@@ -9,9 +9,15 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/commands"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
 )
 
+// handleEngineCut: o cliente confirma o corte com a biometria ou a senha
+// (comprovante de uso único em X-Step-Up-Token).
 func (s *Server) handleEngineCut(w http.ResponseWriter, r *http.Request) {
+	if !s.requireStepUp(w, r, stepup.PurposeEngineCut) {
+		return
+	}
 	s.sendCommand(w, r, protocols.CommandEngineCut, nil)
 }
 

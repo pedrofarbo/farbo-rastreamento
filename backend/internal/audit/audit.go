@@ -24,6 +24,12 @@ const (
 	ActionPasswordReset          = "AUTH_PASSWORD_RESET"
 	ActionPasswordResetFailed    = "AUTH_PASSWORD_RESET_FAILED"
 
+	// Confirmação extra (biometria ou senha) de ações sensíveis.
+	ActionStepUp           = "AUTH_STEP_UP"
+	ActionStepUpFailed     = "AUTH_STEP_UP_FAILED"
+	ActionBiometricAdded   = "AUTH_BIOMETRIC_ADDED"
+	ActionBiometricRemoved = "AUTH_BIOMETRIC_REMOVED"
+
 	ActionCommandRequested = "COMMAND_REQUESTED"
 	ActionCommandSent      = "COMMAND_SENT"
 	ActionCommandRejected  = "COMMAND_REJECTED"

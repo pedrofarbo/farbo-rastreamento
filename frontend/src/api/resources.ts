@@ -152,8 +152,12 @@ export const vehiclesApi = {
 // ---------------------------------------------------------------------------
 
 export const commandsApi = {
-  engineCut: (vehicleId: string) =>
-    api.post<DeviceCommand>(`/api/vehicles/${vehicleId}/commands/engine-cut`),
+  /** O cliente manda o comprovante da confirmação (biometria ou senha). */
+  engineCut: (vehicleId: string, stepUpToken?: string) =>
+    request<DeviceCommand>(`/api/vehicles/${vehicleId}/commands/engine-cut`, {
+      method: 'POST',
+      headers: stepUpToken ? { 'X-Step-Up-Token': stepUpToken } : undefined,
+    }),
   engineCutCheck: (vehicleId: string) =>
     api.get<EngineCutCheck>(`/api/vehicles/${vehicleId}/commands/engine-cut/check`),
   engineResume: (vehicleId: string) =>

@@ -1,19 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { commandsApi } from '@/api/resources';
 import { ApiError } from '@/api/client';
 import { Button } from '@/components/ui/Button';
+import { TextField } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { useRealtimeEvent } from '@/hooks/useRealtime';
 import { useAuth } from '@/stores/AuthContext';
 import { formatCommand } from '@/services/format';
+import {
+  biometricAvailable,
+  biometricGrant,
+  biometricLabels,
+  deviceCredential,
+  enrollBiometric,
+  errorCode,
+  passwordGrant,
+} from '@/services/stepUp';
 import type { CommandType, DeviceCommand, EngineCutCheck, VehicleView } from '@/types';
 
 import styles from './CommandPanel.module.css';
 
-type Phase = 'idle' | 'locating' | 'sending' | 'sent' | 'acknowledged' | 'failed' | 'rejected';
+type Phase = 'idle' | 'verifying' | 'locating' | 'sending' | 'sent' | 'acknowledged' | 'failed' | 'rejected';
 /** O passo "atualizando a posição" antes do corte (none = não precisou). */
 type Locate = 'none' | 'active' | 'done' | 'failed';
 
@@ -34,7 +45,7 @@ const POSITION_POLL_MS = 1_500;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function CommandPanel({ vehicle }: CommandPanelProps) {
-  const { canSendCommands } = useAuth();
+  const { canSendCommands, isCustomer, user } = useAuth();
   const { notify } = useToast();
   const queryClient = useQueryClient();
 
@@ -47,6 +58,18 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
   // Cada envio ganha um número; cancelar troca o número e o envio em
   // andamento para onde estiver.
   const run = useRef(0);
+  // Confirmação do cliente antes do corte: biometria ou senha.
+  const [verify, setVerify] = useState<'biometric' | 'password'>('biometric');
+  const [biometricFailed, setBiometricFailed] = useState(false);
+  const [password, setPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [checkingPassword, setCheckingPassword] = useState(false);
+  // Confirmou com a senha num aparelho com biometria ainda não cadastrada:
+  // depois do corte, oferece cadastrar (com a senha que acabou de digitar).
+  const [canEnroll, setCanEnroll] = useState(false);
+  const [enrolling, setEnrolling] = useState(false);
+  const typedPassword = useRef<string | null>(null);
+  const biometric = biometricLabels();
 
   const blocked = vehicle.state?.relayOn === true;
   const online = vehicle.device?.status === 'ONLINE';
@@ -72,6 +95,12 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
     setReason('');
     setLocate('none');
     setPreflight(null);
+    setVerify('biometric');
+    setBiometricFailed(false);
+    setPassword('');
+    setPasswordError('');
+    setCanEnroll(false);
+    typedPassword.current = null;
   }, []);
 
   // Ao abrir a confirmação do corte, já confere a regra: com a posição
@@ -118,7 +147,7 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
   );
 
   const execute = useCallback(
-    async (type: CommandType) => {
+    async (type: CommandType, stepUpToken?: string) => {
       const token = ++run.current;
       setReason('');
 
@@ -141,7 +170,7 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
 
       setPhase('sending');
       try {
-        const result = await runCommand(vehicle.id, type);
+        const result = await runCommand(vehicle.id, type, stepUpToken);
         setCommand(result);
         setPhase(result.status === 'FAILED' ? 'failed' : 'sent');
 
@@ -158,12 +187,93 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
           setCommand(body?.command ?? null);
           return;
         }
+        if (errorCode(error) === 'STEP_UP_REQUIRED') {
+          setPhase('failed');
+          setReason('A confirmação expirou ou já foi usada. Feche e tente de novo.');
+          return;
+        }
         setPhase('failed');
         setReason(error instanceof Error ? error.message : 'falha desconhecida');
       }
     },
     [vehicle.id, queryClient, refreshPosition],
   );
+
+  /**
+   * O cliente confirma que é ele antes do corte: com a biometria deste
+   * aparelho (Face ID, digital) e, se ela falhar ou não estiver cadastrada,
+   * com a senha. O servidor exige o comprovante; a equipe da central segue
+   * direto.
+   */
+  const confirmIdentity = useCallback(async () => {
+    if (!isCustomer || !user) {
+      void execute('ENGINE_CUT');
+      return;
+    }
+    const token = ++run.current;
+    setPhase('verifying');
+    setPasswordError('');
+    if (deviceCredential(user.id) && (await biometricAvailable())) {
+      setVerify('biometric');
+      try {
+        const grant = await biometricGrant(user.id, 'engine_cut');
+        if (run.current !== token) return;
+        void execute('ENGINE_CUT', grant.token);
+        return;
+      } catch {
+        if (run.current !== token) return;
+        setBiometricFailed(true);
+      }
+    }
+    setVerify('password');
+  }, [isCustomer, user, execute]);
+
+  const submitPassword = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!user) return;
+    if (!password) {
+      setPasswordError('Digite a sua senha.');
+      return;
+    }
+    setCheckingPassword(true);
+    setPasswordError('');
+    try {
+      const grant = await passwordGrant('engine_cut', password);
+      typedPassword.current = password;
+      setPassword('');
+      setCanEnroll(!deviceCredential(user.id) && (await biometricAvailable()));
+      void execute('ENGINE_CUT', grant.token);
+    } catch (error) {
+      setPasswordError(
+        errorCode(error) === 'WRONG_PASSWORD'
+          ? 'Senha incorreta.'
+          : error instanceof Error
+            ? error.message
+            : 'Não foi possível conferir a senha.',
+      );
+    } finally {
+      setCheckingPassword(false);
+    }
+  };
+
+  const enroll = async () => {
+    if (!user || !typedPassword.current) return;
+    setEnrolling(true);
+    try {
+      await enrollBiometric(user, typedPassword.current);
+      notify({ tone: 'success', title: biometric.enabled, description: `Da próxima vez, o bloqueio pede só ${biometric.withArticle}.` });
+      setCanEnroll(false);
+      typedPassword.current = null;
+    } catch (error) {
+      notify({
+        tone: 'error',
+        title: `Não foi possível ativar ${biometric.withArticle}`,
+        description: error instanceof Error && !error.name.includes('Biometric') ? error.message : 'Tente de novo em Conta.',
+      });
+    } finally {
+      setEnrolling(false);
+    }
+  };
 
   const trigger = useCallback(
     (type: CommandType) => {
@@ -267,9 +377,26 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
               <Button variant="ghost" onClick={reset}>
                 Cancelar
               </Button>
-              <Button variant="danger" onClick={() => pending && void execute(pending)}>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  if (pending === 'ENGINE_CUT') void confirmIdentity();
+                  else if (pending) void execute(pending);
+                }}
+              >
                 Confirmar
               </Button>
+            </>
+          ) : phase === 'verifying' ? (
+            <>
+              <Button variant="ghost" onClick={reset}>
+                Cancelar
+              </Button>
+              {verify === 'password' && (
+                <Button variant="danger" type="submit" form="confirmar-com-senha" loading={checkingPassword}>
+                  Confirmar
+                </Button>
+              )}
             </>
           ) : phase === 'locating' ? (
             // Ainda não saiu nenhum corte: dá para desistir.
@@ -305,8 +432,49 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
           </>
         )}
 
-        {phase !== 'idle' && (
+        {phase === 'verifying' &&
+          (verify === 'biometric' ? (
+            <div className={styles.verify} role="status">
+              <span className={styles.stepSpinner} aria-hidden="true" />
+              Confirme com {biometric.withArticle}…
+            </div>
+          ) : (
+            <form id="confirmar-com-senha" className={styles.verifyForm} onSubmit={submitPassword}>
+              <p>
+                {biometricFailed
+                  ? `Não deu para confirmar com ${biometric.withArticle}. Use a senha da sua conta.`
+                  : 'Para desligar o motor, confirme que é você com a senha da sua conta.'}
+              </p>
+              <TextField
+                label="Sua senha"
+                type="password"
+                autoComplete="current-password"
+                autoFocus
+                value={password}
+                error={passwordError || undefined}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+              {biometricFailed && (
+                <Button type="button" variant="ghost" size="small" onClick={() => void confirmIdentity()}>
+                  Tentar {biometric.withArticle} de novo
+                </Button>
+              )}
+            </form>
+          ))}
+
+        {phase !== 'idle' && phase !== 'verifying' && (
           <CommandProgress phase={phase} command={command} reason={reason} pending={pending} locate={locate} />
+        )}
+
+        {canEnroll && (phase === 'sent' || phase === 'acknowledged') && (
+          <div className={styles.enroll}>
+            <span>
+              Da próxima vez, confirme com {biometric.withArticle}, sem digitar a senha.
+            </span>
+            <Button size="small" variant="secondary" onClick={() => void enroll()} loading={enrolling}>
+              Usar {biometric.withArticle}
+            </Button>
+          </div>
         )}
       </Modal>
     </div>
@@ -419,6 +587,7 @@ function Step({ label, state }: { label: string; state: 'idle' | 'active' | 'don
 
 function dialogTitle(pending: CommandType | null, phase: Phase): string {
   if (phase === 'idle' && pending === 'ENGINE_CUT') return 'Desligar motor?';
+  if (phase === 'verifying') return 'Confirme que é você';
   if (phase === 'rejected') return 'Comando recusado';
   if (phase === 'failed') return 'Falha no comando';
   if (phase === 'acknowledged') return 'Comando concluído';
@@ -434,10 +603,10 @@ function formatAge(seconds: number): string {
   return `${Math.round(hours / 24)} dias`;
 }
 
-function runCommand(vehicleId: string, type: CommandType): Promise<DeviceCommand> {
+function runCommand(vehicleId: string, type: CommandType, stepUpToken?: string): Promise<DeviceCommand> {
   switch (type) {
     case 'ENGINE_CUT':
-      return commandsApi.engineCut(vehicleId);
+      return commandsApi.engineCut(vehicleId, stepUpToken);
     case 'ENGINE_RESUME':
       return commandsApi.engineResume(vehicleId);
     case 'REQUEST_POSITION':

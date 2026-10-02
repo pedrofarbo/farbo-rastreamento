@@ -33,6 +33,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols/gt06"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tcp"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/telemetry"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
@@ -178,12 +179,18 @@ type credEnv struct {
 
 func newCredEnv(t *testing.T) *credEnv {
 	t.Helper()
-	return newCredEnvWith(t, nil)
+	return newCredEnvWith(t, credEnvOptions{})
 }
 
-// newCredEnvWith deixa escolher a telemetria da regra do corte; nil é a de
-// um veículo sempre parado e com posição recente.
-func newCredEnvWith(t *testing.T, snapshotsFor func(*tracking.Repository) commands.TelemetryProvider) *credEnv {
+type credEnvOptions struct {
+	// snapshotsFor escolhe a telemetria da regra do corte; nil é a de um
+	// veículo sempre parado e com posição recente.
+	snapshotsFor func(*tracking.Repository) commands.TelemetryProvider
+	// stepUp liga a confirmação extra (biometria ou senha) do cliente.
+	stepUp bool
+}
+
+func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 	t.Helper()
 	db := integrationDB(t)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -231,15 +238,20 @@ func newCredEnvWith(t *testing.T, snapshotsFor func(*tracking.Repository) comman
 	eventSvc := events.NewService(events.NewRepository(db), hub, log)
 	states := tracking.NewStateStore(tracking.NewStateRepository(db))
 	var snapshots commands.TelemetryProvider = stoppedTelemetry{}
-	if snapshotsFor != nil {
-		snapshots = snapshotsFor(env.positions)
+	if opts.snapshotsFor != nil {
+		snapshots = opts.snapshotsFor(env.positions)
 	}
 	env.commands = commands.NewService(commands.NewRepository(db), registry, env.sender,
 		snapshots, eventSvc, auditSvc, hub, cfg.Commands, metrics, log)
 	ingestor := tracking.NewIngestor(env.devices, env.vehicles, env.positions, states, eventSvc,
 		nil, env.commands, nil, hub, cfg.Tracking, metrics, log)
 
+	var stepUpSvc *stepup.Service
+	if opts.stepUp {
+		stepUpSvc = stepup.NewService(db, config.StepUp{RPID: "localhost", Origins: []string{"http://localhost"}}, authSvc)
+	}
 	server := NewServer(Deps{
+		StepUp: stepUpSvc,
 		Config: cfg, Log: log, Metrics: metrics, DB: db, Auth: authSvc,
 		Devices: env.devices, Vehicles: env.vehicles, Events: eventSvc, Commands: env.commands,
 		Audit: auditSvc, Billing: billingSvc,

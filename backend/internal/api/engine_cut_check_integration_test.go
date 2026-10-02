@@ -22,9 +22,9 @@ import (
 // A checagem do corte (sem envio) respeita quem pode cortar e de qual veículo,
 // e diz o motivo com um código. Precisa de FARBO_TEST_DATABASE_URL.
 func TestEngineCutCheckEndToEnd(t *testing.T) {
-	env := newCredEnvWith(t, func(positions *tracking.Repository) commands.TelemetryProvider {
+	env := newCredEnvWith(t, credEnvOptions{snapshotsFor: func(positions *tracking.Repository) commands.TelemetryProvider {
 		return tracking.NewSnapshotProvider(positions)
-	})
+	}})
 	ctx := context.Background()
 	authSvc := auth.NewService(auth.NewRepository(env.db), config.Auth{BcryptCost: bcrypt.MinCost}, nil,
 		slog.New(slog.NewTextHandler(io.Discard, nil)))

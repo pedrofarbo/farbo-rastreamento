@@ -44,6 +44,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/push"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/realtime"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tcp"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/telemetry"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
@@ -278,6 +279,7 @@ func run() error {
 		Fulfillment: fulfillmentSvc, Carrier: carrier, CarrierStore: carrierStore,
 		Retention: retentionSvc,
 		Alerts:    alertEngine, AlertStore: alertStore, Push: pushSvc,
+		StepUp:    stepup.NewService(db, cfg.StepUp, authSvc),
 		Positions: positionRepo, States: stateStore,
 		Raw: rawRepo, Ingestor: ingestor, Conns: connManager, Registry: registry,
 		WS: ws.NewHandler(hub, cfg.HTTP.CORSOrigins), Hub: hub,

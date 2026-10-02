@@ -407,6 +407,19 @@
   text-align: center;
 }
 
+/* O ícone do Face ID (ou da digital) na oferta depois do login. */
+.loginBadge {
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 88px;
+  height: 88px;
+  border-radius: 28px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
 .form {
   display: flex;
   flex-direction: column;

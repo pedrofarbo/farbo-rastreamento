@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,6 +36,7 @@ type Config struct {
 	Shipping  Shipping
 	Alerts    Alerts
 	Push      Push
+	StepUp    StepUp
 }
 
 type HTTP struct {
@@ -250,6 +252,18 @@ type Push struct {
 	// ExtraHosts acrescenta serviços de push aos conhecidos (host:porta; http
 	// só para o próprio computador). Serve para teste.
 	ExtraHosts []string
+}
+
+// StepUp é a confirmação extra (biometria ou senha) antes de ações
+// sensíveis, como o cliente desligar o motor pelo app.
+type StepUp struct {
+	// RPID é o domínio das credenciais de biometria (WebAuthn). Para valerem
+	// no app e no painel, use o domínio comum aos dois (ex.:
+	// farborastreadores.com.br). Vazio usa o host do APP_URL.
+	RPID string
+	// Origins são os endereços de onde a biometria é aceita. Vazio usa o
+	// APP_URL e o CORS_ORIGINS que pertencem ao RPID.
+	Origins []string
 }
 
 // Catalog é a tabela de preços usada quando o próprio cliente contrata um
@@ -543,6 +557,10 @@ func Load() (*Config, error) {
 	}
 	// O horário de vigilância segue o fuso da central, o mesmo das faturas.
 	cfg.Alerts.Timezone = str("ALERTS_TIMEZONE", cfg.Billing.Timezone)
+	cfg.StepUp = StepUp{
+		RPID:    strings.ToLower(str("WEBAUTHN_RP_ID", "")),
+		Origins: csv("WEBAUTHN_ORIGINS", ""),
+	}
 
 	// Sem APP_URL, usa a primeira origem do CORS: ela já é o endereço em que
 	// o navegador abre o painel.
@@ -556,6 +574,22 @@ func Load() (*Config, error) {
 			cfg.Push.VAPIDSubject = "mailto:" + from.Address
 		}
 	}
+	// Biometria: sem domínio, o do painel; sem origens, as do painel e do
+	// CORS que pertencem ao domínio.
+	if cfg.StepUp.RPID == "" {
+		if u, err := url.Parse(cfg.Mail.AppURL); err == nil {
+			cfg.StepUp.RPID = strings.ToLower(u.Hostname())
+		}
+	}
+	if len(cfg.StepUp.Origins) == 0 {
+		for _, origin := range append([]string{cfg.Mail.AppURL}, cfg.HTTP.CORSOrigins...) {
+			origin = strings.TrimRight(origin, "/")
+			if originInDomain(origin, cfg.StepUp.RPID) && !slices.Contains(cfg.StepUp.Origins, origin) {
+				cfg.StepUp.Origins = append(cfg.StepUp.Origins, origin)
+			}
+		}
+	}
+
 	// O callback do OAuth passa pelo mesmo endereço do painel (o /api dele
 	// chega ao backend).
 	if cfg.Shipping.RedirectURL == "" {
@@ -597,6 +631,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if err := cfg.Alerts.validate(); err != nil {
+		return nil, err
+	}
+	if err := cfg.StepUp.validate(); err != nil {
 		return nil, err
 	}
 	if cfg.Payments.PixExpiresIn < 5*time.Minute || cfg.Payments.PixExpiresIn > 30*24*time.Hour {
@@ -650,6 +687,29 @@ func (a Alerts) validate() error {
 		return fmt.Errorf("ALERTS_TIMEZONE inválido: %w", err)
 	}
 	return nil
+}
+
+func (s StepUp) validate() error {
+	if s.RPID == "" {
+		return fmt.Errorf("WEBAUTHN_RP_ID vazio: defina o domínio do painel (ou o APP_URL)")
+	}
+	for _, origin := range s.Origins {
+		if !originInDomain(origin, s.RPID) {
+			return fmt.Errorf("WEBAUTHN_ORIGINS: %q não pertence ao domínio %q (WEBAUTHN_RP_ID)", origin, s.RPID)
+		}
+	}
+	return nil
+}
+
+// originInDomain diz se a origem (https://app.exemplo.com) é do domínio
+// (exemplo.com) ou dele mesmo: é a regra do WebAuthn para o RP ID.
+func originInDomain(origin, domain string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" || domain == "" {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	return host == domain || strings.HasSuffix(host, "."+domain)
 }
 
 func (b Billing) validate() error {

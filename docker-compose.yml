@@ -135,6 +135,9 @@ services:
       PUSH_ENABLED: ${PUSH_ENABLED:-true}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      # Biometria (Face ID, digital) para confirmar o bloqueio do motor.
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
+      WEBAUTHN_ORIGINS: ${WEBAUTHN_ORIGINS:-}
       # Guardar o pacote bruto de cada posição (depuração; ~3x mais disco).
       POSITIONS_STORE_RAW: ${POSITIONS_STORE_RAW:-false}
       # Gravação das posições sem esperar o fsync (ver README, "Capacidade").

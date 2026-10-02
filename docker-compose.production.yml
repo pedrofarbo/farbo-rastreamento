@@ -1,5 +1,8 @@
 services:
   backend:
+    environment:
+      # A biometria vale no app (app.) e no painel (painel.): o domínio comum.
+      WEBAUTHN_RP_ID: farborastreadores.com.br
     ports: !override []
     labels:
       - traefik.enable=true
@@ -39,7 +42,6 @@ services:
       - traefik.http.routers.frontend.entrypoints=websecure
       - traefik.http.routers.frontend.tls=true
       - traefik.http.routers.frontend.tls.certresolver=letsencrypt
-      - traefik.http.routers.frontend.middlewares=secure-headers@docker
       - traefik.http.services.frontend.loadbalancer.server.port=80
 
   traefik:

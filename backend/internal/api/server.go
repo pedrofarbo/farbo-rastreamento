@@ -32,6 +32,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/push"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tcp"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/telemetry"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
@@ -67,7 +68,10 @@ type Deps struct {
 	Alerts     *alerts.Engine
 	AlertStore *alerts.DBStore
 	// Push: notificações no celular do app do cliente.
-	Push         *push.Service
+	Push *push.Service
+	// StepUp: confirmação extra (biometria ou senha) antes de ações
+	// sensíveis. Nil desliga a exigência (só em testes).
+	StepUp       *stepup.Service
 	Carrier      *melhorenvio.Client
 	CarrierStore *melhorenvio.DBStore
 	Owners       *vehicles.OwnerIndex
@@ -118,7 +122,7 @@ func (s *Server) routes() chi.Router {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   s.Config.HTTP.CORSOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", stepUpHeader},
 		AllowCredentials: false,
 		MaxAge:           300,
 	}))
@@ -135,12 +139,19 @@ func (s *Server) routes() chi.Router {
 	// todos (além do intervalo mínimo por conta, aplicado no serviço).
 	forgotLimiter := newRateLimiter(0.1, 3)
 	resetLimiter := newRateLimiter(0.5, 10)
+	// Senha da confirmação extra: além do teto por usuário (stepup).
+	stepUpLimiter := newRateLimiter(0.2, 5)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(limiter.middleware)
 
 		r.Route("/auth", func(r chi.Router) {
 			r.With(loginLimiter.middleware).Post("/login", s.handleLogin)
+			// Entrar com a biometria do aparelho (Face ID, digital), no app.
+			if s.StepUp != nil {
+				r.With(loginLimiter.middleware).Post("/biometric/options", s.handleBiometricLoginOptions)
+				r.With(loginLimiter.middleware).Post("/biometric", s.handleBiometricLogin)
+			}
 			r.Post("/refresh", s.handleRefresh)
 			r.Post("/logout", s.handleLogout)
 
@@ -167,6 +178,21 @@ func (s *Server) routes() chi.Router {
 
 			r.Get("/geocoding/reverse", s.handleReverseGeocode)
 			r.Get("/catalog", s.handleCatalog)
+
+			// Confirmação extra de ações sensíveis (desligar o motor): a
+			// biometria do aparelho (WebAuthn) ou a senha.
+			r.Route("/step-up", func(r chi.Router) {
+				if s.StepUp == nil {
+					return
+				}
+				r.Get("/biometrics", s.handleListBiometrics)
+				r.With(stepUpLimiter.middleware).Post("/biometrics/options", s.handleBiometricOptions)
+				r.Post("/biometrics", s.handleRegisterBiometric)
+				r.Delete("/biometrics/{id}", s.handleDeleteBiometric)
+				r.Post("/options", s.handleStepUpOptions)
+				r.Post("/biometric", s.handleStepUpBiometric)
+				r.With(stepUpLimiter.middleware).Post("/password", s.handleStepUpPassword)
+			})
 
 			// Veículos: a equipe vê todos; o cliente só os dele (o filtro
 			// fica nos handlers, em vehicleFromURL) e perde o acesso se

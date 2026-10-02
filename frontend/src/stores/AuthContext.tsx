@@ -3,12 +3,16 @@ import type { ReactNode } from 'react';
 
 import { authApi } from '@/api/resources';
 import { ApiError, onUnauthorized, tokens } from '@/api/client';
+import { biometricLogin } from '@/services/stepUp';
 import type { User } from '@/types';
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  /** Entra com e-mail e senha; devolve quem entrou. */
+  login: (email: string, password: string) => Promise<User>;
+  /** Entra com a biometria deste aparelho (Face ID, digital). */
+  loginWithBiometric: () => Promise<void>;
   logout: () => Promise<void>;
   canSendCommands: boolean;
   canManage: boolean;
@@ -97,6 +101,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     tokens.save(result);
     rememberUser(result.user);
     setUser(result.user);
+    return result.user;
+  }, []);
+
+  const loginWithBiometric = useCallback(async () => {
+    const result = await biometricLogin();
+    tokens.save(result);
+    rememberUser(result.user);
+    setUser(result.user);
   }, []);
 
   const logout = useCallback(async () => {
@@ -118,6 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       login,
+      loginWithBiometric,
       logout,
       // O cliente também comanda (bloqueio, desbloqueio, posição), mas só os
       // próprios veículos — a API confere o dono.
@@ -128,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isCustomer: user?.role === 'customer',
       isStaff: user !== null && user.role !== 'customer',
     }),
-    [user, loading, login, logout],
+    [user, loading, login, loginWithBiometric, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

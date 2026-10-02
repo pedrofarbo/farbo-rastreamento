@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/stores/AuthContext';
 
+import { BiometricCard } from '../BiometricCard';
 import { clearOfflineData, isIos, promptInstall, unsubscribePush, usePwa } from '../pwa';
 import styles from './Screen.module.css';
 
@@ -66,6 +67,8 @@ export function AccountScreen() {
           </p>
         )}
       </section>
+
+      <BiometricCard />
 
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Mais</h2>

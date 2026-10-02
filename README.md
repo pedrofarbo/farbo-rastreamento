@@ -558,7 +558,13 @@ numa interface pensada para o celular:
   pino fixo, ou usa **Onde estou** ou o atalho de um dos veículos, e ajusta o
   raio num controle deslizante. As cercas aparecem no mapa e na tela do
   veículo.
-- **Conta:** instalar o app, abrir o painel completo e sair.
+- **Entrar com o Face ID:** no iPhone, o Face ID; no Android, a digital ou o
+  rosto. Depois do primeiro login com senha, o app oferece ativar; daí em
+  diante, a tela de entrada mostra a conta e o botão **Entrar com o Face ID**,
+  com e-mail e senha como alternativa. A mesma biometria confirma o bloqueio
+  do motor.
+- **Conta:** instalar o app, ativar ou desativar o Face ID (ou a biometria
+  do Android) deste aparelho, abrir o painel completo e sair.
 
 É um PWA:
 
@@ -877,6 +883,31 @@ enquanto ela não termina. Se a posição não chegar, o corte não é enviado. 
 depende de o aparelho responder ao `WHERE#` com um pacote de posição, e não só
 com texto; confira isso no aparelho real antes de contar com o recurso.
 
+**O cliente confirma que é ele.** Antes de desligar o motor, o cliente
+confirma com a biometria do aparelho: Face ID no iPhone, digital ou rosto no
+Android, Touch ID ou Windows Hello no computador (WebAuthn). Se a biometria
+falhar, for cancelada ou não estiver cadastrada naquele aparelho, ele confirma
+com a senha da conta.
+
+- **Quem exige é o servidor.** A confirmação vira um comprovante de uso único,
+  válido por 3 minutos e só para o corte, enviado em `X-Step-Up-Token`. Sem
+  ele, `POST /commands/engine-cut` do cliente responde 403
+  (`STEP_UP_REQUIRED`), mesmo para quem chamar a API direto com um token
+  roubado. A equipe da central (admin, operador) segue sem essa etapa.
+- **Cadastro da biometria:** em **Conta → Bloqueio do motor**, ou pelo convite
+  que aparece depois de um corte confirmado com a senha. Cadastrar pede a
+  senha: só com o token de acesso, ninguém registra a própria "biometria" na
+  conta de outro. Cada aparelho tem a sua; a lista em Conta permite remover.
+- **Verificação:** só com a biblioteca padrão do Go (ES256 e RS256). O servidor
+  confere a origem, o domínio (`WEBAUTHN_RP_ID`), o desafio de uso único, a
+  verificação do usuário marcada pelo aparelho, a assinatura e o contador.
+- **Senha errada:** responde 403 (`WRONG_PASSWORD`), não 401, para o app não
+  achar que a sessão acabou. Depois de 5 erros em 15 minutos, a senha fica
+  bloqueada para essa confirmação por um tempo.
+- **Domínio:** em produção, `WEBAUTHN_RP_ID` é o domínio comum ao app e ao
+  painel (ex.: `farborastreadores.com.br`), para a mesma biometria valer nos
+  dois.
+
 Além disso, o firmware dos aparelhos com relé costuma ter a própria proteção e
 só engata o corte quando a velocidade cai. As duas travas somam; nenhuma delas
 substitui a outra.
@@ -970,6 +1001,16 @@ GET    /api/vehicles/:id/commands
 
 POST   /api/vehicles/:id/commands/engine-cut       (operator+)
 GET    /api/vehicles/:id/commands/engine-cut/check (operator+) a regra do corte agora, sem enviar
+
+GET    /api/step-up/biometrics            aparelhos com biometria do usuário
+POST   /api/step-up/biometrics/options    começar o cadastro (pede a senha)
+POST   /api/step-up/biometrics            concluir o cadastro (WebAuthn)
+DELETE /api/step-up/biometrics/:id        remover um aparelho
+POST   /api/step-up/options               começar a confirmação com a biometria
+POST   /api/step-up/biometric             confirmar com a biometria → comprovante
+POST   /api/step-up/password              confirmar com a senha → comprovante
+POST   /api/auth/biometric/options        (público) começar o login com a biometria do aparelho
+POST   /api/auth/biometric                (público) entrar com a biometria → sessão
 POST   /api/vehicles/:id/commands/engine-resume    (operator+)
 POST   /api/vehicles/:id/commands/request-position (operator+)
 POST   /api/vehicles/:id/commands/request-status   (operator+)
@@ -1169,6 +1210,8 @@ mais importam:
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | vazio | primeiro acesso, só com o banco sem usuários; exemplos são recusados |
 | `ENGINE_CUT_MAX_SPEED_KMH` | `5` | acima disso o corte é recusado |
 | `ENGINE_CUT_MAX_POSITION_AGE` | `10m` | posição mais velha recusa o corte |
+| `WEBAUTHN_RP_ID` | host do `APP_URL` | domínio das biometrias (o comum ao app e ao painel) |
+| `WEBAUTHN_ORIGINS` | `APP_URL` e `CORS_ORIGINS` do domínio | de onde a biometria é aceita |
 | `COMMAND_ACK_TIMEOUT` | `15s` | sem resposta, o comando vira `TIMEOUT` |
 | `DEVICE_STALE_AFTER` | `2m` | sem pacotes, vira `STALE` |
 | `DEVICE_OFFLINE_AFTER` | `5m` | sem pacotes, vira `OFFLINE` |

@@ -264,6 +264,32 @@ func (s *Service) GetUser(ctx context.Context, id uuid.UUID) (*User, error) {
 
 func (s *Service) ListUsers(ctx context.Context) ([]*User, error) { return s.repo.List(ctx) }
 
+// LoginVerified abre a sessão de quem já provou quem é por outro meio — a
+// biometria do aparelho, conferida pelo pacote stepup.
+func (s *Service) LoginVerified(ctx context.Context, id uuid.UUID, userAgent string) (*Tokens, error) {
+	user, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !user.Active {
+		return nil, ErrInactiveUser
+	}
+	return s.issue(ctx, user, userAgent)
+}
+
+// PasswordMatches confere a senha de um usuário ativo já logado: é a
+// confirmação de ações sensíveis (desligar o motor, cadastrar biometria).
+func (s *Service) PasswordMatches(ctx context.Context, id uuid.UUID, password string) (bool, error) {
+	user, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	if !user.Active {
+		return false, ErrInactiveUser
+	}
+	return bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) == nil, nil
+}
+
 // NewUser é o cadastro completo de um usuário.
 type NewUser struct {
 	Email    string

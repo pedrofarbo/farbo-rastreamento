@@ -71,3 +71,18 @@ export const LocateIcon = ({ active = false }: { active?: boolean }) => (
     <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
   </svg>
 );
+
+/** Face ID (iPhone). */
+export const FaceIdIcon = ({ size = 24 }: { size?: number }) => (
+  <svg {...base} width={size} height={size}>
+    <path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" />
+    <path d="M9 9v1.5M15 9v1.5M12 9v4.5h-1M9.5 16a3.5 3.5 0 0 0 5 0" />
+  </svg>
+);
+
+/** Digital (Android e os demais). */
+export const FingerprintIcon = ({ size = 24 }: { size?: number }) => (
+  <svg {...base} width={size} height={size}>
+    <path d="M6.5 7.5A7 7 0 0 1 19 12v1M5 11.5V12a7 7 0 0 0 1 3.6M12 8a4 4 0 0 1 4 4v1.5a9 9 0 0 1-1 4M8 12a4 4 0 0 1 .6-2M12 12v2a12 12 0 0 1-2 6.5M8.5 15.5A10 10 0 0 1 8 18" />
+  </svg>
+);
