@@ -178,6 +178,13 @@ type credEnv struct {
 
 func newCredEnv(t *testing.T) *credEnv {
 	t.Helper()
+	return newCredEnvWith(t, nil)
+}
+
+// newCredEnvWith deixa escolher a telemetria da regra do corte; nil é a de
+// um veículo sempre parado e com posição recente.
+func newCredEnvWith(t *testing.T, snapshotsFor func(*tracking.Repository) commands.TelemetryProvider) *credEnv {
+	t.Helper()
 	db := integrationDB(t)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	metrics := telemetry.NewMetrics()
@@ -223,8 +230,12 @@ func newCredEnv(t *testing.T) *credEnv {
 	auditSvc := audit.NewService(audit.NewRepository(db), log)
 	eventSvc := events.NewService(events.NewRepository(db), hub, log)
 	states := tracking.NewStateStore(tracking.NewStateRepository(db))
+	var snapshots commands.TelemetryProvider = stoppedTelemetry{}
+	if snapshotsFor != nil {
+		snapshots = snapshotsFor(env.positions)
+	}
 	env.commands = commands.NewService(commands.NewRepository(db), registry, env.sender,
-		stoppedTelemetry{}, eventSvc, auditSvc, hub, cfg.Commands, metrics, log)
+		snapshots, eventSvc, auditSvc, hub, cfg.Commands, metrics, log)
 	ingestor := tracking.NewIngestor(env.devices, env.vehicles, env.positions, states, eventSvc,
 		nil, env.commands, nil, hub, cfg.Tracking, metrics, log)
 

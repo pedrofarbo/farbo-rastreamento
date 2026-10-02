@@ -215,11 +215,44 @@
 }
 
 .vehicleMap {
+  position: relative;
   height: 36vh;
   min-height: 220px;
   border-radius: var(--radius-xl);
   overflow: hidden;
   border: 1px solid var(--border-subtle);
+}
+
+/* Abre o mapa em tela cheia (canto de cima, longe dos créditos do mapa). */
+.mapExpand {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: var(--z-map-overlay);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--surface-sunken) 72%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 70%, transparent);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 140ms ease;
+}
+
+.mapExpand:active {
+  transform: scale(0.92);
+}
+
+.mapExpand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .tiles {
@@ -289,6 +322,11 @@
   transform: scale(0.96);
 }
 
+.chip:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .chipActive {
   color: var(--accent-contrast);
   background: var(--accent);
@@ -316,6 +354,29 @@
 
 .listItem:last-child {
   border-bottom: 0;
+}
+
+/* Linha da lista que abre outra tela (ex.: uma cerca no veículo). */
+.listLink {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 48px;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.list li:last-child .listLink {
+  border-bottom: 0;
+}
+
+.listLink:hover {
+  text-decoration: none;
 }
 
 /* --- Entrar ---------------------------------------------------------------- */

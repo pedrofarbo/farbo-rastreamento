@@ -5,6 +5,8 @@ import type { BadgeTone } from '@/components/ui/Badge';
 const HISTORY_ONLY: Record<string, string> = {
   ENGINE_BLOCKED: 'Motor bloqueado',
   ENGINE_UNBLOCKED: 'Motor liberado',
+  GEOFENCE_ENTER: 'Entrou na cerca',
+  GEOFENCE_EXIT: 'Saiu da cerca',
   TEST: 'E-mail de teste',
 };
 

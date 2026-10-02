@@ -159,6 +159,30 @@ func TestDBStore(t *testing.T) {
 		t.Errorf("histórico: %+v", history)
 	}
 
+	// Alerta de cerca: guardado com o id dela (intervalo próprio por cerca);
+	// o histórico devolve o tipo e o nome.
+	var fenceID uuid.UUID
+	mustScan(`INSERT INTO geofences (name, latitude, longitude, radius_meters, owner_id)
+		VALUES ('Casa', -23.55, -46.63, 200, $1) RETURNING id`, &fenceID, ownerID)
+	fenceKind := "GEOFENCE_ENTER:" + fenceID.String()
+	if err := store.Insert(ctx, &Notification{Recipient: email, UserID: &ownerID, VehicleID: &vehicleID,
+		DeviceID: &deviceID, Kind: fenceKind, OccurredAt: time.Now(), Status: StatusSent}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := store.LastSent(ctx, email, deviceID, fenceKind); !ok {
+		t.Error("intervalo da cerca conta pelo tipo com o id dela")
+	}
+	if _, ok, _ := store.LastSent(ctx, email, deviceID, "GEOFENCE_ENTER:"+uuid.NewString()); ok {
+		t.Error("outra cerca tem intervalo próprio")
+	}
+	history, err = store.History(ctx, ownerID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if history[0].Kind != "GEOFENCE_ENTER" || history[0].Detail != "Casa" || history[1].Detail != "" {
+		t.Errorf("histórico da cerca: tipo e nome, veio %+v / %+v", history[0], history[1])
+	}
+
 	// Teste por e-mail e rastreador offline.
 	if _, ok, _ := store.LastTest(ctx, ownerID); ok {
 		t.Error("nenhum teste ainda")

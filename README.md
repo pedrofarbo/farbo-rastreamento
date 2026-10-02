@@ -210,7 +210,7 @@ Perfis disponíveis:
 
 O cliente entra pelo mesmo login e vê um painel próprio: **Mapa**, **Meus
 veículos** e **Faturas**. Tudo o que é da central (outros veículos, rastreadores,
-eventos da frota, cercas, diagnóstico) fica fora do alcance dele — a API
+eventos da frota, cercas da central, diagnóstico) fica fora do alcance dele — a API
 responde 404 para veículo alheio e 403 para as rotas da equipe, e o tempo real
 (WebSocket) só entrega a ele as mensagens dos próprios veículos. Do rastreador
 ele vê a situação, mas não senha de comando, APN nem anotações internas.
@@ -497,6 +497,31 @@ A central recebe os alertas em `ALERTS_CENTRAL_EMAILS`:
 - os de segurança (SOS, bateria desconectada e reboque) de todos os veículos,
   inclusive de cliente suspenso ou que desligou esses alertas.
 
+**Cercas do cliente.** No app (**Alertas → Cercas**, ou **Criar cerca aqui**
+na tela do veículo), o cliente desenha um círculo em volta de casa, do
+trabalho ou da escola e escolhe:
+
+- **Veículos:** só os dele, e ao menos um. A cerca vigia só os escolhidos.
+- **Tamanho:** de 50 m a 50 km. Abaixo de 50 m, o erro do GPS faria o veículo
+  parado "entrar e sair" sozinho.
+- **Avisos:** ao entrar, ao sair ou nos dois casos. Os avisos vão por e-mail
+  e para o celular.
+
+Cada conta tem até 20 cercas. O aviso respeita o intervalo mínimo e o teto
+por hora, contados por cerca: entrar no trabalho logo depois de sair da
+escola não é tratado como repetição.
+
+As entradas e saídas ficam no histórico do veículo mesmo com o aviso
+desligado. Algumas situações não geram aviso falso:
+
+- **Cerca nova ou alterada:** quem já estava dentro, pela última posição,
+  não "entra".
+- **Cerca apagada, ou veículo tirado dela:** não gera "saída".
+
+A cerca do cliente só vale enquanto o veículo for dele. As cercas da central,
+criadas pelo admin no painel, continuam valendo para a frota inteira e geram
+só eventos, sem aviso ao cliente.
+
 **E-mail de teste.** O botão na tela Alertas manda um e-mail de teste na hora,
 para o cliente conferir que está chegando (limite de um por minuto).
 
@@ -523,8 +548,16 @@ numa interface pensada para o celular:
   bloqueio e liberação do motor (com a mesma trava do painel), trajeto de
   hoje, de ontem ou das últimas 24 h com distância e velocidade máxima,
   **Como chegar**, **Compartilhar** e os últimos eventos.
+- **Mapa em tela cheia:** pelo botão no canto do mapa do veículo. O mapa
+  segue o veículo ao vivo até o cliente arrastá-lo; a mira volta a seguir.
+  Mostra também o trajeto (hoje, ontem, 24 h). O "voltar" do celular, o X ou
+  o Esc fecham sem sair do veículo.
 - **Veículos, Faturas e Alertas:** as mesmas telas do painel, com Pix e
   acompanhamento do pedido.
+- **Cercas:** dentro de Alertas. O cliente arrasta o mapa por baixo de um
+  pino fixo, ou usa **Onde estou** ou o atalho de um dos veículos, e ajusta o
+  raio num controle deslizante. As cercas aparecem no mapa e na tela do
+  veículo.
 - **Conta:** instalar o app, abrir o painel completo e sair.
 
 É um PWA:
@@ -827,6 +860,23 @@ React
 O padrão é conservador: **5 km/h**. Um comando recusado também vira registro no
 banco e na auditoria — recusa não é silêncio.
 
+**Posição antiga: o painel e o app pedem uma nova antes.** Com o carro
+estacionado, o rastreador manda posição de hora em hora (`TIMER,30,3600#`), e a
+última quase sempre passa de `ENGINE_CUT_MAX_POSITION_AGE` (10 min). Para o
+corte não ser recusado por isso, o painel e o app do cliente fazem, depois da
+confirmação:
+
+1. Consultam `GET /api/vehicles/:id/commands/engine-cut/check`, que avalia a
+   regra no backend (com o relógio dele), sem enviar nada.
+2. Se a posição for antiga ou não houver nenhuma, mandam **Solicitar posição**
+   (`WHERE#`) e voltam a consultar até chegar uma posição nova (até 1 minuto).
+3. Só então mandam o corte, que o backend confere de novo.
+
+O cliente acompanha a etapa "Atualizando a posição do veículo" e pode cancelar
+enquanto ela não termina. Se a posição não chegar, o corte não é enviado. Isso
+depende de o aparelho responder ao `WHERE#` com um pacote de posição, e não só
+com texto; confira isso no aparelho real antes de contar com o recurso.
+
 Além disso, o firmware dos aparelhos com relé costuma ter a própria proteção e
 só engata o corte quando a velocidade cai. As duas travas somam; nenhuma delas
 substitui a outra.
@@ -919,6 +969,7 @@ GET    /api/vehicles/:id/events
 GET    /api/vehicles/:id/commands
 
 POST   /api/vehicles/:id/commands/engine-cut       (operator+)
+GET    /api/vehicles/:id/commands/engine-cut/check (operator+) a regra do corte agora, sem enviar
 POST   /api/vehicles/:id/commands/engine-resume    (operator+)
 POST   /api/vehicles/:id/commands/request-position (operator+)
 POST   /api/vehicles/:id/commands/request-status   (operator+)
@@ -933,10 +984,10 @@ GET    /api/devices/:id/provisioning     (admin) comandos de configuração suge
 PATCH  /api/devices/:id                  (admin) senha vazia mantém; clear* apaga
 DELETE /api/devices/:id                  (admin)
 
-GET    /api/geofences
-POST   /api/geofences                    (admin)
-PATCH  /api/geofences/:id                (admin)
-DELETE /api/geofences/:id                (admin)
+GET    /api/geofences                    equipe: as da central; cliente: as dele
+POST   /api/geofences                    (admin: da central; cliente: dele, com vehicleIds)
+PATCH  /api/geofences/:id                (o mesmo dono; outro dono = 404)
+DELETE /api/geofences/:id                (o mesmo dono; outro dono = 404)
 
 GET    /api/events
 GET    /api/protocols

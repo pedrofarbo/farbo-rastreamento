@@ -273,7 +273,7 @@ func (i *Ingestor) processTelemetry(ctx context.Context, dev *devices.Device, ms
 	i.metrics.PositionsStored.WithLabelValues(msg.Protocol).Inc()
 
 	i.evaluateOverspeed(ctx, dev, vehicle, vehicleID, position)
-	i.evaluateGeofences(ctx, dev, vehicleID, position)
+	i.evaluateGeofences(ctx, dev, vehicle, position)
 
 	i.publisher.PublishFor(websocket.TypePositionUpdated, vehicleID, &dev.ID, position)
 	if i.positionObserver != nil {
@@ -452,18 +452,38 @@ func (i *Ingestor) evaluateOverspeed(ctx context.Context, dev *devices.Device, v
 }
 
 // evaluateGeofences compara as cercas em que o veículo estava com as atuais.
-func (i *Ingestor) evaluateGeofences(ctx context.Context, dev *devices.Device, vehicleID *uuid.UUID, pos *Position) {
+// Cada veículo só é avaliado nas cercas que o vigiam: as da central e as que o
+// dono dele criou para ele.
+func (i *Ingestor) evaluateGeofences(ctx context.Context, dev *devices.Device, vehicle *vehicles.Vehicle, pos *Position) {
+	if i.geofences == nil {
+		return
+	}
 	if pos.GPSValid != nil && !*pos.GPSValid {
 		return // sem fix confiável não avaliamos entrada/saída
 	}
 
-	current := i.geofences.Inside(pos.Latitude, pos.Longitude)
+	var subject geofences.Subject
+	if vehicle != nil {
+		subject = geofences.Subject{VehicleID: &vehicle.ID, OwnerID: vehicle.OwnerID}
+	}
+	current := i.geofences.Inside(subject, pos.Latitude, pos.Longitude)
 	before, _ := i.states.Update(ctx, dev.ID, func(st *State) {
 		st.InsideFences = current
 	})
 
-	emit := func(fenceID uuid.UUID, eventType string) {
+	emit := func(fence *geofences.Geofence, eventType string) {
 		speed := pos.SpeedKmh
+		metadata := map[string]any{
+			"geofenceId":   fence.ID,
+			"geofenceName": fence.Name,
+			"vehicleId":    subject.VehicleID,
+		}
+		// Cerca do cliente: o aviso vai para o dono, se ele quis esse lado.
+		if fence.OwnerID != nil {
+			metadata["geofenceOwnerId"] = fence.OwnerID.String()
+			metadata["notify"] = (eventType == events.GeofenceEnter && fence.NotifyEnter) ||
+				(eventType == events.GeofenceExit && fence.NotifyExit)
+		}
 		i.events.Record(ctx, &events.Event{
 			DeviceID:  dev.ID,
 			Type:      eventType,
@@ -471,22 +491,24 @@ func (i *Ingestor) evaluateGeofences(ctx context.Context, dev *devices.Device, v
 			Latitude:  &pos.Latitude,
 			Longitude: &pos.Longitude,
 			SpeedKmh:  &speed,
-			Metadata: map[string]any{
-				"geofenceId":   fenceID,
-				"geofenceName": i.geofences.Name(fenceID),
-				"vehicleId":    vehicleID,
-			},
+			Metadata:  metadata,
 		})
 	}
 
 	for _, fenceID := range current {
 		if !slices.Contains(before.InsideFences, fenceID) {
-			emit(fenceID, events.GeofenceEnter)
+			if fence, ok := i.geofences.Lookup(fenceID); ok {
+				emit(fence, events.GeofenceEnter)
+			}
 		}
 	}
+	// Cerca apagada, desligada ou que deixou de vigiar o veículo some da
+	// lista sem "saída": o veículo não saiu de lugar nenhum.
 	for _, fenceID := range before.InsideFences {
-		if !slices.Contains(current, fenceID) {
-			emit(fenceID, events.GeofenceExit)
+		if !slices.Contains(current, fenceID) && i.geofences.Applies(fenceID, subject) {
+			if fence, ok := i.geofences.Lookup(fenceID); ok {
+				emit(fence, events.GeofenceExit)
+			}
 		}
 	}
 }

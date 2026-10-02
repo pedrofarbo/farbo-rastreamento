@@ -87,6 +87,19 @@ func (e *Engine) describe(kind string, c candidate, vehicle string, s Settings) 
 		return "Bateria do rastreador fraca",
 			fmt.Sprintf("A bateria interna do rastreador do veículo %s está acabando (%s). Isso costuma acontecer quando ele fica sem a energia do veículo.", vehicle, clock),
 			mail.SeverityWarning
+	case KindGeofence:
+		name := c.fenceName
+		if name == "" {
+			name = "sem nome"
+		}
+		if c.variant == variantExit {
+			return "Saiu da cerca " + name,
+				fmt.Sprintf("O veículo %s saiu da cerca %s às %s.", vehicle, name, clock),
+				mail.SeverityInfo
+		}
+		return "Entrou na cerca " + name,
+			fmt.Sprintf("O veículo %s entrou na cerca %s às %s.", vehicle, name, clock),
+			mail.SeverityInfo
 	case KindEngineBlock:
 		if c.variant == variantResume {
 			return "Motor liberado",

@@ -674,3 +674,56 @@ func TestPhoneStillGetsAlertWhenEmailFails(t *testing.T) {
 		t.Errorf("o e-mail fica registrado como não entregue: %v", st)
 	}
 }
+
+func TestGeofenceAlertsGoOnlyToTheFenceOwner(t *testing.T) {
+	fenceA, fenceB := uuid.New(), uuid.New()
+	meta := func(fence uuid.UUID, name string, owner uuid.UUID, notify bool) map[string]any {
+		return map[string]any{"geofenceId": fence, "geofenceName": name, "geofenceOwnerId": owner.String(), "notify": notify}
+	}
+	h := newHarness(t, func(c *config.Alerts) { c.CentralEmails = []string{"central@farbo.test"} })
+	p := &memPusher{}
+	h.e.SetPusher(p)
+
+	got := h.event(events.GeofenceEnter, h.now, meta(fenceA, "Casa", ownerID, true))
+	if len(got) != 1 || got[0].To != "ana@cliente.test" || got[0].Title != "Entrou na cerca Casa" ||
+		!strings.Contains(got[0].Summary, "Moto da Ana entrou na cerca Casa") || got[0].Severity != mail.SeverityInfo {
+		t.Fatalf("entrada: só o dono, com o nome da cerca, veio %+v", got)
+	}
+	if n := p.sent[ownerID]; len(n) != 1 || n[0].Title != "Entrou na cerca Casa" || len(n[0].Topic) > 32 ||
+		strings.ContainsAny(n[0].Topic, "+/=:") {
+		t.Fatalf("no celular também, com Topic válido: %+v", n)
+	}
+
+	// Saída logo depois: outro alerta (não é repetição da entrada).
+	h.now = h.now.Add(3 * time.Minute)
+	if got := h.event(events.GeofenceExit, h.now, meta(fenceA, "Casa", ownerID, true)); len(got) != 1 || got[0].Title != "Saiu da cerca Casa" {
+		t.Fatalf("saída, veio %+v", got)
+	}
+	// Outra cerca dentro do intervalo: também não é repetição.
+	h.now = h.now.Add(3 * time.Minute)
+	if got := h.event(events.GeofenceEnter, h.now, meta(fenceB, "Trabalho", ownerID, true)); len(got) != 1 || got[0].Title != "Entrou na cerca Trabalho" {
+		t.Fatalf("cerca diferente tem intervalo próprio, veio %+v", got)
+	}
+	// A mesma cerca de novo dentro do intervalo: segurado.
+	h.now = h.now.Add(3 * time.Minute)
+	if got := h.event(events.GeofenceEnter, h.now, meta(fenceA, "Casa", ownerID, true)); len(got) != 0 {
+		t.Fatalf("mesma cerca dentro do intervalo é repetição, veio %+v", got)
+	}
+
+	// Lado sem aviso, cerca da central e cerca de outro dono: ninguém recebe.
+	for name, m := range map[string]map[string]any{
+		"aviso desligado":  meta(uuid.New(), "Escola", ownerID, false),
+		"cerca da central": {"geofenceId": uuid.New(), "geofenceName": "Pátio"},
+		"outro dono":       meta(uuid.New(), "Alheia", uuid.New(), true),
+	} {
+		if got := h.event(events.GeofenceEnter, h.now, m); len(got) != 0 {
+			t.Errorf("%s: ninguém recebe, veio %+v", name, got)
+		}
+	}
+
+	h = newHarness(t, nil)
+	h.owner().Suspended = true
+	if got := h.event(events.GeofenceEnter, h.now, meta(fenceA, "Casa", ownerID, true)); len(got) != 0 {
+		t.Fatalf("cliente suspenso não recebe, veio %+v", got)
+	}
+}

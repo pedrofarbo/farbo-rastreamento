@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
-import { vehiclesApi } from '@/api/resources';
+import { geofencesApi, vehiclesApi } from '@/api/resources';
 import { isSuspendedError, SuspendedNotice } from '@/components/billing/SuspendedNotice';
 import { TrackerMap } from '@/components/map/TrackerMap';
 import { Address } from '@/components/ui/Address';
@@ -23,10 +23,13 @@ import {
   formatSpeed,
 } from '@/services/format';
 
-import { BackIcon } from '../icons';
+import { fencesOf, formatRadius, notifyLabel } from '../fence';
+import { BackIcon, ChevronIcon, ExpandIcon } from '../icons';
 import { isIos } from '../pwa';
 import { directionsUrl, summarizeTrip, tripWindow } from '../trip';
 import type { TripRange } from '../trip';
+import { VehicleMapFullscreen } from '../VehicleMapFullscreen';
+import { fencesKey } from './FencesScreen';
 import { statusTone } from './MapScreen';
 import styles from './Screen.module.css';
 
@@ -47,6 +50,16 @@ export function VehicleScreen() {
   const { notify } = useToast();
   const query = useVehicle(id);
   const [range, setRange] = useState<TripRange | null>(null);
+  const location = useLocation();
+  const [params] = useSearchParams();
+  // Tela cheia no endereço (?mapa=tela-cheia): o "voltar" do celular fecha
+  // o mapa em vez de sair do veículo.
+  const fullscreen = params.get('mapa') === 'tela-cheia';
+  const openFullscreen = () => navigate({ search: '?mapa=tela-cheia' }, { state: { fullscreenMap: true } });
+  const closeFullscreen = useCallback(() => {
+    if ((location.state as { fullscreenMap?: boolean } | null)?.fullscreenMap) navigate(-1);
+    else navigate({ search: '' }, { replace: true });
+  }, [location.state, navigate]);
 
   const period = range ? tripWindow(range) : null;
   const trip = useQuery({
@@ -55,6 +68,8 @@ export function VehicleScreen() {
     enabled: Boolean(range && id),
   });
   const events = useQuery({ queryKey: ['app-events', id], queryFn: () => vehiclesApi.events(id, { limit: 15 }), enabled: Boolean(id) });
+  const fences = useQuery({ queryKey: fencesKey, queryFn: geofencesApi.list });
+  const mine = useMemo(() => fencesOf(fences.data ?? [], id), [fences.data, id]);
 
   const track = trip.data?.positions ?? [];
   const summary = useMemo(() => summarizeTrip(track), [track]);
@@ -112,8 +127,29 @@ export function VehicleScreen() {
       </div>
 
       <div className={styles.vehicleMap}>
-        <TrackerMap vehicles={[vehicle]} selectedId={vehicle.id} track={range ? track : undefined} showControls={false} />
+        <TrackerMap
+          vehicles={[vehicle]}
+          selectedId={vehicle.id}
+          track={range ? track : undefined}
+          geofences={mine}
+          showControls={false}
+        />
+        <button type="button" className={styles.mapExpand} onClick={openFullscreen} aria-label="Ver o mapa em tela cheia">
+          <ExpandIcon />
+        </button>
       </div>
+      {fullscreen && (
+        <VehicleMapFullscreen
+          vehicle={vehicle}
+          geofences={mine}
+          range={range}
+          onRange={setRange}
+          track={track}
+          trackLoading={trip.isLoading}
+          trip={summary}
+          onClose={closeFullscreen}
+        />
+      )}
 
       {position ? (
         <>
@@ -171,6 +207,35 @@ export function VehicleScreen() {
       )}
 
       <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>Cercas</h2>
+        {mine.length === 0 ? (
+          <p className={styles.muted}>Receba um aviso quando {vehicle.name} chegar ou sair de casa, do trabalho ou da escola.</p>
+        ) : (
+          <ul className={styles.list}>
+            {mine.map((fence) => (
+              <li key={fence.id}>
+                <Link to={`/cercas/${fence.id}`} className={styles.listLink}>
+                  <span>
+                    <strong>{fence.name}</strong>
+                    <span className={styles.muted}>
+                      {' '}
+                      · {formatRadius(fence.radiusMeters)} · {notifyLabel(fence).toLowerCase()}
+                    </span>
+                  </span>
+                  <span className={styles.chevron}>
+                    <ChevronIcon />
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Button variant="secondary" onClick={() => navigate(`/cercas/nova?veiculo=${vehicle.id}`)}>
+          Criar cerca aqui
+        </Button>
+      </section>
+
+      <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Trajeto</h2>
         <div className={styles.chips} role="group" aria-label="Período do trajeto">
           {RANGES.map((option) => (
@@ -219,9 +284,12 @@ export function VehicleScreen() {
           <ul className={styles.list}>
             {(events.data ?? []).map((event) => (
               <li key={event.id} className={styles.listItem}>
-                <Badge tone={eventSeverity(event.type)}>
-                  {formatEvent(event.type)}
-                </Badge>
+                <span>
+                  <Badge tone={eventSeverity(event.type)}>{formatEvent(event.type)}</Badge>
+                  {typeof event.metadata?.geofenceName === 'string' && event.metadata.geofenceName && (
+                    <span className={styles.muted}> {event.metadata.geofenceName}</span>
+                  )}
+                </span>
                 <span className={styles.muted}>{formatDateTime(event.timestamp)}</span>
               </li>
             ))}

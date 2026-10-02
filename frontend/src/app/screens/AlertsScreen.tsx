@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 
-import { meApi } from '@/api/resources';
+import { geofencesApi, meApi } from '@/api/resources';
 import { AlertSettingsPanel } from '@/components/alerts/AlertSettingsPanel';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -9,6 +10,7 @@ import { useToast } from '@/components/ui/Toast';
 import type { AlertSettings, AlertSettingsInput } from '@/types';
 
 import { currentSubscription, pushSupport, subscribePush, unsubscribePush } from '../pwa';
+import { fencesKey } from './FencesScreen';
 import styles from './Screen.module.css';
 
 const pushKey = ['me', 'push'] as const;
@@ -132,6 +134,33 @@ function PushCard() {
   );
 }
 
+/** Atalho para as cercas: aviso de entrada e saída de um lugar. */
+function FencesCard() {
+  const navigate = useNavigate();
+  const fences = useQuery({ queryKey: fencesKey, queryFn: geofencesApi.list });
+  const count = fences.data?.length ?? 0;
+  return (
+    <section className={styles.section} aria-label="Cercas">
+      <h2 className={styles.sectionTitle}>Cercas</h2>
+      <p className={styles.muted}>
+        {count === 0
+          ? 'Desenhe um círculo em volta de casa, do trabalho ou da escola e saiba quando o veículo chega ou sai.'
+          : count === 1
+            ? '1 cerca avisa quando o veículo entra ou sai.'
+            : `${count} cercas avisam quando o veículo entra ou sai.`}
+      </p>
+      <Button
+        variant={count === 0 ? 'primary' : 'secondary'}
+        onClick={() => navigate(count === 0 ? '/cercas/nova' : '/cercas')}
+        disabled={fences.isLoading}
+        block
+      >
+        {count === 0 ? 'Criar cerca' : 'Ver cercas'}
+      </Button>
+    </section>
+  );
+}
+
 /** Alertas: notificações no celular e as escolhas que valem para e-mail e celular. */
 export function AlertsScreen() {
   const queryClient = useQueryClient();
@@ -162,6 +191,7 @@ export function AlertsScreen() {
         <p className={styles.lead}>Os alertas escolhidos abaixo chegam por e-mail e, com as notificações ligadas, neste celular.</p>
       </div>
       <PushCard />
+      <FencesCard />
       {settings.isLoading ? (
         <Spinner label="Carregando alertas" />
       ) : settings.data ? (

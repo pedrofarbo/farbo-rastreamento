@@ -3,6 +3,7 @@ package alerts
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math"
 	"strings"
@@ -78,6 +79,8 @@ const (
 	variantMoving = "moving"
 	variantParked = "parked"
 	variantAlarm  = "alarm"
+	variantEnter  = "enter"
+	variantExit   = "exit"
 )
 
 // ErrTestTooSoon: o e-mail de teste tem limite de um por minuto.
@@ -96,6 +99,9 @@ type candidate struct {
 	limit    *float64
 	distance float64
 	offline  time.Duration
+
+	// Cerca do cliente: qual, o nome e de quem é.
+	fenceID, fenceName, fenceOwner string
 }
 
 type recipient struct {
@@ -176,7 +182,8 @@ func (e *Engine) OnEvent(ev *events.Event) {
 	switch ev.Type {
 	case events.SOS, events.PowerLoss, events.LowBattery, events.Overspeed, events.IgnitionOn,
 		events.EngineCutAck, events.EngineResumeAck, events.DeviceAlarm,
-		events.DeviceDisconnected, events.DeviceConnected:
+		events.DeviceDisconnected, events.DeviceConnected,
+		events.GeofenceEnter, events.GeofenceExit:
 	default:
 		return // o resto não vira alerta: nem entra na fila
 	}
@@ -338,6 +345,18 @@ func (e *Engine) handleEvent(ctx context.Context, ev *events.Event) {
 			return
 		}
 		c.kind, c.variant = KindSignalLost, variantMoving
+	case events.GeofenceEnter, events.GeofenceExit:
+		// Só as cercas do cliente avisam, e só do lado que ele escolheu; as
+		// da central ficam nos eventos.
+		c.fenceOwner = text(ev.Metadata["geofenceOwnerId"])
+		if notify, _ := ev.Metadata["notify"].(bool); c.fenceOwner == "" || !notify {
+			return
+		}
+		c.kind, c.variant = KindGeofence, variantEnter
+		if ev.Type == events.GeofenceExit {
+			c.variant = variantExit
+		}
+		c.fenceID, c.fenceName = text(ev.Metadata["geofenceId"]), text(ev.Metadata["geofenceName"])
 	default:
 		return
 	}
@@ -422,6 +441,16 @@ func (e *Engine) resolveKind(c candidate, s Settings) string {
 }
 
 func (e *Engine) recipients(t *Target, c candidate) []recipient {
+	if c.kind == KindGeofence {
+		// A cerca é do cliente: o aviso é só dele, e só enquanto o veículo
+		// for dele.
+		o := t.Owner
+		if o == nil || !o.Active || o.Suspended || o.UserID.String() != c.fenceOwner {
+			return nil
+		}
+		id := o.UserID
+		return []recipient{{email: o.Email, name: o.Name, userID: &id, kind: KindGeofence, settings: o.Settings}}
+	}
 	out := []recipient{}
 	ownerEmail := ""
 	if o := t.Owner; o != nil {
@@ -454,13 +483,21 @@ func (e *Engine) recipients(t *Target, c candidate) []recipient {
 }
 
 // notificationKind separa no histórico o que precisa de intervalo próprio:
-// bloquear e depois liberar o motor são dois e-mails, não um repetido.
-func notificationKind(kind, variant string) string {
-	if kind == KindEngineBlock {
-		if variant == variantResume {
+// bloquear e depois liberar o motor são dois e-mails, não um repetido; e cada
+// cerca tem o seu (chegar ao trabalho logo depois de deixar o filho na escola
+// não pode ser segurado como repetição). O id da cerca vai depois de ":".
+func notificationKind(c candidate, kind string) string {
+	switch kind {
+	case KindEngineBlock:
+		if c.variant == variantResume {
 			return "ENGINE_UNBLOCKED"
 		}
 		return "ENGINE_BLOCKED"
+	case KindGeofence:
+		if c.variant == variantExit {
+			return "GEOFENCE_EXIT:" + c.fenceID
+		}
+		return "GEOFENCE_ENTER:" + c.fenceID
 	}
 	return kind
 }
@@ -470,7 +507,7 @@ func (e *Engine) deliver(ctx context.Context, t *Target, c candidate, r recipien
 	deviceID := c.deviceID
 	n := &Notification{
 		Recipient: r.email, UserID: r.userID, VehicleID: t.VehicleID, DeviceID: &deviceID,
-		Kind: notificationKind(r.kind, c.variant), EventID: c.eventID, OccurredAt: c.at,
+		Kind: notificationKind(c, r.kind), EventID: c.eventID, OccurredAt: c.at,
 	}
 
 	last, sent, err := e.store.LastSent(ctx, r.email, deviceID, n.Kind)
@@ -647,6 +684,7 @@ func (e *Engine) notification(t *Target, kind string, a mail.Alert) push.Notific
 }
 
 func topic(kind, vehicle string) string {
+	kind, _, _ = strings.Cut(kind, ":") // a cerca não cabe nos 32 caracteres
 	t := strings.ReplaceAll(kind, "_", "") + "-" + strings.ReplaceAll(vehicle, "-", "")
 	if len(t) > 32 {
 		t = t[:32]
@@ -657,6 +695,18 @@ func topic(kind, vehicle string) string {
 // ---------------------------------------------------------------------------
 // Auxiliares
 // ---------------------------------------------------------------------------
+
+// text lê um valor do metadata como texto (o id da cerca chega como
+// uuid.UUID dentro do processo e como string se vier do banco).
+func text(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case fmt.Stringer:
+		return t.String()
+	}
+	return ""
+}
 
 func number(v any) (float64, bool) {
 	switch n := v.(type) {

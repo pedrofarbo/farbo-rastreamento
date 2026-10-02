@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from 'react-leaflet';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Circle, MapContainer, Marker, Polyline, Popup, useMap } from 'react-leaflet';
 import type { LatLngExpression, LatLngTuple } from 'leaflet';
 import L from 'leaflet';
 
 import { Address } from '@/components/ui/Address';
-import { formatCoordinates, formatDateTime, formatHeading, formatSpeed } from '@/services/format';
+import { formatCoordinates, formatDateTime, formatDistance, formatHeading, formatSpeed } from '@/services/format';
 import type { Geofence, Position, VehicleView } from '@/types';
 
 import { endpointIcon, vehicleIcon } from './markers';
+import { OsmTiles } from './OsmTiles';
 import styles from './TrackerMap.module.css';
 
 /** Centro padrão (São Paulo) quando ainda não há nenhuma posição. */
@@ -27,6 +28,13 @@ interface TrackerMapProps {
   highlight?: Position | null;
   geofences?: Geofence[];
   showControls?: boolean;
+  /** Seguir o veículo, controlado de fora (tela cheia do app). Sem isso, o
+   * mapa usa o próprio botão "Seguindo". */
+  following?: boolean;
+  /** Chamado com false quando o usuário arrasta o mapa (deixa de seguir). */
+  onFollowingChange?: (following: boolean) => void;
+  /** Trocar o valor centraliza de novo: no veículo ou no trajeto inteiro. */
+  recenterKey?: number;
 }
 
 export function TrackerMap({
@@ -37,8 +45,16 @@ export function TrackerMap({
   highlight,
   geofences = [],
   showControls = true,
+  following: followingProp,
+  onFollowingChange,
+  recenterKey,
 }: TrackerMapProps) {
-  const [following, setFollowing] = useState(true);
+  const [ownFollowing, setOwnFollowing] = useState(true);
+  const following = followingProp ?? ownFollowing;
+  const toggleFollowing = () => {
+    if (onFollowingChange) onFollowingChange(!following);
+    else setOwnFollowing(!following);
+  };
   const [showFences, setShowFences] = useState(true);
 
   const located = useMemo(
@@ -68,14 +84,7 @@ export function TrackerMap({
         zoomControl={false}
         preferCanvas
       >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          maxZoom={19}
-          // O OpenStreetMap exige Referer nos tiles: vale mesmo que a página
-          // (ou o proxy na frente) use uma política mais restrita.
-          referrerPolicy="strict-origin-when-cross-origin"
-        />
+        <OsmTiles />
 
         {showFences &&
           geofences
@@ -92,7 +101,7 @@ export function TrackerMap({
                     <span className={styles.popupTitle}>{fence.name}</span>
                     <div className={styles.popupRow}>
                       <span>Raio</span>
-                      <span className={styles.popupValue}>{fence.radiusMeters} m</span>
+                      <span className={styles.popupValue}>{formatDistance(fence.radiusMeters)}</span>
                     </div>
                   </div>
                 </Popup>
@@ -171,7 +180,9 @@ export function TrackerMap({
           center={center}
           enabled={following && !track}
           fitTo={track && track.length > 1 ? trackLine : undefined}
+          recenterKey={recenterKey}
         />
+        {onFollowingChange && <MapDragWatch onDrag={() => onFollowingChange(false)} />}
         <MapResize />
       </MapContainer>
 
@@ -185,7 +196,7 @@ export function TrackerMap({
             <button
               type="button"
               className={`${styles.controlButton} ${following ? styles.controlActive : ''}`}
-              onClick={() => setFollowing((value) => !value)}
+              onClick={toggleFollowing}
               title="Centralizar o mapa no veículo selecionado a cada nova posição"
             >
               {following ? 'Seguindo' : 'Seguir'}
@@ -279,22 +290,39 @@ function MapFocus({
   center,
   enabled,
   fitTo,
+  recenterKey,
 }: {
   center: LatLngTuple;
   enabled: boolean;
   fitTo?: LatLngExpression[];
+  recenterKey?: number;
 }) {
   const map = useMap();
 
   useEffect(() => {
     if (!fitTo || fitTo.length < 2) return;
     map.fitBounds(L.latLngBounds(fitTo), { padding: [40, 40] });
-  }, [map, fitTo]);
+  }, [map, fitTo, recenterKey]);
 
   useEffect(() => {
     if (!enabled || fitTo) return;
     map.setView(center, map.getZoom(), { animate: true });
-  }, [map, center[0], center[1], enabled, fitTo]);
+  }, [map, center[0], center[1], enabled, fitTo, recenterKey]);
 
+  return null;
+}
+
+/** Arrastar o mapa com o dedo (não o setView do código) para de seguir. */
+function MapDragWatch({ onDrag }: { onDrag: () => void }) {
+  const map = useMap();
+  const callback = useRef(onDrag);
+  callback.current = onDrag;
+  useEffect(() => {
+    const handler = () => callback.current();
+    map.on('dragstart', handler);
+    return () => {
+      map.off('dragstart', handler);
+    };
+  }, [map]);
   return null;
 }

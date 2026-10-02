@@ -1,7 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type { CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import { geofencesApi } from '@/api/resources';
 import { isSuspendedError, SuspendedNotice } from '@/components/billing/SuspendedNotice';
 import { TrackerMap } from '@/components/map/TrackerMap';
 import { Badge } from '@/components/ui/Badge';
@@ -14,6 +16,7 @@ import type { VehicleView } from '@/types';
 
 import { BottomSheet } from '../BottomSheet';
 import { ChevronIcon } from '../icons';
+import { fencesKey } from './FencesScreen';
 import styles from './Screen.module.css';
 
 export function statusTone(vehicle: VehicleView): BadgeTone {
@@ -37,6 +40,7 @@ function sortVehicles(list: VehicleView[]): VehicleView[] {
 export function MapScreen() {
   const navigate = useNavigate();
   const vehicles = useVehicles();
+  const fences = useQuery({ queryKey: fencesKey, queryFn: geofencesApi.list });
   const [selected, setSelected] = useState<string | null>(null);
   const [mapInset, setMapInset] = useState(0);
   const growTimer = useRef<number>();
@@ -71,7 +75,13 @@ export function MapScreen() {
   return (
     <div className={styles.mapScreen} style={{ '--map-inset': `${mapInset}px` } as CSSProperties}>
       <div className={styles.map}>
-        <TrackerMap vehicles={list} selectedId={selected} onSelect={setSelected} showControls={false} />
+        <TrackerMap
+          vehicles={list}
+          selectedId={selected}
+          onSelect={setSelected}
+          geofences={fences.data}
+          showControls={false}
+        />
       </div>
       <BottomSheet
         label="Seus veículos"

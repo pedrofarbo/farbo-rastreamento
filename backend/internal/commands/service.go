@@ -238,31 +238,66 @@ func (s *Service) dispatch(ctx context.Context, req Request, cmd *Command, paylo
 	return sent, nil
 }
 
-// engineCutBlocked devolve o motivo da recusa, ou vazio se o corte é seguro.
+// Por que o corte de motor seria recusado agora (EngineCutCheck.Code).
+const (
+	CutReadFailed    = "READ_FAILED"
+	CutNoPosition    = "NO_POSITION"
+	CutStalePosition = "STALE_POSITION"
+	CutTooFast       = "TOO_FAST"
+)
+
+// EngineCutCheck é a regra de segurança do corte avaliada agora, sem enviar
+// nada. Posição ausente ou antiga se resolve pedindo uma nova ao rastreador;
+// velocidade alta, só esperando o veículo parar.
+type EngineCutCheck struct {
+	Allowed bool   `json:"allowed"`
+	Code    string `json:"code,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+	// PositionAgeSeconds é a idade da última posição (nula sem posição).
+	PositionAgeSeconds *int `json:"positionAgeSeconds"`
+	// MaxPositionAgeSeconds é o limite (ENGINE_CUT_MAX_POSITION_AGE).
+	MaxPositionAgeSeconds int `json:"maxPositionAgeSeconds"`
+}
+
+// CheckEngineCut avalia a regra de segurança do corte.
 //
-// A checagem é feita sempre no backend, com o dado que o backend tem — nunca
-// confiando no que o navegador afirma (§14).
-func (s *Service) engineCutBlocked(ctx context.Context, dev *devices.Device) string {
+// A checagem é feita sempre no backend, com o dado e o relógio do backend —
+// nunca confiando no que o navegador afirma (§14).
+func (s *Service) CheckEngineCut(ctx context.Context, dev *devices.Device) EngineCutCheck {
+	check := EngineCutCheck{MaxPositionAgeSeconds: int(s.cfg.EngineCutMaxPositionAge.Seconds())}
+	refuse := func(code, reason string) EngineCutCheck {
+		check.Code, check.Reason = code, reason
+		return check
+	}
+
 	snapshot, err := s.telemetry.Snapshot(ctx, dev.ID)
 	if err != nil {
-		return "não foi possível ler a última posição do veículo"
+		return refuse(CutReadFailed, "não foi possível ler a última posição do veículo")
 	}
 	if !snapshot.HasPosition {
-		return "não há posição conhecida para este veículo"
+		return refuse(CutNoPosition, "não há posição conhecida para este veículo")
 	}
 
 	age := time.Since(snapshot.Timestamp)
+	seconds := int(age.Seconds())
+	check.PositionAgeSeconds = &seconds
 	if age > s.cfg.EngineCutMaxPositionAge {
-		return fmt.Sprintf(
+		return refuse(CutStalePosition, fmt.Sprintf(
 			"última posição tem %s, acima do limite de %s: não é possível garantir que o veículo está parado",
-			age.Round(time.Second), s.cfg.EngineCutMaxPositionAge)
+			age.Round(time.Second), s.cfg.EngineCutMaxPositionAge))
 	}
 	if snapshot.SpeedKmh > s.cfg.EngineCutMaxSpeedKmh {
-		return fmt.Sprintf(
+		return refuse(CutTooFast, fmt.Sprintf(
 			"veículo a %.1f km/h, acima do limite de segurança de %.1f km/h",
-			snapshot.SpeedKmh, s.cfg.EngineCutMaxSpeedKmh)
+			snapshot.SpeedKmh, s.cfg.EngineCutMaxSpeedKmh))
 	}
-	return ""
+	check.Allowed = true
+	return check
+}
+
+// engineCutBlocked devolve o motivo da recusa, ou vazio se o corte é seguro.
+func (s *Service) engineCutBlocked(ctx context.Context, dev *devices.Device) string {
+	return s.CheckEngineCut(ctx, dev).Reason
 }
 
 func (s *Service) reject(ctx context.Context, req Request, reason string) (*Command, error) {

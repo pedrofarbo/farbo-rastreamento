@@ -179,6 +179,16 @@ export interface DeviceCommand {
   createdAt: string;
 }
 
+/** A regra de segurança do corte avaliada agora (sem enviar nada). */
+export interface EngineCutCheck {
+  allowed: boolean;
+  /** NO_POSITION e STALE_POSITION se resolvem pedindo uma posição nova. */
+  code?: 'READ_FAILED' | 'NO_POSITION' | 'STALE_POSITION' | 'TOO_FAST';
+  reason?: string;
+  positionAgeSeconds: number | null;
+  maxPositionAgeSeconds: number;
+}
+
 export interface Geofence {
   id: string;
   name: string;
@@ -186,6 +196,13 @@ export interface Geofence {
   longitude: number;
   radiusMeters: number;
   active: boolean;
+  /** Cliente dono; nulo é cerca da central (vale para todos os veículos). */
+  ownerId: string | null;
+  /** Veículos do cliente vigiados pela cerca (vazio nas da central). */
+  vehicleIds: string[];
+  /** O cliente recebe aviso ao entrar/sair. */
+  notifyEnter: boolean;
+  notifyExit: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -576,7 +593,7 @@ export interface AlertNotification {
   vehicleId: string | null;
   vehicleName: string;
   plate: string;
-  /** Tipo gravado no histórico: os do catálogo e ENGINE_BLOCKED, ENGINE_UNBLOCKED, TEST. */
+  /** Tipo gravado no histórico: os do catálogo e ENGINE_BLOCKED, ENGINE_UNBLOCKED, GEOFENCE_ENTER, GEOFENCE_EXIT, TEST. */
   kind: string;
   occurredAt: string;
   status: AlertNotificationStatus;
@@ -584,6 +601,8 @@ export interface AlertNotification {
   suppressedCount: number;
   /** Em quantos celulares o alerta chegou como notificação. */
   pushSent: number;
+  /** Complemento do tipo: o nome da cerca nos alertas de cerca. */
+  detail: string;
   createdAt: string;
   sentAt: string | null;
 }

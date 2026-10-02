@@ -41,6 +41,11 @@ const (
 // KindTest é o e-mail de teste pedido pela tela de alertas (não configurável).
 const KindTest = "TEST"
 
+// KindGeofence é a entrada ou saída de uma cerca do cliente. Não entra no
+// catálogo: quem escolhe avisar (e de que lado) é a própria cerca. No
+// histórico vira GEOFENCE_ENTER ou GEOFENCE_EXIT.
+const KindGeofence = "GEOFENCE"
+
 // KindInfo descreve um tipo de alerta para a tela de configuração.
 type KindInfo struct {
 	Kind        string `json:"kind"`

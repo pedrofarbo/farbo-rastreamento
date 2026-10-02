@@ -189,6 +189,7 @@ export function AlertSettingsPanel({ settings, audience, saving, onSave, onTest,
                     <tr key={n.id}>
                       <td>
                         {alertKindLabel(n.kind, settings.catalog)}
+                        {n.detail && <> {n.detail}</>}
                         {n.suppressedCount > 0 && (
                           <span className={styles.repeats}>
                             {' '}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { NavLink, Outlet, useLocation, useNavigationType } from 'react-router-dom';
 
@@ -36,18 +36,27 @@ function useOnline(): boolean {
   return online;
 }
 
-const isDetail = (path: string) => path.startsWith('/veiculos/');
+/** Profundidade da tela: as abas são 0; veículo e cercas, telas de dentro. */
+function depth(path: string): number {
+  if (path.startsWith('/cercas/')) return 2;
+  if (path === '/cercas' || path.startsWith('/veiculos/')) return 1;
+  return 0;
+}
 
 /**
- * Animação de entrada da tela: abrir um veículo desliza da direita, voltar
- * desliza da esquerda (como a navegação do iOS); trocar de aba só esmaece.
+ * Animação de entrada da tela: entrar numa tela de dentro (veículo, cercas)
+ * desliza da direita, voltar desliza da esquerda (como a navegação do iOS);
+ * trocar de aba só esmaece.
  */
 function transitionFor(path: string, previous: string | null, navigation: string): 'push' | 'pop' | 'fade' | 'none' {
   if (previous === null) return 'none';
-  if (isDetail(path) && !isDetail(previous) && navigation !== 'POP') return 'push';
-  if (isDetail(previous) && !isDetail(path) && navigation === 'POP') return 'pop';
+  if (depth(path) > depth(previous) && navigation !== 'POP') return 'push';
+  if (depth(path) < depth(previous) && navigation === 'POP') return 'pop';
   return 'fade';
 }
+
+/** As cercas moram dentro da aba Alertas. */
+const tabOf = (path: string) => (path.startsWith('/cercas') ? '/alertas' : path);
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -84,7 +93,13 @@ export function AppLayout() {
 
   // Tela nova começa do topo (o contêiner é novo a cada rota).
   const previous = useRef<string | null>(null);
-  const transition = transitionFor(location.pathname, previous.current, navigation);
+  // Uma vez por rota: re-render na mesma tela (tempo real, ?mapa=tela-cheia)
+  // não pode trocar a animação e fazer a página esmaecer de novo.
+  const transition = useMemo(
+    () => transitionFor(location.pathname, previous.current, navigation),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [location.pathname],
+  );
   useEffect(() => {
     previous.current = location.pathname;
   }, [location.pathname]);
@@ -150,7 +165,13 @@ export function AppLayout() {
 
       <nav className={styles.tabbar} aria-label="Navegação principal">
         {TABS.map(({ to, label, icon: Icon }) => (
-          <NavLink key={to} to={to} className={({ isActive }) => `${styles.tab} ${isActive ? styles.tabActive : ''}`}>
+          <NavLink
+            key={to}
+            to={to}
+            className={({ isActive }) =>
+              `${styles.tab} ${isActive || tabOf(location.pathname) === to ? styles.tabActive : ''}`
+            }
+          >
             <span className={styles.tabIcon}>
               <Icon />
               {to === '/faturas' && overdue > 0 && (

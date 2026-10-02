@@ -58,7 +58,9 @@ type Notification struct {
 	Reason          string     `json:"-"`
 	SuppressedCount int        `json:"suppressedCount"`
 	// PushSent: em quantos celulares o alerta chegou como notificação.
-	PushSent  int        `json:"pushSent"`
+	PushSent int `json:"pushSent"`
+	// Detail completa o tipo no histórico: o nome da cerca.
+	Detail    string     `json:"detail"`
 	Error     string     `json:"-"`
 	CreatedAt time.Time  `json:"createdAt"`
 	SentAt    *time.Time `json:"sentAt"`
@@ -279,10 +281,14 @@ func (s *DBStore) SaveSettings(ctx context.Context, userID uuid.UUID, st Setting
 // History devolve os últimos alertas enviados (ou que falharam) ao usuário.
 func (s *DBStore) History(ctx context.Context, userID uuid.UUID, limit int) ([]*Notification, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT n.id, n.vehicle_id, COALESCE(v.name, ''), COALESCE(v.plate, ''), n.kind, n.occurred_at,
+		SELECT n.id, n.vehicle_id, COALESCE(v.name, ''), COALESCE(v.plate, ''),
+		       split_part(n.kind, ':', 1), COALESCE(g.name, ''), n.occurred_at,
 		       n.status, n.suppressed_count, n.push_sent, n.created_at, n.sent_at
 		FROM alert_notifications n
 		LEFT JOIN vehicles v ON v.id = n.vehicle_id
+		-- Os alertas de cerca guardam o id dela depois de ":" (intervalo
+		-- próprio por cerca); a tela recebe o tipo e o nome.
+		LEFT JOIN geofences g ON n.kind LIKE 'GEOFENCE%:%' AND g.id::text = split_part(n.kind, ':', 2)
 		WHERE n.user_id = $1 AND n.status IN ('PENDING', 'SENT', 'FAILED')
 		ORDER BY n.created_at DESC
 		LIMIT $2`, userID, limit)
@@ -293,7 +299,7 @@ func (s *DBStore) History(ctx context.Context, userID uuid.UUID, limit int) ([]*
 	out := []*Notification{}
 	for rows.Next() {
 		n := &Notification{}
-		if err := rows.Scan(&n.ID, &n.VehicleID, &n.VehicleName, &n.Plate, &n.Kind, &n.OccurredAt,
+		if err := rows.Scan(&n.ID, &n.VehicleID, &n.VehicleName, &n.Plate, &n.Kind, &n.Detail, &n.OccurredAt,
 			&n.Status, &n.SuppressedCount, &n.PushSent, &n.CreatedAt, &n.SentAt); err != nil {
 			return nil, database.MapError(err)
 		}

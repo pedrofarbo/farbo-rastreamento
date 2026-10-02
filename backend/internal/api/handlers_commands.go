@@ -15,6 +15,17 @@ func (s *Server) handleEngineCut(w http.ResponseWriter, r *http.Request) {
 	s.sendCommand(w, r, protocols.CommandEngineCut, nil)
 }
 
+// handleEngineCutCheck diz, sem enviar nada, se o corte passaria agora pela
+// regra de segurança e, se não, por quê. Com a posição antiga demais, o
+// painel e o app pedem uma posição nova ao rastreador antes de cortar.
+func (s *Server) handleEngineCutCheck(w http.ResponseWriter, r *http.Request) {
+	_, device, ok := s.vehicleFromURL(w, r, true)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, s.Commands.CheckEngineCut(r.Context(), device))
+}
+
 func (s *Server) handleEngineResume(w http.ResponseWriter, r *http.Request) {
 	s.sendCommand(w, r, protocols.CommandEngineResume, nil)
 }

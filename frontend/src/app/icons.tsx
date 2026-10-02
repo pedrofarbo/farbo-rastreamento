@@ -50,3 +50,24 @@ export const ChevronIcon = () => (
     <path d="M9 6l6 6-6 6" />
   </svg>
 );
+
+export const ExpandIcon = () => (
+  <svg {...base} width={20} height={20}>
+    <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+  </svg>
+);
+
+export const CloseIcon = () => (
+  <svg {...base} width={22} height={22}>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </svg>
+);
+
+/** Mira de "centralizar no veículo"; cheia enquanto o mapa segue o veículo. */
+export const LocateIcon = ({ active = false }: { active?: boolean }) => (
+  <svg {...base} width={22} height={22}>
+    <circle cx="12" cy="12" r="7" />
+    <circle cx="12" cy="12" r="2.5" fill={active ? 'currentColor' : 'none'} />
+    <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+  </svg>
+);

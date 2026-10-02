@@ -1,0 +1,220 @@
+/* Cercas: lista e editor. O resto vem de Screen.module.css. */
+
+.fenceCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  text-decoration: none;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 140ms ease,
+    background 140ms ease;
+}
+
+.fenceCard:hover {
+  text-decoration: none;
+}
+
+.fenceCard:active {
+  transform: scale(0.98);
+  background: var(--surface-hover);
+}
+
+.fenceTop {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* O círculo verde da cerca, em miniatura. */
+.ring {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: var(--accent-soft);
+}
+
+.fenceName {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fenceMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* --- Editor ------------------------------------------------------------------ */
+
+.where {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.address {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+.radiusHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.radiusValue {
+  font-size: 1.25rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+/* Controle grande o bastante para o dedo (44 px de área de toque). */
+.slider {
+  width: 100%;
+  height: 44px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: -6px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.toggles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 52px;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.toggles li:last-child .toggle {
+  border-bottom: 0;
+}
+
+.toggleText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.toggleLabel {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toggleHint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* Interruptor no estilo do iOS (o mesmo da tela de alertas). */
+.switch {
+  appearance: none;
+  flex-shrink: 0;
+  position: relative;
+  width: 50px;
+  height: 30px;
+  margin: 0;
+  border-radius: var(--radius-full);
+  background: var(--border-strong);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  transition: transform 0.15s ease;
+}
+
+.switch:checked {
+  background: var(--accent);
+}
+
+.switch:checked::after {
+  background: var(--accent-contrast);
+  transform: translateX(20px);
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.switch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fenceCard,
+  .switch,
+  .switch::after {
+    transition: none;
+  }
+}

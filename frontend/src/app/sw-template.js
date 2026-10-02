@@ -16,7 +16,7 @@ const API_CACHE = 'farbo-app-api';
 const SHELL = '/app/index.html';
 
 // Leituras que vale guardar para ver sem internet (GET, do próprio cliente).
-const API_OFFLINE = [/^\/api\/vehicles(\/[^/]+)?$/, /^\/api\/me\/(account|invoices|subscriptions|fulfillments|alerts|push)$/];
+const API_OFFLINE = [/^\/api\/vehicles(\/[^/]+)?$/, /^\/api\/geofences$/, /^\/api\/me\/(account|invoices|subscriptions|fulfillments|alerts|push)$/];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(SHELL_CACHE).then((cache) => cache.addAll(PRECACHE)));

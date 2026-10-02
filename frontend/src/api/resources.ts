@@ -18,6 +18,7 @@ import type {
   DateOnly,
   Device,
   DeviceCommand,
+  EngineCutCheck,
   DeviceState,
   Geofence,
   Invoice,
@@ -153,6 +154,8 @@ export const vehiclesApi = {
 export const commandsApi = {
   engineCut: (vehicleId: string) =>
     api.post<DeviceCommand>(`/api/vehicles/${vehicleId}/commands/engine-cut`),
+  engineCutCheck: (vehicleId: string) =>
+    api.get<EngineCutCheck>(`/api/vehicles/${vehicleId}/commands/engine-cut/check`),
   engineResume: (vehicleId: string) =>
     api.post<DeviceCommand>(`/api/vehicles/${vehicleId}/commands/engine-resume`),
   requestPosition: (vehicleId: string) =>
@@ -251,6 +254,10 @@ export interface GeofenceInput {
   longitude: number;
   radiusMeters: number;
   active?: boolean;
+  /** Cerca do cliente: os veículos dele que ela vigia (ao menos um). */
+  vehicleIds?: string[];
+  notifyEnter?: boolean;
+  notifyExit?: boolean;
 }
 
 export const geofencesApi = {

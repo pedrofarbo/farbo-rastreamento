@@ -95,6 +95,9 @@ func NewServer(deps Deps) *Server {
 		// O WebSocket entrega a cada cliente só o que é dos veículos dele.
 		s.WS.Scope = s.websocketScope
 	}
+	if s.Geofences != nil {
+		s.Geofences.Baseline = s.fenceBaseline
+	}
 	s.router = s.routes()
 	return s
 }
@@ -193,6 +196,7 @@ func (s *Server) routes() chi.Router {
 					r.Group(func(r chi.Router) {
 						r.Use(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator, auth.RoleCustomer))
 						r.Post("/commands/engine-cut", s.handleEngineCut)
+						r.Get("/commands/engine-cut/check", s.handleEngineCutCheck)
 						r.Post("/commands/engine-resume", s.handleEngineResume)
 						r.Post("/commands/request-position", s.handleRequestPosition)
 						r.Post("/commands/request-status", s.handleRequestStatus)
@@ -202,12 +206,18 @@ func (s *Server) routes() chi.Router {
 				})
 			})
 
-			// Cercas: o cliente recebe a lista vazia (as cercas são da central).
+			// Cercas: a equipe vê as da central (só o admin mexe); o cliente
+			// cria e vê as dele, para os veículos dele (o filtro de dono fica
+			// nos handlers, em fenceOwner).
 			r.Route("/geofences", func(r chi.Router) {
+				r.Use(s.requireActiveCustomer)
 				r.Get("/", s.handleListGeofences)
-				r.With(auth.RequireRole(auth.RoleAdmin)).Post("/", s.handleCreateGeofence)
-				r.With(auth.RequireRole(auth.RoleAdmin)).Patch("/{id}", s.handleUpdateGeofence)
-				r.With(auth.RequireRole(auth.RoleAdmin)).Delete("/{id}", s.handleDeleteGeofence)
+				r.Group(func(r chi.Router) {
+					r.Use(auth.RequireRole(auth.RoleAdmin, auth.RoleCustomer))
+					r.Post("/", s.handleCreateGeofence)
+					r.Patch("/{id}", s.handleUpdateGeofence)
+					r.Delete("/{id}", s.handleDeleteGeofence)
+				})
 			})
 
 			// Área do cliente: conta e faturas continuam acessíveis mesmo com

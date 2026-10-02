@@ -1,20 +1,30 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"slices"
+
+	"github.com/google/uuid"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geofences"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 )
 
-func (s *Server) handleListGeofences(w http.ResponseWriter, r *http.Request) {
-	// As cercas são da operação da central; o cliente não as vê.
-	if _, isCustomer := customerOf(r); isCustomer {
-		writeJSON(w, http.StatusOK, []struct{}{})
-		return
+// fenceOwner é o dono das cercas que a requisição enxerga: o cliente vê e
+// mexe só nas dele; a equipe, só nas da central (dono nulo).
+func fenceOwner(r *http.Request) *uuid.UUID {
+	if customerID, isCustomer := customerOf(r); isCustomer {
+		return &customerID
 	}
-	list, err := s.Geofences.List(r.Context())
+	return nil
+}
+
+func (s *Server) handleListGeofences(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Geofences.ListByOwner(r.Context(), fenceOwner(r))
 	if err != nil {
 		handleStoreError(w, err, "cercas não encontradas")
 		return
@@ -29,19 +39,15 @@ func (s *Server) handleCreateGeofence(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fence, err := s.Geofences.Create(r.Context(), in)
+	owner := fenceOwner(r)
+	fence, err := s.Geofences.Create(r.Context(), owner, in)
 	if err != nil {
-		var validation geofences.ValidationError
-		if errors.As(err, &validation) {
-			writeError(w, http.StatusBadRequest, validation.Message)
-			return
-		}
-		handleStoreError(w, err, "cerca não encontrada")
+		writeGeofenceError(w, err)
 		return
 	}
 
 	s.recordAudit(r, audit.ActionGeofenceChanged, nil, nil,
-		map[string]any{"action": "create", "geofenceId": fence.ID, "name": fence.Name})
+		map[string]any{"action": "create", "geofenceId": fence.ID, "name": fence.Name, "ownerId": owner})
 	writeJSON(w, http.StatusCreated, fence)
 }
 
@@ -58,19 +64,15 @@ func (s *Server) handleUpdateGeofence(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fence, err := s.Geofences.Update(r.Context(), id, in)
+	owner := fenceOwner(r)
+	fence, err := s.Geofences.Update(r.Context(), id, owner, in)
 	if err != nil {
-		var validation geofences.ValidationError
-		if errors.As(err, &validation) {
-			writeError(w, http.StatusBadRequest, validation.Message)
-			return
-		}
-		handleStoreError(w, err, "cerca não encontrada")
+		writeGeofenceError(w, err)
 		return
 	}
 
 	s.recordAudit(r, audit.ActionGeofenceChanged, nil, nil,
-		map[string]any{"action": "update", "geofenceId": fence.ID})
+		map[string]any{"action": "update", "geofenceId": fence.ID, "ownerId": owner})
 	writeJSON(w, http.StatusOK, fence)
 }
 
@@ -80,12 +82,80 @@ func (s *Server) handleDeleteGeofence(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "id inválido")
 		return
 	}
-	if err := s.Geofences.Delete(r.Context(), id); err != nil {
+	owner := fenceOwner(r)
+	if err := s.Geofences.Delete(r.Context(), id, owner); err != nil {
 		handleStoreError(w, err, "cerca não encontrada")
 		return
 	}
 
 	s.recordAudit(r, audit.ActionGeofenceChanged, nil, nil,
-		map[string]any{"action": "delete", "geofenceId": id})
+		map[string]any{"action": "delete", "geofenceId": id, "ownerId": owner})
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+func writeGeofenceError(w http.ResponseWriter, err error) {
+	var validation geofences.ValidationError
+	if errors.As(err, &validation) {
+		writeError(w, http.StatusBadRequest, validation.Message)
+		return
+	}
+	handleStoreError(w, err, "cerca não encontrada")
+}
+
+// fenceBaseline marca, pela última posição, quais veículos vigiados pela
+// cerca já estão dentro dela — antes de ela valer para a ingestão. Assim
+// criar a cerca "Casa" com o carro na garagem não avisa "entrou em Casa", e
+// aumentar ou mover a cerca não avisa "saiu". Daí em diante, só mudança de
+// verdade vira evento.
+func (s *Server) fenceBaseline(ctx context.Context, fence *geofences.Geofence) {
+	if s.Vehicles == nil || s.Positions == nil || s.States == nil {
+		return
+	}
+	var (
+		list []*vehicles.Vehicle
+		err  error
+	)
+	if fence.OwnerID == nil {
+		list, err = s.Vehicles.List(ctx)
+	} else {
+		list, err = s.Vehicles.ListByOwner(ctx, *fence.OwnerID)
+	}
+	if err != nil {
+		s.Log.Warn("cerca salva sem marcar quem já está dentro", "geofence", fence.ID, "err", err)
+		return
+	}
+
+	// Cerca da central vale para a frota toda: uma consulta só.
+	var latest map[uuid.UUID]*tracking.Position
+	if fence.OwnerID == nil {
+		if latest, err = s.Positions.LatestForAll(ctx); err != nil {
+			s.Log.Warn("cerca salva sem marcar quem já está dentro", "geofence", fence.ID, "err", err)
+			return
+		}
+	}
+
+	for _, vehicle := range list {
+		if vehicle.DeviceID == nil {
+			continue
+		}
+		deviceID := *vehicle.DeviceID
+		inside := false
+		if fence.Active && fence.AppliesTo(geofences.Subject{VehicleID: &vehicle.ID, OwnerID: vehicle.OwnerID}) {
+			position := latest[deviceID]
+			if latest == nil {
+				position, _ = s.Positions.Latest(ctx, deviceID)
+			}
+			inside = position != nil && fence.Contains(position.Latitude, position.Longitude)
+		}
+		st := s.States.Get(deviceID)
+		if was := st != nil && slices.Contains(st.InsideFences, fence.ID); was == inside {
+			continue
+		}
+		s.States.Update(ctx, deviceID, func(st *tracking.State) {
+			st.InsideFences = slices.DeleteFunc(st.InsideFences, func(id uuid.UUID) bool { return id == fence.ID })
+			if inside {
+				st.InsideFences = append(st.InsideFences, fence.ID)
+			}
+		})
+	}
 }

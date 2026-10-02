@@ -419,6 +419,34 @@ func TestEngineCutRejectedWithStalePosition(t *testing.T) {
 	}
 }
 
+// A checagem sem envio diz o motivo com um código: é com ele que o painel e o
+// app decidem pedir uma posição nova antes do corte.
+func TestCheckEngineCutExplainsWhy(t *testing.T) {
+	cases := []struct {
+		name     string
+		snapshot Snapshot
+		allowed  bool
+		code     string
+		age      bool
+	}{
+		{"parado e recente", stoppedVehicle(), true, "", true},
+		{"sem posição", Snapshot{HasPosition: false}, false, CutNoPosition, false},
+		{"posição antiga", Snapshot{HasPosition: true, Timestamp: time.Now().Add(-42 * time.Minute)}, false, CutStalePosition, true},
+		{"andando", Snapshot{HasPosition: true, SpeedKmh: 40, Timestamp: time.Now()}, false, CutTooFast, true},
+	}
+	for _, c := range cases {
+		h := newHarness(t, c.snapshot, nil)
+		got := h.service.CheckEngineCut(context.Background(), h.device)
+		if got.Allowed != c.allowed || got.Code != c.code || (got.PositionAgeSeconds != nil) != c.age ||
+			got.MaxPositionAgeSeconds != 600 || (c.allowed == (got.Reason != "")) {
+			t.Errorf("%s: %+v", c.name, got)
+		}
+		if h.sender.count() != 0 || len(h.store.commands) != 0 {
+			t.Errorf("%s: a checagem não envia nem grava nada", c.name)
+		}
+	}
+}
+
 func TestEngineCutLimitIsConfigurable(t *testing.T) {
 	// Com o limite em 60 km/h, 42 km/h passa — o que prova que a regra usa a
 	// configuração e não um número fixo no código.
