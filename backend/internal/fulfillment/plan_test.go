@@ -10,7 +10,7 @@ func TestPlan(t *testing.T) {
 	cases := []struct {
 		name                         string
 		track, target, chip, tracker string
-		hasDevice                    bool
+		hasDevice, labeled           bool
 		want                         []string
 		refused                      bool
 	}{
@@ -36,12 +36,26 @@ func TestPlan(t *testing.T) {
 			chip: ChipSeparated, tracker: TrackerConfiguring, hasDevice: true, want: []string{TrackerConfigured}},
 		{name: "enviado só pela etiqueta", track: TrackTracker, target: TrackerShipped,
 			chip: ChipSeparated, tracker: TrackerConfigured, hasDevice: true, refused: true},
-		{name: "entregue antes do envio recusado", track: TrackTracker, target: TrackerDelivered,
+		{name: "entregue em mãos, sem etiqueta", track: TrackTracker, target: TrackerDelivered,
+			chip: ChipSeparated, tracker: TrackerConfigured, hasDevice: true, want: []string{TrackerDelivered}},
+		{name: "entregue em mãos com etiqueta paga recusado", track: TrackTracker, target: TrackerDelivered,
+			chip: ChipSeparated, tracker: TrackerConfigured, hasDevice: true, labeled: true, refused: true},
+		{name: "entregue em mãos exige o aparelho", track: TrackTracker, target: TrackerDelivered,
+			chip: ChipSeparated, tracker: TrackerConfigured, refused: true},
+		{name: "entregue antes de configurado recusado", track: TrackTracker, target: TrackerDelivered,
+			chip: ChipSeparated, tracker: TrackerConfiguring, hasDevice: true, refused: true},
+		{name: "em trânsito sem etiqueta recusado", track: TrackTracker, target: TrackerInTransit,
 			chip: ChipSeparated, tracker: TrackerConfigured, hasDevice: true, refused: true},
 		{name: "entregue à mão depois do envio (reserva)", track: TrackTracker, target: TrackerDelivered,
-			chip: ChipSeparated, tracker: TrackerInTransit, hasDevice: true, want: []string{TrackerDelivered}},
+			chip: ChipSeparated, tracker: TrackerInTransit, hasDevice: true, labeled: true, want: []string{TrackerDelivered}},
 		{name: "enviado não volta para antes do envio", track: TrackTracker, target: TrackerConfigured,
-			chip: ChipSeparated, tracker: TrackerShipped, hasDevice: true, refused: true},
+			chip: ChipSeparated, tracker: TrackerShipped, hasDevice: true, labeled: true, refused: true},
+		{name: "entregue pela transportadora não volta para antes do envio", track: TrackTracker, target: TrackerConfigured,
+			chip: ChipSeparated, tracker: TrackerDelivered, hasDevice: true, labeled: true, refused: true},
+		{name: "entregue em mãos pode ser desfeito", track: TrackTracker, target: TrackerConfigured,
+			chip: ChipSeparated, tracker: TrackerDelivered, hasDevice: true, want: []string{TrackerConfigured}},
+		{name: "entregue em mãos não vira em trânsito", track: TrackTracker, target: TrackerInTransit,
+			chip: ChipSeparated, tracker: TrackerDelivered, hasDevice: true, refused: true},
 		{name: "correção para trás antes do envio", track: TrackTracker, target: TrackerAtBase,
 			chip: ChipSeparated, tracker: TrackerConfiguring, want: []string{TrackerAtBase}},
 		{name: "aguardar chip com o chip já na base não faz sentido", track: TrackTracker, target: TrackerAwaitingChip,
@@ -51,7 +65,7 @@ func TestPlan(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := plan(tc.track, tc.target, tc.chip, tc.tracker, tc.hasDevice)
+			got, err := plan(tc.track, tc.target, tc.chip, tc.tracker, tc.hasDevice, tc.labeled)
 			if tc.refused {
 				var rule RuleError
 				if !errors.As(err, &rule) {

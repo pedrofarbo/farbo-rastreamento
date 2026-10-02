@@ -45,6 +45,8 @@ export function FulfillmentAdminModal({
   const [quotes, setQuotes] = useState<ShippingQuote[] | null>(null);
   const [serviceId, setServiceId] = useState<number | null>(null);
   const [fixing, setFixing] = useState<{ track: FulfillmentTrack; status: string } | null>(null);
+  // Entrega em mãos pede confirmação: avisa o cliente por e-mail.
+  const [handing, setHanding] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -53,6 +55,7 @@ export function FulfillmentAdminModal({
     setQuotes(null);
     setServiceId(null);
     setFixing(null);
+    setHanding(false);
     setError('');
   }, [fulfillmentId]);
 
@@ -76,6 +79,7 @@ export function FulfillmentAdminModal({
     queryClient.invalidateQueries({ queryKey: ['customer', updated.customerId] });
     setNote('');
     setFixing(null);
+    setHanding(false);
     setError('');
     notify({ tone: 'success', title: message });
   };
@@ -339,6 +343,39 @@ export function FulfillmentAdminModal({
                   </>
                 ))}
 
+              {/* Entrega em mãos: retirada na base ou entrega própria, sem etiqueta. */}
+              {f.trackerStatus === 'CONFIGURED' &&
+                !f.shippingOrderId &&
+                (handing ? (
+                  <>
+                    <div className={styles.warning}>
+                      Confirma que o rastreador já está com o cliente? Ele recebe o e-mail de que o rastreador chegou e
+                      passa a ver os instaladores no painel.
+                    </div>
+                    <div className={styles.actionRow}>
+                      <Button
+                        size="small"
+                        variant="primary"
+                        loading={change.isPending}
+                        disabled={busy}
+                        onClick={() => change.mutate({ track: 'TRACKER', status: 'DELIVERED' })}
+                      >
+                        Confirmar entrega
+                      </Button>
+                      <Button size="small" variant="ghost" disabled={busy} onClick={() => setHanding(false)}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <div className={styles.actionRow}>
+                    <Button size="small" variant="ghost" disabled={busy} onClick={() => setHanding(true)}>
+                      Marcar como entregue em mãos
+                    </Button>
+                    <span className={styles.hint}>Sem etiqueta: retirada na base ou entrega própria.</span>
+                  </div>
+                ))}
+
               {(f.trackerStatus === 'SHIPPED' || f.trackerStatus === 'IN_TRANSIT') && (
                 <>
                   {SHIPPING_TROUBLE[f.shippingStatus] && (
@@ -378,7 +415,10 @@ export function FulfillmentAdminModal({
               )}
 
               {f.trackerStatus === 'DELIVERED' && (
-                <span className={styles.hint}>Entregue ao cliente. Ele já vê os instaladores no painel.</span>
+                <span className={styles.hint}>
+                  Entregue ao cliente. Ele já vê os instaladores no painel.
+                  {!f.shippingOrderId && ' Marcado por engano? Corrija a etapa para "Rastreador configurado".'}
+                </span>
               )}
             </div>
 

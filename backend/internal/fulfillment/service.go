@@ -54,8 +54,9 @@ func (s *Service) Repo() *Repository { return s.repo }
 
 // plan decide o que uma mudança pedida pela central grava: os status, em
 // ordem, no track pedido — ou o motivo da recusa. hasDevice diz se o veículo
-// já tem (ou está recebendo agora) o aparelho configurado.
-func plan(track, target, chip, tracker string, hasDevice bool) ([]string, error) {
+// já tem (ou está recebendo agora) o aparelho configurado; labeled, se há
+// etiqueta do Melhor Envios (sem ela, a entrega é em mãos ou por fora).
+func plan(track, target, chip, tracker string, hasDevice, labeled bool) ([]string, error) {
 	if track != TrackChip && track != TrackTracker {
 		return nil, RuleError{"linha do tempo inválida"}
 	}
@@ -79,13 +80,22 @@ func plan(track, target, chip, tracker string, hasDevice bool) ([]string, error)
 	}
 	current, next := Position(TrackTracker, tracker), Position(TrackTracker, target)
 	shipped := Position(TrackTracker, TrackerShipped)
+	configured := Position(TrackTracker, TrackerConfigured)
 	switch {
 	case target == TrackerShipped:
 		return nil, RuleError{"o envio sai pela compra da etiqueta no Melhor Envios"}
-	case current >= shipped && next < shipped:
+	// Entregue em mãos (sem etiqueta) pode ser desfeito; com etiqueta, só
+	// o cancelamento dela no Melhor Envios volta o rastreador.
+	case current >= shipped && next < shipped && labeled:
 		return nil, RuleError{"o rastreador já foi enviado; se a etiqueta for cancelada no Melhor Envios, ele volta sozinho para Configurado"}
-	case next > shipped && current < shipped:
-		return nil, RuleError{"em trânsito e entregue só depois do envio (compra da etiqueta)"}
+	case target == TrackerInTransit && (current < shipped || !labeled):
+		return nil, RuleError{"em trânsito só depois do envio (compra da etiqueta)"}
+	case target == TrackerDelivered && current < configured:
+		return nil, RuleError{"o rastreador é entregue depois de configurado"}
+	case target == TrackerDelivered && current == configured && labeled:
+		return nil, RuleError{"há uma etiqueta paga no Melhor Envios; conclua o envio ou cancele a etiqueta antes de marcar a entrega em mãos"}
+	case target == TrackerDelivered && current == configured && !hasDevice:
+		return nil, RuleError{"vincule o aparelho (IMEI) ao veículo antes de entregar"}
 	case target == TrackerAwaitingChip && Position(TrackChip, chip) >= Position(TrackChip, ChipAtBase):
 		return nil, RuleError{"o chip já chegou à base; siga para a configuração"}
 	}
@@ -129,11 +139,15 @@ func (s *Service) Change(ctx context.Context, id uuid.UUID, req ChangeRequest, a
 			return err
 		}
 		var device *uuid.UUID
-		if err := tx.QueryRow(ctx, `SELECT device_id FROM vehicles WHERE id = $1`, vehicleID).Scan(&device); err != nil {
+		var labeled bool
+		if err := tx.QueryRow(ctx, `
+			SELECT v.device_id, f.shipping_order_id IS NOT NULL
+			FROM fulfillments f JOIN vehicles v ON v.id = f.vehicle_id
+			WHERE f.id = $1`, id).Scan(&device, &labeled); err != nil {
 			return err
 		}
 		linking := req.Track == TrackTracker && req.Status == TrackerConfigured && req.DeviceID != nil
-		if statuses, err = plan(req.Track, req.Status, chip, tracker, device != nil || linking); err != nil {
+		if statuses, err = plan(req.Track, req.Status, chip, tracker, device != nil || linking, labeled); err != nil {
 			return err
 		}
 		if linking {
@@ -147,6 +161,9 @@ func (s *Service) Change(ctx context.Context, id uuid.UUID, req ChangeRequest, a
 				}
 				return err
 			}
+		}
+		if req.Note == "" && req.Track == TrackTracker && req.Status == TrackerDelivered && !labeled {
+			req.Note = "Entregue em mãos, sem etiqueta do Melhor Envios"
 		}
 		for i, status := range statuses {
 			note := req.Note
