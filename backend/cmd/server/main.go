@@ -32,6 +32,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geocoding"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geofences"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/installers"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/mail"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/melhorenvio"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
@@ -45,11 +46,13 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/realtime"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/support"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tcp"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/telemetry"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 	ws "github.com/pedrofarbo/farbo-rastreamento/backend/internal/websocket"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/whatsapp"
 )
 
 func main() {
@@ -227,6 +230,12 @@ func run() error {
 		fulfillment.MailNotifier{Mailer: mail.NewShipmentMailer(mailer, cfg.Mail.AppURL)},
 		cfg.Shipping, cfg.Catalog.EquipmentName, log)
 
+	installerRepo := installers.NewRepository(db)
+	supportSvc, err := newSupport(ctx, cfg, db, fulfillmentSvc.Repo(), installerRepo, mailer, log)
+	if err != nil {
+		return err
+	}
+
 	stateStore := tracking.NewStateStore(stateRepo)
 	if err := stateStore.Load(ctx); err != nil {
 		return fmt.Errorf("carregando estado dos dispositivos: %w", err)
@@ -274,11 +283,14 @@ func run() error {
 		Geofences: geofenceSvc, Geocoder: geocodingSvc, Events: eventSvc, Commands: commandSvc,
 		Audit: auditSvc, Billing: billingSvc, Payments: paymentsSvc, Owners: ownerIndex,
 		Orders:      orders.NewService(db, billingSvc, vehicleSvc, cfg.Catalog, log),
-		Installers:  installers.NewRepository(db),
+		Installers:  installerRepo,
 		Addresses:   addresses.NewRepository(db),
 		Fulfillment: fulfillmentSvc, Carrier: carrier, CarrierStore: carrierStore,
 		Retention: retentionSvc,
-		Alerts:    alertEngine, AlertStore: alertStore, Push: pushSvc,
+		Support:   supportSvc,
+		Leads: leads.NewService(leads.NewRepository(db),
+			leads.MailNotifier{Mailer: mail.NewLeadMailer(mailer, cfg.Mail.AppURL), To: cfg.Leads.NotifyEmails}, log),
+		Alerts: alertEngine, AlertStore: alertStore, Push: pushSvc,
 		StepUp:    stepup.NewService(db, cfg.StepUp, authSvc),
 		Positions: positionRepo, States: stateStore,
 		Raw: rawRepo, Ingestor: ingestor, Conns: connManager, Registry: registry,
@@ -452,6 +464,39 @@ func newPaymentGateway(cfg *config.Config, log *slog.Logger) payments.Gateway {
 	log.Info("pagamento por Pix via AbacatePay", "modo", mode, "webhook", p.WebhookSecret != "",
 		"validade_pix", p.PixExpiresIn.String())
 	return abacatepay.NewClient(p.AbacatePayBaseURL, p.AbacatePayAPIKey)
+}
+
+// newSupport monta o atendimento pelo WhatsApp. Sem o número configurado, o
+// painel mostra o que falta; sem ANTHROPIC_API_KEY, as conversas chegam e só
+// a equipe responde.
+func newSupport(ctx context.Context, cfg *config.Config, db *database.DB, fulfillments *fulfillment.Repository,
+	installerRepo *installers.Repository, mailer mail.Sender, log *slog.Logger) (*support.Service, error) {
+	w := cfg.WhatsApp
+	tz, err := time.LoadLocation(cfg.Billing.Timezone)
+	if err != nil {
+		return nil, err
+	}
+	var wa *whatsapp.Client
+	if w.Enabled() {
+		wa = whatsapp.New(w.GraphBaseURL, w.GraphVersion, w.PhoneNumberID, w.AccessToken)
+	} else {
+		log.Info("WhatsApp não configurado (WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID e WHATSAPP_APP_SECRET)")
+	}
+	var ai *support.Assistant
+	switch {
+	case w.AIReady():
+		ai, err = support.NewAssistant(w.AnthropicAPIKey, w.AIModel, w.AIEffort,
+			support.FactsFrom(cfg.Catalog, cfg.Billing, cfg.Mail.AppURL), tz)
+		if err != nil {
+			return nil, err
+		}
+		log.Info("atendente de IA no WhatsApp ligado", "model", w.AIModel, "effort", w.AIEffort,
+			"avisos_para", len(w.HandoffEmails))
+	case w.Enabled():
+		log.Warn("atendente de IA desligado (ANTHROPIC_API_KEY vazia ou WHATSAPP_AI_ENABLED=false): só a equipe responde")
+	}
+	notifier := support.MailNotifier{Mailer: mail.NewSupportMailer(mailer, cfg.Mail.AppURL), To: w.HandoffEmails}
+	return support.NewService(ctx, w, support.NewRepository(db), wa, ai, fulfillments, installerRepo, notifier, tz, log), nil
 }
 
 // newMailSender escolhe como os e-mails saem: por SMTP quando configurado;

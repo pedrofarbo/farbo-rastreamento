@@ -1,4 +1,7 @@
 import React from 'react';
+
+import { LAUNCH_ANCHOR, PRE_LAUNCH } from '@/config/landing';
+
 import styles from './HeroSection.module.css';
 
 interface HeroSectionProps {
@@ -26,12 +29,19 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenModal }) => {
             em tempo real para motos e carros.
           </p>
 
-          <button
-            className={styles.heroCtaBtn}
-            onClick={() => onOpenModal('Quero meu rastreador')}
-          >
-            Quero proteger meu veículo
-          </button>
+          {/* No pré-lançamento, o convite é entrar na lista (com a promoção). */}
+          {PRE_LAUNCH ? (
+            <a className={styles.heroCtaBtn} href={LAUNCH_ANCHOR}>
+              Entrar no pré-lançamento
+            </a>
+          ) : (
+            <button
+              className={styles.heroCtaBtn}
+              onClick={() => onOpenModal('Quero meu rastreador')}
+            >
+              Quero proteger meu veículo
+            </button>
+          )}
 
           {/* 5 Circular Feature Highlights Row */}
           <div className={styles.featuresRow}>

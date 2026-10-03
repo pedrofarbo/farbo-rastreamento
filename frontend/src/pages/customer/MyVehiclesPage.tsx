@@ -7,6 +7,7 @@ import type { VehicleInput } from '@/api/resources';
 import { AddressModal } from '@/components/address/AddressModal';
 import { DeliveryBox } from '@/components/address/DeliveryBox';
 import billing from '@/components/billing/Billing.module.css';
+import { MonthlyPrice } from '@/components/billing/MonthlyPrice';
 import { NewVehicleWizard } from '@/components/billing/NewVehicleWizard';
 import { PixPaymentModal } from '@/components/billing/PixPaymentModal';
 import { SuspendedNotice, isSuspendedError } from '@/components/billing/SuspendedNotice';
@@ -21,7 +22,7 @@ import { TextField } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { formatDeviceStatus, formatMoney, formatRelative } from '@/services/format';
+import { formatDeviceStatus, formatRelative } from '@/services/format';
 import { stepOf, trackerTone } from '@/services/fulfillment';
 import { subscriptionsByVehicle, subscriptionsWithoutVehicle } from '@/services/subscriptions';
 import { EMPTY_VEHICLE, VehicleFields } from '@/components/vehicle/VehicleFields';
@@ -158,7 +159,7 @@ export function MyVehiclesPage() {
                 <div>
                   <div className={billing.vehicleName}>Assinatura sem veículo</div>
                   <div className={billing.subscriptionLine}>
-                    {sub.planName} · {formatMoney(sub.priceCents)}/mês · vence dia {sub.dueDay}
+                    {sub.planName} · <MonthlyPrice sub={sub} /> · vence dia {sub.dueDay}
                   </div>
                 </div>
                 <div className={billing.vehicleMeta}>
@@ -371,7 +372,7 @@ function VehicleCard({
         <div className={billing.deliveryLabel}>Assinatura</div>
         {subscription?.status === 'ACTIVE' ? (
           <div className={billing.subscriptionLine}>
-            {subscription.planName} · {formatMoney(subscription.priceCents)}/mês · vence dia{' '}
+            {subscription.planName} · <MonthlyPrice sub={subscription} /> · vence dia{' '}
             {subscription.dueDay}
           </div>
         ) : subscription ? (

@@ -417,6 +417,119 @@ CPF/CNPJ do cadastro é válido e há celular — ela recusa o Pix inteiro por u
 documento inválido. Sem isso, o Pix sai sem identificação e é pago do mesmo
 jeito.
 
+### Pré-clientes (cadastro de interesse)
+
+Enquanto a empresa não tem o número oficial do WhatsApp, a landing mostra só o
+e-mail de contato e **Quero meu rastreador** abre o **pré-cadastro**: nome,
+e-mail, WhatsApp (obrigatório), cidade e mensagem (opcionais), plano, tipo e
+quantidade de veículos, com o aceite de contato (LGPD). Cada envio vira um
+**pré-cliente** em **Clientes → Pré-clientes** (só admin), com o número de
+novos no menu e um e-mail para `LEADS_NOTIFY_EMAILS`. Lá a equipe muda a
+situação (novo, em contato, virou cliente, descartado), anota, e **Cadastrar
+como cliente** abre o cadastro já preenchido — salvo, o pré-cliente fica
+ligado ao cliente.
+
+Durante o pré-lançamento, o pré-cadastro traz marcada a opção de entrar
+também na **lista de lançamento** (aviso do lançamento e promoção); quem deixa
+marcada aparece nas duas listas, e o pré-cliente mostra "na lista de
+lançamento". O mesmo e-mail enviado de novo atualiza o pré-cliente em aberto em
+vez de duplicar. A rota pública (`POST /api/public/leads`) aceita poucos envios por IP
+e tem um campo-isca escondido contra robôs; a resposta não devolve nada do que
+foi gravado.
+
+Quando o número oficial existir, preencha `WHATSAPP_NUMBER` em
+`frontend/src/config/contact.ts`: o rodapé volta a mostrar o WhatsApp e a
+contratação volta a abrir o modal que inicia a conversa (o pré-cadastro fica
+guardado no código).
+
+### Pré-lançamento (lista de lançamento)
+
+Antes de haver clientes ativos, a landing mostra, no lugar dos depoimentos, a
+seção **Seja avisado no lançamento**: e-mail e WhatsApp (o nome é opcional) e
+o aceite de receber o aviso. Cada inscrição entra em **Clientes → Lista de lançamento**
+(só admin), de onde sai a lista do aviso (**Baixar CSV**, que o Excel abre
+direto, ou **Copiar e-mails** para o Cco) e onde se remove quem pedir para
+sair. O mesmo e-mail não se repete; a rota pública (`POST /api/public/launch`)
+tem o mesmo limite por IP e a mesma isca do pré-cadastro, e não avisa a
+equipe a cada inscrição.
+
+**Promoção de pré-lançamento** (`LAUNCH_PROMO_*`): quem está na lista
+contrata o primeiro rastreador por R$ 120 e paga R$ 34,90 de mensalidade nos
+12 primeiros meses — R$ 27,90 no plano dos integrantes do Insanos MC
+(`Especial Insanos MC`, o que a central escolhe para eles) — e depois o preço
+do plano, sem ninguém mexer (as faturas que vencem antes do fim da promoção
+saem pelo valor dela). Vale para 1 veículo
+por cliente e para os 500 primeiros da lista a contratar: a vaga é ocupada na
+contratação, numa trava que não deixa passar do limite nem com pedidos
+simultâneos. O direito é conferido pelo **e-mail da conta**, que precisa ser o
+mesmo da inscrição. No **Novo veículo**, o cliente com direito vê os preços da
+promoção; a central vê a opção **Aplicar a promoção** (marcada quando o
+cliente tem direito; sem direito, o motivo). A aba Lista de lançamento mostra
+as vagas usadas e quem já virou cliente.
+
+Com clientes de verdade para depor, `PRE_LAUNCH = false` em
+`frontend/src/config/landing.ts` traz os depoimentos de volta (seção e link no
+menu e no rodapé); o componente deles continua no código.
+
+### Atendimento pelo WhatsApp (IA)
+
+O número de WhatsApp da empresa, pela **API oficial da Meta (Cloud API)**, é
+atendido por uma IA (Claude) que tira dúvidas, explica planos e preços,
+consulta o andamento do pedido de quem é cliente e indica os prestadores de
+instalação. Quando precisa de uma pessoa — contratação, reclamação, cobrança,
+cancelamento, problema técnico, emergência ou quando não sabe responder com
+segurança —, ela **transfere a conversa para a equipe**, avisa o contato e
+manda um e-mail para `WHATSAPP_HANDOFF_EMAILS`. A equipe acompanha tudo em
+**Atendimento** (admin e operador), com o número de conversas esperando no
+menu: pode assumir qualquer conversa, responder (responder já assume) e
+devolver para a IA.
+
+O que a IA sabe está em `backend/internal/support/prompt.md` (os preços vêm de
+`CATALOG_*`, os mesmos que o painel cobra). Ela **não** vê localização, não
+bloqueia motor, não mexe em cadastro nem em faturas. O cliente é reconhecido
+pelo telefone do cadastro (com ou sem o nono dígito); os pedidos consultados
+são sempre os do dono do número que escreveu, nunca os de quem o contato
+disser ser. Áudio e imagem não são lidos: a IA pede o texto ou transfere.
+
+Para ligar:
+
+1. Em [developers.facebook.com](https://developers.facebook.com), crie um
+   aplicativo do tipo **Empresa** com o produto **WhatsApp** e adicione o
+   número da empresa. O número que vai para a Cloud API sai do app WhatsApp
+   Business comum (a não ser pela coexistência que a Meta oferece no cadastro).
+2. Crie um **usuário do sistema** no Business Manager com a permissão
+   `whatsapp_business_messaging` e gere o token (o da tela de testes vence em
+   24 h): `WHATSAPP_ACCESS_TOKEN`. Copie o **ID do número** (não o número) para
+   `WHATSAPP_PHONE_NUMBER_ID` e a **chave secreta do aplicativo** para
+   `WHATSAPP_APP_SECRET`.
+3. Invente o `WHATSAPP_VERIFY_TOKEN` (`openssl rand -hex 24`) e, em WhatsApp →
+   Configuração, cadastre o webhook `https://SEU-DOMINIO/api/whatsapp/webhook`
+   com esse token, assinando o campo **messages**.
+4. Defina `ANTHROPIC_API_KEY` (console.anthropic.com). Sem ela, as conversas
+   chegam em Atendimento e só a equipe responde.
+
+O webhook só vale com a assinatura HMAC-SHA256 da chave do aplicativo
+(`X-Hub-Signature-256`); mensagens repetidas são ignoradas pelo id. A IA espera
+`WHATSAPP_AI_DEBOUNCE` depois da última mensagem (quem manda várias seguidas
+recebe uma resposta), marca como lida e mostra "digitando…". Passou de
+`WHATSAPP_AI_MAX_REPLIES_PER_DAY` respostas a um contato em 24 h, ou a IA
+falhou, a conversa vai para a equipe com um aviso ao contato — ninguém fica
+sem resposta.
+
+**Janela de 24 h**: o WhatsApp só aceita resposta em texto livre até 24 horas
+depois da última mensagem do contato; depois disso, só quando ele escrever de
+novo (mandar fora da janela exige modelo aprovado pela Meta, que esta
+integração não usa).
+
+**Custos**: as mensagens do contato não são cobradas. Desde 1º/10/2026 a Meta
+cobra por mensagem entregue também as respostas de atendimento (as "service
+messages", dentro da janela de 24 h), com **1.000 grátis por mês por número**;
+no Brasil, a tarifa é a mesma da categoria utilidade (cerca de US$ 0,0068 por
+mensagem, faturada em reais). Conversas iniciadas por anúncio de clique para o
+WhatsApp seguem grátis por 72 h. A IA é cobrada à parte, por tokens, pela
+Anthropic; o log registra os tokens de cada resposta (`resposta da IA no
+WhatsApp`), e as instruções ficam em cache entre as conversas.
+
 ### Esqueci minha senha
 
 Na tela de login, **Esqueci minha senha** manda por e-mail um link para criar
@@ -1241,6 +1354,18 @@ mais importam:
 | `MELHORENVIO_SANDBOX` | `true` | sandbox ou produção do Melhor Envios |
 | `MELHORENVIO_FROM_*` | vazio | remetente das etiquetas (a base da central) |
 | `MELHORENVIO_SYNC_INTERVAL` | `15m` | intervalo da consulta de rastreio |
+| `WHATSAPP_ACCESS_TOKEN` / `_PHONE_NUMBER_ID` / `_APP_SECRET` | vazio | número do WhatsApp (Cloud API da Meta); liga o Atendimento |
+| `WHATSAPP_VERIFY_TOKEN` | vazio | token do cadastro do webhook na Meta (16+ caracteres) |
+| `ANTHROPIC_API_KEY` | vazio | liga a IA no WhatsApp; vazio, só a equipe responde |
+| `WHATSAPP_AI_MODEL` / `_EFFORT` | `claude-opus-5` / `low` | modelo do Claude e quanto ele pensa antes de responder |
+| `WHATSAPP_AI_DEBOUNCE` | `4s` | espera depois da última mensagem do contato |
+| `WHATSAPP_AI_MAX_REPLIES_PER_DAY` | `40` | respostas da IA por contato em 24 h antes de passar para a equipe |
+| `WHATSAPP_HANDOFF_EMAILS` | `ALERTS_CENTRAL_EMAILS` | quem recebe o aviso de conversa transferida |
+| `LEADS_NOTIFY_EMAILS` | `ALERTS_CENTRAL_EMAILS` | quem recebe o aviso de pré-cliente novo |
+| `LAUNCH_PROMO_ENABLED` | `true` | promoção de pré-lançamento para quem está na lista |
+| `LAUNCH_PROMO_EQUIPMENT_CENTS` / `_MONTHLY_CENTS` | `12000` / `3490` | rastreador e mensalidade na promoção |
+| `LAUNCH_PROMO_INSANOS_MONTHLY_CENTS` / `_INSANOS_PLAN_NAME` | `2790` / `Especial Insanos MC` | mensalidade na promoção no plano do Insanos MC (pelo nome do plano) |
+| `LAUNCH_PROMO_MONTHS` / `_SLOTS` | `12` / `500` | meses de mensalidade promocional e vagas (clientes) |
 
 ---
 

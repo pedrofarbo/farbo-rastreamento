@@ -49,8 +49,25 @@ type Subscription struct {
 	// DeliveryAddress é a cópia do endereço de entrega no momento da
 	// contratação do rastreador; nula quando não houve envio.
 	DeliveryAddress *addresses.Address `json:"deliveryAddress"`
-	CreatedAt       time.Time          `json:"createdAt"`
-	UpdatedAt       time.Time          `json:"updatedAt"`
+	// PromoPriceCents vale para as faturas que vencem antes de PromoUntil
+	// (promoção de pré-lançamento); depois, PriceCents. Os dois nulos: sem
+	// promoção.
+	PromoPriceCents *int      `json:"promoPriceCents"`
+	PromoUntil      *Date     `json:"promoUntil"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
+}
+
+// PriceOn é o valor da fatura que vence em due.
+func (s *Subscription) PriceOn(due Date) int {
+	return priceOn(s.PriceCents, s.PromoPriceCents, s.PromoUntil, due)
+}
+
+func priceOn(regular int, promo *int, until *Date, due Date) int {
+	if promo != nil && until != nil && due.Before(*until) {
+		return *promo
+	}
+	return regular
 }
 
 type Invoice struct {
@@ -103,16 +120,21 @@ func NewRepository(db *database.DB) *Repository { return &Repository{db: db} }
 // ---------------------------------------------------------------------------
 
 const subscriptionColumns = `id, customer_id, plan_name, price_cents, due_day, next_due_date,
-	status, canceled_at, vehicle_id, delivery_address, created_at, updated_at`
+	status, canceled_at, vehicle_id, delivery_address, promo_price_cents, promo_until, created_at, updated_at`
 
 func scanSubscription(row database.Scanner) (*Subscription, error) {
 	var s Subscription
 	var next time.Time
+	var promoUntil *time.Time
 	if err := row.Scan(&s.ID, &s.CustomerID, &s.PlanName, &s.PriceCents, &s.DueDay, &next,
-		&s.Status, &s.CanceledAt, &s.VehicleID, &s.DeliveryAddress, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		&s.Status, &s.CanceledAt, &s.VehicleID, &s.DeliveryAddress, &s.PromoPriceCents, &promoUntil,
+		&s.CreatedAt, &s.UpdatedAt); err != nil {
 		return nil, database.MapError(err)
 	}
 	s.NextDueDate = Date{next}
+	if promoUntil != nil {
+		s.PromoUntil = &Date{*promoUntil}
+	}
 	return &s, nil
 }
 
@@ -121,10 +143,18 @@ func scanSubscription(row database.Scanner) (*Subscription, error) {
 func InsertSubscription(ctx context.Context, q database.Querier, s *Subscription) (*Subscription, error) {
 	return scanSubscription(q.QueryRow(ctx, `
 		INSERT INTO subscriptions (customer_id, plan_name, price_cents, due_day, next_due_date,
-			vehicle_id, delivery_address)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+			vehicle_id, delivery_address, promo_price_cents, promo_until)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING `+subscriptionColumns,
-		s.CustomerID, s.PlanName, s.PriceCents, s.DueDay, s.NextDueDate.Time, s.VehicleID, s.DeliveryAddress))
+		s.CustomerID, s.PlanName, s.PriceCents, s.DueDay, s.NextDueDate.Time, s.VehicleID, s.DeliveryAddress,
+		s.PromoPriceCents, dateOrNil(s.PromoUntil)))
+}
+
+func dateOrNil(d *Date) *time.Time {
+	if d == nil {
+		return nil
+	}
+	return &d.Time
 }
 
 // LinkVehicle liga um veículo a uma assinatura ativa que ainda não tem
@@ -328,12 +358,14 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 		priceCents     int
 		dueDay         int
 		next           Date
+		promoCents     *int
+		promoUntil     *Date
 	}
 
 	var created int64
 	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-			SELECT id, customer_id, plan_name, price_cents, due_day, next_due_date
+			SELECT id, customer_id, plan_name, price_cents, due_day, next_due_date, promo_price_cents, promo_until
 			FROM subscriptions
 			WHERE status = 'ACTIVE' AND next_due_date <= $1
 			ORDER BY next_due_date
@@ -345,11 +377,16 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 		for rows.Next() {
 			var d due
 			var next time.Time
-			if err := rows.Scan(&d.id, &d.customerID, &d.planName, &d.priceCents, &d.dueDay, &next); err != nil {
+			var promoUntil *time.Time
+			if err := rows.Scan(&d.id, &d.customerID, &d.planName, &d.priceCents, &d.dueDay, &next,
+				&d.promoCents, &promoUntil); err != nil {
 				rows.Close()
 				return err
 			}
 			d.next = Date{next}
+			if promoUntil != nil {
+				d.promoUntil = &Date{*promoUntil}
+			}
 			pending = append(pending, d)
 		}
 		rows.Close()
@@ -360,11 +397,16 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 		for _, d := range pending {
 			next := d.next
 			for i := 0; i < maxCatchUp && !horizon.Before(next); i++ {
+				amount := priceOn(d.priceCents, d.promoCents, d.promoUntil, next)
+				description := invoiceDescription(d.planName, next)
+				if amount != d.priceCents {
+					description += " · promoção de pré-lançamento"
+				}
 				tag, err := tx.Exec(ctx, `
 					INSERT INTO invoices (customer_id, subscription_id, description, amount_cents, due_date)
 					VALUES ($1, $2, $3, $4, $5)
 					ON CONFLICT (subscription_id, due_date) DO NOTHING`,
-					d.customerID, d.id, invoiceDescription(d.planName, next), d.priceCents, next.Time)
+					d.customerID, d.id, description, amount, next.Time)
 				if err != nil {
 					return err
 				}

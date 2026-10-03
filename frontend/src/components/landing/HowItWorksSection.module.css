@@ -60,6 +60,23 @@
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
 }
 
+/* A ilustração animada da etapa, com o brilho na cor de quem faz. */
+.art {
+  margin: -0.75rem -0.5rem 1.5rem;
+  padding: 0.75rem 0.5rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.05) 0%, rgba(10, 15, 11, 1) 72%);
+}
+
+.art_farbo {
+  background: radial-gradient(circle at 50% 40%, rgba(59, 229, 88, 0.09) 0%, rgba(10, 15, 11, 1) 72%);
+}
+
+.art_parceiro {
+  background: radial-gradient(circle at 50% 40%, rgba(240, 180, 60, 0.08) 0%, rgba(10, 15, 11, 1) 72%);
+}
+
 .stepTop {
   display: flex;
   align-items: center;
@@ -202,9 +219,16 @@
     display: contents;
   }
 
+  /* A ilustração abre o passo, ao lado do número. */
+  .art {
+    grid-column: 2;
+    margin: 0 0 0.75rem;
+    padding: 0.5rem;
+  }
+
   .stepNumber {
     grid-column: 1;
-    grid-row: 1 / span 3;
+    grid-row: 1 / span 4;
     align-self: start;
     display: grid;
     place-items: center;
@@ -220,7 +244,7 @@
   .actor {
     grid-column: 2;
     justify-self: start;
-    margin: 0.625rem 0 0.5rem;
+    margin: 0 0 0.5rem;
     font-size: 0.75rem;
   }
 

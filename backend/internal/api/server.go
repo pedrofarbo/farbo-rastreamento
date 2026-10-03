@@ -26,6 +26,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geocoding"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geofences"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/installers"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/melhorenvio"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
@@ -33,6 +34,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/push"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/support"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tcp"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/telemetry"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
@@ -64,6 +66,10 @@ type Deps struct {
 	Fulfillment *fulfillment.Service
 	// Retention decide por quantos dias guardar o histórico de cada veículo.
 	Retention *retention.Service
+	// Atendimento pelo WhatsApp (IA e equipe). Nil: rotas sem efeito.
+	Support *support.Service
+	// Pré-clientes: cadastro de interesse da landing.
+	Leads *leads.Service
 	// Alertas por e-mail: o motor (e-mail de teste) e as preferências.
 	Alerts     *alerts.Engine
 	AlertStore *alerts.DBStore
@@ -139,6 +145,8 @@ func (s *Server) routes() chi.Router {
 	// todos (além do intervalo mínimo por conta, aplicado no serviço).
 	forgotLimiter := newRateLimiter(0.1, 3)
 	resetLimiter := newRateLimiter(0.5, 10)
+	// Cadastro de interesse da landing: público, poucos envios por IP.
+	leadLimiter := newRateLimiter(0.05, 5)
 	// Senha da confirmação extra: além do teto por usuário (stepup).
 	stepUpLimiter := newRateLimiter(0.2, 5)
 
@@ -167,11 +175,22 @@ func (s *Server) routes() chi.Router {
 
 		// Prestadores recomendados para a landing page (público).
 		r.Get("/public/installers", s.handlePublicInstallers)
+		// Cadastro de interesse (pré-cliente) da landing.
+		// E o "me avise quando lançar" (lista de lançamento).
+		if s.Leads != nil {
+			r.With(leadLimiter.middleware).Post("/public/leads", s.handlePublicCreateLead)
+			r.With(leadLimiter.middleware).Post("/public/launch", s.handlePublicJoinWaitlist)
+		}
 
 		// Melhor Envios: volta da autorização (o navegador, sem o token do
 		// painel; vale pelo state) e webhooks de etiqueta (assinatura HMAC).
 		r.Get("/integrations/melhorenvio/callback", s.handleShippingCallback)
 		r.Post("/shipping/melhorenvio/webhook", s.handleShippingWebhook)
+
+		// WhatsApp: verificação do webhook (token combinado) e mensagens dos
+		// contatos (assinatura HMAC da chave do aplicativo).
+		r.Get("/whatsapp/webhook", s.handleWhatsAppVerify)
+		r.Post("/whatsapp/webhook", s.handleWhatsAppWebhook)
 
 		r.Group(func(r chi.Router) {
 			r.Use(s.Auth.Middleware)
@@ -321,9 +340,21 @@ func (s *Server) routes() chi.Router {
 							r.Post("/invite", s.handleInviteCustomer)
 							r.Post("/invoices", s.handleCreateInvoice)
 							r.Post("/trackers", s.handleAdminOrderTracker)
+							r.Get("/launch-promo", s.handleCustomerLaunchPromo)
 							r.Post("/subscriptions/{subscriptionId}/vehicle", s.handleAdminAttachVehicle)
 							r.Post("/vehicles/{vehicleId}/subscription", s.handleReactivateSubscription)
 						})
+					})
+					r.Route("/leads", func(r chi.Router) {
+						if s.Leads == nil {
+							return
+						}
+						r.Get("/", s.handleListLeads)
+						r.Get("/stats", s.handleLeadStats)
+						r.Get("/waitlist", s.handleListWaitlist)
+						r.Get("/promo", s.handleLaunchPromoUsage)
+						r.Delete("/waitlist/{id}", s.handleRemoveFromWaitlist)
+						r.Patch("/{id}", s.handleUpdateLead)
 					})
 					r.Patch("/subscriptions/{id}", s.handleUpdateSubscription)
 					r.Post("/subscriptions/{id}/cancel", s.handleCancelSubscription)
@@ -353,6 +384,19 @@ func (s *Server) routes() chi.Router {
 					r.Get("/", s.handleShippingIntegration)
 					r.Post("/connect", s.handleConnectShipping)
 					r.Post("/disconnect", s.handleDisconnectShipping)
+				})
+
+				// Atendimento pelo WhatsApp: as conversas da IA e da equipe.
+				r.Route("/whatsapp", func(r chi.Router) {
+					r.Use(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator))
+					r.Get("/", s.handleWhatsAppStatus)
+					if s.Support == nil {
+						return
+					}
+					r.Get("/conversations", s.handleListConversations)
+					r.Get("/conversations/{id}", s.handleGetConversation)
+					r.Post("/conversations/{id}/messages", s.handleSendWhatsApp)
+					r.Put("/conversations/{id}/mode", s.handleSetConversationMode)
 				})
 
 				r.Route("/installers", func(r chi.Router) {

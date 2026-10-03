@@ -61,6 +61,10 @@ type Order struct {
 	// (aparelho instalado na hora, entregue em mãos).
 	RequireAddress bool
 	Plan           billing.SubscriptionInput
+	// LaunchPromo pede a promoção de pré-lançamento: o equipamento sai pelo
+	// valor dela (se for cobrado) e a mensalidade, pelo dela nos primeiros
+	// meses. Sem direito, o pedido é recusado com PromoUnavailable.
+	LaunchPromo bool
 }
 
 // Result é o que a contratação criou.
@@ -131,6 +135,12 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 		if err := lockCustomer(ctx, tx, customerID); err != nil {
 			return err
 		}
+		if o.LaunchPromo {
+			var err error
+			if setup, err = s.applyPromo(ctx, tx, customerID, sub, setup); err != nil {
+				return err
+			}
+		}
 		address, err := addresses.GetWith(ctx, tx, customerID)
 		if err != nil {
 			return err
@@ -149,6 +159,13 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 		}
 		if result.Subscription, err = billing.InsertSubscription(ctx, tx, sub); err != nil {
 			return err
+		}
+		if o.LaunchPromo {
+			// A vaga fica com o cliente (e com esta assinatura).
+			if _, err := tx.Exec(ctx, `INSERT INTO launch_promo_claims (customer_id, subscription_id) VALUES ($1, $2)`,
+				customerID, result.Subscription.ID); err != nil {
+				return err
+			}
 		}
 		// Sem aparelho instalado na hora, o rastreador (e o chip) passam a ser
 		// acompanhados até a casa do cliente.
@@ -177,14 +194,45 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 	// Primeira mensalidade, se já estiver dentro da antecedência.
 	s.billing.GenerateInvoices(ctx)
 	s.log.Info("rastreador contratado", "customer", customerID, "vehicle", result.Vehicle.ID,
-		"subscription", result.Subscription.ID, "equipment_cents", o.EquipmentCents)
+		"subscription", result.Subscription.ID, "equipment_cents", o.EquipmentCents, "promo", o.LaunchPromo)
 	return result, nil
+}
+
+// applyPromo reserva a vaga da promoção (na transação do pedido) e troca os
+// valores: o equipamento cobrado sai pelo da promoção e a assinatura ganha a
+// mensalidade promocional pelos primeiros meses (a do plano do Insanos MC,
+// se for o plano deles).
+func (s *Service) applyPromo(ctx context.Context, tx pgx.Tx, customerID uuid.UUID, sub *billing.Subscription,
+	setup *billing.Invoice) (*billing.Invoice, error) {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, promoLockKey); err != nil {
+		return nil, err
+	}
+	p := s.catalog.LaunchPromo
+	reason, err := promoCheck(ctx, tx, customerID, p)
+	if err != nil {
+		return nil, err
+	}
+	if reason != "" {
+		return nil, PromoUnavailable{reason}
+	}
+	monthly := p.MonthlyFor(sub.PlanName)
+	until := billing.Date{Time: sub.NextDueDate.AddDate(0, p.Months, 0)}
+	sub.PromoPriceCents, sub.PromoUntil = &monthly, &until
+	// Equipamento já com o cliente (sem cobrança) continua sem cobrança.
+	if setup != nil {
+		if p.EquipmentCents == 0 {
+			return nil, nil
+		}
+		setup.AmountCents = p.EquipmentCents
+		setup.Description += " · promoção de pré-lançamento"
+	}
+	return setup, nil
 }
 
 // CustomerOrder monta o pedido feito pelo próprio cliente, com os preços do
 // catálogo — ele não escolhe valor. O plano é o que ele já tem (quem paga o
 // preço especial continua nele); sem assinatura ativa, vale o plano padrão.
-func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehicle vehicles.Input) (Order, error) {
+func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehicle vehicles.Input, launchPromo bool) (Order, error) {
 	summary, err := s.billing.GetCustomer(ctx, customerID)
 	if err != nil {
 		return Order{}, err
@@ -210,6 +258,7 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehic
 
 	return Order{
 		Vehicle: vehicle, EquipmentCents: s.catalog.EquipmentPriceCents, RequireAddress: true, Plan: plan,
+		LaunchPromo: launchPromo,
 	}, nil
 }
 

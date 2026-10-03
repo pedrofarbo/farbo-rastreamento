@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
-import { customersApi } from '@/api/resources';
+import { customersApi, leadsApi } from '@/api/resources';
 import billing from '@/components/billing/Billing.module.css';
 import { CustomerStatus } from '@/components/billing/InvoiceStatus';
 import { Button } from '@/components/ui/Button';
@@ -14,8 +14,11 @@ import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { formatMoney } from '@/services/format';
+import type { Lead } from '@/types';
 
 import styles from '../Page.module.css';
+import { LeadsTab } from './LeadsTab';
+import { WaitlistTab } from './WaitlistTab';
 
 interface CustomerDraft {
   name: string;
@@ -24,6 +27,8 @@ interface CustomerDraft {
   document: string;
   access: 'invite' | 'password';
   password: string;
+  /** Cadastro a partir de um pré-cliente (que passa a convertido). */
+  lead?: Lead;
 }
 
 const EMPTY: CustomerDraft = {
@@ -40,6 +45,13 @@ export function CustomersPage() {
   const navigate = useNavigate();
   const { notify } = useToast();
   const queryClient = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('aba');
+  const showLeads = tab === 'pre-clientes';
+  const showWaitlist = tab === 'lancamento';
+  const showCustomers = !showLeads && !showWaitlist;
+  const leadStats = useQuery({ queryKey: ['leads', 'stats'], queryFn: leadsApi.stats, refetchInterval: 60_000 });
+  const newLeads = leadStats.data?.new ?? 0;
 
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState<CustomerDraft | null>(null);
@@ -51,6 +63,7 @@ export function CustomersPage() {
     mutationFn: customersApi.create,
     onSuccess: (customer, input) => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
+      if (input.leadId) queryClient.invalidateQueries({ queryKey: ['leads'] });
       notify({
         tone: 'success',
         title: 'Cliente cadastrado',
@@ -82,6 +95,7 @@ export function CustomersPage() {
       phone: draft.phone,
       document: draft.document,
       password: draft.access === 'password' ? draft.password : '',
+      leadId: draft.lead?.id,
     });
   };
 
@@ -116,85 +130,128 @@ export function CustomersPage() {
           </Button>
         </header>
 
-        <div className={billing.tiles}>
-          <div className={billing.tile}>
-            <span className={billing.tileLabel}>Clientes</span>
-            <span className={billing.tileValue}>{customers.data?.length ?? '—'}</span>
-          </div>
-          <div className={billing.tile}>
-            <span className={billing.tileLabel}>A receber</span>
-            <span className={billing.tileValue}>{formatMoney(totals.open)}</span>
-            <span className={billing.tileHint}>faturas em aberto</span>
-          </div>
-          <div className={`${billing.tile} ${totals.overdue > 0 ? billing.tileDanger : ''}`}>
-            <span className={billing.tileLabel}>Em atraso</span>
-            <span className={billing.tileValue}>{totals.overdue}</span>
-            <span className={billing.tileHint}>
-              {totals.suspended} com acesso suspenso
-            </span>
-          </div>
+        <div className={styles.tabs} role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={showCustomers}
+            className={`${styles.tab} ${showCustomers ? styles.tabActive : ''}`}
+            onClick={() => setParams({}, { replace: true })}
+          >
+            Clientes
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={showLeads}
+            className={`${styles.tab} ${showLeads ? styles.tabActive : ''}`}
+            onClick={() => setParams({ aba: 'pre-clientes' }, { replace: true })}
+          >
+            Pré-clientes{newLeads > 0 ? ` (${newLeads} novo${newLeads > 1 ? 's' : ''})` : ''}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={showWaitlist}
+            className={`${styles.tab} ${showWaitlist ? styles.tabActive : ''}`}
+            onClick={() => setParams({ aba: 'lancamento' }, { replace: true })}
+          >
+            Lista de lançamento
+          </button>
         </div>
 
-        <Card flush>
-          <div style={{ padding: 'var(--space-3)' }}>
-            <input
-              className={fieldStyles.input}
-              placeholder="Buscar por nome, e-mail, telefone ou documento"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </div>
-          {customers.isLoading ? (
-            <Spinner label="Carregando clientes" />
-          ) : filtered.length === 0 ? (
-            <EmptyState
-              icon="👤"
-              title={(customers.data ?? []).length === 0 ? 'Nenhum cliente cadastrado' : 'Nada encontrado'}
-              description={
-                (customers.data ?? []).length === 0
-                  ? 'Cadastre o primeiro cliente para ele acessar o painel e acompanhar os veículos.'
-                  : 'Ajuste a busca para ver outros clientes.'
-              }
-            />
-          ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Cliente</th>
-                    <th>Contato</th>
-                    <th>Veículos</th>
-                    <th>Em aberto</th>
-                    <th>Situação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((customer) => (
-                    <tr key={customer.id}>
-                      <td>
-                        <Link to={`/clientes/${customer.id}`}>
-                          <strong>{customer.name}</strong>
-                        </Link>
-                        {customer.document && <div className={billing.muted}>{customer.document}</div>}
-                      </td>
-                      <td>
-                        {customer.email}
-                        {customer.phone && <div className={billing.muted}>{customer.phone}</div>}
-                      </td>
-                      <td>{customer.vehicleCount}</td>
-                      <td className={billing.amount}>
-                        {customer.openInvoices > 0 ? formatMoney(customer.openAmountCents) : '—'}
-                      </td>
-                      <td>
-                        <CustomerStatus customer={customer} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {showWaitlist ? (
+          <WaitlistTab />
+        ) : showLeads ? (
+          <LeadsTab
+            onConvert={(lead) => {
+              setFormError('');
+              setDraft({ ...EMPTY, name: lead.name, email: lead.email, phone: lead.phone, lead });
+            }}
+          />
+        ) : (
+          <>
+            <div className={billing.tiles}>
+              <div className={billing.tile}>
+                <span className={billing.tileLabel}>Clientes</span>
+                <span className={billing.tileValue}>{customers.data?.length ?? '—'}</span>
+              </div>
+              <div className={billing.tile}>
+                <span className={billing.tileLabel}>A receber</span>
+                <span className={billing.tileValue}>{formatMoney(totals.open)}</span>
+                <span className={billing.tileHint}>faturas em aberto</span>
+              </div>
+              <div className={`${billing.tile} ${totals.overdue > 0 ? billing.tileDanger : ''}`}>
+                <span className={billing.tileLabel}>Em atraso</span>
+                <span className={billing.tileValue}>{totals.overdue}</span>
+                <span className={billing.tileHint}>
+                  {totals.suspended} com acesso suspenso
+                </span>
+              </div>
             </div>
-          )}
-        </Card>
+
+            <Card flush>
+              <div style={{ padding: 'var(--space-3)' }}>
+                <input
+                  className={fieldStyles.input}
+                  placeholder="Buscar por nome, e-mail, telefone ou documento"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </div>
+              {customers.isLoading ? (
+                <Spinner label="Carregando clientes" />
+              ) : filtered.length === 0 ? (
+                <EmptyState
+                  icon="👤"
+                  title={(customers.data ?? []).length === 0 ? 'Nenhum cliente cadastrado' : 'Nada encontrado'}
+                  description={
+                    (customers.data ?? []).length === 0
+                      ? 'Cadastre o primeiro cliente para ele acessar o painel e acompanhar os veículos.'
+                      : 'Ajuste a busca para ver outros clientes.'
+                  }
+                />
+              ) : (
+                <div className={styles.tableWrap}>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr>
+                        <th>Cliente</th>
+                        <th>Contato</th>
+                        <th>Veículos</th>
+                        <th>Em aberto</th>
+                        <th>Situação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((customer) => (
+                        <tr key={customer.id}>
+                          <td>
+                            <Link to={`/clientes/${customer.id}`}>
+                              <strong>{customer.name}</strong>
+                            </Link>
+                            {customer.document && <div className={billing.muted}>{customer.document}</div>}
+                          </td>
+                          <td>
+                            {customer.email}
+                            {customer.phone && <div className={billing.muted}>{customer.phone}</div>}
+                          </td>
+                          <td>{customer.vehicleCount}</td>
+                          <td className={billing.amount}>
+                            {customer.openInvoices > 0 ? formatMoney(customer.openAmountCents) : '—'}
+                          </td>
+                          <td>
+                            <CustomerStatus customer={customer} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </>
+        )}
       </div>
 
       <Modal
@@ -220,6 +277,12 @@ export function CustomersPage() {
       >
         {draft && (
           <div className={styles.form}>
+            {draft.lead && (
+              <div className={styles.note}>
+                A partir do pré-cliente <strong>{draft.lead.name}</strong>: ao cadastrar, ele fica marcado como
+                "Virou cliente".
+              </div>
+            )}
             {formError && <div className={styles.note}>{formError}</div>}
             <div className={styles.formRow}>
               <TextField

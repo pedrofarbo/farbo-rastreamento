@@ -1,0 +1,343 @@
+/* Pré-lançamento: o mesmo fundo escuro e o cartão com brilho verde da
+   chamada final. Texto à esquerda, formulário à direita; no celular, um
+   embaixo do outro. */
+.section {
+  padding: 5rem 1.5rem;
+  background: #060907;
+  /* Os botões "Pré-lançamento" pulam para cá: o menu fixo não cobre o topo. */
+  scroll-margin-top: 4rem;
+}
+
+.container {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.card {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 3rem;
+  align-items: center;
+  background: radial-gradient(circle at 15% 30%, rgba(59, 229, 88, 0.14) 0%, rgba(13, 19, 14, 1) 65%);
+  border: 1px solid rgba(59, 229, 88, 0.25);
+  border-radius: 24px;
+  padding: 3rem;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.8125rem;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  color: var(--color-neon-green);
+  text-transform: uppercase;
+}
+
+.title {
+  font-size: 2.5rem;
+  font-weight: 900;
+  line-height: 1.15;
+  color: #ffffff;
+  margin: 0.5rem 0 1rem;
+}
+
+.subtitle {
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  color: #94a3b8;
+  max-width: 520px;
+}
+
+.perks {
+  list-style: none;
+  margin: 1.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.perks li {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
+.perks strong {
+  color: #ffffff;
+}
+
+.check {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-neon-soft);
+  color: var(--color-neon-green);
+  font-size: 0.8125rem;
+  font-weight: 800;
+}
+
+/* --- Oferta --- */
+
+.offer {
+  margin-top: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  border-radius: 16px;
+  border: 1px solid var(--color-neon-green);
+  background: rgba(59, 229, 88, 0.08);
+  box-shadow: 0 0 24px rgba(59, 229, 88, 0.15);
+}
+
+.offerTag {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--color-neon-green);
+}
+
+.offerPrices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.offerItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.offerLabel {
+  font-size: 0.8125rem;
+  color: #94a3b8;
+}
+
+.offerOld {
+  font-size: 0.9375rem;
+  color: #64748b;
+}
+
+.offerPrice {
+  font-size: 1.75rem;
+  font-weight: 900;
+  color: #ffffff;
+}
+
+.offerNote {
+  margin-top: 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
+/* --- Formulário --- */
+
+.form,
+.done {
+  background: #0d130e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 2rem;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+/* E-mail e WhatsApp lado a lado; no celular, um embaixo do outro. */
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.1rem;
+}
+
+@media (max-width: 480px) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.optional {
+  font-weight: 400;
+  color: #64748b;
+}
+
+.field input {
+  width: 100%;
+  background: #141c15;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+  color: #ffffff;
+  font-size: 0.9375rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.field input:focus {
+  border-color: var(--color-neon-green);
+  box-shadow: 0 0 0 3px rgba(59, 229, 88, 0.15);
+}
+
+.consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.consent input {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  accent-color: var(--color-neon-green);
+}
+
+.error {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fecaca;
+  font-size: 0.875rem;
+}
+
+.submit {
+  margin-top: 0.25rem;
+  background: var(--color-neon-green);
+  color: #060907;
+  border: none;
+  border-radius: 999px;
+  padding: 1rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 800;
+  box-shadow: 0 4px 20px rgba(59, 229, 88, 0.4);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.submit:hover:not(:disabled) {
+  background: var(--color-neon-green-hover);
+  transform: translateY(-2px);
+}
+
+.submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Fora da tela (não display:none: alguns robôs pulam o que não aparece). */
+.honeypot {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* --- Inscrito --- */
+
+.done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  text-align: center;
+}
+
+.done h3 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.done p {
+  color: #cbd5e1;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.done .doneHint {
+  font-size: 0.8125rem;
+  color: #94a3b8;
+}
+
+.doneIcon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--color-neon-soft);
+  border: 1px solid var(--color-neon-green);
+  color: var(--color-neon-green);
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+@media (max-width: 900px) {
+  .card {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    padding: 2rem 1.5rem;
+  }
+
+  .title {
+    font-size: 2rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .offerPrices {
+    grid-template-columns: 1fr;
+  }
+
+  .section {
+    padding: 3.5rem 1rem;
+  }
+
+  .card {
+    padding: 1.5rem 1rem;
+    border-radius: 20px;
+  }
+
+  .form,
+  .done {
+    padding: 1.5rem 1.25rem;
+  }
+
+  .title {
+    font-size: 1.75rem;
+  }
+}
+
+/* Um preço não se parte entre "R$" e o valor. */
+.nowrap {
+  white-space: nowrap;
+}

@@ -37,6 +37,8 @@ type Config struct {
 	Alerts    Alerts
 	Push      Push
 	StepUp    StepUp
+	WhatsApp  WhatsApp
+	Leads     Leads
 }
 
 type HTTP struct {
@@ -278,9 +280,56 @@ type Catalog struct {
 	EquipmentPriceCents int
 	// SetupDueDays: prazo da fatura do equipamento.
 	SetupDueDays int
+	// LaunchPromo é a promoção de pré-lançamento.
+	LaunchPromo LaunchPromo
+}
+
+// LaunchPromo: quem está na lista de lançamento paga menos no primeiro
+// rastreador e na mensalidade dele por um período, enquanto houver vaga.
+type LaunchPromo struct {
+	Enabled bool
+	// EquipmentCents é o valor do rastreador na promoção.
+	EquipmentCents int
+	// MonthlyCents é a mensalidade durante Months meses; depois, a do plano.
+	MonthlyCents int
+	// InsanosMonthlyCents é a mensalidade da promoção no plano dos
+	// integrantes do Insanos MC (InsanosPlanName); depois, a desse plano.
+	InsanosMonthlyCents int
+	InsanosPlanName     string
+	Months              int
+	// Slots é quantos clientes podem usar (os primeiros a contratar).
+	Slots int
+}
+
+func (p LaunchPromo) validate() error {
+	if !p.Enabled {
+		return nil
+	}
+	switch {
+	case p.EquipmentCents < 0 || p.EquipmentCents > 100_000_00 || p.MonthlyCents < 0 || p.MonthlyCents > 100_000_00 ||
+		p.InsanosMonthlyCents < 0 || p.InsanosMonthlyCents > 100_000_00:
+		return fmt.Errorf("LAUNCH_PROMO_*_CENTS fora da faixa (0..10000000 centavos)")
+	case p.Months < 1 || p.Months > 60:
+		return fmt.Errorf("LAUNCH_PROMO_MONTHS fora da faixa (1..60)")
+	case p.Slots < 1 || p.Slots > 1_000_000:
+		return fmt.Errorf("LAUNCH_PROMO_SLOTS fora da faixa (1..1000000)")
+	}
+	return nil
+}
+
+// MonthlyFor é a mensalidade da promoção para o plano da assinatura: o do
+// Insanos MC tem a sua; os demais, MonthlyCents.
+func (p LaunchPromo) MonthlyFor(planName string) int {
+	if p.InsanosPlanName != "" && strings.EqualFold(strings.TrimSpace(planName), p.InsanosPlanName) {
+		return p.InsanosMonthlyCents
+	}
+	return p.MonthlyCents
 }
 
 func (c Catalog) validate() error {
+	if err := c.LaunchPromo.validate(); err != nil {
+		return err
+	}
 	for name, value := range map[string]int{
 		"CATALOG_PLAN_PRICE_CENTS": c.PlanPriceCents, "CATALOG_EQUIPMENT_PRICE_CENTS": c.EquipmentPriceCents,
 	} {
@@ -393,6 +442,96 @@ func (s Shipping) MissingOrigin() []string {
 	return missing
 }
 
+// Leads configura os pré-clientes (cadastro de interesse da landing).
+type Leads struct {
+	// NotifyEmails recebem o aviso de cada pré-cliente novo.
+	NotifyEmails []string
+}
+
+// WhatsApp configura o atendimento pelo WhatsApp (API oficial da Meta, a
+// Cloud API) e o atendente de IA que responde os contatos.
+type WhatsApp struct {
+	// AccessToken é o token do usuário do sistema do Business Manager, com
+	// whatsapp_business_messaging.
+	AccessToken string
+	// PhoneNumberID é o identificador do número (não o número em si), em
+	// WhatsApp > Configuração da API.
+	PhoneNumberID string
+	// AppSecret é a chave secreta do aplicativo da Meta: assina os webhooks.
+	AppSecret string
+	// VerifyToken é o que se digita na Meta ao cadastrar o webhook.
+	VerifyToken string
+	// GraphVersion e GraphBaseURL apontam a Graph API (a URL só em testes).
+	GraphVersion string
+	GraphBaseURL string
+
+	// AnthropicAPIKey liga o atendente de IA (Claude). Sem ela, as conversas
+	// chegam ao painel e só a equipe responde.
+	AnthropicAPIKey string
+	AIEnabled       bool
+	AIModel         string
+	// AIEffort é quanto o modelo pensa antes de responder: low, medium ou
+	// high. Atendimento é conversa curta; low responde mais rápido e gasta
+	// menos.
+	AIEffort string
+	// AIDebounce é a espera antes de responder: quem manda três mensagens
+	// seguidas recebe uma resposta só.
+	AIDebounce time.Duration
+	// AIMaxRepliesPerDay limita as respostas da IA por contato em 24 h;
+	// passou disso, a conversa vai para a equipe.
+	AIMaxRepliesPerDay int
+	// AIHistory é quantas mensagens da conversa a IA lê.
+	AIHistory int
+	// HandoffEmails recebem o aviso de conversa transferida para a equipe.
+	HandoffEmails []string
+}
+
+// Enabled diz se o número do WhatsApp está configurado.
+func (w WhatsApp) Enabled() bool {
+	return w.AccessToken != "" && w.PhoneNumberID != "" && w.AppSecret != ""
+}
+
+// AIReady diz se o atendente de IA responde os contatos.
+func (w WhatsApp) AIReady() bool { return w.Enabled() && w.AIEnabled && w.AnthropicAPIKey != "" }
+
+// minVerifyTokenLen: o token do webhook é um segredo como outro qualquer.
+const minVerifyTokenLen = 16
+
+func (w WhatsApp) validate() error {
+	if !w.Enabled() {
+		return nil
+	}
+	switch {
+	case len(w.VerifyToken) < minVerifyTokenLen:
+		return fmt.Errorf("WHATSAPP_VERIFY_TOKEN precisa de ao menos %d caracteres: gere com %s", minVerifyTokenLen, genPassword)
+	case IsPlaceholder(w.VerifyToken) || IsPlaceholder(w.AppSecret) || IsPlaceholder(w.AccessToken):
+		return fmt.Errorf("WHATSAPP_ACCESS_TOKEN, WHATSAPP_APP_SECRET e WHATSAPP_VERIFY_TOKEN não podem ser valores de exemplo")
+	}
+	switch w.AIEffort {
+	case "low", "medium", "high":
+	default:
+		return fmt.Errorf("WHATSAPP_AI_EFFORT inválido: use low, medium ou high")
+	}
+	if strings.TrimSpace(w.AIModel) == "" {
+		return fmt.Errorf("WHATSAPP_AI_MODEL vazio")
+	}
+	if w.AIDebounce < 0 || w.AIDebounce > time.Minute {
+		return fmt.Errorf("WHATSAPP_AI_DEBOUNCE fora da faixa aceitável (0..1m)")
+	}
+	if w.AIMaxRepliesPerDay < 1 || w.AIMaxRepliesPerDay > 1000 {
+		return fmt.Errorf("WHATSAPP_AI_MAX_REPLIES_PER_DAY fora da faixa aceitável (1..1000)")
+	}
+	if w.AIHistory < 4 || w.AIHistory > 200 {
+		return fmt.Errorf("WHATSAPP_AI_HISTORY fora da faixa aceitável (4..200)")
+	}
+	for _, email := range w.HandoffEmails {
+		if _, err := netmail.ParseAddress(email); err != nil {
+			return fmt.Errorf("WHATSAPP_HANDOFF_EMAILS: endereço inválido %q", email)
+		}
+	}
+	return nil
+}
+
 // Enabled diz se há servidor SMTP configurado. Sem ele os e-mails só vão
 // para o log.
 func (m Mail) Enabled() bool { return m.SMTPHost != "" }
@@ -494,6 +633,16 @@ func Load() (*Config, error) {
 			EquipmentName:       str("CATALOG_EQUIPMENT_NAME", "Rastreador J16 GT06"),
 			EquipmentPriceCents: num("CATALOG_EQUIPMENT_PRICE_CENTS", 15000),
 			SetupDueDays:        num("CATALOG_SETUP_DUE_DAYS", 3),
+			LaunchPromo: LaunchPromo{
+				Enabled:        bl("LAUNCH_PROMO_ENABLED", true),
+				EquipmentCents: num("LAUNCH_PROMO_EQUIPMENT_CENTS", 12000),
+				MonthlyCents:   num("LAUNCH_PROMO_MONTHLY_CENTS", 3490),
+				// O nome é o do plano que a central escolhe para os integrantes.
+				InsanosMonthlyCents: num("LAUNCH_PROMO_INSANOS_MONTHLY_CENTS", 2790),
+				InsanosPlanName:     strings.TrimSpace(str("LAUNCH_PROMO_INSANOS_PLAN_NAME", "Especial Insanos MC")),
+				Months:              num("LAUNCH_PROMO_MONTHS", 12),
+				Slots:               num("LAUNCH_PROMO_SLOTS", 500),
+			},
 		},
 		Payments: Payments{
 			AbacatePayAPIKey:  str("ABACATEPAY_API_KEY", ""),
@@ -561,6 +710,25 @@ func Load() (*Config, error) {
 		RPID:    strings.ToLower(str("WEBAUTHN_RP_ID", "")),
 		Origins: csv("WEBAUTHN_ORIGINS", ""),
 	}
+	cfg.WhatsApp = WhatsApp{
+		AccessToken:   str("WHATSAPP_ACCESS_TOKEN", ""),
+		PhoneNumberID: str("WHATSAPP_PHONE_NUMBER_ID", ""),
+		AppSecret:     str("WHATSAPP_APP_SECRET", ""),
+		VerifyToken:   str("WHATSAPP_VERIFY_TOKEN", ""),
+		GraphVersion:  str("WHATSAPP_GRAPH_VERSION", "v24.0"),
+		GraphBaseURL:  strings.TrimRight(str("WHATSAPP_GRAPH_BASE_URL", "https://graph.facebook.com"), "/"),
+
+		AnthropicAPIKey:    str("ANTHROPIC_API_KEY", ""),
+		AIEnabled:          bl("WHATSAPP_AI_ENABLED", true),
+		AIModel:            str("WHATSAPP_AI_MODEL", "claude-opus-5"),
+		AIEffort:           strings.ToLower(str("WHATSAPP_AI_EFFORT", "low")),
+		AIDebounce:         dur("WHATSAPP_AI_DEBOUNCE", 4*time.Second),
+		AIMaxRepliesPerDay: num("WHATSAPP_AI_MAX_REPLIES_PER_DAY", 40),
+		AIHistory:          num("WHATSAPP_AI_HISTORY", 40),
+		// Sem lista própria: os e-mails da central; sem eles, o do admin.
+		HandoffEmails: csv("WHATSAPP_HANDOFF_EMAILS", centralEmails()),
+	}
+	cfg.Leads = Leads{NotifyEmails: csv("LEADS_NOTIFY_EMAILS", centralEmails())}
 
 	// Sem APP_URL, usa a primeira origem do CORS: ela já é o endereço em que
 	// o navegador abre o painel.
@@ -635,6 +803,14 @@ func Load() (*Config, error) {
 	}
 	if err := cfg.StepUp.validate(); err != nil {
 		return nil, err
+	}
+	if err := cfg.WhatsApp.validate(); err != nil {
+		return nil, err
+	}
+	for _, email := range cfg.Leads.NotifyEmails {
+		if _, err := netmail.ParseAddress(email); err != nil {
+			return nil, fmt.Errorf("LEADS_NOTIFY_EMAILS: endereço inválido %q", email)
+		}
 	}
 	if cfg.Payments.PixExpiresIn < 5*time.Minute || cfg.Payments.PixExpiresIn > 30*24*time.Hour {
 		return nil, fmt.Errorf("PIX_EXPIRES_IN fora da faixa aceitável (5m..720h)")
@@ -739,6 +915,12 @@ func (m Mail) validate() error {
 		return fmt.Errorf("MAIL_FROM é obrigatório quando SMTP_HOST está definido")
 	}
 	return nil
+}
+
+// centralEmails é o padrão de quem recebe os avisos da equipe: os e-mails da
+// central (ALERTS_CENTRAL_EMAILS) ou, sem eles, o do admin.
+func centralEmails() string {
+	return strings.Join(csv("ALERTS_CENTRAL_EMAILS", str("ADMIN_EMAIL", "")), ",")
 }
 
 func str(key, def string) string {

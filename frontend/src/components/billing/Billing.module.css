@@ -535,3 +535,26 @@
     font-size: var(--text-lg);
   }
 }
+
+/* Promoção de pré-lançamento: o aviso ao cliente e a opção da central. */
+.promoBanner,
+.promoOption {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.promoOption {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.promoOption input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}

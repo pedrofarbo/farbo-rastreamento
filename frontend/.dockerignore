@@ -2,3 +2,5 @@ node_modules
 dist
 .env
 .env.local
+# Originais das imagens da landing (scripts/landing-images.mjs gera as do site).
+assets-src

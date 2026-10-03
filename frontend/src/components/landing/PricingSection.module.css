@@ -8,6 +8,83 @@
   margin: 0 auto;
 }
 
+/* --- Pré-lançamento --- */
+
+.launchBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+  padding: 1.25rem 1.75rem;
+  border-radius: 20px;
+  border: 1px solid var(--color-neon-green);
+  background: radial-gradient(circle at 10% 50%, rgba(59, 229, 88, 0.16) 0%, rgba(13, 19, 14, 1) 70%);
+  box-shadow: 0 0 30px rgba(59, 229, 88, 0.15);
+}
+
+.launchBannerText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  color: #94a3b8;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.launchBannerText strong {
+  color: #ffffff;
+  font-size: 1.125rem;
+  line-height: 1.4;
+}
+
+.launchBannerTag {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--color-neon-green);
+}
+
+.launchBannerBtn {
+  flex-shrink: 0;
+  background: var(--color-neon-green);
+  color: #060907;
+  border-radius: 999px;
+  padding: 0.875rem 1.75rem;
+  font-size: 0.9375rem;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: 0 0 20px rgba(59, 229, 88, 0.4);
+  transition: all 0.2s ease;
+}
+
+.launchBannerBtn:hover {
+  text-decoration: none;
+  background: var(--color-neon-green-hover);
+  transform: translateY(-1px);
+}
+
+/* O plano mensal com o preço de pré-lançamento: contorno verde, como o
+   destaque. */
+.launchCard {
+  border-color: rgba(59, 229, 88, 0.55);
+}
+
+@media (max-width: 760px) {
+  .launchBanner {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+    padding: 1.25rem;
+  }
+
+  .launchBannerBtn {
+    text-align: center;
+  }
+}
+
 .cardsGrid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -21,10 +98,16 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 24px;
   padding: 2.25rem 1.75rem;
+  /* O conteúdo começa no topo; quando o cartão estica até a altura do mais
+     alto, só o botão desce (margin-top: auto), sem abrir vãos no meio. */
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card > .whiteBtn,
+.card > .neonBtn {
+  margin-top: auto;
 }
 
 .card:hover {
@@ -195,6 +278,10 @@
 }
 
 .neonBtn {
+  /* Também é link (pré-lançamento): bloco centralizado, sem sublinhado. */
+  display: block;
+  text-align: center;
+  text-decoration: none;
   width: 100%;
   background: var(--color-neon-green);
   color: #060907;
@@ -209,6 +296,7 @@
 }
 
 .neonBtn:hover {
+  text-decoration: none;
   background: var(--color-neon-green-hover);
   transform: translateY(-1px);
   box-shadow: 0 0 30px rgba(59, 229, 88, 0.6);
@@ -218,15 +306,18 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-top: 1.75rem;
+  /* Acima do botão: os botões dos cartões ficam alinhados no pé. */
+  margin: -0.75rem 0 1.5rem;
   padding-top: 1.25rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .partnerLogo {
-  width: 34px;
+  flex-shrink: 0;
+  width: 56px;
   height: auto;
   object-fit: contain;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.5));
 }
 
 .partnerText {
@@ -249,31 +340,59 @@
 
 /* Equipment Card special layout */
 .equipmentCard {
-  flex-direction: row;
-  align-items: stretch;
   overflow: hidden;
 }
 
-.equipmentContent {
+/* Embaixo do preço: a foto do rastreador centralizada no espaço que sobra
+   (o cartão do Insanos é mais alto) e a lista com a largura toda. */
+.equipmentBody {
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  gap: 1.25rem;
+  margin-top: 1rem;
 }
 
-.equipmentImageWrapper {
-  width: 110px;
-  display: flex;
+.equipmentBody .checkList {
+  margin-bottom: 0;
+}
+
+/* Selo Anatel no lugar de um item da lista: a logo e o número de
+   homologação num selo branco, como na etiqueta do produto. */
+.anatelItem {
+  margin-top: 0.25rem;
+}
+
+.anatelSeal {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  margin-left: 0.5rem;
+  gap: 0.6rem;
+  padding: 0.35rem 0.75rem;
+  background: #ffffff;
+  border-radius: 8px;
+}
+
+.anatelSeal img {
+  display: block;
+  width: auto;
+  height: 22px;
+}
+
+.anatelNumber {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #1f2937;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .trackerImg {
-  max-width: 100%;
+  margin: auto;
+  width: 150px;
   height: auto;
   object-fit: contain;
-  filter: drop-shadow(0 10px 15px rgba(0, 0, 0, 0.6));
+  filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.65));
 }
 
 @media (max-width: 1024px) {
@@ -285,8 +404,7 @@
   }
 }
 
-/* Celular: cards mais compactos, foto do rastreador ao lado do preço (antes
-   ela disputava espaço com a lista) e selo da parceria legível. */
+/* Celular: cards mais compactos e o selo da parceria legível. */
 @media (max-width: 600px) {
   .pricingSection {
     padding: 2rem 1rem 2.5rem;
@@ -300,23 +418,18 @@
     padding: 1.75rem 1.5rem;
   }
 
-  .equipmentCard {
-    flex-direction: column;
-  }
-
-  .equipmentImageWrapper {
-    position: absolute;
-    top: 1.5rem;
-    right: 1.25rem;
-    width: 56px;
-    margin: 0;
-  }
-
   .partnerText {
     font-size: 0.75rem;
   }
 
   .partnerText strong {
     font-size: 0.8125rem;
+  }
+}
+
+/* Celular: a foto um pouco menor, para o cartão não crescer demais. */
+@media (max-width: 600px) {
+  .trackerImg {
+    width: 120px;
   }
 }

@@ -8,6 +8,7 @@ import type { VehicleInput } from '@/api/resources';
 import { AddressModal } from '@/components/address/AddressModal';
 import billing from '@/components/billing/Billing.module.css';
 import { CustomerStatus, InvoiceStatus } from '@/components/billing/InvoiceStatus';
+import { MonthlyPrice } from '@/components/billing/MonthlyPrice';
 import { NewVehicleWizard } from '@/components/billing/NewVehicleWizard';
 import { FulfillmentAdminModal } from '@/components/fulfillment/FulfillmentAdminModal';
 import { PixPaymentModal } from '@/components/billing/PixPaymentModal';
@@ -376,7 +377,7 @@ export function CustomerDetailsPage() {
                           {active && sub ? (
                             <>
                               <div className={billing.subscriptionLine}>
-                                {sub.planName} · <span className={billing.amount}>{formatMoney(sub.priceCents)}</span>/mês
+                                {sub.planName} · <MonthlyPrice sub={sub} />
                               </div>
                               <div className={billing.muted}>
                                 dia {sub.dueDay} · próxima fatura {formatDateOnly(sub.nextDueDate)}
@@ -468,7 +469,7 @@ export function CustomerDetailsPage() {
                       <td>—</td>
                       <td>
                         <div className={billing.subscriptionLine}>
-                          {sub.planName} · <span className={billing.amount}>{formatMoney(sub.priceCents)}</span>/mês
+                          {sub.planName} · <MonthlyPrice sub={sub} />
                         </div>
                         <div className={billing.muted}>
                           dia {sub.dueDay} · próxima fatura {formatDateOnly(sub.nextDueDate)}

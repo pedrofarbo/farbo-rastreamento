@@ -124,3 +124,28 @@ func TestValidatePaymentRejectsNonHTTPLinks(t *testing.T) {
 		t.Fatalf("link=%q pix=%q err=%v", link, pix, err)
 	}
 }
+
+func TestPriceOnLaunchPromo(t *testing.T) {
+	day := func(s string) Date {
+		d, err := time.Parse(time.DateOnly, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return Date{d}
+	}
+	promo, until := 2990, day("2027-10-10")
+	cases := map[string]int{
+		"2026-10-10": 2990, // primeira mensalidade
+		"2027-09-10": 2990, // 12ª
+		"2027-10-10": 6990, // 13ª: o plano
+		"2028-01-10": 6990,
+	}
+	for due, want := range cases {
+		if got := priceOn(6990, &promo, &until, day(due)); got != want {
+			t.Errorf("vencimento %s: %d, quer %d", due, got, want)
+		}
+	}
+	if got := priceOn(6990, nil, nil, day("2026-10-10")); got != 6990 {
+		t.Errorf("sem promoção: %d", got)
+	}
+}

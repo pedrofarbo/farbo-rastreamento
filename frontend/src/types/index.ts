@@ -328,6 +328,12 @@ export interface Subscription {
   vehicleId: string | null;
   /** Cópia do endereço de entrega na contratação; nula se não houve envio. */
   deliveryAddress: DeliveryAddress | null;
+  /**
+   * Promoção de pré-lançamento: as faturas que vencem antes de promoUntil
+   * saem por promoPriceCents; depois, priceCents. Nulos: sem promoção.
+   */
+  promoPriceCents: number | null;
+  promoUntil: DateOnly | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -512,6 +518,36 @@ export interface Catalog {
   equipmentPriceCents: number;
   /** Prazo, em dias, da fatura do equipamento. */
   setupDueDays: number;
+  /** O cliente pode contratar com a promoção de pré-lançamento (nulo: não pode). */
+  launchPromo?: PromoOffer | null;
+}
+
+/**
+ * Promoção de pré-lançamento: rastreador e mensalidade dos primeiros meses.
+ * No plano do Insanos MC (insanosPlanName), a mensalidade é
+ * insanosMonthlyCents; no catálogo do cliente, monthlyCents já é a do plano dele.
+ */
+export interface PromoOffer {
+  equipmentCents: number;
+  monthlyCents: number;
+  insanosMonthlyCents: number;
+  insanosPlanName: string;
+  months: number;
+}
+
+/** Se o cliente tem direito à promoção e, se não, por quê. */
+export interface PromoStatus {
+  eligible: boolean;
+  reason: string;
+  offer: PromoOffer;
+}
+
+/** Vagas da promoção de pré-lançamento. */
+export interface PromoUsage {
+  enabled: boolean;
+  slots: number;
+  used: number;
+  offer: PromoOffer;
 }
 
 /** Prestador de instalação recomendado (a instalação é paga direto a ele). */
@@ -650,4 +686,125 @@ export interface PushStatus {
   /** applicationServerKey (VAPID) em base64url. */
   publicKey: string;
   devices: PushDevice[];
+}
+
+/** Atendimento pelo WhatsApp: quem responde a conversa. */
+export type ConversationMode = 'BOT' | 'HUMAN';
+
+export interface WhatsAppMessage {
+  id: number;
+  direction: 'IN' | 'OUT';
+  /** CONTACT escreveu; BOT é a IA; AGENT, alguém da equipe. */
+  author: 'CONTACT' | 'BOT' | 'AGENT';
+  agentId: string | null;
+  agentName: string;
+  /** text, audio, image, video, document, sticker, location... */
+  kind: string;
+  body: string;
+  /** Das enviadas: sent, delivered, read ou failed. */
+  status: string;
+  error: string;
+  createdAt: string;
+}
+
+export interface WhatsAppConversation {
+  id: string;
+  waId: string;
+  phone: string;
+  contactName: string;
+  customerId: string | null;
+  customerName: string;
+  mode: ConversationMode;
+  handoffReason: string;
+  /** Esperando alguém da equipe. */
+  needsAttention: boolean;
+  lastInboundAt: string | null;
+  lastMessageAt: string;
+  /** Dentro das 24 h em que o WhatsApp aceita resposta em texto livre. */
+  windowOpen: boolean;
+  createdAt: string;
+  lastMessage?: WhatsAppMessage;
+}
+
+export interface WhatsAppConversationDetails extends WhatsAppConversation {
+  messages: WhatsAppMessage[];
+}
+
+export interface WhatsAppStatus {
+  configured: boolean;
+  aiReady: boolean;
+  model: string;
+  attention: number;
+}
+
+/** Pré-cliente: NEW ninguém falou ainda; CONTACTED em conversa; CONVERTED virou cliente; DISCARDED não vai fechar. */
+export type LeadStatus = 'NEW' | 'CONTACTED' | 'CONVERTED' | 'DISCARDED';
+
+export type LeadVehicleType = '' | 'moto' | 'carro' | 'frota';
+
+/** O que a landing manda no cadastro de interesse. */
+export interface LeadInput {
+  name: string;
+  email: string;
+  phone: string;
+  city: string;
+  plan: string;
+  vehicleType: LeadVehicleType;
+  vehicleCount: number;
+  message: string;
+  /** Aceitou ser contatado (LGPD). */
+  consent: boolean;
+  /** Entrar também na lista de pré-lançamento (aviso e promoção). */
+  joinLaunch: boolean;
+  /** Isca: escondido, só robô preenche. */
+  website: string;
+}
+
+export interface Lead {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  city: string;
+  plan: string;
+  vehicleType: LeadVehicleType;
+  vehicleCount: number;
+  message: string;
+  status: LeadStatus;
+  notes: string;
+  /** O cliente cadastrado a partir dele. */
+  customerId: string | null;
+  /** O e-mail também está na lista de lançamento (e na promoção). */
+  onLaunchList: boolean;
+  source: string;
+  consentAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** "Me avise quando lançar": o que a seção de pré-lançamento manda. */
+export interface WaitlistInput {
+  name: string;
+  email: string;
+  /** WhatsApp com DDD (obrigatório). */
+  phone: string;
+  consent: boolean;
+  /** Isca: escondido, só robô preenche. */
+  website: string;
+}
+
+/** Inscrição na lista de lançamento. */
+export interface WaitlistEntry {
+  id: string;
+  name: string;
+  email: string;
+  /** WhatsApp; vazio em quem se inscreveu antes de ele ser obrigatório. */
+  phone: string;
+  consentAt: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Já é cliente (conta com este e-mail). */
+  customerId: string | null;
+  /** Contratou com a promoção de pré-lançamento. */
+  promoClaimed: boolean;
 }

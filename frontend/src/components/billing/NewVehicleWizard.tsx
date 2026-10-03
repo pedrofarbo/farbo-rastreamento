@@ -6,6 +6,7 @@ import { catalogApi, customersApi, meApi } from '@/api/resources';
 import type { VehicleInput } from '@/api/resources';
 import { AddressFields, EMPTY_ADDRESS, isAddressComplete } from '@/components/address/AddressFields';
 import { DeliveryBox } from '@/components/address/DeliveryBox';
+import { promoMonthlyFor } from '@/components/billing/MonthlyPrice';
 import {
   DEFAULT_SUBSCRIPTION,
   PLAN_PRESETS,
@@ -41,6 +42,8 @@ interface AdminDraft {
   equipment: string;
   dueDate: string;
   plan: SubscriptionDraft;
+  /** Aplicar a promoção de pré-lançamento (o cliente tem direito). */
+  promo: boolean;
 }
 
 function addDays(iso: string, days: number): string {
@@ -73,12 +76,18 @@ function adminDraftFrom(c: Catalog, current: Subscription | null): AdminDraft {
     equipment: centsToInput(c.equipmentPriceCents),
     dueDate: addDays(todayISO(), c.setupDueDays),
     plan,
+    promo: false,
   };
 }
 
 /** A API responde 409 com este código quando falta o endereço de entrega. */
 function isAddressRequired(error: unknown): boolean {
   return error instanceof ApiError && (error.body as { code?: string } | undefined)?.code === 'ADDRESS_REQUIRED';
+}
+
+/** E com este quando a promoção de pré-lançamento não vale mais (vagas acabaram, já usou). */
+function isPromoUnavailable(error: unknown): boolean {
+  return error instanceof ApiError && (error.body as { code?: string } | undefined)?.code === 'PROMO_UNAVAILABLE';
 }
 
 /**
@@ -113,6 +122,12 @@ export function NewVehicleWizard({
   const [showInstallers, setShowInstallers] = useState(false);
 
   const catalog = useQuery({ queryKey: ['catalog'], queryFn: catalogApi.get, enabled: open });
+  // Para a central: se o cliente pode contratar com a promoção de pré-lançamento.
+  const promoStatus = useQuery({
+    queryKey: ['customer', admin?.customerId, 'launch-promo'],
+    queryFn: () => customersApi.launchPromo(admin!.customerId),
+    enabled: open && isAdmin,
+  });
   const account = useQuery({ queryKey: ['me', 'account'], queryFn: meApi.account, enabled: open && !isAdmin });
   const c = catalog.data;
   const address = isAdmin ? (admin?.deliveryAddress ?? null) : (account.data?.deliveryAddress ?? null);
@@ -139,6 +154,18 @@ export function NewVehicleWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isAdmin, c]);
 
+  // Com direito à promoção, ela já vem marcada (uma vez por abertura).
+  const promoSeeded = useRef(false);
+  useEffect(() => {
+    if (!open) promoSeeded.current = false;
+    else if (adminDraft && promoStatus.data && !promoSeeded.current) {
+      promoSeeded.current = true;
+      if (promoStatus.data.eligible) {
+        setAdminDraft({ ...adminDraft, promo: true, equipment: centsToInput(promoStatus.data.offer.equipmentCents) });
+      }
+    }
+  }, [open, adminDraft, promoStatus.data]);
+
   const saveAddress = useMutation({
     mutationFn: meApi.saveAddress,
     onSuccess: (saved) => {
@@ -154,7 +181,7 @@ export function NewVehicleWizard({
 
   const order = useMutation({
     mutationFn: async () => {
-      if (!admin) return meApi.orderTracker({ vehicle });
+      if (!admin) return meApi.orderTracker({ vehicle, launchPromo: Boolean(customerPromo) });
       const d = adminDraft as AdminDraft;
       const plan = subscriptionFromDraft(d.plan);
       if (typeof plan === 'string') throw new Error(plan);
@@ -163,11 +190,21 @@ export function NewVehicleWizard({
         equipmentCents: optionalMoney(d.equipment) ?? 0,
         setupDueDate: d.dueDate || null,
         plan,
+        launchPromo: d.promo,
       });
     },
     onSuccess: onDone,
     onError: (err: Error) => {
       setError(err.message);
+      if (isPromoUnavailable(err)) {
+        // Os preços voltam aos normais; quem decide continuar confirma de novo.
+        setError(`${err.message}. Os valores foram atualizados para os preços normais.`);
+        queryClient.invalidateQueries({ queryKey: ['catalog'] });
+        if (admin) {
+          queryClient.invalidateQueries({ queryKey: ['customer', admin.customerId, 'launch-promo'] });
+          setAdminDraft((d) => (d && c ? { ...d, promo: false, equipment: centsToInput(c.equipmentPriceCents) } : d));
+        }
+      }
       if (isAddressRequired(err)) {
         setAddressDraft(EMPTY_ADDRESS);
         setStep(1);
@@ -177,9 +214,19 @@ export function NewVehicleWizard({
   });
 
   const loading = !c || (!isAdmin && account.isLoading) || (isAdmin && !adminDraft);
+  // A promoção do cliente vem do catálogo; a da central, da opção marcada.
+  const customerPromo = !isAdmin ? (c?.launchPromo ?? null) : null;
+  const adminPromo = isAdmin && adminDraft?.promo && promoStatus.data?.eligible ? promoStatus.data.offer : null;
+  const promo = customerPromo ?? adminPromo;
+  // A do cliente já vem no plano dele; a da central depende do plano escolhido.
+  const promoMonthly = adminPromo && adminDraft ? promoMonthlyFor(adminPromo, adminDraft.plan.planName) : promo?.monthlyCents;
   // O cliente sem endereço salvo cai direto no formulário.
   const editingAddress = !isAdmin && (addressDraft !== null || !address);
-  const equipmentCents = isAdmin ? (adminDraft ? optionalMoney(adminDraft.equipment) : null) : (c?.equipmentPriceCents ?? 0);
+  const equipmentCents = isAdmin
+    ? adminDraft
+      ? optionalMoney(adminDraft.equipment)
+      : null
+    : (customerPromo?.equipmentCents ?? c?.equipmentPriceCents ?? 0);
   const monthly = isAdmin
     ? adminDraft
       ? { name: adminDraft.plan.planName, cents: parseMoney(adminDraft.plan.price), dueDay: adminDraft.plan.dueDay }
@@ -302,11 +349,42 @@ export function NewVehicleWizard({
                     </option>
                   ))}
                 </SelectField>
+                {promoStatus.data?.eligible ? (
+                  <label className={styles.promoOption}>
+                    <input
+                      type="checkbox"
+                      checked={adminDraft.promo}
+                      onChange={(e) =>
+                        setAdminDraft({
+                          ...adminDraft,
+                          promo: e.target.checked,
+                          equipment: centsToInput(
+                            e.target.checked ? promoStatus.data!.offer.equipmentCents : c.equipmentPriceCents,
+                          ),
+                        })
+                      }
+                    />
+                    <span>
+                      <strong>Aplicar a promoção de pré-lançamento</strong>
+                      <br />
+                      Rastreador por {formatMoney(promoStatus.data.offer.equipmentCents)} e mensalidade de{' '}
+                      {formatMoney(promoStatus.data.offer.monthlyCents)} (
+                      {formatMoney(promoStatus.data.offer.insanosMonthlyCents)} no plano{' '}
+                      {promoStatus.data.offer.insanosPlanName}) nos {promoStatus.data.offer.months} primeiros meses
+                      (depois, o plano escolhido). O cliente está na lista de lançamento; usa 1 das vagas.
+                    </span>
+                  </label>
+                ) : (
+                  promoStatus.data && (
+                    <p className={styles.muted}>Promoção de pré-lançamento: {promoStatus.data.reason}.</p>
+                  )
+                )}
                 <div className={pageStyles.formRow}>
                   <TextField
                     label={`${c.equipmentName} (R$)`}
                     inputMode="decimal"
-                    hint="0 se o cliente já tem o aparelho."
+                    hint={adminDraft.promo ? 'Preço da promoção de pré-lançamento.' : '0 se o cliente já tem o aparelho.'}
+                    disabled={adminDraft.promo}
                     value={adminDraft.equipment}
                     onChange={(e) => setAdminDraft({ ...adminDraft, equipment: e.target.value })}
                   />
@@ -352,12 +430,22 @@ export function NewVehicleWizard({
                 ) : (
                   address && <DeliveryBox address={address} onChange={() => setAddressDraft(address)} />
                 )}
+                {customerPromo && (
+                  <div className={styles.promoBanner}>
+                    <strong>Promoção de pré-lançamento</strong> — você está na lista de lançamento: rastreador por{' '}
+                    {formatMoney(customerPromo.equipmentCents)} e mensalidade de {formatMoney(customerPromo.monthlyCents)}{' '}
+                    nos {customerPromo.months} primeiros meses.
+                  </div>
+                )}
                 <div className={styles.orderSummary}>
                   <div className={`${styles.orderLine} ${styles.orderTotal}`}>
                     <span>
                       {c.equipmentName} (vence em {c.setupDueDays} {c.setupDueDays === 1 ? 'dia' : 'dias'})
                     </span>
-                    <span>{formatMoney(c.equipmentPriceCents)}</span>
+                    <span>
+                      {customerPromo && <s className={styles.muted}>{formatMoney(c.equipmentPriceCents)}</s>}{' '}
+                      {formatMoney(customerPromo?.equipmentCents ?? c.equipmentPriceCents)}
+                    </span>
                   </div>
                 </div>
                 <div className={styles.installNote}>
@@ -412,8 +500,23 @@ export function NewVehicleWizard({
                     <div className={`${styles.orderLine} ${styles.orderMonthly}`}>
                       <span>
                         Assinatura: {monthly.name || 'plano'}, todo dia {monthly.dueDay}
+                        {promo && (
+                          <>
+                            <br />
+                            <span className={styles.muted}>
+                              Promoção de pré-lançamento nos {promo.months} primeiros meses; depois,{' '}
+                              {monthly.cents !== null ? `${formatMoney(monthly.cents)}/mês` : 'o plano'}.
+                            </span>
+                          </>
+                        )}
                       </span>
-                      <span>{monthly.cents !== null ? `${formatMoney(monthly.cents)}/mês` : '—'}</span>
+                      <span>
+                        {promoMonthly !== undefined
+                          ? `${formatMoney(promoMonthly)}/mês`
+                          : monthly.cents !== null
+                            ? `${formatMoney(monthly.cents)}/mês`
+                            : '—'}
+                      </span>
                     </div>
                   )}
                 </div>

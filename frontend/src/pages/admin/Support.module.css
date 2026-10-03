@@ -1,0 +1,309 @@
+/* Atendimento: lista de conversas à esquerda, a conversa à direita. No
+   celular, uma coisa de cada vez. */
+.inner {
+  max-width: 1280px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+  gap: var(--space-4);
+  height: max(460px, calc(100dvh - var(--header-height, 64px) - 220px));
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+}
+
+.listPanel {
+  height: 100%;
+}
+
+.pane {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.placeholder {
+  height: 100%;
+  justify-content: center;
+}
+
+/* --- Lista --- */
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  color: inherit;
+}
+
+.item:hover {
+  background: var(--surface-hover);
+}
+
+.itemActive,
+.itemActive:hover {
+  background: var(--accent-soft);
+}
+
+.itemTop {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.itemName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+}
+
+.itemTime {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.itemPreview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.itemBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/* --- Conversa --- */
+
+.conversation {
+  height: 100%;
+}
+
+.convHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+.back {
+  display: none;
+}
+
+.convTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.convMeta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.convActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.warning,
+.info {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.warning {
+  background: var(--warning-soft);
+}
+
+.info {
+  background: var(--neutral-soft);
+}
+
+.conversation > .warning,
+.conversation > .info {
+  margin: var(--space-3) var(--space-4) 0;
+}
+
+.warning code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  word-break: break-all;
+}
+
+.messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background: var(--surface-sunken);
+}
+
+.bubbleRow {
+  display: flex;
+}
+
+.outRow {
+  justify-content: flex-end;
+}
+
+.bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: min(78%, 560px);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  border: 1px solid var(--border-subtle);
+}
+
+.contact {
+  background: var(--surface-raised);
+  border-bottom-left-radius: var(--radius-sm);
+}
+
+.bot {
+  background: var(--accent-soft);
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+.agent {
+  background: var(--neutral-soft);
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+.author {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.kind {
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+.body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  align-self: flex-end;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+
+.error {
+  font-size: var(--text-xs);
+  color: var(--danger);
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.input {
+  width: 100%;
+  min-height: 64px;
+  max-height: 200px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  color: inherit;
+  resize: vertical;
+}
+
+.input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.composerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* Celular: a lista ou a conversa. */
+@media (max-width: 820px) {
+  .layout {
+    grid-template-columns: 1fr;
+    height: calc(100dvh - var(--header-height, 64px) - 180px);
+  }
+
+  .layout .pane {
+    display: none;
+  }
+
+  .hasSelection .listPanel {
+    display: none;
+  }
+
+  .hasSelection .pane {
+    display: block;
+  }
+
+  .back {
+    display: inline-flex;
+  }
+
+  .bubble {
+    max-width: 88%;
+  }
+}

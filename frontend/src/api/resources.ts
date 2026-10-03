@@ -38,6 +38,18 @@ import type {
   Vehicle,
   VehicleEvent,
   VehicleView,
+  ConversationMode,
+  WhatsAppConversation,
+  WhatsAppConversationDetails,
+  WhatsAppMessage,
+  WhatsAppStatus,
+  Lead,
+  LeadInput,
+  LeadStatus,
+  WaitlistEntry,
+  WaitlistInput,
+  PromoStatus,
+  PromoUsage,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -307,6 +319,8 @@ export interface CustomerInput {
   document: string;
   /** Vazio manda o convite por e-mail para o cliente criar a senha. */
   password: string;
+  /** Pré-cliente de onde veio o cadastro: passa a convertido. */
+  leadId?: string;
 }
 
 export interface InvoiceInput {
@@ -355,6 +369,8 @@ export const customersApi = {
   /** Novo veículo: veículo → rastreador (fatura do equipamento) → assinatura. */
   orderTracker: (customerId: string, input: AdminTrackerOrder) =>
     api.post<TrackerOrderResult>(`/api/customers/${customerId}/trackers`, input),
+  /** Se o cliente pode contratar com a promoção de pré-lançamento. */
+  launchPromo: (id: string) => api.get<PromoStatus>(`/api/customers/${id}/launch-promo`),
   /** Assinatura antiga sem veículo: informa qual veículo ela cobre. */
   attachVehicle: (customerId: string, subscriptionId: string, input: VehicleInput) =>
     api.post<Vehicle>(`/api/customers/${customerId}/subscriptions/${subscriptionId}/vehicle`, input),
@@ -369,6 +385,8 @@ export interface AdminTrackerOrder {
   equipmentCents: number;
   setupDueDate?: DateOnly | null;
   plan: SubscriptionInput;
+  /** Aplica a promoção de pré-lançamento (o cliente precisa ter direito). */
+  launchPromo?: boolean;
 }
 
 export interface InstallerInput {
@@ -407,6 +425,18 @@ export const fulfillmentsApi = {
     api.post<Fulfillment>(`/api/fulfillments/${id}/shipping/label`, { serviceId }),
 };
 
+/** Atendimento pelo WhatsApp: conversas da IA e da equipe (admin e operador). */
+export const whatsappApi = {
+  status: () => api.get<WhatsAppStatus>('/api/whatsapp'),
+  list: (attention = false) =>
+    api.get<WhatsAppConversation[]>(`/api/whatsapp/conversations${attention ? '?filter=attention' : ''}`),
+  get: (id: string) => api.get<WhatsAppConversationDetails>(`/api/whatsapp/conversations/${id}`),
+  /** Responder assume a conversa: a IA para de responder. */
+  send: (id: string, text: string) => api.post<WhatsAppMessage>(`/api/whatsapp/conversations/${id}/messages`, { text }),
+  setMode: (id: string, mode: ConversationMode) =>
+    api.put<WhatsAppConversation>(`/api/whatsapp/conversations/${id}/mode`, { mode }),
+};
+
 /** Conexão com o Melhor Envios (admin). */
 export const shippingIntegrationApi = {
   get: () => api.get<ShippingIntegration>('/api/integrations/melhorenvio'),
@@ -417,6 +447,24 @@ export const shippingIntegrationApi = {
 /** Rotas públicas, usadas também pela landing page (sem login). */
 export const publicApi = {
   installers: () => request<PublicInstaller[]>('/api/public/installers', { anonymous: true }),
+  /** Cadastro de interesse da landing (vira pré-cliente). */
+  createLead: (input: LeadInput) =>
+    request<{ status: string }>('/api/public/leads', { method: 'POST', body: input, anonymous: true }),
+  /** "Me avise quando lançar" (lista de lançamento). */
+  joinLaunch: (input: WaitlistInput) =>
+    request<{ status: string }>('/api/public/launch', { method: 'POST', body: input, anonymous: true }),
+};
+
+/** Pré-clientes (admin). */
+export const leadsApi = {
+  list: (status?: LeadStatus) => api.get<Lead[]>(`/api/leads${status ? `?status=${status}` : ''}`),
+  stats: () => api.get<{ new: number }>('/api/leads/stats'),
+  update: (id: string, input: { status: LeadStatus; notes: string }) => api.patch<Lead>(`/api/leads/${id}`, input),
+  /** Lista de lançamento: quem pediu o aviso. */
+  waitlist: () => api.get<WaitlistEntry[]>('/api/leads/waitlist'),
+  removeFromWaitlist: (id: string) => api.delete<void>(`/api/leads/waitlist/${id}`),
+  /** Vagas da promoção de pré-lançamento. */
+  promo: () => api.get<PromoUsage>('/api/leads/promo'),
 };
 
 export const catalogApi = {
@@ -436,7 +484,8 @@ export const meApi = {
   /** Endereço de entrega: obrigatório antes de contratar um rastreador. */
   saveAddress: (input: DeliveryAddress) => api.put<DeliveryAddress>('/api/me/address', input),
   /** Novo veículo; equipamento e plano vêm do catálogo e da conta do cliente. */
-  orderTracker: (input: { vehicle: VehicleInput }) =>
+  /** launchPromo: o cliente confirmou com os preços da promoção que o catálogo mostrou. */
+  orderTracker: (input: { vehicle: VehicleInput; launchPromo?: boolean }) =>
     api.post<TrackerOrderResult>('/api/me/trackers', input),
   /** Acompanhamento do chip e do rastreador de cada pedido. */
   fulfillments: () => api.get<CustomerFulfillment[]>('/api/me/fulfillments'),

@@ -1,4 +1,8 @@
 import React, { useState } from 'react';
+
+import { CONTACT_EMAIL, WHATSAPP_NUMBER, whatsappDisplay } from '@/config/contact';
+import { ANATEL_HOMOLOGATION, SOCIAL_SECTION } from '@/config/landing';
+
 import styles from './Footer.module.css';
 
 export const Footer: React.FC = () => {
@@ -41,24 +45,24 @@ export const Footer: React.FC = () => {
               <li><a href="#beneficios">Benefícios</a></li>
               <li><a href="#planos">Planos e Preços</a></li>
               <li><a href="#como-funciona">Como Funciona</a></li>
-              <li><a href="#depoimentos">Depoimentos</a></li>
+              <li><a href={`#${SOCIAL_SECTION.id}`}>{SOCIAL_SECTION.label}</a></li>
             </ul>
           </div>
 
           <div className={styles.linksCol}>
-            <h4>Parceiros</h4>
+            <h4>Regulamentação</h4>
             <ul>
-              <li>Motoclube Insanos MC</li>
-              <li>Chip M2M Multi-operadora</li>
-              <li>Rastreador J16 GT06</li>
+              <li title="Homologação do rastreador J16 na Anatel">Anatel - {ANATEL_HOMOLOGATION}</li>
             </ul>
           </div>
 
           <div className={styles.linksCol}>
             <h4>Atendimento</h4>
             <ul>
-              <li>WhatsApp: (11) 99999-9999</li>
-              <li>E-mail: contato@farborastreadores.com.br</li>
+              {WHATSAPP_NUMBER && <li>WhatsApp: {whatsappDisplay()}</li>}
+              <li>
+                E-mail: <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
+              </li>
               <li>Atendimento Seg-Sáb: 08h às 20h</li>
             </ul>
           </div>

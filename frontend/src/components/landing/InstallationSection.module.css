@@ -100,31 +100,6 @@
   color: #94a3b8;
 }
 
-.imagesColumn {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
-}
-
-.imageCard {
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  aspect-ratio: 4 / 3;
-  background: #000;
-}
-
-.imageCard img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.4s ease;
-}
-
-.imageCard:hover img {
-  transform: scale(1.08);
-}
-
 @media (max-width: 900px) {
   .contentGrid {
     grid-template-columns: 1fr;
@@ -138,10 +113,6 @@
   }
   .optionsColumn {
     grid-template-columns: 1fr;
-  }
-  .imagesColumn {
-    grid-template-columns: 1fr;
-    gap: 0.75rem;
   }
 }
 
@@ -189,8 +160,7 @@
   transform: translateY(-1px);
 }
 
-/* Celular: as três fotos lado a lado, pequenas (elas são pequenas: ampliadas
-   para a largura da tela ficavam borradas e ocupavam 700px). */
+/* Celular: menos respiro em volta. */
 @media (max-width: 600px) {
   .installationSection {
     padding: 1.5rem 1rem 2.5rem;
@@ -198,16 +168,6 @@
 
   .outerCard {
     padding: 1.25rem;
-  }
-
-  .imagesColumn {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.5rem;
-  }
-
-  .imageCard {
-    aspect-ratio: 1;
-    border-radius: 12px;
   }
 
   .installersNote {

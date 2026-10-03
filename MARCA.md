@@ -66,7 +66,7 @@ Qualquer outro uso do nome, dos logotipos ou da identidade visual depende de aut
 
 Nomes e marcas de terceiros citados no código, na documentação ou nas imagens pertencem aos respectivos titulares. Aparecem aqui só para identificar integrações e equipamentos compatíveis; isso não implica licença nem endosso. Alguns exemplos:
 - Melhor Envios, AbacatePay e OpenStreetMap;
-- Insanos MC (`insanos-skull.png`);
+- Insanos MC (o escudo em `insanos-escudo.webp`);
 - fabricantes e modelos de rastreadores (GT06, J16, H02, TKSTAR).
 
 ---

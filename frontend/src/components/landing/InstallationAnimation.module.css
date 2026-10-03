@@ -1,0 +1,656 @@
+/* Instalação animada. Ciclo único de 8 s para tudo:
+     0–10%  rastreador desce até o painel      (etapa 1)
+    10–27%  chave de boca trabalhando
+    26–46%  fios: bateria, terra, ignição       (etapa 2)
+    48–94%  LED verde, sinal ao satélite, pino  (etapa 3)
+    94–100% some, e o ciclo recomeça
+   Os estilos fora dos keyframes são a cena final (reduzir movimento). */
+
+.figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem 1rem 1.1rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: radial-gradient(circle at 62% 38%, rgba(59, 229, 88, 0.09) 0%, rgba(10, 15, 11, 1) 70%);
+}
+
+.scene {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* --- Cenário --- */
+
+.ground {
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 2;
+  stroke-dasharray: 6 8;
+}
+
+.body {
+  fill: rgba(255, 255, 255, 0.03);
+  stroke: #cbd5e1;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+
+.window {
+  fill: rgba(59, 229, 88, 0.07);
+  stroke: rgba(203, 213, 225, 0.6);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.door {
+  stroke: rgba(203, 213, 225, 0.45);
+  stroke-width: 2;
+}
+
+.wheel {
+  fill: #0a0f0b;
+  stroke: #cbd5e1;
+  stroke-width: 3;
+}
+
+.hub {
+  fill: none;
+  stroke: rgba(203, 213, 225, 0.7);
+  stroke-width: 2;
+}
+
+.battery rect {
+  fill: #141c15;
+  stroke: #94a3b8;
+  stroke-width: 2;
+}
+
+.battery .terminal {
+  fill: #94a3b8;
+  stroke: none;
+}
+
+.battery text {
+  fill: #e2e8f0;
+  font: 700 12px Inter, system-ui, sans-serif;
+}
+
+.ignition circle {
+  fill: none;
+  stroke: #facc15;
+  stroke-width: 2;
+}
+
+.ignition path {
+  fill: none;
+  stroke: #facc15;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.groundMark line {
+  stroke: #94a3b8;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* --- Fios (pathLength = 1: o traço vai de 1 a 0 para "desenhar") --- */
+
+.wire {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+.wireRed {
+  stroke: #ef4444;
+  animation: wireRed 8s ease-in-out infinite;
+}
+
+.wireGray {
+  stroke: #94a3b8;
+  animation: wireGray 8s ease-in-out infinite;
+}
+
+.wireYellow {
+  stroke: #facc15;
+  animation: wireYellow 8s ease-in-out infinite;
+}
+
+.groundMark {
+  animation: groundMark 8s ease-in-out infinite;
+}
+
+/* --- Rastreador --- */
+
+.tracker {
+  animation: trackerIn 8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.trackerBox {
+  fill: #0b0f0c;
+  stroke: var(--color-neon-green);
+  stroke-width: 2;
+}
+
+.trackerLine {
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.led {
+  fill: var(--color-neon-green);
+  filter: drop-shadow(0 0 4px rgba(59, 229, 88, 0.9));
+  animation: led 8s linear infinite;
+}
+
+.wrench {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 85% 85%;
+  animation: wrench 8s ease-in-out infinite;
+}
+
+.wrench path {
+  fill: none;
+  stroke: #e2e8f0;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* --- Sinal --- */
+
+.ring {
+  fill: none;
+  stroke: var(--color-neon-green);
+  stroke-width: 2;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.ring1 {
+  animation: ring1 8s ease-out infinite;
+}
+
+.ring2 {
+  animation: ring2 8s ease-out infinite;
+}
+
+.beam {
+  fill: none;
+  stroke: var(--color-neon-green);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 0.02 0.03;
+  opacity: 0.85;
+  animation:
+    beamShow 8s ease-in-out infinite,
+    beamFlow 1.2s linear infinite;
+}
+
+.satellite {
+  animation: float 4s ease-in-out infinite;
+}
+
+.satellite .panel {
+  fill: rgba(59, 229, 88, 0.18);
+  stroke: var(--color-neon-green);
+  stroke-width: 1.5;
+}
+
+.satellite .satBody {
+  fill: #141c15;
+  stroke: #cbd5e1;
+  stroke-width: 1.5;
+}
+
+.satellite line {
+  stroke: #cbd5e1;
+  stroke-width: 2;
+}
+
+/* --- Localização e aviso --- */
+
+.pin {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 6px 10px rgba(59, 229, 88, 0.35));
+  animation: pin 8s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+}
+
+.pin path {
+  fill: var(--color-neon-green);
+}
+
+.pin .pinDot {
+  fill: #060907;
+}
+
+.badge {
+  animation: badge 8s ease-out infinite;
+}
+
+.badge rect {
+  fill: rgba(59, 229, 88, 0.12);
+  stroke: rgba(59, 229, 88, 0.5);
+  stroke-width: 1.5;
+}
+
+.badge .badgeCheck {
+  fill: var(--color-neon-green);
+}
+
+.badge .badgeTick {
+  fill: none;
+  stroke: #060907;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.badge text {
+  fill: #ffffff;
+  font: 700 15px Inter, system-ui, sans-serif;
+}
+
+/* --- Etapas (acendem junto com a cena) --- */
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid rgba(59, 229, 88, 0.45);
+  background: rgba(59, 229, 88, 0.08);
+  color: #ffffff;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.stepNumber {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-neon-green);
+  color: #060907;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.step1 {
+  animation: step1 8s ease-in-out infinite;
+}
+
+.step2 {
+  animation: step2 8s ease-in-out infinite;
+}
+
+.step3 {
+  animation: step3 8s ease-in-out infinite;
+}
+
+@media (max-width: 600px) {
+  .figure {
+    padding: 0.75rem 0.75rem 0.9rem;
+  }
+
+  /* O desenho encolhe com a tela: o aviso cresce para continuar legível. */
+  .badgeWrap {
+    transform: scale(1.45);
+    transform-origin: 24px 14px;
+  }
+
+  .step {
+    flex-direction: column;
+    text-align: center;
+    gap: 0.35rem;
+    padding: 0.5rem 0.35rem;
+    font-size: 0.75rem;
+  }
+}
+
+/* --- Linha do tempo --- */
+
+@keyframes trackerIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-70px);
+  }
+  10% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  12% {
+    transform: translateY(-4px);
+  }
+  14%,
+  94% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+}
+
+@keyframes wrench {
+  0%,
+  10% {
+    opacity: 0;
+    transform: rotate(0deg);
+  }
+  12% {
+    opacity: 1;
+    transform: rotate(-25deg);
+  }
+  16% {
+    transform: rotate(15deg);
+  }
+  20% {
+    transform: rotate(-25deg);
+  }
+  24% {
+    opacity: 1;
+    transform: rotate(10deg);
+  }
+  27%,
+  100% {
+    opacity: 0;
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes wireRed {
+  0%,
+  26% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  36%,
+  94% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes wireGray {
+  0%,
+  31% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  41%,
+  94% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes wireYellow {
+  0%,
+  36% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  46%,
+  94% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes groundMark {
+  0%,
+  39% {
+    opacity: 0;
+  }
+  42%,
+  94% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Apagado (cinza) até ligar; depois pisca devagar. */
+@keyframes led {
+  0%,
+  47% {
+    fill: #475569;
+    filter: none;
+  }
+  48%,
+  60%,
+  72%,
+  84%,
+  94% {
+    fill: var(--color-neon-green);
+    filter: drop-shadow(0 0 4px rgba(59, 229, 88, 0.9));
+  }
+  54%,
+  66%,
+  78%,
+  90% {
+    fill: #1f9a37;
+    filter: none;
+  }
+  100% {
+    fill: #475569;
+    filter: none;
+  }
+}
+
+@keyframes ring1 {
+  0%,
+  50% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  51% {
+    opacity: 0.9;
+    transform: scale(0.6);
+  }
+  63% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+  64%,
+  66% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  67% {
+    opacity: 0.9;
+    transform: scale(0.6);
+  }
+  79%,
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+@keyframes ring2 {
+  0%,
+  56% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  57% {
+    opacity: 0.9;
+    transform: scale(0.6);
+  }
+  69% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+  70%,
+  72% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  73% {
+    opacity: 0.9;
+    transform: scale(0.6);
+  }
+  85%,
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+@keyframes beamShow {
+  0%,
+  52% {
+    opacity: 0;
+  }
+  57%,
+  94% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Os pontinhos correm do rastreador para o satélite. */
+@keyframes beamFlow {
+  to {
+    stroke-dashoffset: -0.05;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes pin {
+  0%,
+  60% {
+    opacity: 0;
+    transform: translateY(-40px) scale(0.8);
+  }
+  66% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  94% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes badge {
+  0%,
+  66% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  71%,
+  94% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+}
+
+@keyframes step1 {
+  0%,
+  25% {
+    opacity: 1;
+  }
+  28%,
+  100% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes step2 {
+  0%,
+  24% {
+    opacity: 0.4;
+  }
+  27%,
+  46% {
+    opacity: 1;
+  }
+  49%,
+  100% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes step3 {
+  0%,
+  46% {
+    opacity: 0.4;
+  }
+  49%,
+  94% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.4;
+  }
+}
+
+/* Reduzir movimento: a cena final, parada. */
+@media (prefers-reduced-motion: reduce) {
+  .figure *,
+  .figure *::before,
+  .figure *::after {
+    animation: none !important;
+  }
+}

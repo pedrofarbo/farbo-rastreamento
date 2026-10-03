@@ -1,0 +1,315 @@
+/* Pré-cadastro compacto. A moldura (fundo, cartão, fechar, selo, seletor de
+   tipo e botão verde) vem do ContactModal.module.css; o resto é daqui, sem os
+   espaçamentos largos de lá — o formulário tem o dobro de campos. */
+
+/* Computador: mais largo, para os campos irem lado a lado, e nunca mais alto
+   que a tela (rola por dentro se precisar, sem esconder o topo). */
+@media (min-width: 561px) {
+  .modal {
+    max-width: 680px;
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 1.5rem 1.75rem;
+  }
+}
+
+.head {
+  text-align: center;
+  margin-bottom: 1rem;
+  padding: 0 2rem; /* não passa por baixo do botão de fechar */
+}
+
+.head h2 {
+  margin: 0.25rem 0 0.25rem;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.head p {
+  color: #94a3b8;
+  font-size: 0.875rem;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Dois campos por linha; no celular, um embaixo do outro. */
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (max-width: 520px) {
+  .row:not(.rowKeep) {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Tipo de veículo e quantidade na mesma linha, em qualquer tela. */
+.inline {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.inline > .field:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.field > label,
+.label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.optional {
+  font-weight: 400;
+  color: #64748b;
+}
+
+.input {
+  width: 100%;
+  min-width: 0;
+  background: #141c15;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 0.6rem 0.85rem;
+  color: #ffffff;
+  font-size: 0.9375rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+textarea.input {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.input:focus {
+  border-color: var(--color-neon-green);
+  box-shadow: 0 0 0 3px rgba(59, 229, 88, 0.15);
+}
+
+.types button {
+  padding: 0.55rem 0.25rem;
+  white-space: nowrap;
+}
+
+/* Quantidade: − 1 + */
+.stepper {
+  display: flex;
+  align-items: center;
+  height: 42px;
+  background: #141c15;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.stepper button {
+  width: 36px;
+  height: 100%;
+  background: transparent;
+  border: none;
+  color: var(--color-neon-green);
+  font-size: 1.25rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.stepper button:disabled {
+  color: #475569;
+  cursor: not-allowed;
+}
+
+.stepper input {
+  width: 3rem;
+  height: 100%;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  text-align: center;
+  outline: none;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.stepper input::-webkit-outer-spin-button,
+.stepper input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.stepper:focus-within {
+  border-color: var(--color-neon-green);
+}
+
+.linkButton {
+  align-self: flex-start;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--color-neon-green);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.linkButton:hover {
+  text-decoration: underline;
+}
+
+.consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.consent input {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  accent-color: var(--color-neon-green);
+}
+
+/* A opção da lista de pré-lançamento: destacada, é a oferta. */
+.launchOption {
+  padding: 0.6rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid rgba(59, 229, 88, 0.4);
+  background: rgba(59, 229, 88, 0.08);
+}
+
+.launchOption strong {
+  color: #ffffff;
+}
+
+.error {
+  margin: 0;
+  padding: 0.6rem 0.9rem;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fecaca;
+  font-size: 0.875rem;
+}
+
+.submit {
+  margin-top: 0.25rem;
+  padding: 0.85rem 1.5rem;
+}
+
+/* Botão de enviar sem os dados obrigatórios: apagado. */
+.submit:disabled,
+.submit:disabled:hover {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Fora da tela (não display:none: alguns robôs pulam o que não aparece). */
+.honeypot {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* --- Enviado --- */
+
+.done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  text-align: center;
+  padding: 0.5rem 0;
+}
+
+.done h2 {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.done p {
+  color: #cbd5e1;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.done a {
+  color: var(--color-neon-green);
+}
+
+.done button {
+  align-self: stretch;
+}
+
+.doneIcon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--color-neon-soft);
+  border: 1px solid var(--color-neon-green);
+  color: var(--color-neon-green);
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.done .muted {
+  font-size: 0.8125rem;
+  color: #94a3b8;
+}
+
+/* Celular: a folha que sobe de baixo (ContactModal) com menos respiro, para
+   caber sem rolar na maioria dos aparelhos. */
+@media (max-width: 560px) {
+  .modal {
+    padding: 1.1rem 1.1rem calc(1rem + env(safe-area-inset-bottom));
+  }
+
+  .head {
+    margin-bottom: 0.75rem;
+  }
+
+  .head h2 {
+    font-size: 1.35rem;
+  }
+
+  /* O "responde por e-mail" também está na confirmação. */
+  .head p {
+    display: none;
+  }
+
+  .form {
+    gap: 0.65rem;
+  }
+}

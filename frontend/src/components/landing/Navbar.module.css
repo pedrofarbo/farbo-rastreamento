@@ -92,6 +92,9 @@
 }
 
 .ctaButton {
+  /* Também é link (pré-lançamento): sem sublinhado, com cara de botão. */
+  display: inline-block;
+  text-decoration: none;
   background: var(--color-neon-green);
   color: #060907;
   border: none;
@@ -105,6 +108,7 @@
 }
 
 .ctaButton:hover {
+  text-decoration: none;
   background: var(--color-neon-green-hover);
   transform: translateY(-1px);
   box-shadow: 0 0 25px rgba(59, 229, 88, 0.55);
@@ -270,6 +274,8 @@
     display: block;
     width: 100%;
     margin-top: 1rem;
+    text-align: center;
+    text-decoration: none;
     background: var(--color-neon-green);
     color: #060907;
     border: none;

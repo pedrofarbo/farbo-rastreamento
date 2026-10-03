@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { WHATSAPP_NUMBER } from '@/config/contact';
+
 import styles from './ContactModal.module.css';
 import { useModalBehavior } from './useModalBehavior';
 
@@ -32,7 +34,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
       `• Qtd de veículos: ${vehicleCount}\n` +
       `• Telefone: ${phone || 'Não informado'}`
     );
-    window.open(`https://wa.me/5511999999999?text=${message}`, '_blank');
+    window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${message}`, '_blank');
     onClose();
   };
 

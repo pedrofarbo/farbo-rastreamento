@@ -153,6 +153,8 @@ type createCustomerRequest struct {
 	// própria senha — o caminho recomendado. Veículos e assinaturas entram
 	// depois, pelo fluxo Novo veículo.
 	Password string `json:"password"`
+	// LeadID: o pré-cliente de onde veio o cadastro, que passa a convertido.
+	LeadID *uuid.UUID `json:"leadId"`
 }
 
 func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +199,13 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.recordBillingAudit(r, audit.ActionCustomerCreated,
-		map[string]any{"customerId": user.ID, "email": user.Email, "invite": invite})
+		map[string]any{"customerId": user.ID, "email": user.Email, "invite": invite, "leadId": req.LeadID})
+	if req.LeadID != nil && s.Leads != nil {
+		if err := s.Leads.Repo().MarkConverted(r.Context(), *req.LeadID, user.ID); err != nil {
+			s.Log.Error("cliente cadastrado, mas o pré-cliente não foi marcado como convertido",
+				"lead", *req.LeadID, "customer", user.ID, "err", err)
+		}
+	}
 
 	detail, err := s.customerDetail(r.Context(), user.ID)
 	if err != nil {

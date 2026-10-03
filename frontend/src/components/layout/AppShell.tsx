@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { NavLink, Outlet } from 'react-router-dom';
 
-import { meApi } from '@/api/resources';
+import { leadsApi, meApi, whatsappApi } from '@/api/resources';
 import { Spinner } from '@/components/ui/Spinner';
 import { useRealtime } from '@/hooks/useRealtime';
 import { useAuth } from '@/stores/AuthContext';
@@ -28,6 +28,22 @@ export function AppShell() {
     refetchInterval: 5 * 60_000,
   });
   const overdue = account.data?.overdueInvoices ?? 0;
+  // Para a central, as conversas do WhatsApp esperando alguém da equipe.
+  const whatsapp = useQuery({
+    queryKey: ['whatsapp', 'status'],
+    queryFn: whatsappApi.status,
+    enabled: canOperate,
+    refetchInterval: 30_000,
+  });
+  const waiting = whatsapp.data?.attention ?? 0;
+  // Para o admin, os pré-clientes que ninguém atendeu ainda.
+  const leadStats = useQuery({
+    queryKey: ['leads', 'stats'],
+    queryFn: leadsApi.stats,
+    enabled: canManage,
+    refetchInterval: 60_000,
+  });
+  const newLeads = leadStats.data?.new ?? 0;
   const { connected } = useRealtime();
   const { theme, toggle } = useTheme();
 
@@ -84,14 +100,29 @@ export function AppShell() {
                 Cercas
               </NavLink>
               {canOperate && (
-                <NavLink to="/pedidos" className={navClass}>
-                  Pedidos
-                </NavLink>
+                <>
+                  <NavLink to="/pedidos" className={navClass}>
+                    Pedidos
+                  </NavLink>
+                  <NavLink to="/atendimento" className={navClass}>
+                    Atendimento
+                    {waiting > 0 && (
+                      <span className={styles.navBadge} title={`${waiting} conversa(s) esperando a equipe`}>
+                        {waiting}
+                      </span>
+                    )}
+                  </NavLink>
+                </>
               )}
               {canManage && (
                 <>
                   <NavLink to="/clientes" className={navClass}>
                     Clientes
+                    {newLeads > 0 && (
+                      <span className={styles.navBadge} title={`${newLeads} pré-cliente(s) novo(s)`}>
+                        {newLeads}
+                      </span>
+                    )}
                   </NavLink>
                   <NavLink to="/prestadores" className={navClass}>
                     Prestadores

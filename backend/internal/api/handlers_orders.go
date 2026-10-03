@@ -16,6 +16,10 @@ import (
 // codeAddressRequired acompanha o 409 da contratação sem endereço de entrega.
 const codeAddressRequired = "ADDRESS_REQUIRED"
 
+// codePromoUnavailable: pediu a promoção de pré-lançamento sem ter direito
+// (o painel volta a mostrar os preços normais).
+const codePromoUnavailable = "PROMO_UNAVAILABLE"
+
 // catalogView é a tabela de preços em JSON.
 type catalogView struct {
 	PlanName            string `json:"planName"`
@@ -24,6 +28,9 @@ type catalogView struct {
 	EquipmentName       string `json:"equipmentName"`
 	EquipmentPriceCents int    `json:"equipmentPriceCents"`
 	SetupDueDays        int    `json:"setupDueDays"`
+	// LaunchPromo: o cliente pode contratar com a promoção de
+	// pré-lançamento (nulo: não pode, ou não é cliente).
+	LaunchPromo *orders.PromoOffer `json:"launchPromo"`
 }
 
 // handleCatalog devolve os preços de um rastreador novo. Para o cliente, o
@@ -42,6 +49,11 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 					break
 				}
 			}
+		}
+		if promo, err := s.Orders.PromoFor(r.Context(), customerID); err == nil && promo.Eligible {
+			// A mensalidade da promoção no plano dele (o do Insanos MC tem a sua).
+			promo.Offer.MonthlyCents = c.LaunchPromo.MonthlyFor(view.PlanName)
+			view.LaunchPromo = &promo.Offer
 		}
 	}
 	writeJSON(w, http.StatusOK, view)
@@ -62,6 +74,8 @@ func writeOrderError(w http.ResponseWriter, r *http.Request, err error, notFound
 	case errors.Is(err, orders.ErrHasOverdue), errors.Is(err, orders.ErrTooManyPending),
 		errors.Is(err, orders.ErrSubscriptionTaken), errors.Is(err, orders.ErrVehicleHasSubscription):
 		writeError(w, http.StatusConflict, err.Error())
+	case errors.As(err, new(orders.PromoUnavailable)):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error(), "code": codePromoUnavailable})
 	case errors.Is(err, orders.ErrAddressRequired):
 		// O código leva o painel direto ao cadastro do endereço.
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error(), "code": codeAddressRequired})
@@ -83,6 +97,9 @@ type adminTrackerOrderRequest struct {
 	EquipmentCents int                       `json:"equipmentCents"`
 	SetupDueDate   *billing.Date             `json:"setupDueDate"`
 	Plan           billing.SubscriptionInput `json:"plan"`
+	// LaunchPromo aplica a promoção de pré-lançamento (o cliente precisa ter
+	// direito; ver /customers/{id}/launch-promo).
+	LaunchPromo bool `json:"launchPromo"`
 }
 
 func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request) {
@@ -98,6 +115,7 @@ func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request)
 
 	result, err := s.Orders.Place(r.Context(), customerID, orders.Order{
 		Vehicle: req.Vehicle, EquipmentCents: req.EquipmentCents, SetupDueDate: req.SetupDueDate, Plan: req.Plan,
+		LaunchPromo: req.LaunchPromo,
 	})
 	if err != nil {
 		writeOrderError(w, r, err, "cliente não encontrado")
@@ -111,6 +129,9 @@ func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request)
 // só o veículo; equipamento e plano vêm do catálogo e da conta dele.
 type customerTrackerOrderRequest struct {
 	Vehicle vehicles.Input `json:"vehicle"`
+	// LaunchPromo: o painel mostrou os preços da promoção (catálogo) e o
+	// cliente confirmou com eles.
+	LaunchPromo bool `json:"launchPromo"`
 }
 
 func (s *Server) handleMyOrderTracker(w http.ResponseWriter, r *http.Request) {
@@ -121,7 +142,7 @@ func (s *Server) handleMyOrderTracker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	order, err := s.Orders.CustomerOrder(r.Context(), customerID, req.Vehicle)
+	order, err := s.Orders.CustomerOrder(r.Context(), customerID, req.Vehicle, req.LaunchPromo)
 	if err != nil {
 		writeOrderError(w, r, err, "cliente não encontrado")
 		return
@@ -146,6 +167,9 @@ func (s *Server) orderPlaced(r *http.Request, customerID string, result *orders.
 	if result.SetupInvoice != nil {
 		meta["setupInvoiceId"] = result.SetupInvoice.ID
 		meta["setupCents"] = result.SetupInvoice.AmountCents
+	}
+	if result.Subscription.PromoPriceCents != nil {
+		meta["launchPromo"] = true
 	}
 	s.recordAudit(r, audit.ActionTrackerOrdered, &result.Vehicle.ID, result.Vehicle.DeviceID, meta)
 }
@@ -227,4 +251,29 @@ func (s *Server) handleReactivateSubscription(w http.ResponseWriter, r *http.Req
 		"plan": sub.PlanName, "priceCents": sub.PriceCents,
 	})
 	writeJSON(w, http.StatusCreated, sub)
+}
+
+// handleCustomerLaunchPromo: a central vê se o cliente pode contratar com a
+// promoção de pré-lançamento (e por que não).
+func (s *Server) handleCustomerLaunchPromo(w http.ResponseWriter, r *http.Request) {
+	customerID, ok := s.customerFromURL(w, r)
+	if !ok {
+		return
+	}
+	status, err := s.Orders.PromoFor(r.Context(), customerID)
+	if err != nil {
+		handleStoreError(w, err, "cliente não encontrado")
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+// handleLaunchPromoUsage: vagas da promoção usadas e o total.
+func (s *Server) handleLaunchPromoUsage(w http.ResponseWriter, r *http.Request) {
+	usage, err := s.Orders.PromoUsage(r.Context())
+	if err != nil {
+		handleStoreError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusOK, usage)
 }

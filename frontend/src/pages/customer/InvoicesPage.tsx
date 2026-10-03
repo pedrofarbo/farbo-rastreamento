@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { meApi } from '@/api/resources';
 import billing from '@/components/billing/Billing.module.css';
 import { InvoiceStatus } from '@/components/billing/InvoiceStatus';
+import { MonthlyPrice } from '@/components/billing/MonthlyPrice';
 import { PixPaymentModal } from '@/components/billing/PixPaymentModal';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -166,7 +167,9 @@ export function InvoicesPage() {
                   {(subscriptions.data ?? []).map((subscription) => (
                     <tr key={subscription.id}>
                       <td>{subscription.planName}</td>
-                      <td data-label="Valor mensal" className={billing.amount}>{formatMoney(subscription.priceCents)}</td>
+                      <td data-label="Valor mensal">
+                        <MonthlyPrice sub={subscription} />
+                      </td>
                       <td data-label="Vencimento">todo dia {subscription.dueDay}</td>
                       <td data-label="Situação">
                         {subscription.status === 'ACTIVE' ? (

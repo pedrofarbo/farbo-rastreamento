@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+
+import { LAUNCH_ANCHOR, PRE_LAUNCH, SOCIAL_SECTION } from '@/config/landing';
+
 import { ClientAreaLink } from './ClientAreaLink';
 import styles from './Navbar.module.css';
 
@@ -70,21 +73,30 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenModal }) => {
           <a href="#beneficios" onClick={closeMenu}>Benefícios</a>
           <a href="#planos" onClick={closeMenu}>Planos</a>
           <a href="#como-funciona" onClick={closeMenu}>Como funciona</a>
-          <a href="#depoimentos" onClick={closeMenu}>Depoimentos</a>
+          {/* No pré-lançamento o botão do menu já leva à seção da lista. */}
+          {!PRE_LAUNCH && (
+            <a href={`#${SOCIAL_SECTION.id}`} onClick={closeMenu}>{SOCIAL_SECTION.label}</a>
+          )}
           <a href="#contato" onClick={closeMenu}>Contato</a>
           <ClientAreaLink className={styles.mobileLoginLink} onClick={closeMenu}>
             <UserIcon />
             Área do cliente
           </ClientAreaLink>
-          <button
-            className={styles.mobileCtaBtn}
-            onClick={() => {
-              closeMenu();
-              onOpenModal('Quero meu rastreador');
-            }}
-          >
-            Quero meu rastreador
-          </button>
+          {PRE_LAUNCH ? (
+            <a className={styles.mobileCtaBtn} href={LAUNCH_ANCHOR} onClick={closeMenu}>
+              Pré-lançamento
+            </a>
+          ) : (
+            <button
+              className={styles.mobileCtaBtn}
+              onClick={() => {
+                closeMenu();
+                onOpenModal('Quero meu rastreador');
+              }}
+            >
+              Quero meu rastreador
+            </button>
+          )}
         </nav>
 
         <div className={styles.rightActions}>
@@ -93,12 +105,18 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenModal }) => {
             <span>Área do cliente</span>
           </ClientAreaLink>
 
-          <button
-            className={styles.ctaButton}
-            onClick={() => onOpenModal('Quero meu rastreador')}
-          >
-            Quero meu rastreador
-          </button>
+          {PRE_LAUNCH ? (
+            <a className={styles.ctaButton} href={LAUNCH_ANCHOR}>
+              Pré-lançamento
+            </a>
+          ) : (
+            <button
+              className={styles.ctaButton}
+              onClick={() => onOpenModal('Quero meu rastreador')}
+            >
+              Quero meu rastreador
+            </button>
+          )}
 
           <button
             className={styles.hamburger}

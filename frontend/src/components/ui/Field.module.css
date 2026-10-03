@@ -42,6 +42,51 @@
   }
 }
 
+/* Senha: o "olhinho" fica dentro do campo, à direita. */
+.password {
+  position: relative;
+}
+
+.password .input {
+  padding-right: 44px;
+}
+
+.reveal {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.reveal:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.reveal:focus-visible {
+  outline-offset: -4px;
+}
+
+.reveal:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (pointer: coarse) {
+  .reveal {
+    width: 44px;
+  }
+}
+
 .textarea {
   min-height: 72px;
   resize: vertical;

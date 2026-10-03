@@ -1,0 +1,644 @@
+/* Ilustrações do passo a passo. Todas num ciclo de 7 s:
+     até ~56%  a etapa acontece (campos, pedido, chip, viagem, conversa, trajeto)
+     56–94%   o resultado aparece e fica (convite, Pix pago, pronto, entregue…)
+     94–100%  some, e o ciclo recomeça
+   Os estilos fora dos keyframes são a cena final (reduzir movimento). */
+
+.scene {
+  --loop: 7s;
+  --green: var(--color-neon-green);
+  --amber: #f0b43c;
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 150px;
+  overflow: visible;
+}
+
+/* --- Traços e preenchimentos --- */
+
+.panel {
+  fill: #101711;
+  stroke: rgba(203, 213, 225, 0.22);
+  stroke-width: 1.5;
+}
+
+.panelStrong {
+  fill: #141c15;
+  stroke: rgba(203, 213, 225, 0.55);
+  stroke-width: 1.5;
+}
+
+.field {
+  fill: rgba(255, 255, 255, 0.04);
+  stroke: rgba(203, 213, 225, 0.32);
+  stroke-width: 1.2;
+}
+
+.line {
+  fill: none;
+  stroke: #cbd5e1;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lineMuted {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.divider {
+  fill: none;
+  stroke: rgba(203, 213, 225, 0.16);
+  stroke-width: 1;
+}
+
+.dot {
+  fill: rgba(255, 255, 255, 0.18);
+}
+
+.bar {
+  fill: rgba(226, 232, 240, 0.72);
+}
+
+.barMuted {
+  fill: rgba(255, 255, 255, 0.16);
+}
+
+.barAmber {
+  fill: rgba(240, 180, 60, 0.65);
+}
+
+.lightFill {
+  fill: #cbd5e1;
+}
+
+.greenFill {
+  fill: var(--green);
+}
+
+.amberFill {
+  fill: var(--amber);
+}
+
+.alertFill {
+  fill: #ef4444;
+}
+
+.inkFill {
+  fill: #060907;
+}
+
+.greenStroke {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.inkStroke {
+  fill: none;
+  stroke: #060907;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.whiteStroke {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.wheel {
+  fill: #0a0f0b;
+  stroke: #cbd5e1;
+  stroke-width: 1.8;
+}
+
+.window {
+  fill: rgba(59, 229, 88, 0.14);
+  stroke: rgba(203, 213, 225, 0.55);
+  stroke-width: 1.2;
+}
+
+.door {
+  fill: rgba(255, 255, 255, 0.05);
+  stroke: rgba(203, 213, 225, 0.55);
+  stroke-width: 1.2;
+}
+
+.label {
+  fill: var(--green);
+  font: 800 10px Inter, system-ui, sans-serif;
+  letter-spacing: 0.5px;
+}
+
+.labelAmber {
+  fill: var(--amber);
+  font: 800 10px Inter, system-ui, sans-serif;
+}
+
+.bubbleMine {
+  fill: rgba(59, 229, 88, 0.16);
+  stroke: rgba(59, 229, 88, 0.55);
+  stroke-width: 1.2;
+}
+
+.bubbleTheirs {
+  fill: rgba(255, 255, 255, 0.06);
+  stroke: rgba(203, 213, 225, 0.4);
+  stroke-width: 1.2;
+}
+
+.bubbleAmber {
+  fill: rgba(240, 180, 60, 0.12);
+  stroke: rgba(240, 180, 60, 0.6);
+  stroke-width: 1.2;
+}
+
+/* Pedido */
+
+.qrBack {
+  fill: #e2e8f0;
+}
+
+.qr rect {
+  fill: #0a0f0b;
+}
+
+.qr .qrFinder {
+  fill: none;
+  stroke: #0a0f0b;
+  stroke-width: 2.4;
+}
+
+/* Preparo */
+
+.chipBody {
+  fill: #141c15;
+  stroke: #cbd5e1;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.chipGold {
+  fill: #e0b84a;
+}
+
+.chipLines {
+  fill: none;
+  stroke: #141c15;
+  stroke-width: 1;
+}
+
+.trackerBody {
+  fill: #0b0f0c;
+  stroke: var(--green);
+  stroke-width: 2;
+}
+
+.slot {
+  fill: #060907;
+  stroke: rgba(203, 213, 225, 0.5);
+  stroke-width: 1;
+}
+
+.track {
+  fill: rgba(255, 255, 255, 0.08);
+}
+
+.todo {
+  fill: none;
+  stroke: rgba(203, 213, 225, 0.35);
+  stroke-width: 1.5;
+}
+
+.gearTeeth {
+  fill: none;
+  stroke: #cbd5e1;
+  stroke-width: 4.5;
+  /* Dentes: o contorno tracejado (2π·10 ÷ 9 dentes ≈ 6,98). */
+  stroke-dasharray: 3.49 3.49;
+}
+
+.gearBody {
+  fill: #141c15;
+  stroke: #cbd5e1;
+  stroke-width: 1.8;
+}
+
+.gearHole {
+  fill: #060907;
+  stroke: #cbd5e1;
+  stroke-width: 1.2;
+}
+
+/* Envio */
+
+.road {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 2;
+  stroke-dasharray: 5 6;
+}
+
+/* Instalação */
+
+.avatar {
+  fill: rgba(255, 255, 255, 0.06);
+  stroke: rgba(203, 213, 225, 0.45);
+  stroke-width: 1.2;
+}
+
+.picked {
+  fill: rgba(240, 180, 60, 0.1);
+  stroke: var(--amber);
+  stroke-width: 1.5;
+}
+
+.checkDraw {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Tempo real */
+
+.phone {
+  fill: #0a0f0b;
+  stroke: #cbd5e1;
+  stroke-width: 2;
+}
+
+.screen {
+  fill: rgba(59, 229, 88, 0.05);
+}
+
+.street {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.09);
+  stroke-width: 5;
+}
+
+.origin {
+  fill: #0a0f0b;
+  stroke: var(--green);
+  stroke-width: 1.5;
+}
+
+.car {
+  fill: var(--green);
+  stroke: #060907;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 3px rgba(59, 229, 88, 0.8));
+}
+
+.toggleTrack {
+  fill: var(--green);
+}
+
+.toggleKnob {
+  fill: #ffffff;
+}
+
+/* --- Animação --- */
+
+/* Aparece na sua vez (in04 … in70: começa em 4% … 70% do ciclo) e fica até
+   o fim. */
+.pop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation-duration: var(--loop);
+  animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation-iteration-count: infinite;
+}
+
+.in04 { animation-name: in04; }
+.in10 { animation-name: in10; }
+.in16 { animation-name: in16; }
+.in22 { animation-name: in22; }
+.in28 { animation-name: in28; }
+.in34 { animation-name: in34; }
+.in40 { animation-name: in40; }
+.in46 { animation-name: in46; }
+.in58 { animation-name: in58; }
+.in64 { animation-name: in64; }
+.in70 { animation-name: in70; }
+
+/* Campos sendo digitados, um depois do outro. */
+.type {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation-duration: var(--loop);
+  animation-iteration-count: infinite;
+}
+
+.typeA { animation-name: typeA; }
+.typeB { animation-name: typeB; }
+.typeC { animation-name: typeC; }
+
+.press {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: press var(--loop) ease-in-out infinite;
+}
+
+/* A linha do envio até o e-mail (pathLength = 1: o traço vai de 1 a 0). */
+.send {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  opacity: 0.8;
+  animation: send var(--loop) ease-in-out infinite;
+}
+
+.scan {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  opacity: 0;
+  filter: drop-shadow(0 0 3px rgba(59, 229, 88, 0.9));
+  animation: scan var(--loop) linear infinite;
+}
+
+.chip {
+  animation: chip var(--loop) ease-out infinite;
+}
+
+.gear {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: gear var(--loop) ease-in-out infinite;
+}
+
+.progress {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: progress var(--loop) ease-in-out infinite;
+}
+
+.ledBoot {
+  fill: var(--green);
+  animation: ledBoot var(--loop) step-end infinite;
+}
+
+/* Caminhão e o rastro na estrada andam juntos (mesmos tempos e curva). */
+.truck {
+  animation: truck var(--loop) ease-in-out infinite;
+}
+
+.trail {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: trail var(--loop) ease-in-out infinite;
+}
+
+/* O trajeto e o carro andam juntos: tempos proporcionais a cada trecho. */
+.route {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  animation: route var(--loop) linear infinite;
+}
+
+.car {
+  animation: car var(--loop) linear infinite;
+}
+
+.pulse {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 1.5;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pulse var(--loop) ease-out infinite;
+}
+
+.shackle {
+  animation: shackle var(--loop) ease-in-out infinite;
+}
+
+.toggleTrack {
+  animation: toggleTrack var(--loop) ease-in-out infinite;
+}
+
+.toggleKnob {
+  animation: toggleKnob var(--loop) ease-in-out infinite;
+}
+
+/* --- Linhas do tempo --- */
+
+@keyframes in04 {
+  0%, 4% { opacity: 0; transform: translateY(6px) scale(0.85); }
+  10%, 94% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: none; }
+}
+
+@keyframes in10 {
+  0%, 10% { opacity: 0; transform: translateY(6px) scale(0.85); }
+  16%, 94% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: none; }
+}
+
+@keyframes in16 {
+  0%, 16% { opacity: 0; transform: translateY(6px) scale(0.85); }
+  22%, 94% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: none; }
+}
+
+@keyframes in22 {
+  0%, 22% { opacity: 0; transform: translateY(6px) scale(0.85); }
+  28%, 94% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: none; }
+}
+
+@keyframes in28 {
+  0%, 28% { opacity: 0; transform: translateY(6px) scale(0.85); }
+  34%, 94% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: none; }
+}
+
+@keyframes in34 {
+  0%, 34% { opacity: 0; transform: translateY(6px) scale(0.85); }
+  40%, 94% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: none; }
+}
+
+@keyframes in40 {
+  0%, 40% { opacity: 0; transform: translateY(6px) scale(0.85); }
+  46%, 94% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: none; }
+}
+
+@keyframes in46 {
+  0%, 46% { opacity: 0; transform: translateY(6px) scale(0.85); }
+  52%, 94% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: none; }
+}
+
+@keyframes in58 {
+  0%, 58% { opacity: 0; transform: translateY(6px) scale(0.85); }
+  64%, 94% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: none; }
+}
+
+@keyframes in64 {
+  0%, 64% { opacity: 0; transform: translateY(6px) scale(0.85); }
+  70%, 94% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: none; }
+}
+
+@keyframes in70 {
+  0%, 70% { opacity: 0; transform: translateY(6px) scale(0.85); }
+  76%, 94% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: none; }
+}
+
+/* Digitação: cresce aos saltos, como letras entrando. */
+@keyframes typeA {
+  0%, 6% { opacity: 1; transform: scaleX(0); animation-timing-function: steps(7, end); }
+  16%, 94% { opacity: 1; transform: scaleX(1); animation-timing-function: ease; }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+@keyframes typeB {
+  0%, 16% { opacity: 1; transform: scaleX(0); animation-timing-function: steps(8, end); }
+  26%, 94% { opacity: 1; transform: scaleX(1); animation-timing-function: ease; }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+@keyframes typeC {
+  0%, 26% { opacity: 1; transform: scaleX(0); animation-timing-function: steps(6, end); }
+  36%, 94% { opacity: 1; transform: scaleX(1); animation-timing-function: ease; }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+@keyframes press {
+  0%, 46% { transform: none; }
+  48% { transform: scale(0.92); }
+  52%, 100% { transform: none; }
+}
+
+/* Escondida até começar: com a ponta arredondada, o traço "vazio" ainda
+   deixaria um ponto no fim da linha. */
+@keyframes send {
+  0%, 50% { stroke-dashoffset: 1; opacity: 0; }
+  50.5% { stroke-dashoffset: 1; opacity: 0.8; }
+  62%, 94% { stroke-dashoffset: 0; opacity: 0.8; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+/* O leitor passa pelo QR Code (pagamento) antes do "pago". */
+@keyframes scan {
+  0%, 49% { opacity: 0; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(0); }
+  62% { opacity: 1; transform: translateY(52px); }
+  64%, 100% { opacity: 0; transform: translateY(52px); }
+}
+
+@keyframes chip {
+  0%, 6% { opacity: 0; transform: translateY(-24px); }
+  14% { opacity: 1; transform: translateY(2px); }
+  18%, 94% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: none; }
+}
+
+@keyframes gear {
+  0%, 28% { transform: rotate(0deg); }
+  62%, 100% { transform: rotate(360deg); }
+}
+
+@keyframes progress {
+  0%, 28% { opacity: 1; transform: scaleX(0); }
+  62%, 94% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+/* Apagado até o rastreador ficar pronto. */
+@keyframes ledBoot {
+  0% { fill: #475569; }
+  62% { fill: var(--green); }
+}
+
+@keyframes truck {
+  0% { opacity: 0; transform: translateX(-78px); }
+  4%, 22% { opacity: 1; transform: translateX(-78px); }
+  68%, 94% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: none; }
+}
+
+@keyframes trail {
+  0%, 22% { opacity: 1; transform: scaleX(0); }
+  68%, 94% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+@keyframes route {
+  0%, 8% { opacity: 1; stroke-dashoffset: 1; }
+  56%, 94% { opacity: 1; stroke-dashoffset: 0; }
+  100% { opacity: 0; stroke-dashoffset: 0; }
+}
+
+/* Trajeto M40,98 V70 H62 V40 H74 (92 de comprimento) entre 8% e 56%: cada
+   ponto de virada no tempo proporcional à distância já percorrida. O carro
+   está desenhado no fim do trajeto (74,40). */
+@keyframes car {
+  0% { opacity: 0; transform: translate(-34px, 58px); }
+  4%, 8% { opacity: 1; transform: translate(-34px, 58px); }
+  22.6% { transform: translate(-34px, 30px); }
+  34.1% { transform: translate(-12px, 30px); }
+  49.7% { transform: translate(-12px, 0); }
+  56%, 94% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: none; }
+}
+
+@keyframes pulse {
+  0%, 56% { opacity: 0; transform: scale(1); }
+  57% { opacity: 0.9; transform: scale(1); }
+  68% { opacity: 0; transform: scale(3.2); }
+  69%, 71% { opacity: 0; transform: scale(1); }
+  72% { opacity: 0.9; transform: scale(1); }
+  83%, 100% { opacity: 0; transform: scale(3.2); }
+}
+
+/* Bloqueio: o cadeado fecha e a chave liga. */
+@keyframes shackle {
+  0%, 78% { transform: translateY(-3px); }
+  84%, 100% { transform: none; }
+}
+
+@keyframes toggleTrack {
+  0%, 78% { fill: rgba(255, 255, 255, 0.2); }
+  84%, 100% { fill: var(--green); }
+}
+
+@keyframes toggleKnob {
+  0%, 78% { transform: translateX(-11px); }
+  84%, 100% { transform: none; }
+}
+
+/* Reduzir movimento: a cena final, parada. */
+@media (prefers-reduced-motion: reduce) {
+  .scene * {
+    animation: none !important;
+  }
+}

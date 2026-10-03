@@ -254,3 +254,29 @@ export function todayISO(): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
+
+/**
+ * Máscara do WhatsApp enquanto a pessoa digita: "11999998888" →
+ * "(11) 99999-8888" (fixo: "(11) 3333-4444"). Com `previous`, apagar um
+ * caractere da máscara (o hífen, o parêntese) apaga o dígito antes dele, em
+ * vez de a máscara pôr o caractere de volta.
+ */
+export function formatPhoneInput(value: string, previous = ''): string {
+  let d = value.replace(/\D/g, '');
+  if (value.length < previous.length && d === previous.replace(/\D/g, '')) d = d.slice(0, -1);
+  if (d.startsWith('55') && d.length > 11) d = d.slice(2);
+  d = d.slice(0, 11);
+  if (d.length === 0) return '';
+  if (d.length <= 2) return `(${d}`;
+  const ddd = d.slice(0, 2);
+  const rest = d.slice(2);
+  if (rest.length <= 4) return `(${ddd}) ${rest}`;
+  const split = rest.length === 9 ? 5 : 4;
+  return `(${ddd}) ${rest.slice(0, split)}-${rest.slice(split)}`;
+}
+
+/** WhatsApp com DDD completo (10 ou 11 dígitos). */
+export function isPhoneComplete(value: string): boolean {
+  const d = value.replace(/\D/g, '');
+  return d.length >= 10 && d.length <= 13;
+}

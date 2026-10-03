@@ -63,6 +63,15 @@ const (
 	ActionPaymentRefundAsked   = "PAYMENT_REFUND_REQUESTED"
 	ActionPaymentRefunded      = "PAYMENT_REFUNDED"
 	ActionPaymentDisputed      = "PAYMENT_DISPUTED"
+
+	// Atendimento pelo WhatsApp: resposta da equipe e quem responde a conversa.
+	ActionWhatsAppMessageSent = "WHATSAPP_MESSAGE_SENT"
+	ActionWhatsAppModeChanged = "WHATSAPP_MODE_CHANGED"
+
+	// Pré-clientes: a equipe muda a situação ou anota.
+	ActionLeadUpdated = "LEAD_UPDATED"
+	// Lista de lançamento: alguém pediu para sair.
+	ActionWaitlistRemoved = "WAITLIST_REMOVED"
 	// ActionPaymentUnmatched: Pix pago para fatura que não estava mais em
 	// aberto — precisa de revisão (devolver ou aproveitar o valor).
 	ActionPaymentUnmatched = "PAYMENT_UNMATCHED"
