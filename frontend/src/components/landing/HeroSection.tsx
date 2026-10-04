@@ -31,7 +31,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenModal }) => {
 
           {/* No pré-lançamento, o convite é entrar na lista (com a promoção). */}
           {PRE_LAUNCH ? (
-            <a className={styles.heroCtaBtn} href={LAUNCH_ANCHOR}>
+            <a className={styles.heroCtaBtn} href={LAUNCH_ANCHOR} data-analytics="hero-pre-lancamento">
               Entrar no pré-lançamento
             </a>
           ) : (

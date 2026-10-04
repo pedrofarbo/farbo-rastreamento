@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { publicApi } from '@/api/resources';
 import { CONTACT_EMAIL } from '@/config/contact';
 import { LAUNCH_OFFER, PRE_LAUNCH } from '@/config/landing';
+import { track } from '@/services/analytics';
 import { formatPhoneInput, isPhoneComplete } from '@/services/format';
 import type { LeadVehicleType } from '@/types';
 
@@ -99,6 +100,7 @@ export const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, defaultPl
         joinLaunch: PRE_LAUNCH && joinLaunch,
       });
       setSent(true);
+      track('lead_submit', plan);
     } catch (err) {
       setError(
         err instanceof Error && err.message

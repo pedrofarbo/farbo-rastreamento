@@ -83,7 +83,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenModal }) => {
             Área do cliente
           </ClientAreaLink>
           {PRE_LAUNCH ? (
-            <a className={styles.mobileCtaBtn} href={LAUNCH_ANCHOR} onClick={closeMenu}>
+            <a className={styles.mobileCtaBtn} href={LAUNCH_ANCHOR} onClick={closeMenu} data-analytics="menu-pre-lancamento">
               Pré-lançamento
             </a>
           ) : (
@@ -106,7 +106,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenModal }) => {
           </ClientAreaLink>
 
           {PRE_LAUNCH ? (
-            <a className={styles.ctaButton} href={LAUNCH_ANCHOR}>
+            <a className={styles.ctaButton} href={LAUNCH_ANCHOR} data-analytics="menu-pre-lancamento">
               Pré-lançamento
             </a>
           ) : (

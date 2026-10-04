@@ -40,6 +40,7 @@ export const Footer: React.FC = () => {
             <a
               className={styles.social}
               href={INSTAGRAM_URL}
+              data-analytics="instagram"
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`Instagram da Farbo Rastreadores (@${INSTAGRAM_HANDLE}), abre em nova aba`}
@@ -75,7 +76,7 @@ export const Footer: React.FC = () => {
             <ul>
               {WHATSAPP_NUMBER && <li>WhatsApp: {whatsappDisplay()}</li>}
               <li>
-                E-mail: <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
+                E-mail: <a href={`mailto:${CONTACT_EMAIL}`} data-analytics="email">{CONTACT_EMAIL}</a>
               </li>
               <li>Atendimento Seg-Sáb: 08h às 20h</li>
             </ul>

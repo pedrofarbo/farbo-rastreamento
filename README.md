@@ -482,6 +482,28 @@ Com clientes de verdade para depor, `PRE_LAUNCH = false` em
 `frontend/src/config/landing.ts` traz os depoimentos de volta (seção e link no
 menu e no rodapé); o componente deles continua no código.
 
+**Visitas do site** (**Clientes → Visitas do site**, só admin): as visitas da
+landing, sem Google Analytics, sem cookies e sem dados pessoais. A página
+manda a visita, cada seção a que a pessoa chega, os cliques nos botões
+marcados com `data-analytics`, a abertura e o envio do pré-cadastro e a
+inscrição na lista (`POST /api/public/analytics`, via `sendBeacon`). O
+servidor transforma cada visitante num código, o hash do IP e do navegador
+com um sal que muda todo dia; o IP não é gravado e o sal do dia anterior é
+apagado, então ninguém refaz o código nem segue a pessoa entre dias (por isso
+a mesma pessoa conta uma vez por dia). Robôs ficam de fora. A aba mostra:
+
+- visitantes, visualizações e quem está no site agora;
+- o gráfico por dia (7, 30 ou 90 dias);
+- o funil até o pré-cadastro e a lista;
+- até onde a página é lida;
+- de onde vêm e as campanhas;
+- aparelhos, navegadores e sistemas;
+- os cliques.
+
+Para ver uma campanha, use links com UTM, por exemplo
+`https://farborastreadores.com.br/?utm_source=instagram&utm_campaign=lancamento`.
+As visitas ficam guardadas por 400 dias.
+
 ### Atendimento pelo WhatsApp (IA)
 
 O número de WhatsApp da empresa, pela **API oficial da Meta (Cloud API)**, é
@@ -1089,6 +1111,9 @@ POST   /api/users/:id/invite             (admin) reenvia o convite (o link anter
 POST   /api/auth/forgot-password         {email} → 202 sempre (envia o link se houver conta)
 POST   /api/auth/reset-password/validate {token} → 204, ou 410 se o link não vale mais
 POST   /api/auth/reset-password          {token, password} → 204; 400 senha fraca; 410 link inválido
+
+POST   /api/public/analytics             (público) {name, label, path, referrer, utm*, screenWidth} → 204
+GET    /api/analytics/landing            (admin) ?days= resumo das visitas da landing
 
 GET    /api/me/shares                    (customer) os acessos que o cliente deu
 POST   /api/me/shares                    (customer) {vehicleId, name, email, canBlock}; confirmação vehicle_share

@@ -14,6 +14,7 @@ export const CTASection: React.FC<CTASectionProps> = ({ onOpenModal }) => {
           <button
             className={styles.mainCtaBtn}
             onClick={() => onOpenModal('Quero Proteger Meu Veículo')}
+            data-analytics="cta-final"
           >
             <span>QUERO PROTEGER MEU VEÍCULO</span>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">

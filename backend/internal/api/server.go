@@ -14,6 +14,7 @@ import (
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/addresses"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/alerts"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/analytics"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
@@ -78,6 +79,8 @@ type Deps struct {
 	Push *push.Service
 	// Shares: acessos de terceiros aos veículos dos clientes.
 	Shares *shares.Service
+	// Analytics: visitas da landing page (sem cookies).
+	Analytics *analytics.Service
 	// StepUp: confirmação extra (biometria ou senha) antes de ações
 	// sensíveis. Nil desliga a exigência (só em testes).
 	StepUp       *stepup.Service
@@ -150,6 +153,8 @@ func (s *Server) routes() chi.Router {
 	resetLimiter := newRateLimiter(0.5, 10)
 	// Cadastro de interesse da landing: público, poucos envios por IP.
 	leadLimiter := newRateLimiter(0.05, 5)
+	// Visitas da landing: uma página manda a visita, as seções e os cliques.
+	analyticsLimiter := newRateLimiter(1, 40)
 	// Senha da confirmação extra: além do teto por usuário (stepup).
 	stepUpLimiter := newRateLimiter(0.2, 5)
 
@@ -178,6 +183,10 @@ func (s *Server) routes() chi.Router {
 
 		// Prestadores recomendados para a landing page (público).
 		r.Get("/public/installers", s.handlePublicInstallers)
+		// Visitas da landing (sem cookies nem dados pessoais).
+		if s.Analytics != nil {
+			r.With(analyticsLimiter.middleware).Post("/public/analytics", s.handlePublicAnalytics)
+		}
 		// Cadastro de interesse (pré-cliente) da landing.
 		// E o "me avise quando lançar" (lista de lançamento).
 		if s.Leads != nil {
@@ -327,6 +336,11 @@ func (s *Server) routes() chi.Router {
 						r.With(auth.RequireRole(auth.RoleAdmin)).Get("/provisioning", s.handleDeviceProvisioning)
 					})
 				})
+
+				// Visitas da landing page (admin).
+				if s.Analytics != nil {
+					r.With(auth.RequireRole(auth.RoleAdmin)).Get("/analytics/landing", s.handleLandingAnalytics)
+				}
 
 				// Equipe da central: quem entra no painel e com que perfil.
 				r.Route("/users", func(r chi.Router) {

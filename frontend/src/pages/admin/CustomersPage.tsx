@@ -18,6 +18,7 @@ import type { Lead } from '@/types';
 
 import styles from '../Page.module.css';
 import { LeadsTab } from './LeadsTab';
+import { SiteAnalyticsTab } from './SiteAnalyticsTab';
 import { WaitlistTab } from './WaitlistTab';
 
 interface CustomerDraft {
@@ -49,7 +50,9 @@ export function CustomersPage() {
   const tab = params.get('aba');
   const showLeads = tab === 'pre-clientes';
   const showWaitlist = tab === 'lancamento';
-  const showCustomers = !showLeads && !showWaitlist;
+  // As visitas da landing: o começo do funil (visita → pré-cliente → cliente).
+  const showVisits = tab === 'visitas';
+  const showCustomers = !showLeads && !showWaitlist && !showVisits;
   const leadStats = useQuery({ queryKey: ['leads', 'stats'], queryFn: leadsApi.stats, refetchInterval: 60_000 });
   const newLeads = leadStats.data?.new ?? 0;
 
@@ -158,9 +161,20 @@ export function CustomersPage() {
           >
             Lista de lançamento
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={showVisits}
+            className={`${styles.tab} ${showVisits ? styles.tabActive : ''}`}
+            onClick={() => setParams({ aba: 'visitas' }, { replace: true })}
+          >
+            Visitas do site
+          </button>
         </div>
 
-        {showWaitlist ? (
+        {showVisits ? (
+          <SiteAnalyticsTab />
+        ) : showWaitlist ? (
           <WaitlistTab />
         ) : showLeads ? (
           <LeadsTab

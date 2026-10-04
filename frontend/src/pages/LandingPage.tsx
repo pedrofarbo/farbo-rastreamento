@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Navbar } from '@/components/landing/Navbar';
 import { HeroSection } from '@/components/landing/HeroSection';
 import { PricingSection } from '@/components/landing/PricingSection';
@@ -14,6 +14,7 @@ import { LaunchSection } from '@/components/landing/LaunchSection';
 import { LeadModal } from '@/components/landing/LeadModal';
 import { WHATSAPP_NUMBER } from '@/config/contact';
 import { PRE_LAUNCH } from '@/config/landing';
+import { clickEvent, track, trackPageview } from '@/services/analytics';
 import styles from './LandingPage.module.css';
 
 export const LandingPage: React.FC = () => {
@@ -25,6 +26,45 @@ export const LandingPage: React.FC = () => {
   const handleOpenModal = (plan?: string) => {
     if (plan) setSelectedPlan(plan);
     setModalOpen(true);
+    track('lead_open', plan ?? '');
+  };
+
+  const openInstallers = (filter: 'todos' | 'moto' | 'carro' = 'todos') => {
+    setInstallers(filter);
+    track('installers_open', filter);
+  };
+
+  // A visita, e cada seção a que a pessoa chega (uma vez por visita): mostra
+  // até onde a página é lida.
+  const wrapper = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    trackPageview();
+    const root = wrapper.current;
+    if (!root || typeof IntersectionObserver === 'undefined') return;
+    const seen = new Set<string>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = (entry.target as HTMLElement).dataset.section ?? entry.target.id;
+          if (!entry.isIntersecting || !id || seen.has(id)) continue;
+          seen.add(id);
+          track('section_view', id);
+          observer.unobserve(entry.target);
+        }
+      },
+      { threshold: 0.3 },
+    );
+    root.querySelectorAll('main section[id], footer').forEach((el) => {
+      if (el.tagName === 'FOOTER') (el as HTMLElement).dataset.section = 'rodape';
+      observer.observe(el);
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  // Os botões marcados com data-analytics (um ouvinte só, na página toda).
+  const onClickCapture = (event: React.MouseEvent) => {
+    const hit = clickEvent(event.target as Element);
+    if (hit) track(hit.name, hit.label);
   };
 
   const handleCloseModal = () => {
@@ -32,12 +72,12 @@ export const LandingPage: React.FC = () => {
   };
 
   return (
-    <div className={styles.landingWrapper}>
+    <div className={styles.landingWrapper} ref={wrapper} onClickCapture={onClickCapture}>
       <Navbar onOpenModal={handleOpenModal} />
       <main>
         <HeroSection onOpenModal={handleOpenModal} />
         <PricingSection onOpenModal={handleOpenModal} />
-        <InstallationSection onOpenInstallers={(filter = 'todos') => setInstallers(filter)} />
+        <InstallationSection onOpenInstallers={openInstallers} />
         <FeaturesSection />
         <HowItWorksSection />
         {/* Sem clientes ativos ainda: no lugar dos depoimentos, a lista de quem

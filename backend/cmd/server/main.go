@@ -19,6 +19,7 @@ import (
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/addresses"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/alerts"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/analytics"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/api"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
@@ -275,6 +276,9 @@ func run() error {
 		alertEngine.SetPusher(pushSvc)
 	}
 
+	// Visitas da landing page, sem cookies.
+	analyticsSvc := analytics.NewService(db, log)
+
 	// Acessos de terceiros aos veículos (acompanhar e bloqueio de emergência).
 	sharesSvc := shares.NewService(db, authSvc, mail.NewShareMailer(mailer, cfg.Mail.AppURL), log)
 	if pushSvc.Enabled() {
@@ -297,7 +301,7 @@ func run() error {
 		Support:   supportSvc,
 		Leads: leads.NewService(leads.NewRepository(db),
 			leads.MailNotifier{Mailer: mail.NewLeadMailer(mailer, cfg.Mail.AppURL), To: cfg.Leads.NotifyEmails}, log),
-		Alerts: alertEngine, AlertStore: alertStore, Push: pushSvc, Shares: sharesSvc,
+		Alerts: alertEngine, AlertStore: alertStore, Push: pushSvc, Shares: sharesSvc, Analytics: analyticsSvc,
 		StepUp:    stepup.NewService(db, cfg.StepUp, authSvc),
 		Positions: positionRepo, States: stateStore,
 		Raw: rawRepo, Ingestor: ingestor, Conns: connManager, Registry: registry,
@@ -335,7 +339,7 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, log)
+		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, log)
 	}()
 
 	log.Info("plataforma no ar",
@@ -367,6 +371,7 @@ func runWorkers(
 	retentionSvc *retention.Service,
 	rawRepo *tracking.RawPacketRepository,
 	geocodingSvc *geocoding.Service,
+	analyticsSvc *analytics.Service,
 	log *slog.Logger,
 ) {
 	statusTicker := time.NewTicker(cfg.Tracking.StatusSweepInterval)
@@ -442,6 +447,11 @@ func runWorkers(
 
 		case <-cleanupTicker.C:
 			authSvc.CleanupExpiredTokens(ctx)
+			if removed, err := analyticsSvc.Cleanup(ctx); err != nil {
+				log.Warn("falha ao limpar as visitas antigas da landing", "err", err)
+			} else if removed > 0 {
+				log.Info("visitas antigas da landing removidas", "count", removed)
+			}
 			geocodingSvc.PurgeExpired()
 			cutoff := time.Now().Add(-30 * 24 * time.Hour)
 			if removed, err := rawRepo.DeleteOlderThan(ctx, cutoff); err != nil {

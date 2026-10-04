@@ -33,7 +33,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
                 por cliente.
               </span>
             </div>
-            <a className={styles.launchBannerBtn} href={LAUNCH_ANCHOR}>
+            <a className={styles.launchBannerBtn} href={LAUNCH_ANCHOR} data-analytics="planos-banner">
               Quero me cadastrar
             </a>
           </div>
@@ -104,7 +104,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
             </ul>
 
             {PRE_LAUNCH ? (
-              <a className={styles.neonBtn} href={LAUNCH_ANCHOR}>
+              <a className={styles.neonBtn} href={LAUNCH_ANCHOR} data-analytics="plano-mensal">
                 Garantir preço de pré-lançamento
               </a>
             ) : (
@@ -206,6 +206,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
             <button
               className={styles.neonBtn}
               onClick={() => onOpenModal('Preço Especial Insanos MC - R$ 39,90')}
+              data-analytics="plano-insanos"
             >
               {PRE_LAUNCH ? 'Garantir preço de pré-lançamento' : 'Quero meu desconto'}
             </button>

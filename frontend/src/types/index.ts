@@ -837,3 +837,32 @@ export interface WaitlistEntry {
   /** Contratou com a promoção de pré-lançamento. */
   promoClaimed: boolean;
 }
+
+/** Uma linha de ranking das visitas: visitantes (únicos por dia) e vezes. */
+export interface AnalyticsCount {
+  key: string;
+  visitors: number;
+  count: number;
+}
+
+/** As visitas da landing num período (sem cookies; ver o pacote analytics). */
+export interface LandingAnalytics {
+  from: string;
+  to: string;
+  visitors: number;
+  pageviews: number;
+  /** Visitantes nos últimos 10 minutos. */
+  activeNow: number;
+  leadOpens: number;
+  leads: number;
+  waitlist: number;
+  installerOpens: number;
+  days: { day: string; visitors: number; pageviews: number }[];
+  referrers: AnalyticsCount[];
+  campaigns: AnalyticsCount[];
+  devices: AnalyticsCount[];
+  browsers: AnalyticsCount[];
+  systems: AnalyticsCount[];
+  sections: AnalyticsCount[];
+  clicks: AnalyticsCount[];
+}

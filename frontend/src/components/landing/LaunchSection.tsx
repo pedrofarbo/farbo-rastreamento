@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 
 import { publicApi } from '@/api/resources';
+import { track } from '@/services/analytics';
 import { CONTACT_EMAIL } from '@/config/contact';
 import { INSANOS_MONTHLY, LAUNCH_OFFER } from '@/config/landing';
 import { formatPhoneInput, isPhoneComplete } from '@/services/format';
@@ -34,6 +35,7 @@ export const LaunchSection: React.FC = () => {
     try {
       await publicApi.joinLaunch({ name, email, phone, consent, website });
       setJoined(true);
+      track('waitlist_submit');
     } catch (err) {
       setError(err instanceof Error && err.message ? err.message : 'Não deu para enviar agora. Tente de novo.');
     } finally {

@@ -53,6 +53,7 @@ import type {
   WaitlistInput,
   PromoStatus,
   PromoUsage,
+  LandingAnalytics,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -510,6 +511,11 @@ export const publicApi = {
   /** "Me avise quando lançar" (lista de lançamento). */
   joinLaunch: (input: WaitlistInput) =>
     request<{ status: string }>('/api/public/launch', { method: 'POST', body: input, anonymous: true }),
+};
+
+/** Visitas da landing page (admin). */
+export const analyticsApi = {
+  landing: (days: number) => api.get<LandingAnalytics>(`/api/analytics/landing?days=${days}`),
 };
 
 /** Pré-clientes (admin). */
