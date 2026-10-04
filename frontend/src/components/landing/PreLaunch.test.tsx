@@ -101,4 +101,14 @@ describe('rodapé', () => {
     expect(text).toContain('Anatel - 04895-25-16219');
     expect(text).not.toContain('Parceiros');
   });
+
+  it('o ícone do Instagram leva ao perfil @farborastreadores, em nova aba', () => {
+    const host = render(<Footer />);
+    const link = host.querySelector('a[href*="instagram.com"]') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('https://www.instagram.com/farborastreadores/');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toContain('noopener');
+    expect(link.getAttribute('aria-label')).toContain('@farborastreadores');
+    expect(link.querySelector('svg')).not.toBeNull();
+  });
 });

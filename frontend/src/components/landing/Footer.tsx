@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-import { CONTACT_EMAIL, WHATSAPP_NUMBER, whatsappDisplay } from '@/config/contact';
+import { CONTACT_EMAIL, INSTAGRAM_HANDLE, INSTAGRAM_URL, WHATSAPP_NUMBER, whatsappDisplay } from '@/config/contact';
 import { ANATEL_HOMOLOGATION, SOCIAL_SECTION } from '@/config/landing';
 
 import styles from './Footer.module.css';
@@ -37,6 +37,20 @@ export const Footer: React.FC = () => {
             <p className={styles.brandDesc}>
               Tecnologia de rastreamento veicular em tempo real para carros e motos. Liberdade com mais segurança.
             </p>
+            <a
+              className={styles.social}
+              href={INSTAGRAM_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Instagram da Farbo Rastreadores (@${INSTAGRAM_HANDLE}), abre em nova aba`}
+            >
+              <svg className={styles.socialIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect x="3" y="3" width="18" height="18" rx="5" />
+                <circle cx="12" cy="12" r="4.2" />
+                <circle className={styles.socialDot} cx="17.4" cy="6.6" r="1.1" />
+              </svg>
+              <span>@{INSTAGRAM_HANDLE}</span>
+            </a>
           </div>
 
           <div className={styles.linksCol}>

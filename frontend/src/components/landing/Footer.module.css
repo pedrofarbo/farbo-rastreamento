@@ -59,6 +59,43 @@
   max-width: 320px;
 }
 
+.social {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1.25rem;
+  padding: 0.45rem 0.9rem 0.45rem 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  color: #cbd5e1;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.social:hover,
+.social:focus-visible {
+  color: var(--color-neon-green);
+  border-color: rgba(59, 229, 88, 0.5);
+  background: rgba(59, 229, 88, 0.08);
+  text-decoration: none;
+}
+
+/* O glifo do Instagram: o contorno da câmera, na cor do texto. */
+.socialIcon {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+
+.socialIcon .socialDot {
+  fill: currentColor;
+  stroke: none;
+}
+
 .linksCol h4 {
   font-size: 0.9375rem;
   font-weight: 800;
@@ -155,9 +192,13 @@
     gap: 0;
   }
 
+  /* Em flex o espaço do texto some ("E-mail:contato@…"): o gap o devolve,
+     e numa tela estreita o e-mail desce para a linha de baixo. */
   .linksCol li {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
+    column-gap: 0.3em;
     min-height: 40px;
   }
 

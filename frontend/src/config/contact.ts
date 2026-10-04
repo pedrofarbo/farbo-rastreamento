@@ -8,6 +8,10 @@
  */
 export const CONTACT_EMAIL = 'contato@farborastreadores.com.br';
 
+/** O Instagram da empresa: o ícone no rodapé da landing leva ao perfil. */
+export const INSTAGRAM_HANDLE = 'farborastreadores';
+export const INSTAGRAM_URL = `https://www.instagram.com/${INSTAGRAM_HANDLE}/`;
+
 /** Só dígitos, com o 55 (ex.: 5511999999999). Vazio: sem WhatsApp na landing. */
 export const WHATSAPP_NUMBER = '';
 
