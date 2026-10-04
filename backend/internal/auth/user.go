@@ -3,10 +3,12 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 )
@@ -22,12 +24,28 @@ const (
 )
 
 func ValidRole(role string) bool {
+	return TeamRole(role) || role == RoleCustomer
+}
+
+// TeamRole: os perfis da equipe da central. O cliente tem cadastro próprio
+// (em Clientes), com contato, endereço e assinaturas.
+func TeamRole(role string) bool {
 	switch role {
-	case RoleAdmin, RoleOperator, RoleViewer, RoleCustomer:
+	case RoleAdmin, RoleOperator, RoleViewer:
 		return true
 	}
 	return false
 }
+
+var (
+	// ErrNotTeam: o usuário é cliente, não da equipe.
+	ErrNotTeam = errors.New("o usuário não é da equipe")
+	// ErrLastAdmin: a mudança deixaria o painel sem administrador ativo.
+	ErrLastAdmin = errors.New("o painel precisa de pelo menos um administrador ativo")
+	// ErrSelfChange: ninguém muda o próprio perfil nem se desativa (outro
+	// administrador faz isso).
+	ErrSelfChange = errors.New("você não pode mudar o próprio perfil nem se desativar")
+)
 
 type User struct {
 	ID    uuid.UUID `json:"id"`
@@ -81,8 +99,9 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	return scanUser(r.db.QueryRow(ctx, `SELECT `+userColumns+` FROM users WHERE id = $1`, id))
 }
 
-func (r *Repository) List(ctx context.Context) ([]*User, error) {
-	rows, err := r.db.Query(ctx, `SELECT `+userColumns+` FROM users ORDER BY created_at`)
+// ListTeam lista a equipe da central (sem os clientes).
+func (r *Repository) ListTeam(ctx context.Context) ([]*User, error) {
+	rows, err := r.db.Query(ctx, `SELECT `+userColumns+` FROM users WHERE role <> $1 ORDER BY created_at`, RoleCustomer)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -115,6 +134,65 @@ func (r *Repository) UpdateProfile(ctx context.Context, id uuid.UUID, p Profile)
 		}
 	}
 	return user, nil
+}
+
+// Member são os dados de alguém da equipe que um administrador altera.
+type Member struct {
+	Name   string
+	Role   string
+	Active bool
+}
+
+// UpdateMember altera nome, perfil e situação de alguém da equipe, a pedido
+// de actor, e devolve como estava antes e como ficou.
+//
+// Roda numa transação que trava os administradores ativos (sempre na mesma
+// ordem): duas mudanças ao mesmo tempo não deixam o painel sem nenhum. Quem
+// muda de perfil ou é desativado perde as sessões abertas — o perfil vai no
+// token de acesso, e o novo vale a partir do próximo login.
+func (r *Repository) UpdateMember(ctx context.Context, actor, id uuid.UUID, m Member) (before, after *User, err error) {
+	err = pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `SELECT id FROM users WHERE role = $1 AND active ORDER BY id FOR UPDATE`, RoleAdmin)
+		if err != nil {
+			return err
+		}
+		admins := 0
+		for rows.Next() {
+			admins++
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+
+		if before, err = scanUser(tx.QueryRow(ctx, `SELECT `+userColumns+` FROM users WHERE id = $1 FOR UPDATE`, id)); err != nil {
+			return err
+		}
+		switch {
+		case !TeamRole(before.Role):
+			return ErrNotTeam
+		case id == actor && (m.Role != before.Role || !m.Active):
+			return ErrSelfChange
+		case before.Role == RoleAdmin && before.Active && !(m.Role == RoleAdmin && m.Active) && admins <= 1:
+			return ErrLastAdmin
+		}
+
+		if after, err = scanUser(tx.QueryRow(ctx, `
+			UPDATE users SET name = $2, role = $3, active = $4, updated_at = NOW()
+			WHERE id = $1
+			RETURNING `+userColumns, id, m.Name, m.Role, m.Active)); err != nil {
+			return err
+		}
+		if after.Role != before.Role || !after.Active {
+			_, err = tx.Exec(ctx,
+				`UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`, id)
+		}
+		return err
+	})
+	if err != nil {
+		return nil, nil, database.MapError(err)
+	}
+	return before, after, nil
 }
 
 func (r *Repository) Count(ctx context.Context) (int, error) {

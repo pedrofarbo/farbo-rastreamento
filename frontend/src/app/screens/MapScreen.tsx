@@ -118,6 +118,7 @@ export function MapScreen() {
               </span>
               <span className={styles.vehicleMeta}>
                 {vehicle.plate && <span className={styles.plate}>{vehicle.plate}</span>}
+                {vehicle.shared && <span>de {vehicle.shared.ownerName}</span>}
                 {vehicle.device ? (
                   <>
                     <span className={acc ? styles.good : undefined}>

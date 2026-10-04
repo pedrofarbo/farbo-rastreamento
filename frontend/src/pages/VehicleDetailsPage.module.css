@@ -140,3 +140,18 @@
     overflow: visible;
   }
 }
+
+/* Veículo compartilhado por outra pessoa: de quem é e o que dá para fazer. */
+.sharedNote {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.sharedNote strong {
+  color: var(--text-primary);
+}

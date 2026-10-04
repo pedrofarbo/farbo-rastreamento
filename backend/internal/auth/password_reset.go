@@ -19,7 +19,8 @@ var ErrInvalidResetToken = errors.New("link de redefinição inválido ou expira
 type Notifier interface {
 	PasswordReset(ctx context.Context, to, name, token string, ttl time.Duration) error
 	PasswordChanged(ctx context.Context, to, name string, at time.Time) error
-	Invite(ctx context.Context, to, name, token string, ttl time.Duration) error
+	// Invite tem o perfil: o convite da equipe é outro que o do cliente.
+	Invite(ctx context.Context, to, name, role, token string, ttl time.Duration) error
 }
 
 // ResetOutcome diz o que aconteceu com um pedido de redefinição. Serve só
@@ -101,21 +102,31 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) (*User
 // senha. Usa o mesmo mecanismo da redefinição, com validade mais longa, e
 // invalida convites ou pedidos anteriores ainda não usados.
 func (s *Service) InviteUser(ctx context.Context, user *User) error {
-	if !user.Active {
-		return ErrInactiveUser
-	}
-	token, err := newOpaqueToken()
+	token, ttl, err := s.IssueInvite(ctx, user)
 	if err != nil {
 		return err
 	}
-	ttl := s.cfg.InviteTTL
-	if err := s.resets.CreatePasswordReset(ctx, user.ID, hashToken(token), time.Now().Add(ttl)); err != nil {
-		return err
-	}
 	s.notify("convite", user.ID, func(ctx context.Context) error {
-		return s.notifier.Invite(ctx, user.Email, user.Name, token, ttl)
+		return s.notifier.Invite(ctx, user.Email, user.Name, user.Role, token, ttl)
 	})
 	return nil
+}
+
+// IssueInvite gera o link de convite (para criar a senha) sem mandar o
+// e-mail: serve a quem manda um convite com outro texto (ex.: o acesso a um
+// veículo compartilhado). Invalida convites e pedidos anteriores.
+func (s *Service) IssueInvite(ctx context.Context, user *User) (token string, ttl time.Duration, err error) {
+	if !user.Active {
+		return "", 0, ErrInactiveUser
+	}
+	if token, err = newOpaqueToken(); err != nil {
+		return "", 0, err
+	}
+	ttl = s.cfg.InviteTTL
+	if err := s.resets.CreatePasswordReset(ctx, user.ID, hashToken(token), time.Now().Add(ttl)); err != nil {
+		return "", 0, err
+	}
+	return token, ttl, nil
 }
 
 // CheckResetToken diz se o link ainda pode ser usado, sem consumi-lo.

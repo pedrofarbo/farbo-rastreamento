@@ -40,7 +40,17 @@ const (
 	ActionVehicleCreated   = "VEHICLE_CREATED"
 	ActionVehicleUpdated   = "VEHICLE_UPDATED"
 	ActionVehicleDeleted   = "VEHICLE_DELETED"
-	ActionGeofenceChanged  = "GEOFENCE_CHANGED"
+	// Acessos de terceiros a um veículo (e o bloqueio pedido por eles).
+	ActionVehicleShared       = "VEHICLE_SHARED"
+	ActionVehicleShareUpdated = "VEHICLE_SHARE_UPDATED"
+	ActionVehicleShareRemoved = "VEHICLE_SHARE_REMOVED"
+	ActionSharedEngineCut     = "SHARED_ENGINE_CUT"
+	ActionGeofenceChanged     = "GEOFENCE_CHANGED"
+
+	// Equipe da central (usuários do painel).
+	ActionUserCreated = "USER_CREATED"
+	ActionUserUpdated = "USER_UPDATED"
+	ActionUserInvited = "USER_INVITED"
 
 	ActionCustomerCreated      = "CUSTOMER_CREATED"
 	ActionCustomerUpdated      = "CUSTOMER_UPDATED"

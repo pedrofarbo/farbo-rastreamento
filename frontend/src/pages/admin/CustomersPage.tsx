@@ -236,7 +236,14 @@ export function CustomersPage() {
                             {customer.email}
                             {customer.phone && <div className={billing.muted}>{customer.phone}</div>}
                           </td>
-                          <td>{customer.vehicleCount}</td>
+                          <td>
+                            {customer.vehicleCount}
+                            {customer.sharedVehicles > 0 && (
+                              <div className={billing.muted}>
+                                + acompanha {customer.sharedVehicles} de outro cliente
+                              </div>
+                            )}
+                          </td>
                           <td className={billing.amount}>
                             {customer.openInvoices > 0 ? formatMoney(customer.openAmountCents) : '—'}
                           </td>

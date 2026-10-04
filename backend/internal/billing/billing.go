@@ -103,12 +103,15 @@ type CustomerSummary struct {
 	Active    bool      `json:"active"`
 	CreatedAt time.Time `json:"createdAt"`
 
-	ActiveSubscriptions int  `json:"activeSubscriptions"`
-	VehicleCount        int  `json:"vehicleCount"`
-	OpenInvoices        int  `json:"openInvoices"`
-	OverdueInvoices     int  `json:"overdueInvoices"`
-	OpenAmountCents     int  `json:"openAmountCents"`
-	Suspended           bool `json:"suspended"`
+	ActiveSubscriptions int `json:"activeSubscriptions"`
+	VehicleCount        int `json:"vehicleCount"`
+	// SharedVehicles: veículos de outros clientes que este acompanha (acesso
+	// de terceiro). Quem só tem isso não é cliente pagante.
+	SharedVehicles  int  `json:"sharedVehicles"`
+	OpenInvoices    int  `json:"openInvoices"`
+	OverdueInvoices int  `json:"overdueInvoices"`
+	OpenAmountCents int  `json:"openAmountCents"`
+	Suspended       bool `json:"suspended"`
 }
 
 type Repository struct{ db *database.DB }
@@ -445,6 +448,8 @@ const summaryQuery = `
 	SELECT u.id, u.name, u.email, u.phone, u.document, u.active, u.created_at,
 		(SELECT count(*) FROM subscriptions s WHERE s.customer_id = u.id AND s.status = 'ACTIVE'),
 		(SELECT count(*) FROM vehicles v WHERE v.owner_id = u.id),
+		(SELECT count(*) FROM vehicle_shares sh JOIN vehicles v ON v.id = sh.vehicle_id AND v.owner_id = sh.owner_id
+			WHERE sh.guest_id = u.id),
 		(SELECT count(*) FROM invoices i WHERE i.customer_id = u.id AND i.status = 'OPEN'),
 		(SELECT count(*) FROM invoices i
 			WHERE i.customer_id = u.id AND i.status = 'OPEN' AND i.due_date < $1),
@@ -458,7 +463,7 @@ const summaryQuery = `
 func scanSummary(row database.Scanner) (*CustomerSummary, error) {
 	var c CustomerSummary
 	if err := row.Scan(&c.ID, &c.Name, &c.Email, &c.Phone, &c.Document, &c.Active, &c.CreatedAt,
-		&c.ActiveSubscriptions, &c.VehicleCount, &c.OpenInvoices, &c.OverdueInvoices,
+		&c.ActiveSubscriptions, &c.VehicleCount, &c.SharedVehicles, &c.OpenInvoices, &c.OverdueInvoices,
 		&c.OpenAmountCents, &c.Suspended); err != nil {
 		return nil, database.MapError(err)
 	}

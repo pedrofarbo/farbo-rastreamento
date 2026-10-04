@@ -171,6 +171,33 @@
   overflow: hidden;
 }
 
+/* Notebook: o menu da central tem muitos itens. Mais justos, e o "Ao vivo"
+   só com o ponto (o texto fica na dica), cabem todos sem rolar. */
+@media (max-width: 1536px) {
+  .header {
+    gap: var(--space-3);
+  }
+
+  .navLink {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .connection {
+    padding: var(--space-2);
+  }
+
+  .connection span:last-child {
+    display: none;
+  }
+}
+
+/* Telas de 1280 px: o nome de quem está logado sai (como no celular). */
+@media (max-width: 1320px) {
+  .user {
+    display: none;
+  }
+}
+
 @media (max-width: 820px) {
   .user {
     display: none;

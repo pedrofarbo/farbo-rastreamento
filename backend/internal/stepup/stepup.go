@@ -27,8 +27,17 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 )
 
-// PurposeEngineCut é desligar o motor.
-const PurposeEngineCut = "engine_cut"
+// As ações que pedem a confirmação extra.
+const (
+	// PurposeEngineCut é desligar o motor.
+	PurposeEngineCut = "engine_cut"
+	// PurposeEngineResume é religar o motor: com o celular roubado e o app
+	// aberto, quem está com ele não desbloqueia o veículo.
+	PurposeEngineResume = "engine_resume"
+	// PurposeVehicleShare é dar a alguém acesso a um veículo (ou o bloqueio):
+	// quem pega o celular por um instante não se cadastra para rastrear.
+	PurposeVehicleShare = "vehicle_share"
+)
 
 // Métodos de confirmação (no comprovante e na auditoria).
 const (
@@ -51,7 +60,7 @@ const (
 	maxNameLength       = 60
 )
 
-var purposes = []string{PurposeEngineCut}
+var purposes = []string{PurposeEngineCut, PurposeEngineResume, PurposeVehicleShare}
 
 var (
 	ErrWrongPassword      = errors.New("senha incorreta")

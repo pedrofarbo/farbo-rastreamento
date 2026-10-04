@@ -286,7 +286,7 @@ func TestAccountMailerInvite(t *testing.T) {
 	capture := &captureSender{}
 	mailer := NewAccountMailer(capture, "https://painel.farbo.test")
 
-	if err := mailer.Invite(context.Background(), "joao@exemplo.com", "João Souza", "tok123", 72*time.Hour); err != nil {
+	if err := mailer.Invite(context.Background(), "joao@exemplo.com", "João Souza", "customer", "tok123", 72*time.Hour); err != nil {
 		t.Fatal(err)
 	}
 	msg := capture.last
@@ -305,6 +305,34 @@ func TestAccountMailerInvite(t *testing.T) {
 	// No HTML o & do link é escapado como &amp;, o que o navegador desfaz.
 	if !strings.Contains(msg.HTML, "#token=tok123&amp;boasvindas=1") {
 		t.Errorf("HTML sem o link de convite")
+	}
+}
+
+// O convite de quem entra na equipe diz o perfil e o que ele permite, e não
+// fala de "seus veículos" nem de faturas, que são do cliente.
+func TestAccountMailerTeamInvite(t *testing.T) {
+	capture := &captureSender{}
+	mailer := NewAccountMailer(capture, "https://painel.farbo.test")
+
+	if err := mailer.Invite(context.Background(), "bia@farbo.test", "Bia Lima", "operator", "tok456", 72*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	msg := capture.last
+	if !strings.Contains(msg.Subject, "equipe") {
+		t.Errorf("assunto = %q", msg.Subject)
+	}
+	for name, body := range map[string]string{"texto": msg.Text, "HTML": msg.HTML} {
+		for _, want := range []string{"Bia", "Operador", "envia comandos", "3 dias"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s sem %q", name, want)
+			}
+		}
+		if strings.Contains(body, "faturas") {
+			t.Errorf("%s com o texto do cliente", name)
+		}
+	}
+	if !strings.Contains(msg.Text, "https://painel.farbo.test/redefinir-senha#token=tok456&boasvindas=1") {
+		t.Errorf("texto sem o link do convite")
 	}
 }
 
@@ -373,5 +401,59 @@ func TestShipmentEmails(t *testing.T) {
 	}
 	if strings.Contains(sender.last.HTML, "<b>Moto</b>") || !strings.Contains(sender.last.HTML, "https://painel.farbo.test/meus-veiculos") {
 		t.Errorf("e-mail de chegada: HTML sem escapar ou sem o link do painel")
+	}
+}
+
+// Os e-mails dos acessos de terceiros: o convite leva ao link de criar a
+// senha, o aviso ao app, o dono recebe o alerta de segurança e o do
+// bloqueio — e a permissão de bloqueio aparece só quando foi dada.
+func TestShareMailer(t *testing.T) {
+	capture := &captureSender{}
+	mailer := NewShareMailer(capture, "https://painel.farbo.test")
+	n := ShareNotice{
+		VehicleID: "v-1", VehicleName: "Carro da Ana", VehiclePlate: "ABC1D23", OwnerName: "Ana Souza",
+		GuestName: "Caio Lima", GuestEmail: "caio@exemplo.com", CanBlock: true,
+		At: time.Date(2026, 10, 4, 15, 30, 0, 0, time.UTC),
+	}
+	ctx := context.Background()
+
+	if err := mailer.GuestInvited(ctx, "caio@exemplo.com", n, "tok789", 72*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	msg := capture.last
+	for _, want := range []string{"Olá, Caio!", "Ana Souza compartilhou Carro da Ana (ABC1D23)", "bloquear o motor",
+		"https://painel.farbo.test/redefinir-senha#token=tok789&boasvindas=1", "3 dias"} {
+		if !strings.Contains(msg.Text, want) {
+			t.Errorf("convite sem %q:\n%s", want, msg.Text)
+		}
+	}
+	if !strings.Contains(msg.Subject, "Ana Souza compartilhou") {
+		t.Errorf("assunto do convite = %q", msg.Subject)
+	}
+
+	only := n
+	only.CanBlock = false
+	if err := mailer.GuestAdded(ctx, "caio@exemplo.com", only); err != nil {
+		t.Fatal(err)
+	}
+	if msg := capture.last; strings.Contains(msg.Text, "bloquear") || !strings.Contains(msg.Text, "https://painel.farbo.test/app/") {
+		t.Errorf("aviso só de acompanhar:\n%s", msg.Text)
+	}
+
+	if err := mailer.OwnerShared(ctx, "ana@exemplo.com", n); err != nil {
+		t.Fatal(err)
+	}
+	if msg := capture.last; !strings.Contains(msg.Text, "Caio Lima (caio@exemplo.com)") ||
+		!strings.Contains(msg.Text, "remova agora") || !strings.Contains(msg.HTML, "Olá, Ana!") {
+		t.Errorf("aviso de segurança ao dono:\n%s", msg.Text)
+	}
+
+	if err := mailer.GuestBlocked(ctx, "ana@exemplo.com", n); err != nil {
+		t.Fatal(err)
+	}
+	msg = capture.last
+	if !strings.Contains(msg.Subject, "Motor bloqueado") || !strings.Contains(msg.Text, "04/10/2026 às 12:30") ||
+		!strings.Contains(msg.Text, "https://painel.farbo.test/app/veiculos/v-1") {
+		t.Errorf("aviso de bloqueio: %q\n%s", msg.Subject, msg.Text)
 	}
 }

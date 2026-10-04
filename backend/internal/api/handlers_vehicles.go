@@ -11,6 +11,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/shares"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 )
@@ -29,6 +30,10 @@ type vehicleView struct {
 	// HistoryDays é por quantos dias o histórico deste veículo é guardado
 	// (a exceção dele, a do cliente ou o padrão da central).
 	HistoryDays int `json:"historyDays"`
+	// Shared: o veículo é de outro cliente, que deu acesso a quem chama
+	// (posição ao vivo e, se liberado, o bloqueio). Nulo para o dono e para a
+	// equipe.
+	Shared *sharedAccess `json:"shared,omitempty"`
 }
 
 // customerOf devolve o id do cliente quando quem chama é um cliente final.
@@ -54,13 +59,63 @@ func (s *Server) handleListVehicles(w http.ResponseWriter, r *http.Request) {
 		handleStoreError(w, err, "veículos não encontrados")
 		return
 	}
+	shared, err := s.sharedWith(r, customerID, isCustomer)
+	if err != nil {
+		handleStoreError(w, err, "veículos não encontrados")
+		return
+	}
+	for _, sv := range shared {
+		list = append(list, sv.vehicle)
+	}
 
 	views, err := s.vehicleViews(r.Context(), list, deviceAudience(r))
 	if err != nil {
 		handleStoreError(w, err, "veículos não encontrados")
 		return
 	}
+	for i := range views {
+		if sv, ok := shared[views[i].ID]; ok {
+			views[i].Shared = sharedAccessOf(sv.share)
+			views[i].HistoryDays = 0
+		}
+	}
 	writeJSON(w, http.StatusOK, views)
+}
+
+type sharedVehicle struct {
+	vehicle *vehicles.Vehicle
+	share   *shares.Share
+}
+
+// sharedWith: os veículos que outros clientes compartilharam com este (fora
+// os de quem está suspenso).
+func (s *Server) sharedWith(r *http.Request, customerID uuid.UUID, isCustomer bool) (map[uuid.UUID]sharedVehicle, error) {
+	out := map[uuid.UUID]sharedVehicle{}
+	if !isCustomer || s.Shares == nil {
+		return out, nil
+	}
+	list, err := s.Shares.ForGuest(r.Context(), customerID)
+	if err != nil {
+		return nil, err
+	}
+	for _, share := range list {
+		suspended, err := s.Billing.IsSuspended(r.Context(), share.OwnerID)
+		if err != nil {
+			return nil, err
+		}
+		if suspended {
+			continue
+		}
+		vehicle, err := s.Vehicles.Get(r.Context(), share.VehicleID)
+		if err != nil {
+			if errors.Is(err, database.ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		out[vehicle.ID] = sharedVehicle{vehicle: vehicle, share: share}
+	}
+	return out, nil
 }
 
 // vehicleViews junta a cada veículo o rastreador, a última posição e o
@@ -109,17 +164,19 @@ func (s *Server) vehicleViews(ctx context.Context, list []*vehicles.Vehicle, aud
 }
 
 func (s *Server) handleGetVehicle(w http.ResponseWriter, r *http.Request) {
-	vehicle, _, ok := s.vehicleFromURL(w, r, false)
+	vehicle, _, share, ok := s.vehicleForViewer(w, r, false)
 	if !ok {
 		return
 	}
-	view := vehicleView{Vehicle: vehicle}
-	days, err := s.historyDays(r.Context(), vehicle)
-	if err != nil {
-		handleStoreError(w, err, "veículo não encontrado")
-		return
+	view := vehicleView{Vehicle: vehicle, Shared: sharedAccessOf(share)}
+	if share == nil {
+		days, err := s.historyDays(r.Context(), vehicle)
+		if err != nil {
+			handleStoreError(w, err, "veículo não encontrado")
+			return
+		}
+		view.HistoryDays = days
 	}
-	view.HistoryDays = days
 	if vehicle.DeviceID != nil {
 		device, err := s.Devices.Get(r.Context(), *vehicle.DeviceID)
 		if err == nil {
@@ -281,21 +338,29 @@ func (s *Server) vehicleFromURL(w http.ResponseWriter, r *http.Request, requireD
 	if !requireDevice {
 		return vehicle, nil, true
 	}
-	if vehicle.DeviceID == nil {
-		writeError(w, http.StatusConflict, "este veículo não tem rastreador vinculado")
+	device, ok := s.vehicleDevice(w, r, vehicle)
+	if !ok {
 		return nil, nil, false
 	}
+	return vehicle, device, true
+}
 
+// vehicleDevice carrega o rastreador vinculado ao veículo.
+func (s *Server) vehicleDevice(w http.ResponseWriter, r *http.Request, vehicle *vehicles.Vehicle) (*devices.Device, bool) {
+	if vehicle.DeviceID == nil {
+		writeError(w, http.StatusConflict, "este veículo não tem rastreador vinculado")
+		return nil, false
+	}
 	device, err := s.Devices.Get(r.Context(), *vehicle.DeviceID)
 	if err != nil {
 		if errors.Is(err, database.ErrNotFound) {
 			writeError(w, http.StatusConflict, "o rastreador vinculado não existe mais")
-			return nil, nil, false
+			return nil, false
 		}
 		handleStoreError(w, err, "rastreador não encontrado")
-		return nil, nil, false
+		return nil, false
 	}
-	return vehicle, device, true
+	return device, true
 }
 
 func (s *Server) recordAudit(r *http.Request, action string, vehicleID, deviceID *uuid.UUID, metadata map[string]any) {

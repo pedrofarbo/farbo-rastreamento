@@ -49,6 +49,10 @@ export function VehicleDetailsPage() {
 
   const [rangeHours, setRangeHours] = useState<number | null>(null);
   const [frame, setFrame] = useState<Position | null>(null);
+  // Veículo de outra pessoa, compartilhado com quem está vendo: só a posição
+  // ao vivo (histórico, eventos e comandos continuam só do dono).
+  const shared = vehicle?.shared ?? null;
+  const owned = Boolean(vehicle && !shared);
 
   // O período só é recalculado quando o usuário troca a faixa; sem isso cada
   // render geraria um "from" novo e refaria a consulta.
@@ -60,20 +64,20 @@ export function VehicleDetailsPage() {
   const history = useQuery({
     queryKey: ['history', id, rangeHours],
     queryFn: () => vehiclesApi.positions(id as string, { from: range!.from, to: range!.to }),
-    enabled: Boolean(id && range),
+    enabled: Boolean(id && range && owned),
   });
 
   const events = useQuery({
     queryKey: ['events', id],
     queryFn: () => vehiclesApi.events(id as string, { limit: 100 }),
-    enabled: Boolean(id),
+    enabled: Boolean(id && owned),
     refetchInterval: 60_000,
   });
 
   const commands = useQuery({
     queryKey: ['commands', id],
     queryFn: () => vehiclesApi.commands(id as string),
-    enabled: Boolean(id),
+    enabled: Boolean(id && owned),
   });
 
   if (isLoading) return <Spinner label="Carregando veículo" />;
@@ -125,41 +129,48 @@ export function VehicleDetailsPage() {
           </div>
         </header>
 
-        <div className={styles.rangeBar}>
-          <span className={styles.rangeLabel}>Histórico:</span>
-          <button
-            type="button"
-            className={`${styles.rangeButton} ${rangeHours === null ? styles.rangeActive : ''}`}
-            onClick={() => {
-              setRangeHours(null);
-              setFrame(null);
-            }}
-          >
-            Ao vivo
-          </button>
-          {/* Só os períodos que cabem no histórico guardado do veículo. */}
-          {RANGES.filter((option) => option.hours <= (vehicle.historyDays || 30) * 24).map((option) => (
+        {shared ? (
+          <p className={styles.sharedNote}>
+            Compartilhado por <strong>{shared.ownerName}</strong>: você acompanha a posição ao vivo
+            {shared.canBlock ? ' e pode bloquear o motor numa emergência' : ''}.
+          </p>
+        ) : (
+          <div className={styles.rangeBar}>
+            <span className={styles.rangeLabel}>Histórico:</span>
             <button
-              key={option.hours}
               type="button"
-              className={`${styles.rangeButton} ${rangeHours === option.hours ? styles.rangeActive : ''}`}
-              onClick={() => setRangeHours(option.hours)}
+              className={`${styles.rangeButton} ${rangeHours === null ? styles.rangeActive : ''}`}
+              onClick={() => {
+                setRangeHours(null);
+                setFrame(null);
+              }}
             >
-              {option.label}
+              Ao vivo
             </button>
-          ))}
+            {/* Só os períodos que cabem no histórico guardado do veículo. */}
+            {RANGES.filter((option) => option.hours <= (vehicle.historyDays || 30) * 24).map((option) => (
+              <button
+                key={option.hours}
+                type="button"
+                className={`${styles.rangeButton} ${rangeHours === option.hours ? styles.rangeActive : ''}`}
+                onClick={() => setRangeHours(option.hours)}
+              >
+                {option.label}
+              </button>
+            ))}
 
-          {rangeHours === null && vehicle.historyDays > 0 && (
-            <span className={styles.sampleNote}>Histórico guardado por {vehicle.historyDays} dias</span>
-          )}
-          {history.data && rangeHours !== null && (
-            <span className={styles.sampleNote}>
-              {history.data.returned} de {history.data.total} pontos
-              {history.data.sampled ? ` (1 a cada ${history.data.sampleStep})` : ''}
-              {history.data.simplified ? ' · traçado simplificado' : ''}
-            </span>
-          )}
-        </div>
+            {rangeHours === null && vehicle.historyDays > 0 && (
+              <span className={styles.sampleNote}>Histórico guardado por {vehicle.historyDays} dias</span>
+            )}
+            {history.data && rangeHours !== null && (
+              <span className={styles.sampleNote}>
+                {history.data.returned} de {history.data.total} pontos
+                {history.data.sampled ? ` (1 a cada ${history.data.sampleStep})` : ''}
+                {history.data.simplified ? ' · traçado simplificado' : ''}
+              </span>
+            )}
+          </div>
+        )}
 
         <div className={styles.mapArea}>
           <TrackerMap
@@ -230,7 +241,7 @@ export function VehicleDetailsPage() {
           )}
         </Card>
 
-        {device && (
+        {device && !shared && (
           <Card title="Rastreador" subtitle={device.model || device.manufacturer || undefined}>
             <div className={styles.infoGrid}>
               <Info label="IMEI" value={device.imei} mono />
@@ -243,21 +254,25 @@ export function VehicleDetailsPage() {
           </Card>
         )}
 
-        <Card title="Eventos" flush>
-          {events.isLoading ? (
-            <Spinner inline />
-          ) : (
-            <EventList events={events.data ?? []} />
-          )}
-        </Card>
+        {!shared && (
+          <>
+            <Card title="Eventos" flush>
+              {events.isLoading ? (
+                <Spinner inline />
+              ) : (
+                <EventList events={events.data ?? []} />
+              )}
+            </Card>
 
-        <Card title="Histórico de comandos" flush>
-          {commands.isLoading ? (
-            <Spinner inline />
-          ) : (
-            <CommandHistory commands={commands.data ?? []} />
-          )}
-        </Card>
+            <Card title="Histórico de comandos" flush>
+              {commands.isLoading ? (
+                <Spinner inline />
+              ) : (
+                <CommandHistory commands={commands.data ?? []} />
+              )}
+            </Card>
+          </>
+        )}
       </aside>
     </div>
   );

@@ -148,6 +148,33 @@ export interface VehicleView extends Vehicle {
   connected: boolean;
   /** Prazo que vale para o veículo (dele, do cliente ou o padrão da central). */
   historyDays: number;
+  /**
+   * O veículo é de outro cliente, que deu acesso a você: só a posição ao vivo
+   * e, se liberado, o bloqueio de emergência (nunca o desbloqueio). Ausente
+   * nos seus veículos e para a equipe.
+   */
+  shared?: SharedAccess | null;
+}
+
+export interface SharedAccess {
+  shareId: string;
+  ownerName: string;
+  canBlock: boolean;
+}
+
+/** Um acesso dado pelo dono a outra pessoa (que entra com a própria conta). */
+export interface VehicleShare {
+  id: string;
+  vehicleId: string;
+  vehicleName: string;
+  vehiclePlate: string;
+  ownerName: string;
+  guestId: string;
+  guestName: string;
+  guestEmail: string;
+  canBlock: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface VehicleEvent {
@@ -403,6 +430,8 @@ export interface CustomerSummary {
   createdAt: string;
   activeSubscriptions: number;
   vehicleCount: number;
+  /** Veículos de outros clientes que ele acompanha (acesso de terceiro). */
+  sharedVehicles: number;
   openInvoices: number;
   overdueInvoices: number;
   openAmountCents: number;

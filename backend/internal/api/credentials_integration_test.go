@@ -33,6 +33,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols/gt06"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/shares"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tcp"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/telemetry"
@@ -172,6 +173,7 @@ type credEnv struct {
 	owners    *vehicles.OwnerIndex
 	positions *tracking.Repository
 	sender    *captureSender
+	stepUp    *stepup.Service
 
 	fwdMu     sync.Mutex
 	forwarded [][]byte // o que iria para o Redis (outras instâncias)
@@ -188,6 +190,8 @@ type credEnvOptions struct {
 	snapshotsFor func(*tracking.Repository) commands.TelemetryProvider
 	// stepUp liga a confirmação extra (biometria ou senha) do cliente.
 	stepUp bool
+	// shares liga os acessos de terceiros, com os avisos neste Notifier.
+	shares shares.Notifier
 }
 
 func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
@@ -250,8 +254,14 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 	if opts.stepUp {
 		stepUpSvc = stepup.NewService(db, config.StepUp{RPID: "localhost", Origins: []string{"http://localhost"}}, authSvc)
 	}
+	env.stepUp = stepUpSvc
+	var sharesSvc *shares.Service
+	if opts.shares != nil {
+		sharesSvc = shares.NewService(db, authSvc, opts.shares, log)
+		sharesSvc.SetSync()
+	}
 	server := NewServer(Deps{
-		StepUp: stepUpSvc,
+		StepUp: stepUpSvc, Shares: sharesSvc,
 		Config: cfg, Log: log, Metrics: metrics, DB: db, Auth: authSvc,
 		Devices: env.devices, Vehicles: env.vehicles, Events: eventSvc, Commands: env.commands,
 		Audit: auditSvc, Billing: billingSvc,

@@ -20,6 +20,7 @@ import {
   errorCode,
   passwordGrant,
 } from '@/services/stepUp';
+import type { StepUpPurpose } from '@/services/stepUp';
 import type { CommandType, DeviceCommand, EngineCutCheck, VehicleView } from '@/types';
 
 import styles from './CommandPanel.module.css';
@@ -33,7 +34,17 @@ interface CommandPanelProps {
 }
 
 /** Comandos que mexem no relé exigem confirmação explícita (§24). */
-const DESTRUCTIVE: CommandType[] = ['ENGINE_CUT'];
+const DESTRUCTIVE: CommandType[] = ['ENGINE_CUT', 'ENGINE_RESUME'];
+
+/**
+ * Para o cliente, mexer no relé também pede que ele confirme que é ele
+ * (biometria ou senha): com o celular roubado e o app aberto, quem está com
+ * ele não bloqueia nem desbloqueia.
+ */
+const PURPOSE: Partial<Record<CommandType, StepUpPurpose>> = {
+  ENGINE_CUT: 'engine_cut',
+  ENGINE_RESUME: 'engine_resume',
+};
 
 /** Recusas do corte que se resolvem com uma posição nova do rastreador. */
 const NEEDS_POSITION: EngineCutCheck['code'][] = ['NO_POSITION', 'STALE_POSITION'];
@@ -74,6 +85,9 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
   const blocked = vehicle.state?.relayOn === true;
   const online = vehicle.device?.status === 'ONLINE';
   const hasDevice = Boolean(vehicle.deviceId);
+  // Veículo de outro cliente, com acesso dado a quem está vendo: só pedir a
+  // posição e, se liberado, bloquear (nunca desbloquear).
+  const shared = vehicle.shared ?? null;
 
   // O desfecho do comando chega pelo WebSocket, não pela resposta HTTP: o
   // rastreador confirma depois (§18).
@@ -200,37 +214,42 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
   );
 
   /**
-   * O cliente confirma que é ele antes do corte: com a biometria deste
-   * aparelho (Face ID, digital) e, se ela falhar ou não estiver cadastrada,
-   * com a senha. O servidor exige o comprovante; a equipe da central segue
-   * direto.
+   * O cliente confirma que é ele antes de bloquear ou desbloquear: com a
+   * biometria deste aparelho (Face ID, digital) e, se ela falhar ou não
+   * estiver cadastrada, com a senha. O servidor exige o comprovante; a
+   * equipe da central segue direto.
    */
-  const confirmIdentity = useCallback(async () => {
-    if (!isCustomer || !user) {
-      void execute('ENGINE_CUT');
-      return;
-    }
-    const token = ++run.current;
-    setPhase('verifying');
-    setPasswordError('');
-    if (deviceCredential(user.id) && (await biometricAvailable())) {
-      setVerify('biometric');
-      try {
-        const grant = await biometricGrant(user.id, 'engine_cut');
-        if (run.current !== token) return;
-        void execute('ENGINE_CUT', grant.token);
+  const confirmIdentity = useCallback(
+    async (type: CommandType) => {
+      const purpose = PURPOSE[type];
+      if (!isCustomer || !user || !purpose) {
+        void execute(type);
         return;
-      } catch {
-        if (run.current !== token) return;
-        setBiometricFailed(true);
       }
-    }
-    setVerify('password');
-  }, [isCustomer, user, execute]);
+      const token = ++run.current;
+      setPhase('verifying');
+      setPasswordError('');
+      if (deviceCredential(user.id) && (await biometricAvailable())) {
+        setVerify('biometric');
+        try {
+          const grant = await biometricGrant(user.id, purpose);
+          if (run.current !== token) return;
+          void execute(type, grant.token);
+          return;
+        } catch {
+          if (run.current !== token) return;
+          setBiometricFailed(true);
+        }
+      }
+      setVerify('password');
+    },
+    [isCustomer, user, execute],
+  );
 
   const submitPassword = async (event: FormEvent) => {
     event.preventDefault();
-    if (!user) return;
+    const purpose = pending ? PURPOSE[pending] : undefined;
+    if (!user || !pending || !purpose) return;
     if (!password) {
       setPasswordError('Digite a sua senha.');
       return;
@@ -238,11 +257,11 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
     setCheckingPassword(true);
     setPasswordError('');
     try {
-      const grant = await passwordGrant('engine_cut', password);
+      const grant = await passwordGrant(purpose, password);
       typedPassword.current = password;
       setPassword('');
       setCanEnroll(!deviceCredential(user.id) && (await biometricAvailable()));
-      void execute('ENGINE_CUT', grant.token);
+      void execute(pending, grant.token);
     } catch (error) {
       setPasswordError(
         errorCode(error) === 'WRONG_PASSWORD'
@@ -261,7 +280,7 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
     setEnrolling(true);
     try {
       await enrollBiometric(user, typedPassword.current);
-      notify({ tone: 'success', title: biometric.enabled, description: `Da próxima vez, o bloqueio pede só ${biometric.withArticle}.` });
+      notify({ tone: 'success', title: biometric.enabled, description: `Da próxima vez, o bloqueio e o desbloqueio pedem só ${biometric.withArticle}.` });
       setCanEnroll(false);
       typedPassword.current = null;
     } catch (error) {
@@ -316,46 +335,71 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
 
   const busy = phase === 'sending' || phase === 'sent';
 
+  const requestPosition = (
+    <Button
+      variant="secondary"
+      onClick={() => trigger('REQUEST_POSITION')}
+      disabled={busy || !online}
+      loading={busy && pending === 'REQUEST_POSITION'}
+    >
+      Solicitar posição
+    </Button>
+  );
+
   return (
     <div className={styles.panel}>
-      <div className={styles.grid}>
-        <Button
-          variant="secondary"
-          onClick={() => trigger('REQUEST_POSITION')}
-          disabled={busy || !online}
-          loading={busy && pending === 'REQUEST_POSITION'}
-        >
-          Solicitar posição
-        </Button>
+      {shared ? (
+        <>
+          <div className={styles.grid}>
+            {requestPosition}
+            {shared.canBlock && !blocked && (
+              <Button variant="danger" onClick={() => trigger('ENGINE_CUT')} disabled={busy || !online}>
+                Bloquear motor
+              </Button>
+            )}
+          </div>
+          {blocked ? (
+            <div className={styles.notice}>
+              O motor está bloqueado. Desbloquear é com {shared.ownerName} ou com a central.
+            </div>
+          ) : (
+            !shared.canBlock && (
+              <div className={styles.notice}>
+                Você acompanha a posição ao vivo. O bloqueio de emergência não foi liberado por{' '}
+                {shared.ownerName}.
+              </div>
+            )
+          )}
+        </>
+      ) : (
+        <div className={styles.grid}>
+          {requestPosition}
 
-        <Button
-          variant="secondary"
-          onClick={() => trigger('REQUEST_STATUS')}
-          disabled={busy || !online}
-          loading={busy && pending === 'REQUEST_STATUS'}
-        >
-          Solicitar status
-        </Button>
+          <Button
+            variant="secondary"
+            onClick={() => trigger('REQUEST_STATUS')}
+            disabled={busy || !online}
+            loading={busy && pending === 'REQUEST_STATUS'}
+          >
+            Solicitar status
+          </Button>
 
-        {blocked ? (
-          <Button
-            variant="primary"
-            onClick={() => trigger('ENGINE_RESUME')}
-            disabled={busy || !online}
-            loading={busy && pending === 'ENGINE_RESUME'}
-          >
-            Liberar motor
-          </Button>
-        ) : (
-          <Button
-            variant="danger"
-            onClick={() => trigger('ENGINE_CUT')}
-            disabled={busy || !online}
-          >
-            Desligar motor
-          </Button>
-        )}
-      </div>
+          {blocked ? (
+            <Button
+              variant="primary"
+              onClick={() => trigger('ENGINE_RESUME')}
+              disabled={busy || !online}
+              loading={busy && pending === 'ENGINE_RESUME'}
+            >
+              Liberar motor
+            </Button>
+          ) : (
+            <Button variant="danger" onClick={() => trigger('ENGINE_CUT')} disabled={busy || !online}>
+              Desligar motor
+            </Button>
+          )}
+        </div>
+      )}
 
       {!online && (
         <div className={styles.notice}>
@@ -378,9 +422,9 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
                 Cancelar
               </Button>
               <Button
-                variant="danger"
+                variant={pending === 'ENGINE_RESUME' ? 'primary' : 'danger'}
                 onClick={() => {
-                  if (pending === 'ENGINE_CUT') void confirmIdentity();
+                  if (pending && PURPOSE[pending]) void confirmIdentity(pending);
                   else if (pending) void execute(pending);
                 }}
               >
@@ -420,6 +464,12 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
               configurada — parado ou em velocidade muito baixa, com posição recente. Se a
               condição não for atendida, o pedido é recusado antes de qualquer byte sair daqui.
             </p>
+            {shared && (
+              <p className={styles.notice}>
+                {shared.ownerName} recebe um aviso do bloqueio. Desbloquear é só com quem compartilhou o
+                veículo ou com a central.
+              </p>
+            )}
             {preflight && NEEDS_POSITION.includes(preflight.code) && (
               <p className={styles.notice}>
                 {preflight.positionAgeSeconds === null
@@ -430,6 +480,13 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
               </p>
             )}
           </>
+        )}
+
+        {phase === 'idle' && pending === 'ENGINE_RESUME' && (
+          <div className={styles.dialogWarning}>
+            O motor de <strong>{vehicle.name}</strong> volta a funcionar. Confirme só com o veículo em
+            segurança.
+          </div>
         )}
 
         {phase === 'verifying' &&
@@ -443,7 +500,7 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
               <p>
                 {biometricFailed
                   ? `Não deu para confirmar com ${biometric.withArticle}. Use a senha da sua conta.`
-                  : 'Para desligar o motor, confirme que é você com a senha da sua conta.'}
+                  : `Para ${pending === 'ENGINE_RESUME' ? 'liberar' : 'desligar'} o motor, confirme que é você com a senha da sua conta.`}
               </p>
               <TextField
                 label="Sua senha"
@@ -455,7 +512,7 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
                 onChange={(event) => setPassword(event.target.value)}
               />
               {biometricFailed && (
-                <Button type="button" variant="ghost" size="small" onClick={() => void confirmIdentity()}>
+                <Button type="button" variant="ghost" size="small" onClick={() => pending && void confirmIdentity(pending)}>
                   Tentar {biometric.withArticle} de novo
                 </Button>
               )}
@@ -495,6 +552,7 @@ function CommandProgress({
   locate: Locate;
 }) {
   const isCut = pending === 'ENGINE_CUT';
+  const isResume = pending === 'ENGINE_RESUME';
   // O corte ainda não saiu (buscando posição) ou nem vai sair (posição não
   // chegou): os passos do envio ficam parados.
   const notSent = phase === 'locating' || locate === 'failed';
@@ -533,13 +591,13 @@ function CommandProgress({
         }
       />
       <Step
-        label={isCut ? 'Motor bloqueado' : 'Confirmado pelo rastreador'}
+        label={isCut ? 'Motor bloqueado' : isResume ? 'Motor liberado' : 'Confirmado pelo rastreador'}
         state={phase === 'acknowledged' ? 'done' : phase === 'failed' && !notSent ? 'failed' : 'idle'}
       />
 
       {phase === 'acknowledged' && command && (
         <div className={`${styles.result} ${styles.resultSuccess}`}>
-          <strong>{isCut ? 'Motor bloqueado.' : 'Comando confirmado.'}</strong>
+          <strong>{isCut ? 'Motor bloqueado.' : isResume ? 'Motor liberado.' : 'Comando confirmado.'}</strong>
           {command.response && <div className={styles.detail}>{command.response}</div>}
         </div>
       )}
@@ -587,6 +645,7 @@ function Step({ label, state }: { label: string; state: 'idle' | 'active' | 'don
 
 function dialogTitle(pending: CommandType | null, phase: Phase): string {
   if (phase === 'idle' && pending === 'ENGINE_CUT') return 'Desligar motor?';
+  if (phase === 'idle' && pending === 'ENGINE_RESUME') return 'Liberar motor?';
   if (phase === 'verifying') return 'Confirme que é você';
   if (phase === 'rejected') return 'Comando recusado';
   if (phase === 'failed') return 'Falha no comando';
@@ -608,7 +667,7 @@ function runCommand(vehicleId: string, type: CommandType, stepUpToken?: string):
     case 'ENGINE_CUT':
       return commandsApi.engineCut(vehicleId, stepUpToken);
     case 'ENGINE_RESUME':
-      return commandsApi.engineResume(vehicleId);
+      return commandsApi.engineResume(vehicleId, stepUpToken);
     case 'REQUEST_POSITION':
       return commandsApi.requestPosition(vehicleId);
     case 'REQUEST_STATUS':

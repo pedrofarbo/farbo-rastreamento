@@ -7,7 +7,8 @@ import type { AuthTokens } from '@/types';
  * servidor devolve um comprovante de uso único, que vai junto com a ação.
  */
 
-export type StepUpPurpose = 'engine_cut';
+/** As ações que pedem a confirmação: bloquear, desbloquear e dar acesso a um veículo. */
+export type StepUpPurpose = 'engine_cut' | 'engine_resume' | 'vehicle_share';
 
 export interface StepUpGrant {
   token: string;

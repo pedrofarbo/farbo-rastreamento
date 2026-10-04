@@ -163,7 +163,7 @@ func (n *recordingNotifier) PasswordChanged(_ context.Context, to, _ string, _ t
 	return nil
 }
 
-func (n *recordingNotifier) Invite(_ context.Context, to, name, token string, ttl time.Duration) error {
+func (n *recordingNotifier) Invite(_ context.Context, to, name, _, token string, ttl time.Duration) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.invites = append(n.invites, sentReset{to: to, name: name, token: token, ttl: ttl})

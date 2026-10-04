@@ -1,0 +1,101 @@
+/* Usuários da equipe: a marca "você", os perfis no formulário e a legenda. */
+
+.you {
+  margin-left: var(--space-2);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+/* --- Formulário --- */
+
+.roles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+/* Cada perfil é uma opção grande, com o que ele permite logo abaixo. */
+.role {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.role:hover {
+  border-color: var(--border-strong);
+}
+
+.role input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.roleChecked {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.roles:disabled .role {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.role strong,
+.check {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.roleDescription {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.check {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.check input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+/* --- Legenda dos perfis --- */
+
+.legend {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+  margin: 0;
+}
+
+.legend dd {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .legend {
+    grid-template-columns: 1fr;
+  }
+}

@@ -41,3 +41,41 @@ func TestOwnerIndexOwns(t *testing.T) {
 		})
 	}
 }
+
+func TestOwnerIndexSharedWith(t *testing.T) {
+	alice, bia, caio := uuid.New(), uuid.New(), uuid.New()
+	vehicle, device, other := uuid.New(), uuid.New(), uuid.New()
+
+	index := &OwnerIndex{
+		byVehicle:       map[uuid.UUID]uuid.UUID{vehicle: alice},
+		byDevice:        map[uuid.UUID]uuid.UUID{device: alice},
+		guestsByVehicle: map[uuid.UUID]map[uuid.UUID]bool{vehicle: {bia: true}},
+		guestsByDevice:  map[uuid.UUID]map[uuid.UUID]bool{device: {bia: true}},
+	}
+
+	cases := []struct {
+		name    string
+		user    uuid.UUID
+		vehicle *uuid.UUID
+		device  *uuid.UUID
+		want    bool
+	}{
+		{"com acesso, pelo veículo", bia, &vehicle, nil, true},
+		{"com acesso, pelo rastreador", bia, nil, &device, true},
+		{"sem acesso", caio, &vehicle, nil, false},
+		{"com acesso a outro veículo", bia, &other, &device, false},
+		// O dono não "recebeu" acesso: o dele é o Owns.
+		{"o dono", alice, &vehicle, nil, false},
+		{"mensagem sem veículo nem rastreador", bia, nil, nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := index.SharedWith(tc.user, tc.vehicle, tc.device); got != tc.want {
+				t.Fatalf("SharedWith = %v, esperado %v", got, tc.want)
+			}
+		})
+	}
+	if index.Owns(bia, &vehicle, nil) {
+		t.Error("quem tem acesso não vira dono")
+	}
+}

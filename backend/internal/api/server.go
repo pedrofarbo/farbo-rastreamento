@@ -33,6 +33,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/push"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/shares"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/support"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tcp"
@@ -75,6 +76,8 @@ type Deps struct {
 	AlertStore *alerts.DBStore
 	// Push: notificações no celular do app do cliente.
 	Push *push.Service
+	// Shares: acessos de terceiros aos veículos dos clientes.
+	Shares *shares.Service
 	// StepUp: confirmação extra (biometria ou senha) antes de ações
 	// sensíveis. Nil desliga a exigência (só em testes).
 	StepUp       *stepup.Service
@@ -292,6 +295,14 @@ func (s *Server) routes() chi.Router {
 				r.Post("/push/subscriptions", s.handleMyPushSubscribe)
 				r.Post("/push/unsubscribe", s.handleMyPushUnsubscribe)
 				r.Post("/push/test", s.handleMyPushTest)
+
+				// Acessos de terceiros aos veículos do cliente.
+				if s.Shares != nil {
+					r.Get("/shares", s.handleMyShares)
+					r.With(s.requireActiveCustomer).Post("/shares", s.handleCreateShare)
+					r.Patch("/shares/{id}", s.handleUpdateShare)
+					r.Delete("/shares/{id}", s.handleRemoveShare)
+				}
 			})
 
 			// Daqui para baixo, só a equipe da central.
@@ -317,10 +328,13 @@ func (s *Server) routes() chi.Router {
 					})
 				})
 
+				// Equipe da central: quem entra no painel e com que perfil.
 				r.Route("/users", func(r chi.Router) {
 					r.Use(auth.RequireRole(auth.RoleAdmin))
 					r.Get("/", s.handleListUsers)
 					r.Post("/", s.handleCreateUser)
+					r.Patch("/{id}", s.handleUpdateUser)
+					r.Post("/{id}/invite", s.handleInviteUser)
 				})
 
 				// Clientes, assinaturas e faturas (administração).

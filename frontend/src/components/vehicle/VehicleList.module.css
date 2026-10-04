@@ -115,3 +115,9 @@
   color: var(--danger);
   font-weight: 600;
 }
+
+/* Veículo de outra pessoa, compartilhado com quem está vendo. */
+.shared {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}

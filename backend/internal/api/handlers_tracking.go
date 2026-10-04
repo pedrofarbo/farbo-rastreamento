@@ -11,8 +11,10 @@ import (
 )
 
 // handleVehiclePosition devolve a última posição conhecida do veículo.
+// handleVehiclePosition: a posição ao vivo, também para quem acompanha o
+// veículo com acesso de terceiro.
 func (s *Server) handleVehiclePosition(w http.ResponseWriter, r *http.Request) {
-	_, device, ok := s.vehicleFromURL(w, r, true)
+	_, device, _, ok := s.vehicleForViewer(w, r, true)
 	if !ok {
 		return
 	}

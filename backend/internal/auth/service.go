@@ -262,7 +262,13 @@ func (s *Service) GetUser(ctx context.Context, id uuid.UUID) (*User, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
-func (s *Service) ListUsers(ctx context.Context) ([]*User, error) { return s.repo.List(ctx) }
+// FindByEmail acha o usuário pelo e-mail (sem diferença de maiúsculas).
+func (s *Service) FindByEmail(ctx context.Context, email string) (*User, error) {
+	return s.repo.GetByEmail(ctx, email)
+}
+
+// ListTeam lista a equipe da central (os clientes ficam em Clientes).
+func (s *Service) ListTeam(ctx context.Context) ([]*User, error) { return s.repo.ListTeam(ctx) }
 
 // LoginVerified abre a sessão de quem já provou quem é por outro meio — a
 // biometria do aparelho, conferida pelo pacote stepup.
@@ -349,6 +355,24 @@ func (s *Service) UpdateProfile(ctx context.Context, id uuid.UUID, p Profile) (*
 	}
 	p.Phone, p.Document = strings.TrimSpace(p.Phone), strings.TrimSpace(p.Document)
 	return s.repo.UpdateProfile(ctx, id, p)
+}
+
+// InputError é um dado inválido que quem pediu consegue corrigir.
+type InputError struct{ Reason string }
+
+func (e *InputError) Error() string { return e.Reason }
+
+// UpdateMember altera nome, perfil e situação de alguém da equipe (ver
+// Repository.UpdateMember).
+func (s *Service) UpdateMember(ctx context.Context, actor, id uuid.UUID, m Member) (before, after *User, err error) {
+	m.Name = strings.TrimSpace(m.Name)
+	if m.Name == "" {
+		return nil, nil, &InputError{"o nome é obrigatório"}
+	}
+	if !TeamRole(m.Role) {
+		return nil, nil, &InputError{"escolha o perfil: administrador, operador ou visualização"}
+	}
+	return s.repo.UpdateMember(ctx, actor, id, m)
 }
 
 // RandomPassword gera uma senha que ninguém conhece, para contas que vão

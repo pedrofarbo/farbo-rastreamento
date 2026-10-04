@@ -3,45 +3,92 @@ package api
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/commands"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/shares"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 )
 
 // handleEngineCut: o cliente confirma o corte com a biometria ou a senha
-// (comprovante de uso único em X-Step-Up-Token).
+// (comprovante de uso único em X-Step-Up-Token). Quem recebeu do dono o
+// acesso de emergência também bloqueia (com a própria confirmação), e o
+// dono é avisado.
 func (s *Server) handleEngineCut(w http.ResponseWriter, r *http.Request) {
+	vehicle, device, share, ok := s.vehicleForViewer(w, r, true)
+	if !ok || !canBlock(w, share) {
+		return
+	}
 	if !s.requireStepUp(w, r, stepup.PurposeEngineCut) {
 		return
 	}
-	s.sendCommand(w, r, protocols.CommandEngineCut, nil)
+	if !s.dispatchCommand(w, r, vehicle, device, protocols.CommandEngineCut, nil) || share == nil {
+		return
+	}
+	s.recordAudit(r, audit.ActionSharedEngineCut, &vehicle.ID, &device.ID,
+		map[string]any{"shareId": share.ID, "ownerId": share.OwnerID})
+	if s.Shares != nil {
+		s.Shares.GuestBlocked(r.Context(), share, time.Now())
+	}
+}
+
+// canBlock: com acesso de terceiro, só bloqueia quem o dono permitiu.
+func canBlock(w http.ResponseWriter, share *shares.Share) bool {
+	if share != nil && !share.CanBlock {
+		writeError(w, http.StatusForbidden, "você acompanha este veículo, mas o bloqueio não foi liberado para você")
+		return false
+	}
+	return true
 }
 
 // handleEngineCutCheck diz, sem enviar nada, se o corte passaria agora pela
 // regra de segurança e, se não, por quê. Com a posição antiga demais, o
 // painel e o app pedem uma posição nova ao rastreador antes de cortar.
 func (s *Server) handleEngineCutCheck(w http.ResponseWriter, r *http.Request) {
-	_, device, ok := s.vehicleFromURL(w, r, true)
-	if !ok {
+	_, device, share, ok := s.vehicleForViewer(w, r, true)
+	if !ok || !canBlock(w, share) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.Commands.CheckEngineCut(r.Context(), device))
 }
 
+// handleEngineResume: desbloquear é do dono e da central — nunca de quem
+// recebeu acesso. O cliente confirma com a biometria ou a senha: com o
+// celular roubado e o app aberto, quem está com ele não desbloqueia.
 func (s *Server) handleEngineResume(w http.ResponseWriter, r *http.Request) {
-	s.sendCommand(w, r, protocols.CommandEngineResume, nil)
+	vehicle, device, ok := s.vehicleFromURL(w, r, true)
+	if !ok {
+		return
+	}
+	if !s.requireStepUp(w, r, stepup.PurposeEngineResume) {
+		return
+	}
+	s.dispatchCommand(w, r, vehicle, device, protocols.CommandEngineResume, nil)
 }
 
+// handleRequestPosition: pedir uma posição nova também vale para quem
+// acompanha o veículo.
 func (s *Server) handleRequestPosition(w http.ResponseWriter, r *http.Request) {
-	s.sendCommand(w, r, protocols.CommandRequestPosition, nil)
+	vehicle, device, _, ok := s.vehicleForViewer(w, r, true)
+	if !ok {
+		return
+	}
+	s.dispatchCommand(w, r, vehicle, device, protocols.CommandRequestPosition, nil)
 }
 
 func (s *Server) handleRequestStatus(w http.ResponseWriter, r *http.Request) {
-	s.sendCommand(w, r, protocols.CommandRequestStatus, nil)
+	vehicle, device, ok := s.vehicleFromURL(w, r, true)
+	if !ok {
+		return
+	}
+	s.dispatchCommand(w, r, vehicle, device, protocols.CommandRequestStatus, nil)
 }
 
 type genericCommandRequest struct {
@@ -75,15 +122,17 @@ func (s *Server) handleGenericCommand(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.sendCommand(w, r, cmdType, &req)
-}
-
-func (s *Server) sendCommand(w http.ResponseWriter, r *http.Request, cmdType protocols.CommandType, extra *genericCommandRequest) {
 	vehicle, device, ok := s.vehicleFromURL(w, r, true)
 	if !ok {
 		return
 	}
+	s.dispatchCommand(w, r, vehicle, device, cmdType, &req)
+}
 
+// dispatchCommand envia o comando ao rastreador do veículo e responde. Diz
+// se o comando saiu (mesmo que a confirmação do aparelho ainda venha).
+func (s *Server) dispatchCommand(w http.ResponseWriter, r *http.Request, vehicle *vehicles.Vehicle, device *devices.Device,
+	cmdType protocols.CommandType, extra *genericCommandRequest) bool {
 	var userID *uuid.UUID
 	if principal, found := auth.FromContext(r.Context()); found {
 		userID = &principal.UserID
@@ -110,15 +159,16 @@ func (s *Server) sendCommand(w http.ResponseWriter, r *http.Request, cmdType pro
 			"reason":  cmd.Error,
 			"command": cmd,
 		})
-		return
+		return false
 	case err != nil:
 		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return false
 	}
 
 	// 202: o comando saiu, mas a confirmação do aparelho ainda vai chegar —
 	// pelo WebSocket (command.acknowledged / command.failed).
 	writeJSON(w, http.StatusAccepted, cmd)
+	return cmd.Status != commands.StatusFailed
 }
 
 func (s *Server) handleVehicleCommands(w http.ResponseWriter, r *http.Request) {

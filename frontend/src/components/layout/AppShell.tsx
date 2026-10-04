@@ -5,17 +5,11 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { leadsApi, meApi, whatsappApi } from '@/api/resources';
 import { Spinner } from '@/components/ui/Spinner';
 import { useRealtime } from '@/hooks/useRealtime';
+import { ROLE_LABELS } from '@/services/roles';
 import { useAuth } from '@/stores/AuthContext';
 import { useTheme } from '@/hooks/useTheme';
 
 import styles from './AppShell.module.css';
-
-const ROLE_LABELS: Record<string, string> = {
-  admin: 'Administrador',
-  operator: 'Operador',
-  viewer: 'Visualização',
-  customer: 'Cliente',
-};
 
 export function AppShell() {
   const { user, logout, canManage, canOperate, isCustomer } = useAuth();
@@ -132,6 +126,9 @@ export function AppShell() {
                   </NavLink>
                   <NavLink to="/diagnostico" className={navClass}>
                     Diagnóstico
+                  </NavLink>
+                  <NavLink to="/usuarios" className={navClass}>
+                    Usuários
                   </NavLink>
                 </>
               )}

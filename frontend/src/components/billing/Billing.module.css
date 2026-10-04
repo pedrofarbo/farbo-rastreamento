@@ -558,3 +558,18 @@
   margin-top: 3px;
   accent-color: var(--accent);
 }
+
+/* Veículos que outras pessoas compartilharam com o cliente. */
+.sharedSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+.sharedTitle {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--text-primary);
+}

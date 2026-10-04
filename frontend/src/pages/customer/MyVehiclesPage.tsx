@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 
-import { meApi, vehiclesApi, vehicleInputFrom } from '@/api/resources';
+import { meApi, sharesApi, vehiclesApi, vehicleInputFrom } from '@/api/resources';
 import type { VehicleInput } from '@/api/resources';
 import { AddressModal } from '@/components/address/AddressModal';
 import { DeliveryBox } from '@/components/address/DeliveryBox';
@@ -25,6 +25,7 @@ import { useToast } from '@/components/ui/Toast';
 import { formatDeviceStatus, formatRelative } from '@/services/format';
 import { stepOf, trackerTone } from '@/services/fulfillment';
 import { subscriptionsByVehicle, subscriptionsWithoutVehicle } from '@/services/subscriptions';
+import { SharesModal, sharesKey } from '@/components/vehicle/SharesModal';
 import { EMPTY_VEHICLE, VehicleFields } from '@/components/vehicle/VehicleFields';
 import type { CustomerAccount, CustomerFulfillment, Invoice, Subscription, VehicleView } from '@/types';
 
@@ -51,11 +52,27 @@ export function MyVehiclesPage() {
   const [showInstallers, setShowInstallers] = useState(false);
   const [editingAddress, setEditingAddress] = useState(false);
   const [following, setFollowing] = useState<CustomerFulfillment | null>(null);
+  // Acessos de terceiros: o veículo cuja lista está aberta, e o compartilhado
+  // que a pessoa está deixando de acompanhar.
+  const [sharing, setSharing] = useState<VehicleView | null>(null);
+  const [leaving, setLeaving] = useState<string | null>(null);
 
   const vehicles = useQuery({ queryKey: ['vehicles'], queryFn: vehiclesApi.list });
   const account = useQuery({ queryKey: ['me', 'account'], queryFn: meApi.account });
   const subscriptions = useQuery({ queryKey: ['me', 'subscriptions'], queryFn: meApi.subscriptions });
   const fulfillments = useQuery({ queryKey: ['me', 'fulfillments'], queryFn: meApi.fulfillments });
+  const shares = useQuery({ queryKey: sharesKey, queryFn: sharesApi.list });
+
+  const leave = useMutation({
+    mutationFn: (shareId: string) => sharesApi.remove(shareId),
+    onSuccess: () => {
+      setLeaving(null);
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      notify({ tone: 'success', title: 'Você não acompanha mais esse veículo' });
+    },
+    onError: (error: Error) =>
+      notify({ tone: 'error', title: 'Não foi possível sair', description: error.message }),
+  });
 
   const refresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['vehicles'] });
@@ -80,10 +97,17 @@ export function MyVehiclesPage() {
     return <SuspendedNotice message={(vehicles.error as Error).message} />;
   }
 
-  const list = vehicles.data ?? [];
+  // Os do cliente e os que outros clientes compartilharam com ele.
+  const all = vehicles.data ?? [];
+  const list = all.filter((v) => !v.shared);
+  const sharedWithMe = all.filter((v) => v.shared);
+  const sharesOf = new Map<string, number>();
+  for (const share of shares.data ?? []) sharesOf.set(share.vehicleId, (sharesOf.get(share.vehicleId) ?? 0) + 1);
   const subs = subscriptions.data ?? [];
   const byVehicle = subscriptionsByVehicle(subs);
   const withoutVehicle = subscriptionsWithoutVehicle(subs);
+  // Só acompanha veículos de outras pessoas (nenhum próprio nem assinatura).
+  const onlyShared = list.length === 0 && withoutVehicle.length === 0 && sharedWithMe.length > 0;
   const address = account.data?.deliveryAddress ?? null;
   // O pedido mais recente de cada veículo (a lista vem do mais novo).
   const orderOf = new Map<string, CustomerFulfillment>();
@@ -107,7 +131,14 @@ export function MyVehiclesPage() {
           </div>
         </header>
 
+        {onlyShared && (
+          <p className={billing.muted}>
+            Você ainda não tem veículo próprio. Para rastrear um seu, use Novo veículo.
+          </p>
+        )}
+
         {account.data &&
+          !onlyShared &&
           (address ? (
             <DeliveryBox address={address} label="Endereço de entrega" onChange={() => setEditingAddress(true)} />
           ) : (
@@ -127,7 +158,7 @@ export function MyVehiclesPage() {
 
         {vehicles.isLoading || subscriptions.isLoading ? (
           <Spinner label="Carregando veículos" />
-        ) : list.length === 0 && withoutVehicle.length === 0 ? (
+        ) : onlyShared ? null : list.length === 0 && withoutVehicle.length === 0 ? (
           <Card>
             <EmptyState
               icon="🚗"
@@ -152,6 +183,8 @@ export function MyVehiclesPage() {
                 onOpen={() => navigate(`/veiculos/${vehicle.id}`)}
                 onEdit={() => setForm({ mode: 'edit', vehicle, input: vehicleInputFrom(vehicle) })}
                 onShowInstallers={() => setShowInstallers(true)}
+                shareCount={sharesOf.get(vehicle.id) ?? 0}
+                onShares={() => setSharing(vehicle)}
               />
             ))}
             {withoutVehicle.map((sub) => (
@@ -178,7 +211,58 @@ export function MyVehiclesPage() {
             ))}
           </div>
         )}
+
+        {sharedWithMe.length > 0 && (
+          <section className={billing.sharedSection}>
+            <h2 className={billing.sharedTitle}>Compartilhados com você</h2>
+            <p className={billing.muted}>
+              Veículos de outras pessoas que deram acesso a você: a posição ao vivo e, se liberado, o
+              bloqueio de emergência.
+            </p>
+            <div className={billing.vehicleGrid}>
+              {sharedWithMe.map((vehicle) => (
+                <article key={vehicle.id} className={billing.vehicleCard}>
+                  <div className={billing.vehicleHead}>
+                    <div>
+                      <div className={billing.vehicleName}>{vehicle.name}</div>
+                      <div className={billing.vehicleMeta}>De {vehicle.shared?.ownerName}</div>
+                    </div>
+                    {vehicle.plate && <span className={billing.plate}>{vehicle.plate}</span>}
+                  </div>
+                  <div>
+                    <Badge tone={vehicle.shared?.canBlock ? 'warning' : 'neutral'}>
+                      {vehicle.shared?.canBlock ? 'Acompanha e pode bloquear' : 'Só acompanha'}
+                    </Badge>
+                  </div>
+                  <div className={billing.vehicleActions}>
+                    {vehicle.device && (
+                      <Button size="small" variant="primary" onClick={() => navigate(`/veiculos/${vehicle.id}`)}>
+                        Ver no mapa
+                      </Button>
+                    )}
+                    {leaving === vehicle.id ? (
+                      <Button
+                        size="small"
+                        variant="danger"
+                        loading={leave.isPending}
+                        onClick={() => vehicle.shared && leave.mutate(vehicle.shared.shareId)}
+                      >
+                        Confirmar
+                      </Button>
+                    ) : (
+                      <Button size="small" variant="ghost" onClick={() => setLeaving(vehicle.id)}>
+                        Deixar de acompanhar
+                      </Button>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
+
+      <SharesModal vehicle={sharing} onClose={() => setSharing(null)} />
 
       <Modal
         open={form !== null}
@@ -308,6 +392,8 @@ function VehicleCard({
   onOpen,
   onEdit,
   onShowInstallers,
+  shareCount,
+  onShares,
 }: {
   vehicle: VehicleView;
   subscription: Subscription | null;
@@ -316,6 +402,9 @@ function VehicleCard({
   onOpen: () => void;
   onEdit: () => void;
   onShowInstallers: () => void;
+  /** Quantas pessoas acompanham o veículo (acessos de terceiros). */
+  shareCount: number;
+  onShares: () => void;
 }) {
   const status = vehicle.device?.status;
   // Instalado = o rastreador já deu sinal. O aparelho é vinculado antes, na
@@ -400,6 +489,14 @@ function VehicleCard({
         )}
         <Button size="small" variant="secondary" onClick={onEdit}>
           Editar
+        </Button>
+        <Button
+          size="small"
+          variant="secondary"
+          onClick={onShares}
+          title="Quem mais acompanha este veículo e pode bloqueá-lo numa emergência"
+        >
+          {shareCount > 0 ? `Acessos (${shareCount})` : 'Acessos'}
         </Button>
       </div>
     </article>

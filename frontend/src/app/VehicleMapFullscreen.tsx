@@ -52,6 +52,8 @@ export function VehicleMapFullscreen({
   const position = vehicle.lastPosition;
   const acc = vehicle.state?.acc ?? position?.acc ?? null;
   const showingTrip = range !== null;
+  // Veículo compartilhado com quem está vendo: só a posição ao vivo.
+  const liveOnly = Boolean(vehicle.shared);
 
   // Esc fecha (teclado/computador); o foco vai para o fechar e volta para quem
   // abriu.
@@ -113,7 +115,7 @@ export function VehicleMapFullscreen({
         </button>
 
         <div className={styles.bottom}>
-          <div className={styles.chips} role="group" aria-label="O que mostrar no mapa">
+          <div className={styles.chips} role="group" aria-label="O que mostrar no mapa" hidden={liveOnly}>
             {RANGES.map((option) => (
               <button
                 key={option.label}

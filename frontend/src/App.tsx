@@ -24,6 +24,7 @@ const CustomersPage = page(() => import('@/pages/admin/CustomersPage'), 'Custome
 const InstallersPage = page(() => import('@/pages/admin/InstallersPage'), 'InstallersPage');
 const OrdersPage = page(() => import('@/pages/admin/OrdersPage'), 'OrdersPage');
 const SupportPage = page(() => import('@/pages/admin/SupportPage'), 'SupportPage');
+const UsersPage = page(() => import('@/pages/admin/UsersPage'), 'UsersPage');
 const AlertsPage = page(() => import('@/pages/customer/AlertsPage'), 'AlertsPage');
 const InvoicesPage = page(() => import('@/pages/customer/InvoicesPage'), 'InvoicesPage');
 const MyVehiclesPage = page(() => import('@/pages/customer/MyVehiclesPage'), 'MyVehiclesPage');
@@ -91,6 +92,7 @@ export function App() {
                       <Route path="clientes" element={<CustomersPage />} />
                       <Route path="clientes/:id" element={<CustomerDetailsPage />} />
                       <Route path="prestadores" element={<InstallersPage />} />
+                      <Route path="usuarios" element={<UsersPage />} />
                     </Route>
                   </Route>
                 </Route>

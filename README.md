@@ -206,6 +206,17 @@ Perfis disponíveis:
 | `viewer` | apenas visualizar |
 | `customer` | cliente final: só os próprios veículos, mapa e faturas |
 
+**Usuários da equipe** (menu **Usuários**, perfil `admin`): cadastra quem da
+central entra no painel e com que perfil (`admin`, `operator` ou `viewer`), com
+convite por e-mail para a pessoa criar a senha ou com uma senha definida na
+hora. Na mesma tela muda o nome, o perfil e a situação, e reenvia o convite.
+Ninguém muda o próprio perfil nem se desativa, e o painel nunca fica sem um
+administrador ativo (a conferência trava os administradores, então nem duas
+mudanças ao mesmo tempo passam disso). O perfil vai no token de acesso: quem
+muda de perfil ou é desativado perde as sessões abertas, e a mudança vale
+quando o token atual vence (`JWT_ACCESS_TTL`, 15 min). Os clientes não
+aparecem aqui; ficam em **Clientes**.
+
 ### Painel do cliente
 
 O cliente entra pelo mesmo login e vê um painel próprio: **Mapa**, **Meus
@@ -996,17 +1007,19 @@ enquanto ela não termina. Se a posição não chegar, o corte não é enviado. 
 depende de o aparelho responder ao `WHERE#` com um pacote de posição, e não só
 com texto; confira isso no aparelho real antes de contar com o recurso.
 
-**O cliente confirma que é ele.** Antes de desligar o motor, o cliente
-confirma com a biometria do aparelho: Face ID no iPhone, digital ou rosto no
+**O cliente confirma que é ele.** Antes de desligar ou religar o motor, o
+cliente confirma com a biometria do aparelho: Face ID no iPhone, digital ou rosto no
 Android, Touch ID ou Windows Hello no computador (WebAuthn). Se a biometria
 falhar, for cancelada ou não estiver cadastrada naquele aparelho, ele confirma
 com a senha da conta.
 
 - **Quem exige é o servidor.** A confirmação vira um comprovante de uso único,
-  válido por 3 minutos e só para o corte, enviado em `X-Step-Up-Token`. Sem
-  ele, `POST /commands/engine-cut` do cliente responde 403
-  (`STEP_UP_REQUIRED`), mesmo para quem chamar a API direto com um token
-  roubado. A equipe da central (admin, operador) segue sem essa etapa.
+  válido por 3 minutos e só para a ação pedida (`engine_cut`, `engine_resume`
+  ou `vehicle_share`), enviado em `X-Step-Up-Token`. Sem ele, o corte e o
+  desbloqueio do cliente respondem 403 (`STEP_UP_REQUIRED`), mesmo para quem
+  chamar a API direto com um token roubado. Assim, quem estiver com o celular
+  roubado e o app aberto não desbloqueia o veículo. A equipe da central
+  (admin, operador) segue sem essa etapa.
 - **Cadastro da biometria:** em **Conta → Bloqueio do motor**, ou pelo convite
   que aparece depois de um corte confirmado com a senha. Cadastrar pede a
   senha: só com o token de acesso, ninguém registra a própria "biometria" na
@@ -1028,6 +1041,33 @@ substitui a outra.
 Todo comando — enviado, recusado, confirmado ou expirado — vai para
 `audit_logs` com usuário, IP, o texto exato mandado ao aparelho e o resultado.
 
+### Acessos de terceiros
+
+Em **Meus veículos → Acessos**, o cliente dá a outra pessoa o acompanhamento
+de um veículo dele: a posição ao vivo e, se ele marcar, o **bloqueio de
+emergência** (o celular roubado junto com o veículo, por exemplo). Até 5
+pessoas por veículo.
+
+- **A pessoa entra com a própria conta.** Sem conta com aquele e-mail, ela é
+  criada (como cliente, sem assinatura) e a pessoa recebe o convite para criar
+  a senha. Já sendo cliente, só recebe o aviso, e o veículo aparece no app
+  dela, em **Compartilhados com você**. E-mail da equipe não recebe acesso.
+- **O que ela alcança:** a lista e o detalhe do veículo, a posição ao vivo, o
+  tempo real da posição e do motor (sem os eventos), o pedido de posição e,
+  com o bloqueio liberado, o corte, com a confirmação dela (biometria ou
+  senha). Histórico, eventos, cercas, comandos, edição, status e
+  **desbloqueio** continuam só do dono (404 para ela).
+- **Segurança:** dar acesso e liberar o bloqueio pedem a confirmação do dono
+  (`vehicle_share`), para que quem pegue o celular dele por um instante não se
+  cadastre para rastreá-lo. O dono recebe um e-mail de segurança a cada acesso
+  dado, e e-mail e notificação no celular quando alguém bloqueia. Tirar o
+  acesso, ou deixar de acompanhar, vale na hora, inclusive no tempo real. O
+  acesso para de valer sozinho se o veículo mudar de dono, e fica suspenso
+  enquanto o dono estiver suspenso por falta de pagamento.
+- **Auditoria:** `VEHICLE_SHARED`, `VEHICLE_SHARE_UPDATED`,
+  `VEHICLE_SHARE_REMOVED` e `SHARED_ENGINE_CUT`. Na lista de **Clientes**, a
+  central vê quantos veículos de outros cada pessoa acompanha.
+
 ---
 
 ## API
@@ -1041,9 +1081,19 @@ POST   /api/auth/refresh
 POST   /api/auth/logout
 GET    /api/auth/me
 
+GET    /api/users                        (admin) a equipe (sem os clientes)
+POST   /api/users                        (admin) {email, name, role, password?} sem senha: convite por e-mail
+PATCH  /api/users/:id                    (admin) {name, role, active}; 409 no próprio perfil ou sem administrador
+POST   /api/users/:id/invite             (admin) reenvia o convite (o link anterior deixa de valer)
+
 POST   /api/auth/forgot-password         {email} → 202 sempre (envia o link se houver conta)
 POST   /api/auth/reset-password/validate {token} → 204, ou 410 se o link não vale mais
 POST   /api/auth/reset-password          {token, password} → 204; 400 senha fraca; 410 link inválido
+
+GET    /api/me/shares                    (customer) os acessos que o cliente deu
+POST   /api/me/shares                    (customer) {vehicleId, name, email, canBlock}; confirmação vehicle_share
+PATCH  /api/me/shares/:id                (customer) {canBlock}; liberar pede vehicle_share
+DELETE /api/me/shares/:id                (customer) o dono tira, ou quem recebeu deixa de acompanhar
 
 GET    /api/me/account                   (customer) assinaturas, veículos, suspensão, próxima fatura
 GET    /api/me/subscriptions             (customer) cada uma com o vehicleId
@@ -1112,8 +1162,8 @@ GET    /api/vehicles/:id/positions       ?from&to&limit&simplify&raw&after
 GET    /api/vehicles/:id/events
 GET    /api/vehicles/:id/commands
 
-POST   /api/vehicles/:id/commands/engine-cut       (operator+)
-GET    /api/vehicles/:id/commands/engine-cut/check (operator+) a regra do corte agora, sem enviar
+POST   /api/vehicles/:id/commands/engine-cut       (operator+; terceiro com o bloqueio liberado)
+GET    /api/vehicles/:id/commands/engine-cut/check (operator+; idem) a regra do corte agora, sem enviar
 
 GET    /api/step-up/biometrics            aparelhos com biometria do usuário
 POST   /api/step-up/biometrics/options    começar o cadastro (pede a senha)
@@ -1124,8 +1174,8 @@ POST   /api/step-up/biometric             confirmar com a biometria → comprova
 POST   /api/step-up/password              confirmar com a senha → comprovante
 POST   /api/auth/biometric/options        (público) começar o login com a biometria do aparelho
 POST   /api/auth/biometric                (público) entrar com a biometria → sessão
-POST   /api/vehicles/:id/commands/engine-resume    (operator+)
-POST   /api/vehicles/:id/commands/request-position (operator+)
+POST   /api/vehicles/:id/commands/engine-resume    (operator+; o cliente confirma: engine_resume)
+POST   /api/vehicles/:id/commands/request-position (operator+; também o terceiro)
 POST   /api/vehicles/:id/commands/request-status   (operator+)
 POST   /api/vehicles/:id/commands                  (operator+; CUSTOM é admin)
 

@@ -106,6 +106,7 @@ export function VehicleList({ vehicles, selectedId, onSelect }: VehicleListProps
                 </div>
 
                 {vehicle.plate && <div className={styles.plate}>{vehicle.plate}</div>}
+                {vehicle.shared && <div className={styles.shared}>Compartilhado por {vehicle.shared.ownerName}</div>}
 
                 <div className={styles.metrics}>
                   <span className={`${styles.metric} ${styles.speed}`}>

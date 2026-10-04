@@ -1,3 +1,5 @@
+import type { TeamRole } from '@/services/roles';
+
 import { api, request } from './client';
 import type {
   AlertSettings,
@@ -35,6 +37,7 @@ import type {
   PublicInstaller,
   TrackerOrderResult,
   User,
+  VehicleShare,
   Vehicle,
   VehicleEvent,
   VehicleView,
@@ -69,7 +72,6 @@ export const authApi = {
   logout: (refreshToken: string) =>
     request<void>('/api/auth/logout', { method: 'POST', body: { refreshToken }, anonymous: true }),
   me: () => api.get<User>('/api/auth/me'),
-  listUsers: () => api.get<User[]>('/api/users'),
 
   // Redefinição de senha: rotas públicas, sem sessão (anonymous evita mandar
   // um token velho e disparar a renovação de sessão num 401).
@@ -91,8 +93,33 @@ export const authApi = {
       body: { token, password },
       anonymous: true,
     }),
-  createUser: (input: { email: string; name: string; role: string; password: string }) =>
-    api.post<User>('/api/users', input),
+};
+
+// ---------------------------------------------------------------------------
+// Equipe da central (usuários do painel)
+// ---------------------------------------------------------------------------
+
+export interface TeamUserInput {
+  email: string;
+  name: string;
+  role: TeamRole;
+  /** Em branco: vai o convite por e-mail para a pessoa criar a senha. */
+  password: string;
+}
+
+export interface TeamUserUpdate {
+  name: string;
+  role: TeamRole;
+  active: boolean;
+}
+
+export const usersApi = {
+  /** Só a equipe: os clientes ficam em Clientes. */
+  list: () => api.get<User[]>('/api/users'),
+  create: (input: TeamUserInput) => api.post<User>('/api/users', input),
+  update: (id: string, input: TeamUserUpdate) => api.patch<User>(`/api/users/${id}`, input),
+  /** Reenvia o link para criar a senha (o anterior deixa de valer). */
+  invite: (id: string) => api.post<{ message: string }>(`/api/users/${id}/invite`),
 };
 
 // ---------------------------------------------------------------------------
@@ -172,14 +199,44 @@ export const commandsApi = {
     }),
   engineCutCheck: (vehicleId: string) =>
     api.get<EngineCutCheck>(`/api/vehicles/${vehicleId}/commands/engine-cut/check`),
-  engineResume: (vehicleId: string) =>
-    api.post<DeviceCommand>(`/api/vehicles/${vehicleId}/commands/engine-resume`),
+  /** Desbloquear também pede a confirmação do cliente. */
+  engineResume: (vehicleId: string, stepUpToken?: string) =>
+    request<DeviceCommand>(`/api/vehicles/${vehicleId}/commands/engine-resume`, {
+      method: 'POST',
+      headers: stepUpToken ? { 'X-Step-Up-Token': stepUpToken } : undefined,
+    }),
   requestPosition: (vehicleId: string) =>
     api.post<DeviceCommand>(`/api/vehicles/${vehicleId}/commands/request-position`),
   requestStatus: (vehicleId: string) =>
     api.post<DeviceCommand>(`/api/vehicles/${vehicleId}/commands/request-status`),
   generic: (vehicleId: string, body: { command: string; params?: Record<string, string>; raw?: string }) =>
     api.post<DeviceCommand>(`/api/vehicles/${vehicleId}/commands`, body),
+};
+
+// ---------------------------------------------------------------------------
+// Acessos de terceiros (o cliente compartilha um veículo dele)
+// ---------------------------------------------------------------------------
+
+export interface VehicleShareInput {
+  vehicleId: string;
+  name: string;
+  email: string;
+  canBlock: boolean;
+}
+
+const withStepUp = (token?: string) => (token ? { 'X-Step-Up-Token': token } : undefined);
+
+export const sharesApi = {
+  /** Os acessos que o cliente deu, de todos os veículos dele. */
+  list: () => api.get<VehicleShare[]>('/api/me/shares'),
+  /** Pede a confirmação (biometria ou senha) do dono. */
+  create: (input: VehicleShareInput, stepUpToken: string) =>
+    request<VehicleShare>('/api/me/shares', { method: 'POST', body: input, headers: withStepUp(stepUpToken) }),
+  /** Liberar o bloqueio pede a confirmação; tirar, não. */
+  setCanBlock: (id: string, canBlock: boolean, stepUpToken?: string) =>
+    request<VehicleShare>(`/api/me/shares/${id}`, { method: 'PATCH', body: { canBlock }, headers: withStepUp(stepUpToken) }),
+  /** O dono tira o acesso, ou quem recebeu deixa de acompanhar. */
+  remove: (id: string) => api.delete<void>(`/api/me/shares/${id}`),
 };
 
 // ---------------------------------------------------------------------------

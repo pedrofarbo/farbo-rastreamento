@@ -44,16 +44,37 @@ func (s *Server) requireActiveCustomer(next http.Handler) http.Handler {
 }
 
 // websocketScope define o que cada conexão recebe: a equipe, tudo; o
-// cliente, só as mensagens dos veículos e rastreadores dele. Mensagem sem
-// veículo nem rastreador não vai para cliente nenhum.
+// cliente, só as mensagens dos veículos e rastreadores dele — e, dos que
+// compartilharam com ele, só a posição e a situação (nada de eventos).
+// Mensagem sem veículo nem rastreador não vai para cliente nenhum.
 func (s *Server) websocketScope(r *http.Request) ws.Filter {
 	customerID, isCustomer := customerOf(r)
 	if !isCustomer {
 		return nil
 	}
 	return func(msg ws.Message) bool {
-		return s.Owners != nil && s.Owners.Owns(customerID, msg.VehicleID, msg.DeviceID)
+		if s.Owners == nil {
+			return false
+		}
+		if s.Owners.Owns(customerID, msg.VehicleID, msg.DeviceID) {
+			return true
+		}
+		return sharedMessage[msg.Type] && s.Owners.SharedWith(customerID, msg.VehicleID, msg.DeviceID)
 	}
+}
+
+// sharedMessage: o que quem acompanha um veículo compartilhado recebe ao
+// vivo — a posição, a conexão do rastreador, o motor e o andamento dos
+// comandos (o bloqueio que ele pediu).
+var sharedMessage = map[string]bool{
+	ws.TypePositionUpdated:     true,
+	ws.TypeDeviceOnline:        true,
+	ws.TypeDeviceOffline:       true,
+	ws.TypeDeviceStale:         true,
+	ws.TypeEngineStatusChanged: true,
+	ws.TypeCommandSent:         true,
+	ws.TypeCommandAcknowledged: true,
+	ws.TypeCommandFailed:       true,
 }
 
 func (s *Server) handleMyAccount(w http.ResponseWriter, r *http.Request) {

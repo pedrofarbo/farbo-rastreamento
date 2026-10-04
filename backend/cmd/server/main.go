@@ -45,6 +45,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/push"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/realtime"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/shares"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/support"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tcp"
@@ -274,6 +275,12 @@ func run() error {
 		alertEngine.SetPusher(pushSvc)
 	}
 
+	// Acessos de terceiros aos veículos (acompanhar e bloqueio de emergência).
+	sharesSvc := shares.NewService(db, authSvc, mail.NewShareMailer(mailer, cfg.Mail.AppURL), log)
+	if pushSvc.Enabled() {
+		sharesSvc.SetPusher(pushSvc)
+	}
+
 	// ---- Servidores ----
 	tcpServer := tcp.NewServer(cfg.TCP, registry, connManager, ingestor, log, metrics)
 
@@ -290,7 +297,7 @@ func run() error {
 		Support:   supportSvc,
 		Leads: leads.NewService(leads.NewRepository(db),
 			leads.MailNotifier{Mailer: mail.NewLeadMailer(mailer, cfg.Mail.AppURL), To: cfg.Leads.NotifyEmails}, log),
-		Alerts: alertEngine, AlertStore: alertStore, Push: pushSvc,
+		Alerts: alertEngine, AlertStore: alertStore, Push: pushSvc, Shares: sharesSvc,
 		StepUp:    stepup.NewService(db, cfg.StepUp, authSvc),
 		Positions: positionRepo, States: stateStore,
 		Raw: rawRepo, Ingestor: ingestor, Conns: connManager, Registry: registry,

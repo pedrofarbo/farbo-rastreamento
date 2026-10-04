@@ -9,7 +9,6 @@ import (
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
-	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 )
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -225,42 +224,6 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, user)
-}
-
-func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := s.Auth.ListUsers(r.Context())
-	if err != nil {
-		handleStoreError(w, err, "usuários não encontrados")
-		return
-	}
-	writeJSON(w, http.StatusOK, users)
-}
-
-type createUserRequest struct {
-	Email    string `json:"email"`
-	Name     string `json:"name"`
-	Role     string `json:"role"`
-	Password string `json:"password"`
-}
-
-func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
-	var req createUserRequest
-	if err := decodeJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "corpo inválido")
-		return
-	}
-
-	user, err := s.Auth.CreateUser(r.Context(), req.Email, req.Name, req.Role, req.Password)
-	if err != nil {
-		if errors.Is(err, database.ErrConflict) {
-			writeError(w, http.StatusConflict, "já existe um usuário com esse e-mail")
-			return
-		}
-		// O que sobra são erros de validação, que o cliente consegue corrigir.
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusCreated, user)
 }
 
 func (s *Server) handleListProtocols(w http.ResponseWriter, _ *http.Request) {

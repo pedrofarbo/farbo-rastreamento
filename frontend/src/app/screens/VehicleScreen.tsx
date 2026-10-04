@@ -61,13 +61,18 @@ export function VehicleScreen() {
     else navigate({ search: '' }, { replace: true });
   }, [location.state, navigate]);
 
+  // Veículo de outra pessoa, compartilhado com quem está vendo: só a posição
+  // ao vivo (o trajeto, os eventos e as cercas continuam só do dono).
+  const shared = query.data?.shared ?? null;
+  const owned = Boolean(query.data && !query.data.shared);
+
   const period = range ? tripWindow(range) : null;
   const trip = useQuery({
     queryKey: ['app-trip', id, range],
     queryFn: () => vehiclesApi.positions(id, { from: period!.from, to: period!.to }),
-    enabled: Boolean(range && id),
+    enabled: Boolean(range && id && owned),
   });
-  const events = useQuery({ queryKey: ['app-events', id], queryFn: () => vehiclesApi.events(id, { limit: 15 }), enabled: Boolean(id) });
+  const events = useQuery({ queryKey: ['app-events', id], queryFn: () => vehiclesApi.events(id, { limit: 15 }), enabled: Boolean(id && owned) });
   const fences = useQuery({ queryKey: fencesKey, queryFn: geofencesApi.list });
   const mine = useMemo(() => fencesOf(fences.data ?? [], id), [fences.data, id]);
 
@@ -125,6 +130,13 @@ export function VehicleScreen() {
           {vehicle.device ? formatDeviceStatus(vehicle.device.status) : 'Sem rastreador'}
         </Badge>
       </div>
+
+      {shared && (
+        <p className={styles.sharedNote}>
+          Compartilhado por <strong>{shared.ownerName}</strong>: você acompanha a posição ao vivo
+          {shared.canBlock ? ' e pode bloquear o motor numa emergência' : ''}.
+        </p>
+      )}
 
       <div className={styles.vehicleMap}>
         <TrackerMap
@@ -188,9 +200,11 @@ export function VehicleScreen() {
             <Button variant="secondary" onClick={() => openExternal(directionsUrl(position.latitude, position.longitude, isIos()))}>
               Como chegar
             </Button>
-            <Button variant="secondary" onClick={share}>
-              Compartilhar
-            </Button>
+            {!shared && (
+              <Button variant="secondary" onClick={share}>
+                Compartilhar
+              </Button>
+            )}
           </div>
         </>
       ) : (
@@ -206,96 +220,101 @@ export function VehicleScreen() {
         </section>
       )}
 
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Cercas</h2>
-        {mine.length === 0 ? (
-          <p className={styles.muted}>Receba um aviso quando {vehicle.name} chegar ou sair de casa, do trabalho ou da escola.</p>
-        ) : (
-          <ul className={styles.list}>
-            {mine.map((fence) => (
-              <li key={fence.id}>
-                <Link to={`/cercas/${fence.id}`} className={styles.listLink}>
-                  <span>
-                    <strong>{fence.name}</strong>
-                    <span className={styles.muted}>
-                      {' '}
-                      · {formatRadius(fence.radiusMeters)} · {notifyLabel(fence).toLowerCase()}
-                    </span>
-                  </span>
-                  <span className={styles.chevron}>
-                    <ChevronIcon />
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-        <Button variant="secondary" onClick={() => navigate(`/cercas/nova?veiculo=${vehicle.id}`)}>
-          Criar cerca aqui
-        </Button>
-      </section>
+      {/* Só do dono: as cercas, o trajeto e os eventos. */}
+      {!shared && (
+        <>
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>Cercas</h2>
+            {mine.length === 0 ? (
+              <p className={styles.muted}>Receba um aviso quando {vehicle.name} chegar ou sair de casa, do trabalho ou da escola.</p>
+            ) : (
+              <ul className={styles.list}>
+                {mine.map((fence) => (
+                  <li key={fence.id}>
+                    <Link to={`/cercas/${fence.id}`} className={styles.listLink}>
+                      <span>
+                        <strong>{fence.name}</strong>
+                        <span className={styles.muted}>
+                          {' '}
+                          · {formatRadius(fence.radiusMeters)} · {notifyLabel(fence).toLowerCase()}
+                        </span>
+                      </span>
+                      <span className={styles.chevron}>
+                        <ChevronIcon />
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <Button variant="secondary" onClick={() => navigate(`/cercas/nova?veiculo=${vehicle.id}`)}>
+              Criar cerca aqui
+            </Button>
+          </section>
 
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Trajeto</h2>
-        <div className={styles.chips} role="group" aria-label="Período do trajeto">
-          {RANGES.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`${styles.chip} ${range === option.value ? styles.chipActive : ''}`}
-              onClick={() => setRange(range === option.value ? null : option.value)}
-              aria-pressed={range === option.value}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-        {range === null && <p className={styles.muted}>Escolha um período para ver o caminho no mapa.</p>}
-        {range !== null && trip.isLoading && <Spinner label="Buscando trajeto" />}
-        {range !== null && trip.data && (
-          track.length < 2 ? (
-            <p className={styles.muted}>Sem deslocamento registrado nesse período.</p>
-          ) : (
-            <div className={styles.tiles}>
-              <div className={styles.tile}>
-                <span className={styles.tileLabel}>Distância</span>
-                <span className={styles.tileValue}>{formatDistance(summary.distanceMeters)}</span>
-              </div>
-              <div className={styles.tile}>
-                <span className={styles.tileLabel}>Máxima</span>
-                <span className={styles.tileValue}>{formatSpeed(summary.maxSpeedKmh)}</span>
-              </div>
-              <div className={styles.tile}>
-                <span className={styles.tileLabel}>Pontos</span>
-                <span className={styles.tileValue}>{trip.data.total}</span>
-              </div>
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>Trajeto</h2>
+            <div className={styles.chips} role="group" aria-label="Período do trajeto">
+              {RANGES.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`${styles.chip} ${range === option.value ? styles.chipActive : ''}`}
+                  onClick={() => setRange(range === option.value ? null : option.value)}
+                  aria-pressed={range === option.value}
+                >
+                  {option.label}
+                </button>
+              ))}
             </div>
-          )
-        )}
-      </section>
+            {range === null && <p className={styles.muted}>Escolha um período para ver o caminho no mapa.</p>}
+            {range !== null && trip.isLoading && <Spinner label="Buscando trajeto" />}
+            {range !== null && trip.data && (
+              track.length < 2 ? (
+                <p className={styles.muted}>Sem deslocamento registrado nesse período.</p>
+              ) : (
+                <div className={styles.tiles}>
+                  <div className={styles.tile}>
+                    <span className={styles.tileLabel}>Distância</span>
+                    <span className={styles.tileValue}>{formatDistance(summary.distanceMeters)}</span>
+                  </div>
+                  <div className={styles.tile}>
+                    <span className={styles.tileLabel}>Máxima</span>
+                    <span className={styles.tileValue}>{formatSpeed(summary.maxSpeedKmh)}</span>
+                  </div>
+                  <div className={styles.tile}>
+                    <span className={styles.tileLabel}>Pontos</span>
+                    <span className={styles.tileValue}>{trip.data.total}</span>
+                  </div>
+                </div>
+              )
+            )}
+          </section>
 
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Últimos eventos</h2>
-        {events.isLoading ? (
-          <Spinner label="Carregando eventos" />
-        ) : (events.data ?? []).length === 0 ? (
-          <p className={styles.muted}>Nenhum evento recente.</p>
-        ) : (
-          <ul className={styles.list}>
-            {(events.data ?? []).map((event) => (
-              <li key={event.id} className={styles.listItem}>
-                <span>
-                  <Badge tone={eventSeverity(event.type)}>{formatEvent(event.type)}</Badge>
-                  {typeof event.metadata?.geofenceName === 'string' && event.metadata.geofenceName && (
-                    <span className={styles.muted}> {event.metadata.geofenceName}</span>
-                  )}
-                </span>
-                <span className={styles.muted}>{formatDateTime(event.timestamp)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>Últimos eventos</h2>
+            {events.isLoading ? (
+              <Spinner label="Carregando eventos" />
+            ) : (events.data ?? []).length === 0 ? (
+              <p className={styles.muted}>Nenhum evento recente.</p>
+            ) : (
+              <ul className={styles.list}>
+                {(events.data ?? []).map((event) => (
+                  <li key={event.id} className={styles.listItem}>
+                    <span>
+                      <Badge tone={eventSeverity(event.type)}>{formatEvent(event.type)}</Badge>
+                      {typeof event.metadata?.geofenceName === 'string' && event.metadata.geofenceName && (
+                        <span className={styles.muted}> {event.metadata.geofenceName}</span>
+                      )}
+                    </span>
+                    <span className={styles.muted}>{formatDateTime(event.timestamp)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
+      )}
     </div>
   );
 }
