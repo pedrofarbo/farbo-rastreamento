@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
 import { publicApi } from '@/api/resources';
-import { CONTACT_EMAIL } from '@/config/contact';
+import { CONTACT_EMAIL, WHATSAPP_NUMBER, whatsappDisplay, whatsappUrl } from '@/config/contact';
 import { LAUNCH_OFFER, PRE_LAUNCH } from '@/config/landing';
 import { track } from '@/services/analytics';
 import { formatPhoneInput, isPhoneComplete } from '@/services/format';
@@ -141,7 +141,17 @@ export const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, defaultPl
               </p>
             )}
             <p className={styles.muted}>
-              Ficou alguma dúvida? Escreva para <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
+              Ficou alguma dúvida?{' '}
+              {WHATSAPP_NUMBER && (
+                <>
+                  Chame no WhatsApp{' '}
+                  <a href={whatsappUrl(`Olá! Acabei de fazer o pré-cadastro no site (${email}).`)} target="_blank" rel="noopener noreferrer" data-analytics="whatsapp-pre-cadastro">
+                    {whatsappDisplay()}
+                  </a>{' '}
+                  ou escreva
+                </>
+              )}
+              {!WHATSAPP_NUMBER && 'Escreva'} para <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
             </p>
             <button type="button" className={base.submitBtn} onClick={close}>
               Fechar
@@ -152,7 +162,7 @@ export const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, defaultPl
             <div className={styles.head}>
               <div className={base.badge}>Pré-cadastro</div>
               <h2 id="lead-modal-title">Quero meu rastreador</h2>
-              <p>Deixe seus dados e a nossa equipe responde por e-mail.</p>
+              <p>Deixe seus dados e a nossa equipe responde por e-mail{WHATSAPP_NUMBER ? ' ou WhatsApp' : ''}.</p>
             </div>
 
             <form onSubmit={submit} className={styles.form} noValidate>
@@ -368,6 +378,23 @@ export const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, defaultPl
                   <path d="M5 12h14M12 5l7 7-7 7" />
                 </svg>
               </button>
+
+              {WHATSAPP_NUMBER && (
+                <p className={styles.alt}>
+                  Prefere conversar?{' '}
+                  <a
+                    href={whatsappUrl(
+                      // Só o nome do plano: o preço do valor ("- R$ 39,90") confunde no pré-lançamento.
+                      `Olá! Vim pelo site da Farbo Rastreadores e quero saber mais sobre: ${plan.split(' - ')[0]}.`,
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-analytics="whatsapp-pre-cadastro"
+                  >
+                    Chame no WhatsApp
+                  </a>
+                </p>
+              )}
             </form>
           </>
         )}

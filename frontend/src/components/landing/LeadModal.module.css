@@ -313,3 +313,16 @@ textarea.input {
     gap: 0.65rem;
   }
 }
+
+/* "Prefere conversar? Chame no WhatsApp", embaixo do envio. */
+.alt {
+  margin: 0;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: #94a3b8;
+}
+
+.alt a {
+  color: var(--color-neon-green);
+  font-weight: 700;
+}

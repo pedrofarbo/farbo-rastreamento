@@ -448,10 +448,14 @@ vez de duplicar. A rota pública (`POST /api/public/leads`) aceita poucos envios
 e tem um campo-isca escondido contra robôs; a resposta não devolve nada do que
 foi gravado.
 
-Quando o número oficial existir, preencha `WHATSAPP_NUMBER` em
-`frontend/src/config/contact.ts`: o rodapé volta a mostrar o WhatsApp e a
-contratação volta a abrir o modal que inicia a conversa (o pré-cadastro fica
-guardado no código).
+O WhatsApp da landing fica em `WHATSAPP_NUMBER`, em
+`frontend/src/config/contact.ts` (hoje (11) 5194-6470). Com ele preenchido,
+a landing mostra o número clicável no rodapé, o botão flutuante do WhatsApp
+e o "Prefere conversar? Chame no WhatsApp" no pré-cadastro, cada um com a
+primeira mensagem já escrita (os cliques aparecem em Visitas do site). A
+contratação continua pelo pré-cadastro; `HIRE_VIA_WHATSAPP = true` volta ao
+modal antigo, que leva direto para a conversa. Vazio, a landing fica só com
+o e-mail.
 
 ### Pré-lançamento (lista de lançamento)
 

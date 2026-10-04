@@ -33,6 +33,9 @@ const CLICKS: Record<string, string> = {
   'cta-final': 'Chamada final',
   instagram: 'Instagram',
   email: 'E-mail',
+  whatsapp: 'WhatsApp · rodapé',
+  'whatsapp-flutuante': 'WhatsApp · botão flutuante',
+  'whatsapp-pre-cadastro': 'WhatsApp · pré-cadastro',
 };
 
 const DEVICES: Record<string, string> = { mobile: 'Celular', tablet: 'Tablet', desktop: 'Computador' };

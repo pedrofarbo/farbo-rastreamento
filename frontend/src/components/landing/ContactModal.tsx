@@ -34,7 +34,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
       `• Qtd de veículos: ${vehicleCount}\n` +
       `• Telefone: ${phone || 'Não informado'}`
     );
-    window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${message}`, '_blank');
+    window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${message}`, '_blank', 'noopener,noreferrer');
     onClose();
   };
 

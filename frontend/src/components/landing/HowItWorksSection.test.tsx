@@ -3,9 +3,12 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { WHATSAPP_NUMBER } from '@/config/contact';
+import { HIRE_VIA_WHATSAPP, WHATSAPP_NUMBER } from '@/config/contact';
 
 import { HowItWorksSection } from './HowItWorksSection';
+
+// O passo 1 segue a forma de contratar (pré-cadastro ou direto no WhatsApp).
+const VIA_WHATSAPP = Boolean(HIRE_VIA_WHATSAPP && WHATSAPP_NUMBER);
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -33,7 +36,7 @@ describe('Passo a passo', () => {
       return svgs[0].getAttribute('data-art');
     });
     expect(arts).toEqual([
-      WHATSAPP_NUMBER ? 'whatsapp' : 'interesse',
+      VIA_WHATSAPP ? 'whatsapp' : 'interesse',
       'pedido',
       'preparo',
       'envio',
@@ -42,7 +45,7 @@ describe('Passo a passo', () => {
     ]);
 
     expect(cards.map((card) => card.querySelector('h3')?.textContent)).toEqual([
-      WHATSAPP_NUMBER ? 'Contrate pelo WhatsApp' : 'Deixe seu interesse',
+      VIA_WHATSAPP ? 'Contrate pelo WhatsApp' : 'Deixe seu interesse',
       'Peça o rastreador pelo painel',
       'Preparamos na nossa base',
       'Enviamos até você',

@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { WHATSAPP_NUMBER } from '@/config/contact';
+import { HIRE_VIA_WHATSAPP, WHATSAPP_NUMBER } from '@/config/contact';
 
 import { HowItWorksArt, type StepArtKind } from './HowItWorksArt';
 import styles from './HowItWorksSection.module.css';
@@ -27,8 +27,9 @@ interface Step {
  * é feita e cobrada por um prestador parceiro.
  */
 const STEPS: Step[] = [
-  // Sem o WhatsApp oficial, a contratação começa pelo cadastro de interesse.
-  WHATSAPP_NUMBER
+  // A contratação começa pelo cadastro de interesse (com o WhatsApp ao lado),
+  // ou direto pelo WhatsApp (HIRE_VIA_WHATSAPP).
+  HIRE_VIA_WHATSAPP && WHATSAPP_NUMBER
     ? {
         actor: 'voce',
         art: 'whatsapp',
@@ -41,7 +42,9 @@ const STEPS: Step[] = [
         art: 'interesse',
         title: 'Deixe seu interesse',
         description:
-          'Escolha o plano e preencha o pré-cadastro. A gente responde por e-mail, cria a sua conta e você recebe o convite para definir a senha do painel.',
+          WHATSAPP_NUMBER
+            ? 'Escolha o plano e preencha o pré-cadastro, ou chame no WhatsApp. A gente responde, cria a sua conta e você recebe por e-mail o convite para definir a senha do painel.'
+            : 'Escolha o plano e preencha o pré-cadastro. A gente responde por e-mail, cria a sua conta e você recebe o convite para definir a senha do painel.',
       },
   {
     actor: 'voce',

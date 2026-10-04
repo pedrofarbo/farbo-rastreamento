@@ -1,0 +1,45 @@
+/* O botão do WhatsApp no canto: abaixo do menu do celular (1000) e dos
+   modais (2000). */
+.float {
+  position: fixed;
+  right: 20px;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  z-index: 900;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #25d366;
+  color: #ffffff;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45), 0 0 0 0 rgba(37, 211, 102, 0.5);
+  text-decoration: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.float:hover,
+.float:focus-visible {
+  transform: translateY(-2px) scale(1.04);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5), 0 0 0 6px rgba(37, 211, 102, 0.18);
+  text-decoration: none;
+}
+
+.float:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 3px;
+}
+
+@media (max-width: 600px) {
+  .float {
+    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    width: 52px;
+    height: 52px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .float {
+    transition: none;
+  }
+}

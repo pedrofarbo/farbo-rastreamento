@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { WHATSAPP_GREETING, WHATSAPP_NUMBER, whatsappDisplay, whatsappUrl } from '@/config/contact';
 import { LAUNCH_ANCHOR, PRE_LAUNCH, priceParts } from '@/config/landing';
 
 import { Footer } from './Footer';
@@ -100,6 +101,18 @@ describe('rodapé', () => {
     expect(text).toContain('Regulamentação');
     expect(text).toContain('Anatel - 04895-25-16219');
     expect(text).not.toContain('Parceiros');
+  });
+
+  it('com o WhatsApp ativo, o número aparece e abre a conversa', () => {
+    const host = render(<Footer />);
+    const link = host.querySelector('a[href^="https://wa.me/"]') as HTMLAnchorElement | null;
+    if (!WHATSAPP_NUMBER) {
+      expect(link).toBeNull();
+      return;
+    }
+    expect(link?.textContent).toBe(whatsappDisplay());
+    expect(link?.getAttribute('href')).toBe(whatsappUrl(WHATSAPP_GREETING));
+    expect(link?.getAttribute('target')).toBe('_blank');
   });
 
   it('o ícone do Instagram leva ao perfil @farborastreadores, em nova aba', () => {

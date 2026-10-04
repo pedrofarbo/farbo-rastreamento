@@ -12,7 +12,8 @@ import { ContactModal } from '@/components/landing/ContactModal';
 import { InstallersModal } from '@/components/landing/InstallersModal';
 import { LaunchSection } from '@/components/landing/LaunchSection';
 import { LeadModal } from '@/components/landing/LeadModal';
-import { WHATSAPP_NUMBER } from '@/config/contact';
+import { WhatsAppFloat } from '@/components/landing/WhatsAppFloat';
+import { HIRE_VIA_WHATSAPP, WHATSAPP_NUMBER } from '@/config/contact';
 import { PRE_LAUNCH } from '@/config/landing';
 import { clickEvent, track, trackPageview } from '@/services/analytics';
 import styles from './LandingPage.module.css';
@@ -87,13 +88,15 @@ export const LandingPage: React.FC = () => {
       </main>
       <Footer />
 
-      {/* Com o WhatsApp oficial, a contratação abre a conversa; sem ele, o
-          cadastro de interesse (pré-cliente). */}
-      {WHATSAPP_NUMBER ? (
+      {/* A contratação abre o pré-cadastro (pré-cliente), com o WhatsApp como
+          canal ao lado; HIRE_VIA_WHATSAPP volta ao modal que abre a conversa. */}
+      {HIRE_VIA_WHATSAPP && WHATSAPP_NUMBER ? (
         <ContactModal isOpen={modalOpen} onClose={handleCloseModal} defaultPlan={selectedPlan} />
       ) : (
         <LeadModal isOpen={modalOpen} onClose={handleCloseModal} defaultPlan={selectedPlan} />
       )}
+
+      {WHATSAPP_NUMBER && <WhatsAppFloat />}
 
       <InstallersModal
         isOpen={installers !== null}

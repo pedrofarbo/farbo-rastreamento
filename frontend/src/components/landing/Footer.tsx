@@ -1,6 +1,14 @@
 import React, { useState } from 'react';
 
-import { CONTACT_EMAIL, INSTAGRAM_HANDLE, INSTAGRAM_URL, WHATSAPP_NUMBER, whatsappDisplay } from '@/config/contact';
+import {
+  CONTACT_EMAIL,
+  INSTAGRAM_HANDLE,
+  INSTAGRAM_URL,
+  WHATSAPP_GREETING,
+  WHATSAPP_NUMBER,
+  whatsappDisplay,
+  whatsappUrl,
+} from '@/config/contact';
 import { ANATEL_HOMOLOGATION, SOCIAL_SECTION } from '@/config/landing';
 
 import styles from './Footer.module.css';
@@ -74,7 +82,14 @@ export const Footer: React.FC = () => {
           <div className={styles.linksCol}>
             <h4>Atendimento</h4>
             <ul>
-              {WHATSAPP_NUMBER && <li>WhatsApp: {whatsappDisplay()}</li>}
+              {WHATSAPP_NUMBER && (
+                <li>
+                  WhatsApp:{' '}
+                  <a href={whatsappUrl(WHATSAPP_GREETING)} target="_blank" rel="noopener noreferrer" data-analytics="whatsapp">
+                    {whatsappDisplay()}
+                  </a>
+                </li>
+              )}
               <li>
                 E-mail: <a href={`mailto:${CONTACT_EMAIL}`} data-analytics="email">{CONTACT_EMAIL}</a>
               </li>

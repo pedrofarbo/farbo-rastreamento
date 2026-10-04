@@ -1,7 +1,8 @@
 .footer {
   background: #040705;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 4rem 1.5rem 2rem 1.5rem;
+  /* Embaixo, espaço para o botão flutuante do WhatsApp não cobrir os links. */
+  padding: 4rem 1.5rem 5.5rem 1.5rem;
   color: #94a3b8;
 }
 
@@ -171,7 +172,7 @@
    boa para o dedo. */
 @media (max-width: 600px) {
   .footer {
-    padding: 2.5rem 1rem calc(1.5rem + env(safe-area-inset-bottom));
+    padding: 2.5rem 1rem calc(5.5rem + env(safe-area-inset-bottom));
   }
 
   .topRow {
