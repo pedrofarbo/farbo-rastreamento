@@ -26,6 +26,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geocoding"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geofences"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/infra"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/installers"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/melhorenvio"
@@ -81,6 +82,8 @@ type Deps struct {
 	Shares *shares.Service
 	// Analytics: visitas da landing page (sem cookies).
 	Analytics *analytics.Service
+	// Infra: a saúde do sistema (máquina, banco, backups, erros).
+	Infra *infra.Service
 	// StepUp: confirmação extra (biometria ou senha) antes de ações
 	// sensíveis. Nil desliga a exigência (só em testes).
 	StepUp       *stepup.Service
@@ -336,6 +339,15 @@ func (s *Server) routes() chi.Router {
 						r.With(auth.RequireRole(auth.RoleAdmin)).Get("/provisioning", s.handleDeviceProvisioning)
 					})
 				})
+
+				// Infraestrutura: máquina, banco, backups e erros (admin).
+				if s.Infra != nil {
+					r.Route("/infra", func(r chi.Router) {
+						r.Use(auth.RequireRole(auth.RoleAdmin))
+						r.Get("/status", s.handleInfraStatus)
+						r.Get("/logs", s.handleInfraLogs)
+					})
+				}
 
 				// Visitas da landing page (admin).
 				if s.Analytics != nil {

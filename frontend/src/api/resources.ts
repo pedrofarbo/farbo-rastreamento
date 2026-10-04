@@ -54,6 +54,8 @@ import type {
   PromoStatus,
   PromoUsage,
   LandingAnalytics,
+  InfraStatus,
+  SystemLogPage,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -511,6 +513,15 @@ export const publicApi = {
   /** "Me avise quando lançar" (lista de lançamento). */
   joinLaunch: (input: WaitlistInput) =>
     request<{ status: string }>('/api/public/launch', { method: 'POST', body: input, anonymous: true }),
+};
+
+/** Infraestrutura: máquina, banco, backups e erros do servidor (admin). */
+export const infraApi = {
+  status: () => api.get<InfraStatus>('/api/infra/status'),
+  logs: (q: { hours: number; level: '' | 'ERROR' | 'WARN'; search: string }) =>
+    api.get<SystemLogPage>(
+      `/api/infra/logs?${new URLSearchParams({ hours: String(q.hours), level: q.level, q: q.search, limit: '100' })}`,
+    ),
 };
 
 /** Visitas da landing page (admin). */

@@ -280,3 +280,17 @@ export function isPhoneComplete(value: string): boolean {
   const d = value.replace(/\D/g, '');
   return d.length >= 10 && d.length <= 13;
 }
+
+/** 1536 → "1,5 KB"; 3.2e9 → "3,0 GB". */
+export function formatBytes(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined || !Number.isFinite(bytes) || bytes < 0) return '—';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const digits = unit === 0 || value >= 100 ? 0 : 1;
+  return `${value.toLocaleString('pt-BR', { minimumFractionDigits: digits, maximumFractionDigits: digits })} ${units[unit]}`;
+}

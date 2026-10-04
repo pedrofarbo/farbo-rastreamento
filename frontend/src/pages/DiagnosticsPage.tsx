@@ -7,9 +7,10 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { formatDateTime, formatRelative } from '@/services/format';
 
+import { ServerTab } from './admin/ServerTab';
 import styles from './Page.module.css';
 
-type Tab = 'protocols' | 'raw' | 'connections' | 'audit';
+type Tab = 'server' | 'protocols' | 'raw' | 'connections' | 'audit';
 
 const CONFIDENCE_CLASS: Record<string, string> = {
   DOCUMENTED: styles.documented,
@@ -18,7 +19,7 @@ const CONFIDENCE_CLASS: Record<string, string> = {
 };
 
 export function DiagnosticsPage() {
-  const [tab, setTab] = useState<Tab>('protocols');
+  const [tab, setTab] = useState<Tab>('server');
 
   return (
     <div className={styles.page}>
@@ -27,13 +28,16 @@ export function DiagnosticsPage() {
           <div>
             <h1 className={styles.title}>Diagnóstico</h1>
             <p className={styles.description}>
-              O que o servidor sabe sobre os protocolos, as conexões abertas e o tráfego que não
-              conseguiu interpretar. É aqui que se descobre qual variante o aparelho realmente fala.
+              A saúde do servidor (máquina, banco, backups e erros) e o que ele sabe sobre os
+              protocolos, as conexões abertas e o tráfego que não conseguiu interpretar.
             </p>
           </div>
         </header>
 
         <div className={styles.tabs}>
+          <TabButton current={tab} value="server" onSelect={setTab}>
+            Servidor
+          </TabButton>
           <TabButton current={tab} value="protocols" onSelect={setTab}>
             Protocolos
           </TabButton>
@@ -48,6 +52,7 @@ export function DiagnosticsPage() {
           </TabButton>
         </div>
 
+        {tab === 'server' && <ServerTab />}
         {tab === 'protocols' && <ProtocolsTab />}
         {tab === 'raw' && <RawPacketsTab />}
         {tab === 'connections' && <ConnectionsTab />}

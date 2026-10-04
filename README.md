@@ -1125,6 +1125,8 @@ POST   /api/auth/forgot-password         {email} → 202 sempre (envia o link se
 POST   /api/auth/reset-password/validate {token} → 204, ou 410 se o link não vale mais
 POST   /api/auth/reset-password          {token, password} → 204; 400 senha fraca; 410 link inválido
 
+GET    /api/infra/status                 (admin) máquina, histórico 24 h, banco, Redis, backups, conexões
+GET    /api/infra/logs                   (admin) ?hours=&level=ERROR|WARN&q=&limit= avisos e erros do servidor
 POST   /api/public/analytics             (público) {name, label, path, referrer, utm*, screenWidth} → 204
 GET    /api/analytics/landing            (admin) ?days= resumo das visitas da landing
 
@@ -1329,6 +1331,27 @@ Métricas principais: `tracker_connections`, `tracker_online_devices`,
 O Grafana já sobe com a fonte de dados e o painel **Rastreamento — visão
 geral** provisionados: <http://localhost:3001>.
 
+**Painel de infraestrutura** (**Diagnóstico → Servidor**, só admin), dentro
+do próprio painel, sem expor o Grafana:
+
+- CPU, memória, carga e disco da máquina, lidos de `/proc` a cada 10 s, com
+  as últimas 24 h num gráfico. O histórico fica em memória e recomeça quando
+  o servidor reinicia.
+- O banco: latência, tamanho, conexões e as maiores tabelas. Também o Redis,
+  o servidor da API (no ar há quanto tempo, memória, goroutines) e as conexões
+  abertas agora.
+- Os backups do banco, com o último, o tamanho e quantos estão guardados,
+  lidos da pasta `BACKUP_DIR`. Em produção, o volume `postgres-backups` é
+  montado nela só para leitura.
+- Os **avisos e erros do servidor**. O log passa por um `infra.Capture`, que
+  mantém a saída de sempre e copia o que é `WARN` ou `ERROR` para a tabela
+  `system_logs` (30 dias), em segundo plano: uma fila cheia descarta e conta
+  o descarte, nunca trava quem está logando. A aba agrupa os mais frequentes,
+  lista os recentes com os detalhes e filtra por período, nível e busca.
+
+Ficam de fora os logs dos outros contêineres (frontend, Traefik, Postgres).
+Para eles, use `docker compose logs` no servidor.
+
 Os logs são JSON estruturado. O IMEI aparece mascarado
 (`869247******567`) — desligue com `LOG_MASK_IMEI=false` se precisar depurar.
 Senha, token e credencial nunca são registrados.
@@ -1450,6 +1473,7 @@ mais importam:
 | `WHATSAPP_AI_MAX_REPLIES_PER_DAY` | `40` | respostas da IA por contato em 24 h antes de passar para a equipe |
 | `WHATSAPP_HANDOFF_EMAILS` | `ALERTS_CENTRAL_EMAILS` | quem recebe o aviso de conversa transferida |
 | `LEADS_NOTIFY_EMAILS` | `ALERTS_CENTRAL_EMAILS` | quem recebe o aviso de pré-cliente novo |
+| `BACKUP_DIR` | vazio | pasta dos backups do banco para o painel de infraestrutura (produção: `/backups`) |
 | `LAUNCH_PROMO_ENABLED` | `true` | promoção de pré-lançamento para quem está na lista |
 | `LAUNCH_PROMO_EQUIPMENT_CENTS` / `_MONTHLY_CENTS` | `12000` / `3490` | rastreador e mensalidade na promoção |
 | `LAUNCH_PROMO_INSANOS_MONTHLY_CENTS` / `_INSANOS_PLAN_NAME` | `2790` / `Especial Insanos MC` | mensalidade na promoção no plano do Insanos MC (pelo nome do plano) |

@@ -866,3 +866,58 @@ export interface LandingAnalytics {
   sections: AnalyticsCount[];
   clicks: AnalyticsCount[];
 }
+
+/** O painel de infraestrutura (Diagnóstico → Servidor). */
+export interface InfraStatus {
+  host: {
+    at: string;
+    cpuPercent: number;
+    cores: number;
+    load1: number;
+    load5: number;
+    load15: number;
+    memUsed: number;
+    memTotal: number;
+    diskUsed: number;
+    diskTotal: number;
+    /** Há quanto tempo a máquina está ligada (segundos). */
+    hostUptime: number;
+  };
+  /** Um ponto por minuto, em porcentagem (recomeça quando o servidor reinicia). */
+  history: { at: string; cpu: number; mem: number; disk: number }[];
+  process: { startedAt: string; goVersion: string; goroutines: number; heapBytes: number; rssBytes: number };
+  database: {
+    enabled: boolean;
+    ok: boolean;
+    latencyMs: number;
+    error?: string;
+    sizeBytes: number;
+    connections: number;
+    maxConnections: number;
+    tables: { name: string; sizeBytes: number; rows: number }[] | null;
+  };
+  redis: { enabled: boolean; ok: boolean; latencyMs: number; error?: string };
+  backups: {
+    available: boolean;
+    count: number;
+    totalBytes: number;
+    latest: { name: string; at: string; sizeBytes: number } | null;
+  };
+  logs: { errors24h: number; warnings24h: number; dropped: number; failed: number };
+  live: { trackerConnections: number; realtimeClients: number; onlineDevices: number };
+}
+
+/** Um aviso ou erro do servidor. */
+export interface SystemLogEntry {
+  id: number;
+  at: string;
+  level: 'WARN' | 'ERROR';
+  component: string;
+  message: string;
+  attrs: Record<string, unknown>;
+}
+
+export interface SystemLogPage {
+  groups: { level: 'WARN' | 'ERROR'; component: string; message: string; count: number; lastAt: string }[];
+  entries: SystemLogEntry[];
+}

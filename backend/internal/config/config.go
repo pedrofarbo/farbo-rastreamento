@@ -39,6 +39,7 @@ type Config struct {
 	StepUp    StepUp
 	WhatsApp  WhatsApp
 	Leads     Leads
+	Infra     Infra
 }
 
 type HTTP struct {
@@ -442,6 +443,13 @@ func (s Shipping) MissingOrigin() []string {
 	return missing
 }
 
+// Infra configura o painel de infraestrutura (Diagnóstico → Servidor).
+type Infra struct {
+	// BackupDir é a pasta das cópias do banco (montada só para leitura);
+	// vazia, o painel não mostra os backups.
+	BackupDir string
+}
+
 // Leads configura os pré-clientes (cadastro de interesse da landing).
 type Leads struct {
 	// NotifyEmails recebem o aviso de cada pré-cliente novo.
@@ -729,6 +737,7 @@ func Load() (*Config, error) {
 		HandoffEmails: csv("WHATSAPP_HANDOFF_EMAILS", centralEmails()),
 	}
 	cfg.Leads = Leads{NotifyEmails: csv("LEADS_NOTIFY_EMAILS", centralEmails())}
+	cfg.Infra = Infra{BackupDir: strings.TrimSpace(str("BACKUP_DIR", ""))}
 
 	// Sem APP_URL, usa a primeira origem do CORS: ela já é o endereço em que
 	// o navegador abre o painel.

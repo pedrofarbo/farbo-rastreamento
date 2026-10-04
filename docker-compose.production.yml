@@ -3,6 +3,10 @@ services:
     environment:
       # A biometria vale no app (app.) e no painel (painel.): o domínio comum.
       WEBAUTHN_RP_ID: farborastreadores.com.br
+      # Diagnóstico → Servidor mostra o último backup do banco.
+      BACKUP_DIR: /backups
+    volumes:
+      - postgres-backups:/backups:ro
     ports: !override []
     labels:
       - traefik.enable=true

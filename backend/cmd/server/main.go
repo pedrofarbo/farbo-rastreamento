@@ -32,6 +32,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geocoding"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geofences"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/infra"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/installers"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/mail"
@@ -70,7 +71,10 @@ func run() error {
 		return err
 	}
 
-	log := telemetry.NewLogger(cfg.Telemetry.LogLevel, cfg.Telemetry.LogFormat)
+	// Avisos e erros também vão para o painel de infraestrutura (gravados no
+	// banco depois que ele estiver pronto; até lá, esperam na fila).
+	logCapture := infra.NewCapture(telemetry.NewLogger(cfg.Telemetry.LogLevel, cfg.Telemetry.LogFormat).Handler())
+	log := slog.New(logCapture)
 	slog.SetDefault(log)
 	telemetry.SetMaskIMEI(cfg.Telemetry.MaskIMEI)
 	// Segredo de exemplo, óbvio ou repetido: fora do desenvolvimento
@@ -106,6 +110,7 @@ func run() error {
 	if err := db.Migrate(ctx, log); err != nil {
 		return fmt.Errorf("aplicando migrations: %w", err)
 	}
+	logCapture.Persist(ctx, db)
 
 	// Pool separado para o que os rastreadores gravam (posição, estado,
 	// último contato): por padrão sem esperar o fsync do disco — ver
@@ -279,6 +284,15 @@ func run() error {
 	// Visitas da landing page, sem cookies.
 	analyticsSvc := analytics.NewService(db, log)
 
+	// Infraestrutura: CPU, memória e disco da máquina a cada 10 s (o
+	// histórico de 24 h fica em memória), banco, Redis, backups e erros.
+	hostMonitor := infra.NewMonitor("/proc", "/")
+	go hostMonitor.Run(ctx, 10*time.Second)
+	infraSvc := infra.NewService(db, hostMonitor, logCapture, cfg.Infra.BackupDir)
+	if redisClient != nil {
+		infraSvc.SetRedis(func(ctx context.Context) error { return redisClient.Ping(ctx).Err() })
+	}
+
 	// Acessos de terceiros aos veículos (acompanhar e bloqueio de emergência).
 	sharesSvc := shares.NewService(db, authSvc, mail.NewShareMailer(mailer, cfg.Mail.AppURL), log)
 	if pushSvc.Enabled() {
@@ -302,6 +316,7 @@ func run() error {
 		Leads: leads.NewService(leads.NewRepository(db),
 			leads.MailNotifier{Mailer: mail.NewLeadMailer(mailer, cfg.Mail.AppURL), To: cfg.Leads.NotifyEmails}, log),
 		Alerts: alertEngine, AlertStore: alertStore, Push: pushSvc, Shares: sharesSvc, Analytics: analyticsSvc,
+		Infra:     infraSvc,
 		StepUp:    stepup.NewService(db, cfg.StepUp, authSvc),
 		Positions: positionRepo, States: stateStore,
 		Raw: rawRepo, Ingestor: ingestor, Conns: connManager, Registry: registry,
@@ -339,7 +354,7 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, log)
+		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, log)
 	}()
 
 	log.Info("plataforma no ar",
@@ -372,6 +387,7 @@ func runWorkers(
 	rawRepo *tracking.RawPacketRepository,
 	geocodingSvc *geocoding.Service,
 	analyticsSvc *analytics.Service,
+	infraSvc *infra.Service,
 	log *slog.Logger,
 ) {
 	statusTicker := time.NewTicker(cfg.Tracking.StatusSweepInterval)
@@ -447,6 +463,11 @@ func runWorkers(
 
 		case <-cleanupTicker.C:
 			authSvc.CleanupExpiredTokens(ctx)
+			if removed, err := infraSvc.Cleanup(ctx); err != nil {
+				log.Warn("falha ao limpar os registros antigos de erros", "err", err)
+			} else if removed > 0 {
+				log.Info("registros antigos de erros removidos", "count", removed)
+			}
 			if removed, err := analyticsSvc.Cleanup(ctx); err != nil {
 				log.Warn("falha ao limpar as visitas antigas da landing", "err", err)
 			} else if removed > 0 {
