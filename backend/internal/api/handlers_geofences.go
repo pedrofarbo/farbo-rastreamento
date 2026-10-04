@@ -125,13 +125,22 @@ func (s *Server) fenceBaseline(ctx context.Context, fence *geofences.Geofence) {
 		return
 	}
 
-	// Cerca da central vale para a frota toda: uma consulta só.
-	var latest map[uuid.UUID]*tracking.Position
-	if fence.OwnerID == nil {
-		if latest, err = s.Positions.LatestForAll(ctx); err != nil {
-			s.Log.Warn("cerca salva sem marcar quem já está dentro", "geofence", fence.ID, "err", err)
-			return
+	// As últimas posições dos veículos vigiados, numa consulta só (a cerca da
+	// central vale para a frota toda).
+	watches := func(vehicle *vehicles.Vehicle) bool {
+		return vehicle.DeviceID != nil && fence.Active &&
+			fence.AppliesTo(geofences.Subject{VehicleID: &vehicle.ID, OwnerID: vehicle.OwnerID})
+	}
+	watched := []uuid.UUID{}
+	for _, vehicle := range list {
+		if watches(vehicle) {
+			watched = append(watched, *vehicle.DeviceID)
 		}
+	}
+	latest, err := s.Positions.LatestFor(ctx, watched)
+	if err != nil {
+		s.Log.Warn("cerca salva sem marcar quem já está dentro", "geofence", fence.ID, "err", err)
+		return
 	}
 
 	for _, vehicle := range list {
@@ -140,11 +149,8 @@ func (s *Server) fenceBaseline(ctx context.Context, fence *geofences.Geofence) {
 		}
 		deviceID := *vehicle.DeviceID
 		inside := false
-		if fence.Active && fence.AppliesTo(geofences.Subject{VehicleID: &vehicle.ID, OwnerID: vehicle.OwnerID}) {
+		if watches(vehicle) {
 			position := latest[deviceID]
-			if latest == nil {
-				position, _ = s.Positions.Latest(ctx, deviceID)
-			}
 			inside = position != nil && fence.Contains(position.Latitude, position.Longitude)
 		}
 		st := s.States.Get(deviceID)

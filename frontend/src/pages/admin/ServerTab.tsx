@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { formatBytes, formatDateTime, formatRelative, formatTime } from '@/services/format';
-import type { InfraStatus, SystemLogEntry } from '@/types';
+import type { InfraOffsite, InfraStatus, SystemLogEntry } from '@/types';
 
 import styles from './Server.module.css';
 
@@ -35,6 +35,32 @@ export function backupTone(latestAt: string | null | undefined, now = Date.now()
   if (hours > 50) return 'danger';
   if (hours > 26) return 'warn';
   return 'ok';
+}
+
+/**
+ * A cópia fora da VPS: sem ela, perder o disco do servidor leva o banco e os
+ * backups juntos.
+ */
+export function offsiteView(
+  offsite: InfraOffsite | null | undefined,
+  now = Date.now(),
+): { tone: Tone; label: string; alert?: string } {
+  if (!offsite?.configured) {
+    return {
+      tone: 'warn',
+      label: 'Não configurada',
+      alert:
+        'Os backups ficam só no disco do servidor: se ele falhar, vão junto com o banco. Configure a cópia externa (BACKUP_S3_* no .env.production, ver deploy/PRODUCTION.md).',
+    };
+  }
+  if (!offsite.ok) {
+    return {
+      tone: 'danger',
+      label: 'Falhou',
+      alert: `O último envio para fora da VPS falhou${offsite.error ? `: ${offsite.error}` : '.'}`,
+    };
+  }
+  return { tone: backupTone(offsite.at, now), label: `Enviada ${formatRelative(offsite.at)}` };
 }
 
 /** 200000 → "2 dias e 7 h"; 4000 → "1 h 6 min". */
@@ -212,6 +238,7 @@ function BackupsCard({ backups }: { backups: InfraStatus['backups'] }) {
     );
   }
   const tone = backupTone(backups.latest?.at);
+  const offsite = offsiteView(backups.offsite);
   return (
     <Card title="Backups do banco">
       <Rows>
@@ -228,12 +255,18 @@ function BackupsCard({ backups }: { backups: InfraStatus['backups'] }) {
         <Row label="Cópias guardadas">
           {backups.count} · {formatBytes(backups.totalBytes)}
         </Row>
+        <Row label="Fora da VPS">
+          <Badge tone={BADGE[offsite.tone]} dot>
+            {offsite.label}
+          </Badge>
+        </Row>
       </Rows>
       {tone !== 'ok' && (
         <p className={styles.alert}>
           O backup é feito uma vez por dia. Sem um recente, confira o contêiner postgres-backup no servidor.
         </p>
       )}
+      {offsite.alert && <p className={styles.alert}>{offsite.alert}</p>}
     </Card>
   );
 }

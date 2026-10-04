@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Circle, MapContainer, Marker, Polyline, Popup, useMap } from 'react-leaflet';
 import type { LatLngExpression, LatLngTuple } from 'leaflet';
 import L from 'leaflet';
@@ -153,28 +153,9 @@ export function TrackerMap({
         )}
 
         {!highlight &&
-          located.map((vehicle) => {
-            const position = vehicle.lastPosition as Position;
-            return (
-              <Marker
-                key={vehicle.id}
-                position={[position.latitude, position.longitude]}
-                icon={vehicleIcon({
-                  ignition: vehicle.state?.acc ?? position.acc ?? null,
-                  heading: position.heading,
-                  moving: position.speedKmh >= MOVING_SPEED_KMH,
-                  selected: vehicle.id === selectedId,
-                  blocked: vehicle.state?.relayOn === true,
-                  online: vehicle.device?.status === 'ONLINE',
-                })}
-                eventHandlers={{ click: () => onSelect?.(vehicle.id) }}
-              >
-                <Popup>
-                  <PositionPopup title={vehicle.name} position={position} />
-                </Popup>
-              </Marker>
-            );
-          })}
+          located.map((vehicle) => (
+            <VehicleMarker key={vehicle.id} vehicle={vehicle} selected={vehicle.id === selectedId} onSelect={onSelect} />
+          ))}
 
         <MapFocus
           center={center}
@@ -214,6 +195,46 @@ export function TrackerMap({
     </div>
   );
 }
+
+/**
+ * Um veículo no mapa. Com a frota inteira na tela, só se redesenha quando o
+ * próprio veículo muda: ícone e posição novos a cada atualização fariam o
+ * Leaflet refazer todos os marcadores. (O ícone não pode ser dividido entre
+ * marcadores: o SVG dele é um elemento só, e o Leaflet o move de lugar.)
+ */
+const VehicleMarker = memo(function VehicleMarker({
+  vehicle,
+  selected,
+  onSelect,
+}: {
+  vehicle: VehicleView;
+  selected: boolean;
+  onSelect?: (vehicleId: string) => void;
+}) {
+  const position = vehicle.lastPosition as Position;
+  const ignition = vehicle.state?.acc ?? position.acc ?? null;
+  const heading = position.heading;
+  const moving = position.speedKmh >= MOVING_SPEED_KMH;
+  const blocked = vehicle.state?.relayOn === true;
+  const online = vehicle.device?.status === 'ONLINE';
+  const icon = useMemo(
+    () => vehicleIcon({ ignition, heading, moving, selected, blocked, online }),
+    [ignition, heading, moving, selected, blocked, online],
+  );
+  const latLng = useMemo<LatLngTuple>(
+    () => [position.latitude, position.longitude],
+    [position.latitude, position.longitude],
+  );
+  const handlers = useMemo(() => ({ click: () => onSelect?.(vehicle.id) }), [onSelect, vehicle.id]);
+
+  return (
+    <Marker position={latLng} icon={icon} eventHandlers={handlers}>
+      <Popup>
+        <PositionPopup title={vehicle.name} position={position} />
+      </Popup>
+    </Marker>
+  );
+});
 
 function PositionPopup({
   title,

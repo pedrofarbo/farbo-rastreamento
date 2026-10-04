@@ -104,7 +104,19 @@ func (r *Repository) GetByIMEI(ctx context.Context, imei string) (*Device, error
 }
 
 func (r *Repository) List(ctx context.Context) ([]*Device, error) {
-	rows, err := r.db.Query(ctx, `SELECT `+columns+` FROM devices ORDER BY created_at`)
+	return r.list(ctx, `SELECT `+columns+` FROM devices ORDER BY created_at`)
+}
+
+// ListByIDs devolve só os rastreadores pedidos, sem ordem garantida.
+func (r *Repository) ListByIDs(ctx context.Context, ids []uuid.UUID) ([]*Device, error) {
+	if len(ids) == 0 {
+		return []*Device{}, nil
+	}
+	return r.list(ctx, `SELECT `+columns+` FROM devices WHERE id = ANY($1)`, ids)
+}
+
+func (r *Repository) list(ctx context.Context, query string, args ...any) ([]*Device, error) {
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, database.MapError(err)
 	}

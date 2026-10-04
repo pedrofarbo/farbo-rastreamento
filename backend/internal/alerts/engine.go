@@ -43,8 +43,10 @@ type StateReader interface {
 }
 
 const (
-	// Filas: os ganchos da ingestão nunca esperam; fila cheia descarta.
-	eventQueue     = 2048
+	// Filas: os ganchos da ingestão nunca esperam; fila cheia descarta. A de
+	// eventos comporta a frota inteira caindo de uma vez (no teste de carga,
+	// 5000 desconexões juntas estouravam as 2048 vagas de antes).
+	eventQueue     = 16384
 	candidateQueue = 512
 	sendQueue      = 256
 	senders        = 3
@@ -59,6 +61,22 @@ const (
 	// movingWindow: esteve em movimento há menos que isso = "em movimento"
 	// quando o sinal cai.
 	movingWindow = 10 * time.Minute
+
+	// signalLostGrace: com o veículo andando, a queda da conexão só vira
+	// alerta se o rastreador não voltar nesse prazo. Troca de antena e
+	// reinício do servidor derrubam a conexão por segundos; perda de sinal de
+	// verdade (bloqueador) nem fecha o socket — o servidor só percebe pelo
+	// keepalive, minutos depois —, então a espera quase não atrasa o aviso.
+	signalLostGrace = time.Minute
+	lostSweep       = 5 * time.Second
+	// Queda em massa: pelo menos massMinimum desconexões, e massShare % dos
+	// conectados, dentro de massWindow. É o servidor ou a rede (reinício do
+	// Traefik, operadora fora), não os veículos: ninguém recebe "sinal
+	// perdido" na hora; a equipe vê o aviso no log, e quem não voltar cai no
+	// alerta de sem comunicação (OfflineParkedAfter).
+	massWindow  = 30 * time.Second
+	massMinimum = 20
+	massShare   = 10
 
 	sweepInterval   = time.Minute
 	historyKeep     = 90 * 24 * time.Hour
@@ -122,6 +140,14 @@ type delivery struct {
 	notification push.Notification
 }
 
+// lostSignal é a queda com o veículo andando, esperando signalLostGrace.
+type lostSignal struct {
+	c     candidate
+	noted time.Time
+	// mass: fez parte de uma queda em massa.
+	mass bool
+}
+
 type parkedSpot struct {
 	lat, lon float64
 	strikes  int
@@ -149,7 +175,16 @@ type Engine struct {
 	parked  map[uuid.UUID]*parkedSpot
 	moving  map[uuid.UUID]time.Time
 	offline map[uuid.UUID]time.Time
-	dropped atomic.Int64
+	lost    map[uuid.UUID]*lostSignal
+	// drops são os instantes das desconexões recentes (massWindow); a queda
+	// em massa em curso vai de massFrom a massLast.
+	drops     []time.Time
+	massFrom  time.Time
+	massLast  time.Time
+	massCount int
+	// connected conta os rastreadores conectados (tcp.Manager.Count).
+	connected func() int
+	dropped   atomic.Int64
 }
 
 func NewEngine(cfg config.Alerts, appURL string, store Store, mailer Mailer, states StateReader,
@@ -167,11 +202,16 @@ func NewEngine(cfg config.Alerts, appURL string, store Store, mailer Mailer, sta
 		parked:     map[uuid.UUID]*parkedSpot{},
 		moving:     map[uuid.UUID]time.Time{},
 		offline:    map[uuid.UUID]time.Time{},
+		lost:       map[uuid.UUID]*lostSignal{},
 	}
 }
 
 // SetPusher liga a entrega no celular (app do cliente). Chame antes do Run.
 func (e *Engine) SetPusher(p Pusher) { e.pusher = p }
+
+// SetConnectedCount dá o total de rastreadores conectados, para medir a
+// queda em massa contra o tamanho da frota. Chame antes do Run.
+func (e *Engine) SetConnectedCount(fn func() int) { e.connected = fn }
 
 // ---------------------------------------------------------------------------
 // Ganchos da ingestão: só enfileiram, nunca esperam.
@@ -209,6 +249,7 @@ func (e *Engine) OnPosition(deviceID uuid.UUID, pos *tracking.Position, acc *boo
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	delete(e.offline, deviceID) // voltou a falar
+	delete(e.lost, deviceID)
 	if (acc != nil && *acc) || pos.SpeedKmh > movingSpeedKmh {
 		e.moving[deviceID] = now
 	}
@@ -275,6 +316,8 @@ func (e *Engine) Run(ctx context.Context) {
 
 	sweep := time.NewTicker(sweepInterval)
 	defer sweep.Stop()
+	lostTick := time.NewTicker(lostSweep)
+	defer lostTick.Stop()
 	lastPrune := time.Time{}
 	for {
 		select {
@@ -285,6 +328,8 @@ func (e *Engine) Run(ctx context.Context) {
 			e.handleEvent(ctx, ev)
 		case c := <-e.candidates:
 			e.process(ctx, c)
+		case <-lostTick.C:
+			e.sweepLost(ctx)
 		case <-sweep.C:
 			e.sweepOffline(ctx)
 			if e.now().Sub(lastPrune) > 24*time.Hour {
@@ -333,18 +378,25 @@ func (e *Engine) handleEvent(ctx context.Context, ev *events.Event) {
 	case events.DeviceConnected:
 		e.mu.Lock()
 		delete(e.offline, ev.DeviceID)
+		delete(e.lost, ev.DeviceID)
 		e.mu.Unlock()
 		return
 	case events.DeviceDisconnected:
-		if !e.wasMoving(ev.DeviceID) {
+		// Só memória: a frota inteira caindo de uma vez não pode encher a
+		// fila com consultas ao banco.
+		moving := e.wasMoving(ev.DeviceID)
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		e.noteDrop()
+		if !moving {
 			// Parado: garagem sem sinal é comum. Só avisa se continuar
 			// assim por ALERTS_OFFLINE_PARKED_AFTER (sweepOffline).
-			e.mu.Lock()
 			e.offline[ev.DeviceID] = ev.Timestamp
-			e.mu.Unlock()
 			return
 		}
 		c.kind, c.variant = KindSignalLost, variantMoving
+		e.lost[ev.DeviceID] = &lostSignal{c: c, noted: e.now(), mass: e.inMass()}
+		return
 	case events.GeofenceEnter, events.GeofenceExit:
 		// Só as cercas do cliente avisam, e só do lado que ele escolheu; as
 		// da central ficam nos eventos.
@@ -361,6 +413,72 @@ func (e *Engine) handleEvent(ctx context.Context, ev *events.Event) {
 		return
 	}
 	e.process(ctx, c)
+}
+
+// noteDrop conta a desconexão e reconhece a queda em massa. Com e.mu.
+func (e *Engine) noteDrop() {
+	now := e.now()
+	cut := 0
+	for cut < len(e.drops) && now.Sub(e.drops[cut]) > massWindow {
+		cut++
+	}
+	e.drops = append(e.drops[cut:], now)
+	if e.inMass() {
+		e.massLast = now
+		e.massCount++
+		return
+	}
+	population := len(e.drops)
+	if e.connected != nil {
+		population += e.connected() // os que caíram já saíram da conta
+	}
+	if len(e.drops) < max(massMinimum, population*massShare/100) {
+		return
+	}
+	e.massFrom, e.massLast, e.massCount = e.drops[0], now, len(e.drops)
+	// As quedas desta janela que esperavam o prazo também são da massa.
+	for _, l := range e.lost {
+		if !l.noted.Before(e.massFrom) {
+			l.mass = true
+		}
+	}
+	e.log.Warn("queda em massa de conexões: os alertas de sinal perdido ficam segurados",
+		"rastreadores", len(e.drops), "janela", massWindow.String(), "conectados", population-len(e.drops))
+}
+
+// inMass: há uma queda em massa em curso. Com e.mu.
+func (e *Engine) inMass() bool {
+	return !e.massLast.IsZero() && e.now().Sub(e.massLast) <= massWindow
+}
+
+// sweepLost avisa das quedas com o veículo andando que passaram do prazo
+// sem o rastreador voltar. As da queda em massa vão para o alerta de sem
+// comunicação, que só sai se ficarem fora pelo prazo longo.
+func (e *Engine) sweepLost(ctx context.Context) {
+	now := e.now()
+	e.mu.Lock()
+	due := []candidate{}
+	for id, l := range e.lost {
+		if now.Sub(l.noted) < signalLostGrace {
+			continue
+		}
+		delete(e.lost, id)
+		if l.mass {
+			e.offline[id] = l.c.at
+			continue
+		}
+		due = append(due, l.c)
+	}
+	if !e.massLast.IsZero() && !e.inMass() {
+		e.log.Info("queda em massa de conexões terminou", "rastreadores", e.massCount,
+			"duracao", e.massLast.Sub(e.massFrom).Round(time.Second).String())
+		e.massFrom, e.massLast, e.massCount = time.Time{}, time.Time{}, 0
+	}
+	e.mu.Unlock()
+
+	for _, c := range due {
+		e.process(ctx, c)
+	}
 }
 
 // wasMoving: ignição ligada ou deslocamento recente quando o sinal caiu.

@@ -27,6 +27,7 @@ const STATUS: InfraStatus = {
   backups: {
     available: true, count: 14, totalBytes: 2e9,
     latest: { name: 'tracker-x.dump', at: new Date(now.getTime() - 30 * 3_600_000).toISOString(), sizeBytes: 150e6 },
+    offsite: null,
   },
   logs: { errors24h: 3, warnings24h: 5, dropped: 0, failed: 0 },
   live: { trackerConnections: 9, realtimeClients: 4, onlineDevices: 8 },
@@ -49,7 +50,7 @@ vi.mock('@/api/resources', () => ({
   },
 }));
 
-import { backupTone, formatUptime, ServerTab, toneOf, LIMITS } from './ServerTab';
+import { backupTone, formatUptime, offsiteView, ServerTab, toneOf, LIMITS } from './ServerTab';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -70,6 +71,18 @@ describe('regras do painel', () => {
     expect(backupTone('2026-10-03T06:00:00Z', t)).toBe('warn');
     expect(backupTone('2026-10-02T03:00:00Z', t)).toBe('danger');
     expect(backupTone(null, t)).toBe('danger');
+  });
+
+  it('cópia fora da VPS: sem configurar, falhou ou enviada', () => {
+    const t = Date.parse('2026-10-04T12:00:00Z');
+    expect(offsiteView(null, t)).toMatchObject({ tone: 'warn', label: 'Não configurada' });
+    expect(offsiteView({ configured: false, ok: false, at: '', file: '', error: '' }, t).alert).toContain('BACKUP_S3_');
+    const failed = offsiteView({ configured: true, ok: false, at: '2026-10-04T03:00:00Z', file: 'x.dump', error: '403 Forbidden' }, t);
+    expect(failed).toMatchObject({ tone: 'danger', label: 'Falhou' });
+    expect(failed.alert).toContain('403 Forbidden');
+    const sent = offsiteView({ configured: true, ok: true, at: '2026-10-04T03:00:00Z', file: 'x.dump', error: '' }, t);
+    expect(sent.tone).toBe('ok');
+    expect(sent.alert).toBeUndefined();
   });
 
   it('tempo no ar e tamanhos', () => {
@@ -103,6 +116,7 @@ describe('ServerTab', () => {
     // O disco a 92% está no vermelho; o backup de 30 h, atrasado.
     expect(host.querySelector('[aria-label="Disco"]')?.getAttribute('aria-valuenow')).toBe('92');
     expect(text).toContain('Sem um recente, confira o contêiner postgres-backup');
+    expect(text).toContain('Fora da VPSNão configurada');
 
     // Por padrão, os erros das últimas 24 h; trocar o nível refaz a busca.
     expect(asked[0]).toEqual({ hours: 24, level: 'ERROR', search: '' });

@@ -5,6 +5,11 @@ services:
       WEBAUTHN_RP_ID: farborastreadores.com.br
       # Diagnóstico → Servidor mostra o último backup do banco.
       BACKUP_DIR: /backups
+      # Os rastreadores chegam pelo Traefik: o IP real vem no cabeçalho PROXY
+      # (serversTransport "proxyprotocol" em deploy/traefik/dynamic.yml).
+      # Sem ele, todos teriam o IP do Traefik, e o limite de conexões sem
+      # login por IP valeria para a frota inteira.
+      TCP_PROXY_PROTOCOL: 'true'
     volumes:
       - postgres-backups:/backups:ro
     ports: !override []
@@ -21,6 +26,7 @@ services:
       - traefik.tcp.routers.trackers.entrypoints=trackers
       - traefik.tcp.routers.trackers.service=trackers
       - traefik.tcp.services.trackers.loadbalancer.server.port=5000
+      - traefik.tcp.services.trackers.loadbalancer.serverstransport=proxyprotocol@file
       - traefik.http.middlewares.secure-headers.headers.stsSeconds=31536000
       - traefik.http.middlewares.secure-headers.headers.stsIncludeSubdomains=true
       - traefik.http.middlewares.secure-headers.headers.contentTypeNosniff=true
@@ -55,6 +61,8 @@ services:
       - --api.dashboard=false
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
+      # O que os rótulos do Docker não declaram (o PROXY dos rastreadores).
+      - --providers.file.filename=/etc/traefik/dynamic.yml
       - --entrypoints.web.address=:80
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
@@ -72,6 +80,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - traefik-acme:/letsencrypt
+      - ./deploy/traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
     read_only: true
     tmpfs:
       - /tmp
@@ -81,6 +90,45 @@ services:
       - NET_BIND_SERVICE
     security_opt:
       - no-new-privileges:true
+
+  postgres:
+    # Ajustado para a VPS (2 vCPU, 3,6 GB): o padrão do Postgres (128 MB de
+    # cache) lê do disco o que caberia na memória. Se a máquina crescer,
+    # suba POSTGRES_SHARED_BUFFERS (~1/4 da RAM) e POSTGRES_EFFECTIVE_CACHE_SIZE
+    # (~1/2) no .env.production.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-768MB}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-2GB}
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=128MB
+      # SSD: ler fora de ordem custa quase o mesmo que em sequência.
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      # Menos checkpoints (menos escrita no disco) com centenas de posições
+      # por segundo.
+      - -c
+      - max_wal_size=2GB
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - wal_compression=on
+      # O autovacuum acompanha a limpeza diária das posições.
+      - -c
+      - autovacuum_vacuum_cost_limit=1000
+      # Consulta acima de 1 s vai para o log do contêiner, sem os valores.
+      - -c
+      - log_min_duration_statement=1000
+      - -c
+      - log_parameter_max_length=0
+    # O Docker dá 64 MB de /dev/shm; o Postgres usa nas consultas paralelas.
+    shm_size: 256mb
 
   postgres-backup:
     image: postgres:16-alpine
@@ -94,7 +142,23 @@ services:
       PGDATABASE: ${POSTGRES_DB:-tracker}
       PGUSER: ${POSTGRES_USER:-tracker}
       PGPASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD em .env.production}
-      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      # Diárias por esses dias e a de domingo por BACKUP_WEEKLY_KEEP semanas;
+      # sempre com BACKUP_MIN_FREE_MB livres além da próxima cópia.
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+      BACKUP_WEEKLY_KEEP: ${BACKUP_WEEKLY_KEEP:-4}
+      BACKUP_MIN_FREE_MB: ${BACKUP_MIN_FREE_MB:-2048}
+      # Cópia criptografada fora da VPS (S3 compatível: Backblaze B2,
+      # Cloudflare R2, AWS S3). Sem bucket, fica desligada; ver
+      # deploy/PRODUCTION.md.
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-}
+      BACKUP_S3_PROVIDER: ${BACKUP_S3_PROVIDER:-Other}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-farbo}
+      BACKUP_S3_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
+      BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
+      BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE:-}
+      BACKUP_OFFSITE_KEEP_DAYS: ${BACKUP_OFFSITE_KEEP_DAYS:-30}
     volumes:
       - postgres-backups:/backups
       - ./deploy/postgres-backup.sh:/usr/local/bin/postgres-backup.sh:ro

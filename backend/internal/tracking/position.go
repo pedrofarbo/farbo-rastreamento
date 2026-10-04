@@ -119,11 +119,22 @@ func (r *Repository) LatestWithLocation(ctx context.Context, deviceID uuid.UUID)
 		ORDER BY gps_timestamp DESC, id DESC LIMIT 1`, deviceID))
 }
 
-// LatestForAll devolve a última posição de cada dispositivo numa só consulta.
-func (r *Repository) LatestForAll(ctx context.Context) (map[uuid.UUID]*Position, error) {
+// LatestFor devolve a última posição (pelo relógio do aparelho) de cada
+// rastreador pedido, numa só consulta. Cada um é uma busca curta no índice
+// (device_id, gps_timestamp): o tempo depende de quantos rastreadores, não
+// do tamanho do histórico. Ler a tabela inteira com DISTINCT ON levava 4,8 s
+// com 2 milhões de posições (um dia de 5000 rastreadores), a cada lista de
+// veículos aberta. Quem não tem posição fica fora do mapa.
+func (r *Repository) LatestFor(ctx context.Context, deviceIDs []uuid.UUID) (map[uuid.UUID]*Position, error) {
+	if len(deviceIDs) == 0 {
+		return map[uuid.UUID]*Position{}, nil
+	}
 	rows, err := r.db.Query(ctx, `
-		SELECT DISTINCT ON (device_id) `+lightColumns+`
-		FROM positions ORDER BY device_id, gps_timestamp DESC, id DESC`)
+		SELECT p.* FROM unnest($1::uuid[]) AS d(id)
+		CROSS JOIN LATERAL (
+			SELECT `+lightColumns+` FROM positions
+			WHERE device_id = d.id
+			ORDER BY gps_timestamp DESC, id DESC LIMIT 1) p`, deviceIDs)
 	if err != nil {
 		return nil, database.MapError(err)
 	}

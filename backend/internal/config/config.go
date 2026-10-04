@@ -65,7 +65,8 @@ type TCP struct {
 	ReadTimeout time.Duration
 	// WriteTimeout limita o envio de um comando.
 	WriteTimeout time.Duration
-	// MaxConnections limita o total de sessões simultâneas.
+	// MaxConnections limita o total de sessões simultâneas (no teste de
+	// carga, ~30 KB de memória cada).
 	MaxConnections int
 	// KeepAlive do socket TCP.
 	KeepAlive time.Duration
@@ -77,6 +78,12 @@ type TCP struct {
 	// IP (0 desliga). Folgado de propósito: chips M2M saem por NAT da
 	// operadora, com muitos rastreadores atrás de um IP.
 	MaxPendingPerIP int
+	// ProxyProtocol lê o cabeçalho PROXY (v1/v2) que o balanceador (Traefik)
+	// manda com o IP real do rastreador. Só vale de TrustedProxies, e quem
+	// chega sem cabeçalho segue com o IP do socket.
+	ProxyProtocol bool
+	// TrustedProxies: os mesmos de HTTP.TrustedProxies (TRUSTED_PROXIES).
+	TrustedProxies []netip.Prefix
 }
 
 type Postgres struct {
@@ -561,10 +568,11 @@ func Load() (*Config, error) {
 			MaxPacketSize:   num("TCP_MAX_PACKET_SIZE", 8192),
 			ReadTimeout:     dur("TCP_READ_TIMEOUT", 10*time.Minute),
 			WriteTimeout:    dur("TCP_WRITE_TIMEOUT", 10*time.Second),
-			MaxConnections:  num("TCP_MAX_CONNECTIONS", 10000),
+			MaxConnections:  num("TCP_MAX_CONNECTIONS", 20000),
 			IdentifyTimeout: dur("TCP_IDENTIFY_TIMEOUT", 30*time.Second),
 			MaxPendingPerIP: num("TCP_MAX_PENDING_PER_IP", 100),
 			KeepAlive:       dur("TCP_KEEPALIVE", 60*time.Second),
+			ProxyProtocol:   bl("TCP_PROXY_PROTOCOL", false),
 		},
 		Postgres: Postgres{
 			Host:     str("POSTGRES_HOST", "localhost"),
@@ -785,6 +793,7 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	cfg.HTTP.TrustedProxies = proxies
+	cfg.TCP.TrustedProxies = proxies
 
 	if err := cfg.validateSecrets(); err != nil {
 		return nil, err

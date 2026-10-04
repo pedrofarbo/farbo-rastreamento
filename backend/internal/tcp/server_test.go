@@ -111,6 +111,13 @@ func (f *fakeIngestor) waitForInvalid(t *testing.T, want int) []invalidRecord {
 
 func startServer(t *testing.T, ingestor Ingestor, tune func(*config.TCP)) (string, *Manager) {
 	t.Helper()
+	addr, manager, _ := startTestServer(t, ingestor, tune)
+	return addr, manager
+}
+
+// startTestServer também devolve o servidor, para o teste olhar por dentro.
+func startTestServer(t *testing.T, ingestor Ingestor, tune func(*config.TCP)) (string, *Manager, *Server) {
+	t.Helper()
 
 	cfg := config.TCP{
 		Port:           0,
@@ -164,7 +171,7 @@ func startServer(t *testing.T, ingestor Ingestor, tune func(*config.TCP)) (strin
 			t.Log("servidor demorou a encerrar")
 		}
 	})
-	return addr, manager
+	return addr, manager, server
 }
 
 func dial(t *testing.T, addr string) net.Conn {

@@ -1,12 +1,17 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import { vehiclesApi } from '@/api/resources';
 import { useRealtimeEvent } from '@/hooks/useRealtime';
 import type { DeviceStatus, Position, VehicleView } from '@/types';
 
+import { applyVehiclePatches, createUpdateBatcher, withPosition, withRelay, withStatus } from './vehicleUpdates';
+
 export const vehiclesKey = ['vehicles'] as const;
 export const vehicleKey = (id: string) => ['vehicle', id] as const;
+
+/** A lista da frota se atualiza no máximo uma vez por segundo. */
+const FLUSH_MS = 1000;
 
 /**
  * Lista de veículos que se mantém viva.
@@ -25,18 +30,19 @@ export function useVehicles() {
     staleTime: 10_000,
   });
 
+  // As mensagens se acumulam e entram juntas na lista (ver createUpdateBatcher).
+  const [batcher] = useState(() =>
+    createUpdateBatcher((batch) => {
+      queryClient.setQueryData<VehicleView[]>(vehiclesKey, (current) => applyVehiclePatches(current, batch));
+      queryClient.invalidateQueries({ queryKey: ['vehicle'], exact: false, refetchType: 'none' });
+    }, FLUSH_MS),
+  );
+  useEffect(() => () => batcher.cancel(), [batcher]);
+
   useRealtimeEvent(['position.updated'], (message) => {
     const position = message.data as Position | undefined;
     if (!position?.deviceId) return;
-
-    queryClient.setQueryData<VehicleView[]>(vehiclesKey, (current) =>
-      current?.map((vehicle) =>
-        vehicle.deviceId === position.deviceId
-          ? { ...vehicle, lastPosition: position, connected: true }
-          : vehicle,
-      ),
-    );
-    queryClient.invalidateQueries({ queryKey: ['vehicle'], exact: false, refetchType: 'none' });
+    batcher.queue(position.deviceId, withPosition(position));
   });
 
   useRealtimeEvent(['device.online', 'device.offline', 'device.stale'], (message) => {
@@ -51,31 +57,13 @@ export function useVehicles() {
         : message.type === 'device.stale'
           ? 'STALE'
           : 'ONLINE');
-
-    queryClient.setQueryData<VehicleView[]>(vehiclesKey, (current) =>
-      current?.map((vehicle) =>
-        vehicle.deviceId === deviceId && vehicle.device
-          ? {
-              ...vehicle,
-              device: { ...vehicle.device, status },
-              connected: status === 'ONLINE' ? vehicle.connected : false,
-            }
-          : vehicle,
-      ),
-    );
+    batcher.queue(deviceId, withStatus(status));
   });
 
   useRealtimeEvent(['engine.status.changed'], (message) => {
     const payload = message.data as { deviceId?: string; relayOn?: boolean } | undefined;
     if (!payload?.deviceId || payload.relayOn === undefined) return;
-
-    queryClient.setQueryData<VehicleView[]>(vehiclesKey, (current) =>
-      current?.map((vehicle) =>
-        vehicle.deviceId === payload.deviceId && vehicle.state
-          ? { ...vehicle, state: { ...vehicle.state, relayOn: payload.relayOn ?? null } }
-          : vehicle,
-      ),
-    );
+    batcher.queue(payload.deviceId, withRelay(payload.relayOn ?? null));
   });
 
   return query;

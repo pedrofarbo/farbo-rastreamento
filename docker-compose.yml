@@ -210,6 +210,8 @@ services:
       # derrubada, e cada IP só mantém esse número de conexões sem login.
       TCP_IDENTIFY_TIMEOUT: ${TCP_IDENTIFY_TIMEOUT:-30s}
       TCP_MAX_PENDING_PER_IP: ${TCP_MAX_PENDING_PER_IP:-100}
+      # Rastreadores conectados ao mesmo tempo (~30 KB de memória cada).
+      TCP_MAX_CONNECTIONS: ${TCP_MAX_CONNECTIONS:-20000}
 
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: json

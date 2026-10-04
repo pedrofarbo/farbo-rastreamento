@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -37,8 +38,10 @@ type Server struct {
 	log      *slog.Logger
 	metrics  *telemetry.Metrics
 
-	listener net.Listener
-	wg       sync.WaitGroup
+	// listenerMu: Addr é chamado de outra goroutine enquanto o listen sobe.
+	listenerMu sync.Mutex
+	listener   net.Listener
+	wg         sync.WaitGroup
 
 	// sem limita o número de sessões simultâneas.
 	sem chan struct{}
@@ -99,6 +102,8 @@ func remoteIP(conn net.Conn) string {
 }
 
 func (s *Server) Addr() string {
+	s.listenerMu.Lock()
+	defer s.listenerMu.Unlock()
 	if s.listener == nil {
 		return ""
 	}
@@ -112,7 +117,9 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 	if err != nil {
 		return err
 	}
+	s.listenerMu.Lock()
 	s.listener = ln
+	s.listenerMu.Unlock()
 	s.log.Info("servidor TCP de rastreadores no ar", "addr", ln.Addr().String())
 
 	go func() {
@@ -142,8 +149,11 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 			_ = conn.Close()
 			continue
 		}
+		// Do proxy confiável o IP de verdade vem no cabeçalho PROXY, lido já
+		// na goroutine da conexão (o accept não espera ninguém).
+		proxied := s.cfg.ProxyProtocol && s.trustedProxy(conn)
 		ip := remoteIP(conn)
-		if !s.admitPending(ip) {
+		if !proxied && !s.admitPending(ip) {
 			<-s.sem
 			s.log.Debug("muitas conexões não identificadas do mesmo IP, recusando", "remote", ip)
 			_ = conn.Close()
@@ -156,9 +166,38 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 				<-s.sem
 				s.wg.Done()
 			}()
+			if proxied {
+				origin, err := readProxyHeader(conn, proxyHeaderTimeout)
+				if err != nil {
+					s.log.Debug("conexão do proxy sem cabeçalho válido, encerrando", "err", err)
+					_ = conn.Close()
+					return
+				}
+				conn, ip = origin, remoteIP(origin)
+				if !s.admitPending(ip) {
+					s.log.Debug("muitas conexões não identificadas do mesmo IP, recusando", "remote", ip)
+					_ = conn.Close()
+					return
+				}
+			}
 			s.handle(ctx, conn, ip)
 		}()
 	}
+}
+
+// trustedProxy: a conexão vem de um proxy de TRUSTED_PROXIES.
+func (s *Server) trustedProxy(conn net.Conn) bool {
+	peer, err := netip.ParseAddr(remoteIP(conn))
+	if err != nil {
+		return false
+	}
+	peer = peer.Unmap()
+	for _, prefix := range s.cfg.TrustedProxies {
+		if prefix.Contains(peer) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handle(ctx context.Context, netConn net.Conn, ip string) {
@@ -176,7 +215,11 @@ func (s *Server) handle(ctx context.Context, netConn net.Conn, ip string) {
 		s.metrics.Connections.Set(float64(s.manager.Count()))
 	}()
 
-	if tcpConn, ok := netConn.(*net.TCPConn); ok {
+	raw := netConn
+	if p, ok := netConn.(*proxiedConn); ok {
+		raw = p.Conn
+	}
+	if tcpConn, ok := raw.(*net.TCPConn); ok {
 		_ = tcpConn.SetKeepAlive(true)
 		_ = tcpConn.SetKeepAlivePeriod(s.cfg.KeepAlive)
 	}

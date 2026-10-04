@@ -399,9 +399,19 @@ func TestTowingIgnoresBufferedPositions(t *testing.T) {
 func TestSignalLostMovingVersusParked(t *testing.T) {
 	h := newHarness(t, nil)
 	h.states[deviceID] = &tracking.State{ACC: ptr(true)}
-	got := h.event(events.DeviceDisconnected, h.now, nil)
+	if got := h.event(events.DeviceDisconnected, h.now, nil); len(got) != 0 {
+		t.Fatalf("andando, a queda espera o prazo antes de avisar, veio %d", len(got))
+	}
+	h.now = h.now.Add(signalLostGrace - time.Second)
+	h.e.sweepLost(h.ctx)
+	if got := h.flush(); len(got) != 0 {
+		t.Fatalf("dentro do prazo ainda não, veio %d", len(got))
+	}
+	h.now = h.now.Add(time.Second)
+	h.e.sweepLost(h.ctx)
+	got := h.flush()
 	if len(got) != 1 || got[0].Title != "Rastreador sem sinal com o veículo em movimento" {
-		t.Fatalf("sinal caiu com a ignição ligada: alerta na hora, veio %+v", got)
+		t.Fatalf("sinal caiu com a ignição ligada e não voltou: alerta, veio %+v", got)
 	}
 
 	// Parado: só avisa se continuar sem sinal pelo prazo configurado.
@@ -432,6 +442,76 @@ func TestSignalLostMovingVersusParked(t *testing.T) {
 	h3.e.sweepOffline(h3.ctx)
 	if got := h3.flush(); len(got) != 0 {
 		t.Fatalf("reconectou antes do prazo: sem alerta, veio %d", len(got))
+	}
+}
+
+// Conexão que cai e volta logo (troca de antena, reinício do servidor) não
+// é sinal perdido.
+func TestSignalLostIgnoresQuickReconnect(t *testing.T) {
+	h := newHarness(t, nil)
+	h.states[deviceID] = &tracking.State{ACC: ptr(true)}
+	h.event(events.DeviceDisconnected, h.now, nil)
+	h.now = h.now.Add(20 * time.Second)
+	h.event(events.DeviceConnected, h.now, nil)
+	h.now = h.now.Add(2 * signalLostGrace)
+	h.e.sweepLost(h.ctx)
+	if got := h.flush(); len(got) != 0 {
+		t.Fatalf("voltou em 20 s: sem alerta, veio %d", len(got))
+	}
+
+	// Uma posição nova também conta como volta.
+	h.event(events.DeviceDisconnected, h.now, nil)
+	h.now = h.now.Add(10 * time.Second)
+	h.position(-23.55, -46.63, 40, true, h.now)
+	h.now = h.now.Add(2 * signalLostGrace)
+	h.e.sweepLost(h.ctx)
+	if got := h.flush(); len(got) != 0 {
+		t.Fatalf("mandou posição depois da queda: sem alerta, veio %d", len(got))
+	}
+}
+
+// Muitas quedas juntas são o servidor ou a rede: ninguém recebe "sinal
+// perdido"; quem não voltar entra no alerta de sem comunicação.
+func TestMassDisconnectHoldsSignalLost(t *testing.T) {
+	dropOthers := func(h *harness, n int) {
+		for range n {
+			h.now = h.now.Add(200 * time.Millisecond)
+			h.e.handleEvent(h.ctx, &events.Event{DeviceID: uuid.New(), Type: events.DeviceDisconnected, Timestamp: h.now})
+		}
+	}
+
+	h := newHarness(t, nil)
+	h.e.SetConnectedCount(func() int { return 30 })
+	h.states[deviceID] = &tracking.State{ACC: ptr(true)}
+	h.event(events.DeviceDisconnected, h.now, nil)
+	dropOthers(h, massMinimum) // 21 quedas em ~4 s
+	h.now = h.now.Add(signalLostGrace)
+	h.e.sweepLost(h.ctx)
+	if got := h.flush(); len(got) != 0 {
+		t.Fatalf("queda em massa: sem sinal perdido, veio %+v", got)
+	}
+	if !h.e.massLast.IsZero() {
+		t.Error("a queda em massa devia ter terminado depois da janela")
+	}
+	// Continuou fora pelo prazo longo: aí avisa.
+	h.store.offline[deviceID] = true
+	h.now = h.now.Add(2 * time.Hour)
+	h.e.sweepOffline(h.ctx)
+	if got := h.flush(); len(got) != 1 || got[0].Title != "Rastreador sem comunicação há mais de 2 horas" {
+		t.Fatalf("sem voltar pelo prazo longo: alerta de sem comunicação, veio %+v", got)
+	}
+
+	// As mesmas 21 quedas numa frota de 1000 conectados são o normal do dia:
+	// o veículo andando que não voltou é avisado.
+	h2 := newHarness(t, nil)
+	h2.e.SetConnectedCount(func() int { return 1000 })
+	h2.states[deviceID] = &tracking.State{ACC: ptr(true)}
+	h2.event(events.DeviceDisconnected, h2.now, nil)
+	dropOthers(h2, massMinimum)
+	h2.now = h2.now.Add(signalLostGrace)
+	h2.e.sweepLost(h2.ctx)
+	if got := h2.flush(); len(got) != 1 {
+		t.Fatalf("21 quedas em 1000 não é massa: alerta, veio %d", len(got))
 	}
 }
 

@@ -66,6 +66,11 @@ func TestInfraEndToEnd(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// O postgres-backup conta como foi o envio para fora da VPS.
+	offsite := `{"configured":true,"ok":false,"at":"2026-10-04T03:24:10Z","file":"tracker-20261004T030000Z.dump","error":"403 Forbidden"}`
+	if err := os.WriteFile(filepath.Join(backups, "offsite-status.json"), []byte(offsite), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	monitor := infra.NewMonitor("/proc", "/")
 	monitor.Sample(time.Now())
 	svc := infra.NewService(db, monitor, capture, backups)
@@ -109,6 +114,10 @@ func TestInfraEndToEnd(t *testing.T) {
 	if !status.Backups.Available || status.Backups.Count != 2 || status.Backups.Latest == nil ||
 		status.Backups.Latest.Name != "tracker-20261003T030000Z.dump" {
 		t.Errorf("backups = %+v %+v", status.Backups, status.Backups.Latest)
+	}
+	if o := status.Backups.Offsite; o == nil || !o.Configured || o.OK || o.Error != "403 Forbidden" ||
+		o.File != "tracker-20261004T030000Z.dump" || o.At.IsZero() {
+		t.Errorf("cópia fora da VPS = %+v", o)
 	}
 	if status.Logs.Errors24h != 1 || status.Logs.Warnings24h != 1 || status.Process.Goroutines == 0 {
 		t.Errorf("logs = %+v, processo = %+v", status.Logs, status.Process)

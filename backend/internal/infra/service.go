@@ -85,7 +85,22 @@ type Backups struct {
 	Count      int     `json:"count"`
 	TotalBytes int64   `json:"totalBytes"`
 	Latest     *Backup `json:"latest"`
+	// Offsite é a cópia fora da VPS, como o postgres-backup a deixou em
+	// offsite-status.json (nil antes da primeira volta do script).
+	Offsite *Offsite `json:"offsite"`
 }
+
+// Offsite: o último envio da cópia criptografada para fora da VPS.
+type Offsite struct {
+	Configured bool      `json:"configured"`
+	OK         bool      `json:"ok"`
+	At         time.Time `json:"at"`
+	File       string    `json:"file"`
+	Error      string    `json:"error"`
+}
+
+// offsiteStatusFile é escrito pelo deploy/postgres-backup.sh.
+const offsiteStatusFile = "offsite-status.json"
 
 // Backup é um arquivo de cópia.
 type Backup struct {
@@ -226,6 +241,12 @@ func (s *Service) backups() Backups {
 		latest := files[0]
 		latest.Name = filepath.Base(latest.Name)
 		out.Latest = &latest
+	}
+	if body, err := os.ReadFile(filepath.Join(s.backupDir, offsiteStatusFile)); err == nil {
+		var offsite Offsite
+		if json.Unmarshal(body, &offsite) == nil {
+			out.Offsite = &offsite
+		}
 	}
 	return out
 }

@@ -1,0 +1,8 @@
+# Configuração dinâmica do Traefik que os rótulos do Docker não declaram.
+tcp:
+  serversTransports:
+    # Os rastreadores (porta 5000) chegam ao backend com o cabeçalho PROXY v2:
+    # é dele que o backend tira o IP real de cada um (TCP_PROXY_PROTOCOL).
+    proxyprotocol:
+      proxyProtocol:
+        version: 2

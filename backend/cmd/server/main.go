@@ -268,6 +268,8 @@ func run() error {
 	alertStore := alerts.NewDBStore(db, billingSvc.IsSuspended)
 	alertEngine := alerts.NewEngine(cfg.Alerts, cfg.Mail.AppURL, alertStore, mail.NewAlertMailer(mailer),
 		stateStore, geocodingSvc, log)
+	// A queda em massa é medida contra o tamanho da frota conectada.
+	alertEngine.SetConnectedCount(connManager.Count)
 	if cfg.Alerts.Enabled {
 		eventSvc.SetObserver(alertEngine.OnEvent)
 		ingestor.SetPositionObserver(alertEngine.OnPosition)

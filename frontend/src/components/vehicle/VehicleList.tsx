@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/Badge';
 import { Link } from 'react-router-dom';
@@ -29,9 +29,19 @@ function statusTone(status: DeviceStatus | undefined | null) {
   }
 }
 
+/**
+ * Linhas por vez: com a frota inteira (milhares de veículos) na tela, cada
+ * atualização do tempo real pesaria no navegador. A busca acha o resto.
+ */
+export const PAGE_SIZE = 200;
+
+// Bem mais rápido que localeCompare a cada comparação (milhares por ordenação).
+const collator = new Intl.Collator('pt-BR');
+
 export function VehicleList({ vehicles, selectedId, onSelect }: VehicleListProps) {
   const { isCustomer } = useAuth();
   const [search, setSearch] = useState('');
+  const [limit, setLimit] = useState(PAGE_SIZE);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -49,7 +59,7 @@ export function VehicleList({ vehicles, selectedId, onSelect }: VehicleListProps
     return [...matching].sort((a, b) => {
       const byStatus =
         (rank[a.device?.status ?? 'OFFLINE'] ?? 3) - (rank[b.device?.status ?? 'OFFLINE'] ?? 3);
-      return byStatus !== 0 ? byStatus : a.name.localeCompare(b.name);
+      return byStatus !== 0 ? byStatus : collator.compare(a.name, b.name);
     });
   }, [vehicles, search]);
 
@@ -61,7 +71,10 @@ export function VehicleList({ vehicles, selectedId, onSelect }: VehicleListProps
           type="search"
           placeholder="Buscar por nome, placa ou IMEI"
           value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={(event) => {
+            setSearch(event.target.value);
+            setLimit(PAGE_SIZE);
+          }}
           aria-label="Buscar veículo"
         />
       </div>
@@ -85,58 +98,77 @@ export function VehicleList({ vehicles, selectedId, onSelect }: VehicleListProps
             }
           />
         ) : (
-          filtered.map((vehicle) => {
-            const position = vehicle.lastPosition;
-            const status = vehicle.device?.status;
-            const blocked = vehicle.state?.relayOn === true;
-
-            return (
-              <button
-                key={vehicle.id}
-                type="button"
-                className={`${styles.item} ${vehicle.id === selectedId ? styles.selected : ''}`}
-                onClick={() => onSelect(vehicle.id)}
-                aria-current={vehicle.id === selectedId}
-              >
-                <div className={styles.itemHeader}>
-                  <span className={styles.name}>{vehicle.name}</span>
-                  <Badge tone={statusTone(status)} dot pulse={status === 'ONLINE'}>
-                    {formatDeviceStatus(status)}
-                  </Badge>
-                </div>
-
-                {vehicle.plate && <div className={styles.plate}>{vehicle.plate}</div>}
-                {vehicle.shared && <div className={styles.shared}>Compartilhado por {vehicle.shared.ownerName}</div>}
-
-                <div className={styles.metrics}>
-                  <span className={`${styles.metric} ${styles.speed}`}>
-                    {position ? formatSpeed(position.speedKmh) : '— km/h'}
-                  </span>
-                  <span className={styles.metric}>
-                    {vehicle.state?.acc === null || vehicle.state?.acc === undefined
-                      ? 'ACC —'
-                      : vehicle.state.acc
-                        ? 'ACC ligada'
-                        : 'ACC desligada'}
-                  </span>
-                  {position?.gsmLevel !== null && position?.gsmLevel !== undefined && (
-                    <span className={styles.metric}>4G {position.gsmLevel}/4</span>
-                  )}
-                </div>
-
-                <div className={styles.footerRow}>
-                  <span className={styles.lastSeen}>
-                    {vehicle.device
-                      ? `Comunicou ${formatRelative(vehicle.device.lastSeenAt)}`
-                      : 'Sem rastreador vinculado'}
-                  </span>
-                  {blocked && <span className={styles.blocked}>Motor bloqueado</span>}
-                </div>
+          <>
+            {filtered.slice(0, limit).map((vehicle) => (
+              <VehicleRow key={vehicle.id} vehicle={vehicle} selected={vehicle.id === selectedId} onSelect={onSelect} />
+            ))}
+            {filtered.length > limit && (
+              <button type="button" className={styles.more} onClick={() => setLimit((current) => current + PAGE_SIZE)}>
+                {filtered.length - limit > PAGE_SIZE
+                  ? `Mostrar mais ${PAGE_SIZE} (faltam ${filtered.length - limit})`
+                  : `Mostrar os ${filtered.length - limit} restantes`}
               </button>
-            );
-          })
+            )}
+          </>
         )}
       </div>
     </div>
   );
 }
+
+/** Uma linha só se redesenha quando o próprio veículo muda. */
+const VehicleRow = memo(function VehicleRow({
+  vehicle,
+  selected,
+  onSelect,
+}: {
+  vehicle: VehicleView;
+  selected: boolean;
+  onSelect: (vehicleId: string) => void;
+}) {
+  const position = vehicle.lastPosition;
+  const status = vehicle.device?.status;
+  const blocked = vehicle.state?.relayOn === true;
+
+  return (
+    <button
+      type="button"
+      className={`${styles.item} ${selected ? styles.selected : ''}`}
+      onClick={() => onSelect(vehicle.id)}
+      aria-current={selected}
+    >
+      <div className={styles.itemHeader}>
+        <span className={styles.name}>{vehicle.name}</span>
+        <Badge tone={statusTone(status)} dot pulse={status === 'ONLINE'}>
+          {formatDeviceStatus(status)}
+        </Badge>
+      </div>
+
+      {vehicle.plate && <div className={styles.plate}>{vehicle.plate}</div>}
+      {vehicle.shared && <div className={styles.shared}>Compartilhado por {vehicle.shared.ownerName}</div>}
+
+      <div className={styles.metrics}>
+        <span className={`${styles.metric} ${styles.speed}`}>
+          {position ? formatSpeed(position.speedKmh) : '— km/h'}
+        </span>
+        <span className={styles.metric}>
+          {vehicle.state?.acc === null || vehicle.state?.acc === undefined
+            ? 'ACC —'
+            : vehicle.state.acc
+              ? 'ACC ligada'
+              : 'ACC desligada'}
+        </span>
+        {position?.gsmLevel !== null && position?.gsmLevel !== undefined && (
+          <span className={styles.metric}>4G {position.gsmLevel}/4</span>
+        )}
+      </div>
+
+      <div className={styles.footerRow}>
+        <span className={styles.lastSeen}>
+          {vehicle.device ? `Comunicou ${formatRelative(vehicle.device.lastSeenAt)}` : 'Sem rastreador vinculado'}
+        </span>
+        {blocked && <span className={styles.blocked}>Motor bloqueado</span>}
+      </div>
+    </button>
+  );
+});

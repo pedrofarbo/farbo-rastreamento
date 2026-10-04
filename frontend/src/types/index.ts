@@ -868,6 +868,15 @@ export interface LandingAnalytics {
 }
 
 /** O painel de infraestrutura (Diagnóstico → Servidor). */
+/** Último envio da cópia criptografada do banco para fora da VPS. */
+export interface InfraOffsite {
+  configured: boolean;
+  ok: boolean;
+  at: string;
+  file: string;
+  error: string;
+}
+
 export interface InfraStatus {
   host: {
     at: string;
@@ -902,6 +911,8 @@ export interface InfraStatus {
     count: number;
     totalBytes: number;
     latest: { name: string; at: string; sizeBytes: number } | null;
+    /** A cópia fora da VPS (null antes da primeira volta do postgres-backup). */
+    offsite: InfraOffsite | null;
   };
   logs: { errors24h: number; warnings24h: number; dropped: number; failed: number };
   live: { trackerConnections: number; realtimeClients: number; onlineDevices: number };

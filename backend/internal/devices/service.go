@@ -23,6 +23,10 @@ func NewService(repo *Repository, registry *protocols.ProtocolRegistry) *Service
 
 func (s *Service) List(ctx context.Context) ([]*Device, error) { return s.repo.List(ctx) }
 
+func (s *Service) ListByIDs(ctx context.Context, ids []uuid.UUID) ([]*Device, error) {
+	return s.repo.ListByIDs(ctx, ids)
+}
+
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Device, error) {
 	return s.repo.GetByID(ctx, id)
 }

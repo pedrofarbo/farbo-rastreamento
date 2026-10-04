@@ -120,17 +120,27 @@ func (s *Server) sharedWith(r *http.Request, customerID uuid.UUID, isCustomer bo
 
 // vehicleViews junta a cada veículo o rastreador, a última posição e o
 // estado. O rastreador sai na representação do perfil (audience).
+//
+// Só busca os rastreadores e as posições destes veículos: a lista de um
+// cliente (pedida de novo a cada minuto por tela aberta) não pode custar o
+// tamanho da frota nem o do histórico.
 func (s *Server) vehicleViews(ctx context.Context, list []*vehicles.Vehicle, audience devices.Audience) ([]vehicleView, error) {
-	allDevices, err := s.Devices.List(ctx)
+	deviceIDs := make([]uuid.UUID, 0, len(list))
+	for _, vehicle := range list {
+		if vehicle.DeviceID != nil {
+			deviceIDs = append(deviceIDs, *vehicle.DeviceID)
+		}
+	}
+	listed, err := s.Devices.ListByIDs(ctx, deviceIDs)
 	if err != nil {
 		return nil, err
 	}
-	byID := make(map[uuid.UUID]*devices.Device, len(allDevices))
-	for _, d := range allDevices {
+	byID := make(map[uuid.UUID]*devices.Device, len(listed))
+	for _, d := range listed {
 		byID[d.ID] = d
 	}
 
-	positions, err := s.Positions.LatestForAll(ctx)
+	positions, err := s.Positions.LatestFor(ctx, deviceIDs)
 	if err != nil {
 		return nil, err
 	}
