@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import {
   CONTACT_EMAIL,
@@ -10,6 +11,7 @@ import {
   whatsappUrl,
 } from '@/config/contact';
 import { ANATEL_HOMOLOGATION, SOCIAL_SECTION } from '@/config/landing';
+import { PRIVACY_PATH, TERMS_PATH } from '@/config/legal';
 
 import styles from './Footer.module.css';
 
@@ -65,10 +67,11 @@ export const Footer: React.FC = () => {
           <div className={styles.linksCol}>
             <h4>Navegação</h4>
             <ul>
-              <li><a href="#beneficios">Benefícios</a></li>
-              <li><a href="#planos">Planos e Preços</a></li>
-              <li><a href="#como-funciona">Como Funciona</a></li>
-              <li><a href={`#${SOCIAL_SECTION.id}`}>{SOCIAL_SECTION.label}</a></li>
+              {/* Com a barra: funcionam também nas páginas dos termos e da privacidade. */}
+              <li><a href="/#beneficios">Benefícios</a></li>
+              <li><a href="/#planos">Planos e Preços</a></li>
+              <li><a href="/#como-funciona">Como Funciona</a></li>
+              <li><a href={`/#${SOCIAL_SECTION.id}`}>{SOCIAL_SECTION.label}</a></li>
             </ul>
           </div>
 
@@ -101,8 +104,8 @@ export const Footer: React.FC = () => {
         <div className={styles.bottomBar}>
           <span>© {new Date().getFullYear()} Farbo Rastreadores. Todos os direitos reservados.</span>
           <div className={styles.legalLinks}>
-            <a href="#">Termos de Uso</a>
-            <a href="#">Política de Privacidade</a>
+            <Link to={TERMS_PATH}>Termos de Uso</Link>
+            <Link to={PRIVACY_PATH}>Política de Privacidade</Link>
           </div>
         </div>
       </div>

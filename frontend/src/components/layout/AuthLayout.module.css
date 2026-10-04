@@ -171,3 +171,17 @@
   color: var(--accent);
   text-decoration: none;
 }
+
+/* "Ao entrar, você concorda com os Termos..." embaixo do botão. */
+.legal {
+  margin: 0;
+  text-align: center;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.legal a {
+  color: var(--text-secondary);
+  font-weight: 600;
+}

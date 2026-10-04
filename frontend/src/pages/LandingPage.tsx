@@ -39,6 +39,11 @@ export const LandingPage: React.FC = () => {
   // até onde a página é lida.
   const wrapper = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    // Vindo de outra página com uma seção no endereço (/#planos): a página
+    // monta depois do navegador procurar a âncora, então rola aqui.
+    if (window.location.hash.length > 1) {
+      document.getElementById(decodeURIComponent(window.location.hash.slice(1)))?.scrollIntoView();
+    }
     trackPageview();
     const root = wrapper.current;
     if (!root || typeof IntersectionObserver === 'undefined') return;

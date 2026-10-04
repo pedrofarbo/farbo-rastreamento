@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 
 import { publicApi } from '@/api/resources';
+import { PRIVACY_PATH } from '@/config/legal';
 import { track } from '@/services/analytics';
 import { CONTACT_EMAIL } from '@/config/contact';
 import { INSANOS_MONTHLY, LAUNCH_OFFER } from '@/config/landing';
@@ -175,7 +176,13 @@ export const LaunchSection: React.FC = () => {
 
               <label className={styles.consent}>
                 <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-                <span>Aceito receber o aviso do lançamento da Farbo Rastreadores por e-mail e WhatsApp.</span>
+                <span>
+                  Aceito receber o aviso do lançamento da Farbo Rastreadores por e-mail e WhatsApp (veja a{' '}
+                  <a href={PRIVACY_PATH} target="_blank" rel="noopener noreferrer">
+                    Política de Privacidade
+                  </a>
+                  ).
+                </span>
               </label>
 
               {error && (

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 
 import { publicApi } from '@/api/resources';
 import { CONTACT_EMAIL, WHATSAPP_NUMBER, whatsappDisplay, whatsappUrl } from '@/config/contact';
+import { PRIVACY_PATH } from '@/config/legal';
 import { LAUNCH_OFFER, PRE_LAUNCH } from '@/config/landing';
 import { track } from '@/services/analytics';
 import { formatPhoneInput, isPhoneComplete } from '@/services/format';
@@ -359,7 +360,13 @@ export const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, defaultPl
                   checked={consent}
                   onChange={(e) => setConsent(e.target.checked)}
                 />
-                <span>Aceito ser contatado pela Farbo Rastreadores sobre a contratação.</span>
+                <span>
+                  Aceito ser contatado pela Farbo Rastreadores sobre a contratação (veja a{' '}
+                  <a href={PRIVACY_PATH} target="_blank" rel="noopener noreferrer">
+                    Política de Privacidade
+                  </a>
+                  ).
+                </span>
               </label>
 
               {error && (

@@ -25,6 +25,8 @@ const InstallersPage = page(() => import('@/pages/admin/InstallersPage'), 'Insta
 const OrdersPage = page(() => import('@/pages/admin/OrdersPage'), 'OrdersPage');
 const SupportPage = page(() => import('@/pages/admin/SupportPage'), 'SupportPage');
 const UsersPage = page(() => import('@/pages/admin/UsersPage'), 'UsersPage');
+const TermsPage = page(() => import('@/pages/legal/TermsPage'), 'TermsPage');
+const PrivacyPage = page(() => import('@/pages/legal/PrivacyPage'), 'PrivacyPage');
 const AlertsPage = page(() => import('@/pages/customer/AlertsPage'), 'AlertsPage');
 const InvoicesPage = page(() => import('@/pages/customer/InvoicesPage'), 'InvoicesPage');
 const MyVehiclesPage = page(() => import('@/pages/customer/MyVehiclesPage'), 'MyVehiclesPage');
@@ -63,6 +65,8 @@ export function App() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/esqueci-senha" element={<ForgotPasswordPage />} />
                 <Route path="/redefinir-senha" element={<ResetPasswordPage />} />
+                <Route path="/termos-de-uso" element={<TermsPage />} />
+                <Route path="/politica-de-privacidade" element={<PrivacyPage />} />
 
                 <Route element={<RequireAuth />}>
                   <Route element={<AppShell />}>

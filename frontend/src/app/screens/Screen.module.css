@@ -473,3 +473,14 @@
 .sharedNote strong {
   color: var(--text-primary);
 }
+
+/* Termos de Uso e Política de Privacidade, embaixo do login. */
+.legalLinks {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.legalLinks a {
+  color: var(--text-secondary);
+}

@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 
 import { AuthLayout, authStyles as styles } from '@/components/layout/AuthLayout';
+import { PRIVACY_PATH, TERMS_PATH } from '@/config/legal';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/Field';
 import { Spinner } from '@/components/ui/Spinner';
@@ -82,6 +83,11 @@ export function LoginPage() {
         <Button type="submit" variant="primary" size="large" block loading={submitting}>
           Entrar
         </Button>
+
+        <p className={styles.legal}>
+          Ao entrar, você concorda com os <Link to={TERMS_PATH}>Termos de Uso</Link> e a{' '}
+          <Link to={PRIVACY_PATH}>Política de Privacidade</Link>.
+        </p>
       </form>
     </AuthLayout>
   );

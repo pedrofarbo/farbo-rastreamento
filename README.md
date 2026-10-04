@@ -448,6 +448,15 @@ vez de duplicar. A rota pública (`POST /api/public/leads`) aceita poucos envios
 e tem um campo-isca escondido contra robôs; a resposta não devolve nada do que
 foi gravado.
 
+**Termos de Uso e Política de Privacidade** ficam em `/termos-de-uso` e
+`/politica-de-privacidade`, com links no rodapé, no aceite do pré-cadastro e
+da lista e no login do painel e do app. O texto descreve o que o sistema
+faz de fato com os dados (prazos de guarda, fornecedores, visitas sem
+cookies, bloqueio e acessos de terceiros). Razão social, CNPJ e endereço
+entram em `frontend/src/config/legal.ts` (vazios, ficam de fora), junto com
+a data da versão e os números que os documentos citam e que vêm da
+configuração do servidor (mude junto se mudar lá).
+
 O WhatsApp da landing fica em `WHATSAPP_NUMBER`, em
 `frontend/src/config/contact.ts` (hoje (11) 5194-6470). Com ele preenchido,
 a landing mostra o número clicável no rodapé, o botão flutuante do WhatsApp

@@ -4,6 +4,7 @@ import { Navigate, useNavigate } from 'react-router-dom';
 
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/Field';
+import { PRIVACY_PATH, TERMS_PATH } from '@/config/legal';
 import {
   BiometricError,
   biometricAvailable,
@@ -241,6 +242,10 @@ export function LoginScreen() {
         <a className={styles.link} href="/esqueci-senha">
           Esqueci minha senha
         </a>
+        {/* Fora do /app: links comuns, não do router do app. */}
+        <p className={styles.legalLinks}>
+          <a href={TERMS_PATH}>Termos de Uso</a> · <a href={PRIVACY_PATH}>Política de Privacidade</a>
+        </p>
       </div>
     </div>
   );
