@@ -820,6 +820,8 @@ export interface WaitlistInput {
   consent: boolean;
   /** Isca: escondido, só robô preenche. */
   website: string;
+  /** O evento da tela aberta pelo QR Code (/evento/<nome>). */
+  event?: string;
 }
 
 /** Inscrição na lista de lançamento. */
@@ -829,6 +831,8 @@ export interface WaitlistEntry {
   email: string;
   /** WhatsApp; vazio em quem se inscreveu antes de ele ser obrigatório. */
   phone: string;
+  /** O evento em que se inscreveu (QR Code); vazio: pela landing. */
+  event: string;
   consentAt: string;
   createdAt: string;
   updatedAt: string;

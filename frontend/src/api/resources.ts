@@ -1,6 +1,6 @@
 import type { TeamRole } from '@/services/roles';
 
-import { api, download, request } from './client';
+import { api, download, fetchBlob, request } from './client';
 import type {
   CashFlow,
   DreMonth,
@@ -556,6 +556,10 @@ export const leadsApi = {
   removeFromWaitlist: (id: string) => api.delete<void>(`/api/leads/waitlist/${id}`),
   /** Vagas da promoção de pré-lançamento. */
   promo: () => api.get<PromoUsage>('/api/leads/promo'),
+  /** O QR Code de um link (o da tela do evento), para ver e para imprimir. */
+  qrImage: (text: string) => fetchBlob(`/api/leads/qr?${new URLSearchParams({ text })}`),
+  downloadQr: (text: string, name: string, format: 'svg' | 'png') =>
+    download(`/api/leads/qr?${new URLSearchParams({ text, name, format })}`),
 };
 
 export const catalogApi = {

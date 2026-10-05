@@ -14,12 +14,33 @@ import { formatDateTime, formatMoney, formatRelative } from '@/services/format';
 import type { WaitlistEntry } from '@/types';
 
 import styles from '../Page.module.css';
+import { EventQrCard } from './EventQrCard';
+
+/** De onde veio: "Site" ou o evento do QR Code ("encontro-insanos" → "Encontro Insanos"). */
+export function eventLabel(event: string): string {
+  if (!event) return 'Site';
+  return event
+    .split('-')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/** Quantos vieram de cada origem, da que mais trouxe gente. */
+export function byOrigin(list: WaitlistEntry[]): { label: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const e of list) counts.set(e.event, (counts.get(e.event) ?? 0) + 1);
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([event, count]) => ({ label: eventLabel(event), count }));
+}
 
 /** CSV com ";" e BOM: o Excel em português abre direto, com acentos. */
 export function waitlistCsv(list: WaitlistEntry[]): string {
   const cell = (value: string) => `"${value.replace(/"/g, '""')}"`;
-  const rows = list.map((e) => [e.name, e.email, e.phone, formatDateTime(e.createdAt)].map(cell).join(';'));
-  return '\uFEFF' + ['Nome;E-mail;WhatsApp;Inscrito em', ...rows].join('\r\n');
+  const rows = list.map((e) =>
+    [e.name, e.email, e.phone, eventLabel(e.event), formatDateTime(e.createdAt)].map(cell).join(';'),
+  );
+  return '\uFEFF' + ['Nome;E-mail;WhatsApp;Origem;Inscrito em', ...rows].join('\r\n');
 }
 
 /** Conversa no WhatsApp com o número da inscrição (com o 55 do Brasil). */
@@ -39,8 +60,9 @@ function download(list: WaitlistEntry[]) {
 }
 
 /**
- * Lista de lançamento: quem pediu, na landing, para ser avisado quando a
- * Farbo lançar. Daqui sai a lista do aviso (CSV ou e-mails copiados).
+ * Lista de lançamento: quem pediu, na landing ou no QR Code de um evento,
+ * para ser avisado quando a Farbo lançar. Daqui sai a lista do aviso (CSV ou
+ * e-mails copiados) e o QR Code dos eventos.
  */
 export function WaitlistTab() {
   const { notify } = useToast();
@@ -92,10 +114,17 @@ export function WaitlistTab() {
           )}
         </div>
       )}
+      <EventQrCard />
       <Card
         flush
         title={`${list.length} ${list.length === 1 ? 'pessoa' : 'pessoas'} esperando o lançamento`}
-        subtitle="Inscritas pela seção de pré-lançamento da landing."
+        subtitle={
+          list.length > 0
+            ? `Por origem: ${byOrigin(list)
+                .map((o) => `${o.label} ${o.count}`)
+                .join(' · ')}`
+            : 'Inscritas pela landing e pelo QR Code dos eventos.'
+        }
         actions={
           list.length > 0 && (
             <div className={styles.actions}>
@@ -115,7 +144,7 @@ export function WaitlistTab() {
           <EmptyState
             icon="🚀"
             title="Ninguém na lista ainda"
-            description="Quem deixa o e-mail em “Seja avisado no lançamento”, na landing, aparece aqui."
+            description="Quem deixa o e-mail em “Seja avisado no lançamento”, na landing, ou se cadastra pelo QR Code de um evento aparece aqui."
           />
         ) : (
           <div className={styles.tableWrap}>
@@ -125,6 +154,7 @@ export function WaitlistTab() {
                   <th>Nome</th>
                   <th>E-mail</th>
                   <th>WhatsApp</th>
+                  <th>Origem</th>
                   <th>Inscrito</th>
                   <th>Situação</th>
                   <th />
@@ -144,6 +174,13 @@ export function WaitlistTab() {
                         </a>
                       ) : (
                         <span className={billing.muted}>—</span>
+                      )}
+                    </td>
+                    <td data-label="Origem">
+                      {entry.event ? (
+                        <Badge tone="accent">{eventLabel(entry.event)}</Badge>
+                      ) : (
+                        <span className={billing.muted}>Site</span>
                       )}
                     </td>
                     <td data-label="Inscrito" title={formatDateTime(entry.createdAt)}>

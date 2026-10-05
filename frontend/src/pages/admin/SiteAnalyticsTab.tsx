@@ -50,6 +50,7 @@ const CHANNELS: Record<string, string> = {
   youtube: 'YouTube',
   google: 'Google',
   busca: 'Outros buscadores',
+  evento: 'Eventos (QR Code)',
 };
 
 export function channelLabel(channel: string): string {

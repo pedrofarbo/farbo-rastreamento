@@ -183,16 +183,13 @@ async function parseBody(response: Response): Promise<unknown> {
   }
 }
 
-/**
- * Baixa um arquivo protegido (o link comum não leva o token) e entrega ao
- * navegador com o nome que o servidor mandou.
- */
-export async function download(path: string, retrying = false): Promise<void> {
+/** Busca um arquivo protegido (o link comum não leva o token). */
+async function fetchFile(path: string, retrying = false): Promise<{ blob: Blob; filename: string }> {
   const headers = new Headers();
   if (tokens.accessToken) headers.set('Authorization', `Bearer ${tokens.accessToken}`);
   const response = await fetch(`${API_URL}${path}`, { headers });
   if (response.status === 401 && !retrying) {
-    if (await refreshSession()) return download(path, true);
+    if (await refreshSession()) return fetchFile(path, true);
     tokens.clear();
     notifyUnauthorized();
     throw new ApiError(401, 'sessão expirada');
@@ -207,8 +204,18 @@ export async function download(path: string, retrying = false): Promise<void> {
   }
   const disposition = response.headers.get('Content-Disposition') ?? '';
   const match = /filename\*=utf-8''([^;]+)/i.exec(disposition) ?? /filename="?([^";]+)"?/i.exec(disposition);
-  const filename = match ? decodeURIComponent(match[1]) : 'arquivo';
-  const url = URL.createObjectURL(await response.blob());
+  return { blob: await response.blob(), filename: match ? decodeURIComponent(match[1]) : 'arquivo' };
+}
+
+/** O arquivo protegido como Blob (para mostrar uma imagem, por exemplo). */
+export async function fetchBlob(path: string): Promise<Blob> {
+  return (await fetchFile(path)).blob;
+}
+
+/** Baixa um arquivo protegido com o nome que o servidor mandou. */
+export async function download(path: string): Promise<void> {
+  const { blob, filename } = await fetchFile(path);
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;

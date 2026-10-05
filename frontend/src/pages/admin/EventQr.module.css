@@ -1,0 +1,87 @@
+/* O gerador do QR Code dos eventos. */
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken, transparent);
+}
+
+.linkText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.linkActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.open {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.tip {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+}
+
+/* O QR sempre em fundo branco, nos dois temas. */
+.preview {
+  display: grid;
+  place-items: center;
+  width: 236px;
+  height: 236px;
+  padding: 8px;
+  border-radius: var(--radius-lg, var(--radius-md));
+  background: #ffffff;
+  color: #64748b;
+  font-size: var(--text-sm);
+}
+
+.preview img {
+  display: block;
+  width: 220px;
+  height: 220px;
+  image-rendering: pixelated;
+}
+
+@media (max-width: 720px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .preview {
+    margin: 0 auto;
+  }
+}

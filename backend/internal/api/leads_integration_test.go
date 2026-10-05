@@ -1,12 +1,15 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -249,6 +252,69 @@ func TestLaunchWaitlistEndToEnd(t *testing.T) {
 	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/leads/waitlist", nil, http.StatusOK), &list)
 	if len(list) != 0 {
 		t.Errorf("depois de remover: %+v", list)
+	}
+}
+
+// Cadastro no evento (a tela aberta pelo QR Code): muita gente pela mesma
+// rede se inscreve sem esbarrar no limite, o evento fica gravado (e não some
+// quando a pessoa se inscreve de novo pela landing) e o admin baixa o QR
+// Code para imprimir.
+func TestEventSignupEndToEnd(t *testing.T) {
+	env, _ := newLeadsEnv(t)
+	for i := range 20 {
+		body := map[string]any{"name": fmt.Sprintf("Pessoa %d", i), "email": fmt.Sprintf("pessoa%d@evento.test", i),
+			"phone": "(11) 98888-7777", "consent": true, "event": "Encontro Insanos MC — Out/26"}
+		env.must("", http.MethodPost, "/api/public/launch", body, http.StatusCreated)
+	}
+	// Folgado, mas com limite: a 21ª seguida espera.
+	env.must("", http.MethodPost, "/api/public/launch", map[string]any{"email": "x@evento.test", "phone": "(11) 98888-7777",
+		"consent": true}, http.StatusTooManyRequests)
+
+	admin := env.login(auth.RoleAdmin + "@leads.test")
+	var list []leads.WaitlistEntry
+	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/leads/waitlist", nil, http.StatusOK), &list)
+	if len(list) != 20 || list[0].Event != "encontro-insanos-mc-out-26" {
+		t.Fatalf("inscrições do evento = %d, evento %q", len(list), list[0].Event)
+	}
+	// Inscrita de novo pela landing: o evento que a trouxe continua.
+	if _, err := env.db.Exec(context.Background(), `DELETE FROM launch_waitlist WHERE email <> 'pessoa0@evento.test'`); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2100 * time.Millisecond) // o limite devolve uma vaga a cada 2 s
+	env.must("", http.MethodPost, "/api/public/launch", map[string]any{"email": "pessoa0@evento.test", "phone": "(11) 98888-7777",
+		"consent": true}, http.StatusCreated)
+	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/leads/waitlist", nil, http.StatusOK), &list)
+	if len(list) != 1 || list[0].Event != "encontro-insanos-mc-out-26" || list[0].Name != "Pessoa 0" {
+		t.Fatalf("reinscrição pela landing = %+v", list)
+	}
+
+	// O QR Code do link do evento, para imprimir.
+	link := url.QueryEscape("https://farborastreadores.com.br/evento/encontro-insanos-mc-out-26")
+	get := func(token, query string) (*http.Response, []byte) {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodGet, env.srv.URL+"/api/leads/qr?"+query, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		body, _ := io.ReadAll(res.Body)
+		return res, body
+	}
+	res, body := get(admin, "text="+link+"&name=Encontro+Insanos+MC")
+	if res.StatusCode != http.StatusOK || res.Header.Get("Content-Type") != "image/svg+xml" || !bytes.HasPrefix(body, []byte("<svg")) ||
+		!strings.Contains(res.Header.Get("Content-Disposition"), "encontro-insanos-mc.svg") {
+		t.Fatalf("SVG = %d %v %.40s", res.StatusCode, res.Header, body)
+	}
+	if res, body := get(admin, "text="+link+"&format=png"); res.StatusCode != http.StatusOK || !bytes.HasPrefix(body, []byte("\x89PNG")) {
+		t.Fatalf("PNG = %d %v", res.StatusCode, res.Header)
+	}
+	if res, _ := get(admin, "text="); res.StatusCode != http.StatusBadRequest {
+		t.Errorf("sem texto = %d", res.StatusCode)
+	}
+	if res, _ := get(env.login(auth.RoleOperator+"@leads.test"), "text="+link); res.StatusCode != http.StatusForbidden {
+		t.Errorf("operador = %d", res.StatusCode)
 	}
 }
 

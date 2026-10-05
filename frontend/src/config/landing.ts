@@ -32,6 +32,31 @@ export const LAUNCH_OFFER = {
   slots: 500,
 };
 
+/** O endereço público do site: o QR Code dos eventos aponta para ele. */
+export const SITE_URL = 'https://farborastreadores.com.br';
+
+/**
+ * O nome do evento como vai no link (o servidor faz igual): minúsculo, sem
+ * acento, palavras com hífen. "Encontro Insanos MC — Out/26" →
+ * "encontro-insanos-mc-out-26".
+ */
+export function eventSlug(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+/, '')
+    .slice(0, 60)
+    .replace(/-+$/, '');
+}
+
+/** O link da tela de cadastro do evento (o que o QR Code abre). */
+export function eventUrl(name: string): string {
+  const slug = eventSlug(name);
+  return `${SITE_URL}/evento${slug ? `/${slug}` : ''}`;
+}
+
 /** A âncora da seção de pré-lançamento (lista de lançamento). */
 export const LAUNCH_ANCHOR = '#lancamento';
 

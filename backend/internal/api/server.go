@@ -159,6 +159,9 @@ func (s *Server) routes() chi.Router {
 	resetLimiter := newRateLimiter(0.5, 10)
 	// Cadastro de interesse da landing: público, poucos envios por IP.
 	leadLimiter := newRateLimiter(0.05, 5)
+	// Lista de lançamento: mais folgado que o pré-cadastro, porque num evento
+	// (QR Code) muita gente se inscreve pela mesma rede, ou no mesmo tablet.
+	launchLimiter := newRateLimiter(0.5, 20)
 	// Visitas da landing: uma página manda a visita, as seções e os cliques.
 	analyticsLimiter := newRateLimiter(1, 40)
 	// Senha da confirmação extra: além do teto por usuário (stepup).
@@ -197,7 +200,7 @@ func (s *Server) routes() chi.Router {
 		// E o "me avise quando lançar" (lista de lançamento).
 		if s.Leads != nil {
 			r.With(leadLimiter.middleware).Post("/public/leads", s.handlePublicCreateLead)
-			r.With(leadLimiter.middleware).Post("/public/launch", s.handlePublicJoinWaitlist)
+			r.With(launchLimiter.middleware).Post("/public/launch", s.handlePublicJoinWaitlist)
 		}
 
 		// Melhor Envios: volta da autorização (o navegador, sem o token do
@@ -440,6 +443,7 @@ func (s *Server) routes() chi.Router {
 						r.Get("/stats", s.handleLeadStats)
 						r.Get("/waitlist", s.handleListWaitlist)
 						r.Get("/promo", s.handleLaunchPromoUsage)
+						r.Get("/qr", s.handleLeadQR)
 						r.Delete("/waitlist/{id}", s.handleRemoveFromWaitlist)
 						r.Patch("/{id}", s.handleUpdateLead)
 					})

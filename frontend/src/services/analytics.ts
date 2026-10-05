@@ -22,17 +22,21 @@ export type AnalyticsEvent =
 // desenvolvimento, monta a página duas vezes).
 let pageviewSent = '';
 
-/** A visita: com a origem (de fora) e a campanha (UTM) do endereço. */
-export function trackPageview(): void {
+/**
+ * A visita: com a origem (de fora) e a campanha (UTM) do endereço. Uma página
+ * que já sabe de onde a pessoa veio (a do evento, aberta pelo QR Code) passa
+ * a campanha dela; a do endereço, se houver, vale mais.
+ */
+export function trackPageview(campaign: { source?: string; campaign?: string } = {}): void {
   if (pageviewSent === window.location.href) return;
   pageviewSent = window.location.href;
   const params = new URLSearchParams(window.location.search);
   send({
     name: 'pageview',
     referrer: externalReferrer(),
-    utmSource: params.get('utm_source') ?? '',
+    utmSource: params.get('utm_source') ?? campaign.source ?? '',
     utmMedium: params.get('utm_medium') ?? '',
-    utmCampaign: params.get('utm_campaign') ?? '',
+    utmCampaign: params.get('utm_campaign') ?? campaign.campaign ?? '',
   });
 }
 

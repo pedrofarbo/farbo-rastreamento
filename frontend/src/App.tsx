@@ -28,6 +28,7 @@ const UsersPage = page(() => import('@/pages/admin/UsersPage'), 'UsersPage');
 const CompanyPage = page(() => import('@/pages/admin/company/CompanyPage'), 'CompanyPage');
 const TermsPage = page(() => import('@/pages/legal/TermsPage'), 'TermsPage');
 const PrivacyPage = page(() => import('@/pages/legal/PrivacyPage'), 'PrivacyPage');
+const EventSignupPage = page(() => import('@/pages/EventSignupPage'), 'EventSignupPage');
 const AlertsPage = page(() => import('@/pages/customer/AlertsPage'), 'AlertsPage');
 const InvoicesPage = page(() => import('@/pages/customer/InvoicesPage'), 'InvoicesPage');
 const MyVehiclesPage = page(() => import('@/pages/customer/MyVehiclesPage'), 'MyVehiclesPage');
@@ -68,6 +69,9 @@ export function App() {
                 <Route path="/redefinir-senha" element={<ResetPasswordPage />} />
                 <Route path="/termos-de-uso" element={<TermsPage />} />
                 <Route path="/politica-de-privacidade" element={<PrivacyPage />} />
+                {/* Cadastro no pré-lançamento em eventos (o QR Code do estande). */}
+                <Route path="/evento" element={<EventSignupPage />} />
+                <Route path="/evento/:evento" element={<EventSignupPage />} />
 
                 <Route element={<RequireAuth />}>
                   <Route element={<AppShell />}>

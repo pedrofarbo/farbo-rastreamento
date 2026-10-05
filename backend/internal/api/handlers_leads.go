@@ -2,10 +2,13 @@ package api
 
 import (
 	"errors"
+	"mime"
 	"net/http"
+	"strings"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/qrcode"
 )
 
 func writeLeadError(w http.ResponseWriter, err error) {
@@ -107,10 +110,13 @@ type publicWaitlistRequest struct {
 	Consent bool   `json:"consent"`
 	// Website é a isca, como no pré-cadastro.
 	Website string `json:"website"`
+	// Event: o evento da tela aberta pelo QR Code (/evento/<nome>).
+	Event string `json:"event"`
 }
 
-// handlePublicJoinWaitlist: "me avise quando lançar", da landing. Público,
-// com o mesmo limite por IP do pré-cadastro.
+// handlePublicJoinWaitlist: "me avise quando lançar", da landing ou da tela
+// do evento (QR Code). Público, com limite por IP mais folgado que o do
+// pré-cadastro: num evento, muita gente se inscreve pela mesma rede.
 func (s *Server) handlePublicJoinWaitlist(w http.ResponseWriter, r *http.Request) {
 	var req publicWaitlistRequest
 	if err := decodeJSON(w, r, &req); err != nil {
@@ -123,7 +129,7 @@ func (s *Server) handlePublicJoinWaitlist(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if _, err := s.Leads.JoinWaitlist(r.Context(), leads.WaitlistInput{
-		Name: req.Name, Email: req.Email, Phone: req.Phone, Consent: req.Consent,
+		Name: req.Name, Email: req.Email, Phone: req.Phone, Consent: req.Consent, Event: req.Event,
 	}); err != nil {
 		writeLeadError(w, err)
 		return
@@ -153,4 +159,33 @@ func (s *Server) handleRemoveFromWaitlist(w http.ResponseWriter, r *http.Request
 	}
 	s.recordAudit(r, audit.ActionWaitlistRemoved, nil, nil, map[string]any{"entryId": id})
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// handleLeadQR desenha o QR Code de um link (o da tela do evento), para
+// imprimir: ?format=svg (vetor) ou png. Só o admin.
+func (s *Server) handleLeadQR(w http.ResponseWriter, r *http.Request) {
+	text := strings.TrimSpace(r.URL.Query().Get("text"))
+	var body []byte
+	var err error
+	contentType, ext := "image/svg+xml", "svg"
+	if r.URL.Query().Get("format") == "png" {
+		contentType, ext = "image/png", "png"
+		body, err = qrcode.PNG(text, 20)
+	} else {
+		body, err = qrcode.SVG(text)
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	name := leads.EventSlug(r.URL.Query().Get("name"))
+	if name == "" {
+		name = "qrcode"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name + "." + ext}))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
 }
