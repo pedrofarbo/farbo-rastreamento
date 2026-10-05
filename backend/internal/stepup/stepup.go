@@ -37,6 +37,9 @@ const (
 	// PurposeVehicleShare é dar a alguém acesso a um veículo (ou o bloqueio):
 	// quem pega o celular por um instante não se cadastra para rastrear.
 	PurposeVehicleShare = "vehicle_share"
+	// PurposeSupplierPix é pagar um fornecedor por Pix pela AbacatePay (o
+	// dinheiro sai da conta): vale para a equipe também.
+	PurposeSupplierPix = "supplier_pix"
 )
 
 // Métodos de confirmação (no comprovante e na auditoria).
@@ -60,7 +63,7 @@ const (
 	maxNameLength       = 60
 )
 
-var purposes = []string{PurposeEngineCut, PurposeEngineResume, PurposeVehicleShare}
+var purposes = []string{PurposeEngineCut, PurposeEngineResume, PurposeVehicleShare, PurposeSupplierPix}
 
 var (
 	ErrWrongPassword      = errors.New("senha incorreta")

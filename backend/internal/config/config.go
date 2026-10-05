@@ -370,9 +370,25 @@ type Payments struct {
 	WebhookPublicKey string
 	// PixExpiresIn é a validade de cada Pix gerado.
 	PixExpiresIn time.Duration
+	// SupplierPix liga o pagamento de fornecedores por Pix (sai do saldo da
+	// AbacatePay; a chave precisa da permissão WITHDRAW:CREATE).
+	SupplierPix bool
+	// TransferAPIKey é uma chave só para os envios; vazia usa AbacatePayAPIKey.
+	TransferAPIKey string
 }
 
 func (p Payments) Enabled() bool { return p.AbacatePayAPIKey != "" }
+
+// TransferKey é a chave dos envios a fornecedores ("" se desligado).
+func (p Payments) TransferKey() string {
+	if !p.SupplierPix {
+		return ""
+	}
+	if p.TransferAPIKey != "" {
+		return p.TransferAPIKey
+	}
+	return p.AbacatePayAPIKey
+}
 
 // Shipping configura o envio do rastreador pelo Melhor Envios: etiqueta
 // comprada pelo sistema e rastreio até a casa do cliente.
@@ -666,6 +682,8 @@ func Load() (*Config, error) {
 			WebhookSecret:     str("ABACATEPAY_WEBHOOK_SECRET", ""),
 			WebhookPublicKey:  str("ABACATEPAY_WEBHOOK_PUBLIC_KEY", ""),
 			PixExpiresIn:      dur("PIX_EXPIRES_IN", 24*time.Hour),
+			SupplierPix:       bl("ABACATEPAY_SUPPLIER_PIX", true),
+			TransferAPIKey:    str("ABACATEPAY_TRANSFER_API_KEY", ""),
 		},
 		Shipping: Shipping{
 			Sandbox:      bl("MELHORENVIO_SANDBOX", true),

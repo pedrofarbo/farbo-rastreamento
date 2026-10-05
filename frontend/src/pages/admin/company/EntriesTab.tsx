@@ -15,6 +15,7 @@ import type { EntryKind, FinanceEntry } from '@/types';
 
 import pageStyles from '../../Page.module.css';
 import { AttachmentsModal, EntryModal, KIND_WORDS, PayModal, financeKey, useFinanceLookups, useRefreshFinance } from './EntryModals';
+import { PixPayModal, PixResolveModal } from './PixModals';
 import { RecurrenceModal } from './RegistryTab';
 import { METHOD_LABELS, entrySituation, installmentLabel, todayISO } from './labels';
 import styles from './Company.module.css';
@@ -50,6 +51,16 @@ export function EntriesTab({ kind }: { kind: EntryKind }) {
   const [editing, setEditing] = useState<FinanceEntry | null | undefined>(undefined);
   const [paying, setPaying] = useState<FinanceEntry | null>(null);
   const [files, setFiles] = useState<FinanceEntry | null>(null);
+  // Pagar por Pix pela AbacatePay (só contas a pagar, com a AbacatePay ligada).
+  const [pixPaying, setPixPaying] = useState<FinanceEntry | null>(null);
+  const [pixChecking, setPixChecking] = useState<FinanceEntry | null>(null);
+  const pixInfo = useQuery({
+    queryKey: [...financeKey, 'pix-info'],
+    queryFn: financeApi.pixInfo,
+    enabled: kind === 'PAYABLE',
+    staleTime: 60_000,
+  });
+  const pixOn = kind === 'PAYABLE' && pixInfo.data?.enabled === true;
   const [recurring, setRecurring] = useState(false);
   const words = KIND_WORDS[kind];
   const today = todayISO();
@@ -184,6 +195,8 @@ export function EntriesTab({ kind }: { kind: EntryKind }) {
                 {list.map((e) => {
                   const situation = entrySituation(e, today);
                   const part = installmentLabel(e);
+                  // Com Pix enviado ou sem confirmação, a conta não se mexe à mão.
+                  const pixLocked = e.pix !== null && e.pix.status !== 'FAILED';
                   return (
                     <tr key={e.id}>
                       <td data-label="Vencimento">{formatDateOnly(e.dueDate)}</td>
@@ -212,15 +225,29 @@ export function EntriesTab({ kind }: { kind: EntryKind }) {
                         <Badge tone={situation.tone} dot={situation.tone === 'danger'}>
                           {situation.label}
                         </Badge>
+                        {e.pix && <PixNote pix={e.pix} />}
                       </td>
                       <td data-label="">
                         <div className={styles.rowActions}>
-                          {e.status === 'OPEN' && (
-                            <Button size="small" variant="primary" onClick={() => setPaying(e)}>
-                              {words.pay}
+                          {e.pix && (e.pix.status === 'UNKNOWN' || e.pix.status === 'SENDING') ? (
+                            <Button size="small" variant="primary" onClick={() => setPixChecking(e)}>
+                              Conferir Pix
                             </Button>
+                          ) : (
+                            <>
+                              {e.status === 'OPEN' && pixOn && (
+                                <Button size="small" variant="primary" onClick={() => setPixPaying(e)}>
+                                  Pagar por Pix
+                                </Button>
+                              )}
+                              {e.status === 'OPEN' && (
+                                <Button size="small" variant={pixOn ? 'secondary' : 'primary'} onClick={() => setPaying(e)}>
+                                  {words.pay}
+                                </Button>
+                              )}
+                            </>
                           )}
-                          {e.status === 'OPEN' && (
+                          {e.status === 'OPEN' && !pixLocked && (
                             <Button size="small" variant="ghost" onClick={() => setEditing(e)}>
                               Editar
                             </Button>
@@ -228,7 +255,7 @@ export function EntriesTab({ kind }: { kind: EntryKind }) {
                           <Button size="small" variant="ghost" onClick={() => setFiles(e)}>
                             Anexos{e.attachments.length > 0 ? ` (${e.attachments.length})` : ''}
                           </Button>
-                          {e.status === 'OPEN' ? (
+                          {pixLocked ? null : e.status === 'OPEN' ? (
                             <Button size="small" variant="ghost" onClick={() => action.mutate({ op: 'cancel', entry: e })}>
                               Cancelar
                             </Button>
@@ -237,7 +264,7 @@ export function EntriesTab({ kind }: { kind: EntryKind }) {
                               Reabrir
                             </Button>
                           )}
-                          {e.status !== 'PAID' && (
+                          {e.status !== 'PAID' && !pixLocked && (
                             <Button
                               size="small"
                               variant="ghost"
@@ -264,7 +291,39 @@ export function EntriesTab({ kind }: { kind: EntryKind }) {
       {editing !== undefined && <EntryModal kind={kind} entry={editing} onClose={() => setEditing(undefined)} />}
       {paying && <PayModal entry={paying} onClose={() => setPaying(null)} />}
       {files && <AttachmentsModal entry={files} onClose={() => setFiles(null)} />}
+      {pixPaying && <PixPayModal entry={pixPaying} onClose={() => setPixPaying(null)} />}
+      {pixChecking?.pix && (
+        <PixResolveModal entry={pixChecking} transfer={pixChecking.pix} onClose={() => setPixChecking(null)} />
+      )}
       {recurring && <RecurrenceModal recurrence={null} onClose={() => setRecurring(false)} />}
+    </div>
+  );
+}
+
+/** O Pix pela AbacatePay da conta: o comprovante, a falha ou o que conferir. */
+function PixNote({ pix }: { pix: NonNullable<FinanceEntry['pix']> }) {
+  if (pix.status === 'COMPLETE') {
+    return (
+      <div className={styles.pixNote}>
+        <span className={styles.muted}>Pix pela AbacatePay{pix.devMode ? ' (teste)' : ''}</span>
+        {pix.receiptUrl && (
+          <a href={pix.receiptUrl} target="_blank" rel="noopener noreferrer">
+            comprovante
+          </a>
+        )}
+      </div>
+    );
+  }
+  if (pix.status === 'FAILED') {
+    return (
+      <div className={styles.pixNote} title={pix.error}>
+        <span className={styles.danger}>Pix não saiu: {pix.error || 'recusado pela AbacatePay'}</span>
+      </div>
+    );
+  }
+  return (
+    <div className={styles.pixNote}>
+      <Badge tone="warning">{pix.status === 'SENDING' ? 'Enviando Pix' : 'Pix a conferir'}</Badge>
     </div>
   );
 }

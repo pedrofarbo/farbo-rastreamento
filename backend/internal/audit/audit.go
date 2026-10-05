@@ -65,6 +65,9 @@ const (
 	ActionTrackerOrdered       = "TRACKER_ORDERED"
 	ActionInstallerChanged     = "INSTALLER_CHANGED"
 	ActionFinanceChanged       = "FINANCE_CHANGED"
+	// ActionSupplierPix: Pix a um fornecedor pela AbacatePay (enviado,
+	// recusado ou conferido à mão).
+	ActionSupplierPix          = "SUPPLIER_PIX"
 	ActionStockMoved           = "STOCK_MOVED"
 	ActionDeliveryAddressSaved = "DELIVERY_ADDRESS_SAVED"
 	ActionFulfillmentChanged   = "FULFILLMENT_CHANGED"

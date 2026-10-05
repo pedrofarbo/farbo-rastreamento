@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
@@ -28,6 +29,9 @@ type Service struct {
 	now    func() time.Time
 	log    *slog.Logger
 	mailer Mailer
+	// pix paga fornecedores pela AbacatePay (nil: desligado); pixDev: chave de testes.
+	pix    PixSender
+	pixDev bool
 }
 
 func NewService(db *database.DB, mailer Mailer, log *slog.Logger) *Service {
@@ -119,11 +123,11 @@ func (s *Service) exists(ctx context.Context, query string, args ...any) (bool, 
 	return ok, database.MapError(err)
 }
 
-const supplierColumns = `id, name, document, email, phone, pix_key, notes, active, created_at`
+const supplierColumns = `id, name, document, email, phone, pix_key, pix_key_type, notes, active, created_at`
 
 func scanSupplier(row database.Scanner) (*Supplier, error) {
 	var x Supplier
-	if err := row.Scan(&x.ID, &x.Name, &x.Document, &x.Email, &x.Phone, &x.PixKey, &x.Notes, &x.Active, &x.CreatedAt); err != nil {
+	if err := row.Scan(&x.ID, &x.Name, &x.Document, &x.Email, &x.Phone, &x.PixKey, &x.PixKeyType, &x.Notes, &x.Active, &x.CreatedAt); err != nil {
 		return nil, database.MapError(err)
 	}
 	return &x, nil
@@ -153,15 +157,15 @@ func (s *Service) SaveSupplier(ctx context.Context, id *uuid.UUID, in SupplierIn
 	}
 	if id == nil {
 		return scanSupplier(s.db.QueryRow(ctx, `
-			INSERT INTO suppliers (name, document, email, phone, pix_key, notes, active)
-			VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING `+supplierColumns,
-			in.Name, in.Document, in.Email, in.Phone, in.PixKey, in.Notes, in.Active))
+			INSERT INTO suppliers (name, document, email, phone, pix_key, pix_key_type, notes, active)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING `+supplierColumns,
+			in.Name, in.Document, in.Email, in.Phone, in.PixKey, in.PixKeyType, in.Notes, in.Active))
 	}
 	return scanSupplier(s.db.QueryRow(ctx, `
-		UPDATE suppliers SET name = $2, document = $3, email = $4, phone = $5, pix_key = $6, notes = $7,
-			active = $8, updated_at = NOW()
+		UPDATE suppliers SET name = $2, document = $3, email = $4, phone = $5, pix_key = $6, pix_key_type = $7,
+			notes = $8, active = $9, updated_at = NOW()
 		WHERE id = $1 RETURNING `+supplierColumns,
-		*id, in.Name, in.Document, in.Email, in.Phone, in.PixKey, in.Notes, in.Active))
+		*id, in.Name, in.Document, in.Email, in.Phone, in.PixKey, in.PixKeyType, in.Notes, in.Active))
 }
 
 // checkRefs confere a categoria (do lado certo) e o fornecedor.
@@ -330,7 +334,25 @@ func (s *Service) attach(ctx context.Context, entries []*Entry) error {
 		}
 		byID[a.EntryID].Attachments = append(byID[a.EntryID].Attachments, a)
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	// O último envio por Pix de cada conta.
+	pixRows, err := s.db.Query(ctx, `
+		SELECT DISTINCT ON (entry_id) `+pixColumns+` FROM finance_pix_transfers
+		WHERE entry_id = ANY($1) ORDER BY entry_id, created_at DESC`, ids)
+	if err != nil {
+		return database.MapError(err)
+	}
+	defer pixRows.Close()
+	for pixRows.Next() {
+		p, err := scanPix(pixRows)
+		if err != nil {
+			return err
+		}
+		byID[p.EntryID].Pix = p
+	}
+	return pixRows.Err()
 }
 
 func (s *Service) Entry(ctx context.Context, id uuid.UUID) (*Entry, error) {
@@ -429,6 +451,9 @@ func (s *Service) UpdateEntry(ctx context.Context, id uuid.UUID, in EntryUpdate)
 		if status != StatusOpen {
 			return ErrNotOpen
 		}
+		if err := noLivePix(ctx, tx, id); err != nil {
+			return err
+		}
 		normalized, err := in.Normalize(kind)
 		if err != nil {
 			return err
@@ -462,6 +487,9 @@ func (s *Service) Pay(ctx context.Context, id uuid.UUID, in PayInput) (*Entry, e
 		if status != StatusOpen {
 			return ErrNotOpen
 		}
+		if err := noLivePix(ctx, tx, id); err != nil {
+			return err
+		}
 		paid, err := in.Normalize(amount, s.Today())
 		if err != nil {
 			return err
@@ -481,8 +509,12 @@ func (s *Service) Pay(ctx context.Context, id uuid.UUID, in PayInput) (*Entry, e
 	return s.Entry(ctx, id)
 }
 
-// Reopen desfaz a baixa (ou o cancelamento).
+// Reopen desfaz a baixa (ou o cancelamento). A conta paga por Pix pela
+// AbacatePay não se reabre: o dinheiro saiu.
 func (s *Service) Reopen(ctx context.Context, id uuid.UUID) (*Entry, error) {
+	if err := noLivePix(ctx, s.db, id); err != nil {
+		return nil, err
+	}
 	return s.setStatus(ctx, id, `
 		UPDATE finance_entries SET status = 'OPEN', paid_on = NULL, paid_cents = NULL, payment_method = '',
 			updated_at = NOW()
@@ -491,6 +523,9 @@ func (s *Service) Reopen(ctx context.Context, id uuid.UUID) (*Entry, error) {
 
 // Cancel tira a conta das contas (sem apagar o registro).
 func (s *Service) Cancel(ctx context.Context, id uuid.UUID) (*Entry, error) {
+	if err := noLivePix(ctx, s.db, id); err != nil {
+		return nil, err
+	}
 	return s.setStatus(ctx, id, `
 		UPDATE finance_entries SET status = 'CANCELED', updated_at = NOW() WHERE id = $1 AND status = 'OPEN'`)
 }
@@ -512,7 +547,19 @@ func (s *Service) setStatus(ctx context.Context, id uuid.UUID, query string) (*E
 // DeleteEntry apaga um lançamento feito por engano (com os anexos). A conta
 // paga precisa ser reaberta antes: o que já saiu do caixa não some sem querer.
 func (s *Service) DeleteEntry(ctx context.Context, id uuid.UUID) error {
-	tag, err := s.db.Exec(ctx, `DELETE FROM finance_entries WHERE id = $1 AND status <> 'PAID'`, id)
+	if err := noLivePix(ctx, s.db, id); err != nil {
+		return err
+	}
+	var tag pgconn.CommandTag
+	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		// As tentativas de Pix recusadas saem junto.
+		if _, err := tx.Exec(ctx, `DELETE FROM finance_pix_transfers WHERE entry_id = $1 AND status = 'FAILED'`, id); err != nil {
+			return err
+		}
+		var err error
+		tag, err = tx.Exec(ctx, `DELETE FROM finance_entries WHERE id = $1 AND status <> 'PAID'`, id)
+		return err
+	})
 	if err != nil {
 		return database.MapError(err)
 	}

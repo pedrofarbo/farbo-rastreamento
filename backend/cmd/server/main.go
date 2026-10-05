@@ -290,6 +290,11 @@ func run() error {
 
 	// Gestão da empresa: contas, caixa, resultado e estoque (admin).
 	financeSvc := finance.NewService(db, mail.NewFinanceMailer(mailer, cfg.Mail.AppURL), log)
+	if key := cfg.Payments.TransferKey(); key != "" {
+		financeSvc.SetPixSender(abacatepay.NewClient(cfg.Payments.AbacatePayBaseURL, key), abacatepay.IsDevKey(key))
+		log.Info("pagamento de fornecedores por Pix via AbacatePay", "testes", abacatepay.IsDevKey(key),
+			"chave_propria", cfg.Payments.TransferAPIKey != "")
+	}
 	affiliatesSvc := affiliates.NewService(db, log)
 
 	// Infraestrutura: CPU, memória e disco da máquina a cada 10 s (o
@@ -463,6 +468,8 @@ func runWorkers(
 
 		case <-paymentsTicker.C:
 			paymentsSvc.SyncPending(ctx)
+			// Os Pix aos fornecedores: sem resposta e os que podem falhar depois.
+			financeSvc.WatchPix(ctx)
 
 		case <-historyTicker.C:
 			cleanHistory()

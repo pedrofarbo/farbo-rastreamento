@@ -12,10 +12,11 @@ import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { centsToInput, formatDateOnly, formatMoney, parseMoney } from '@/services/format';
-import type { DreGroup, EntryKind, FinanceCategory, FinanceRecurrence, Supplier } from '@/types';
+import type { DreGroup, EntryKind, FinanceCategory, FinanceRecurrence, PixKeyType, Supplier } from '@/types';
 
 import pageStyles from '../../Page.module.css';
 import { financeKey, useFinanceLookups, useRefreshFinance } from './EntryModals';
+import { KEY_TYPE_LABELS, detectKeyType } from './PixModals';
 import { EXPENSE_GROUPS, GROUP_HINTS, GROUP_LABELS, INCOME_GROUPS, todayISO } from './labels';
 import styles from './Company.module.css';
 
@@ -252,7 +253,16 @@ export function RecurrenceModal({ recurrence, onClose }: { recurrence: FinanceRe
 // Fornecedores
 // ---------------------------------------------------------------------------
 
-const EMPTY_SUPPLIER: SupplierInput = { name: '', document: '', email: '', phone: '', pixKey: '', notes: '', active: true };
+const EMPTY_SUPPLIER: SupplierInput = {
+  name: '',
+  document: '',
+  email: '',
+  phone: '',
+  pixKey: '',
+  pixKeyType: '',
+  notes: '',
+  active: true,
+};
 
 function SuppliersCard() {
   const { suppliers } = useFinanceLookups();
@@ -293,7 +303,11 @@ function SuppliersCard() {
                   <td data-label="Contato">
                     <span className={styles.desc}>
                       <span>{[x.email, x.phone].filter(Boolean).join(' · ') || '—'}</span>
-                      {x.pixKey && <span className={styles.muted}>Pix: {x.pixKey}</span>}
+                      {x.pixKey && (
+                        <span className={styles.muted}>
+                          Pix{x.pixKeyType ? ` (${KEY_TYPE_LABELS[x.pixKeyType]})` : ''}: {x.pixKey}
+                        </span>
+                      )}
                     </span>
                   </td>
                   <td data-label="">
@@ -351,6 +365,27 @@ function SupplierModal({ supplier, onClose }: { supplier: Supplier | null; onClo
           <TextField label="CNPJ ou CPF (opcional)" value={draft.document} onChange={(e) => set('document', e.target.value)} inputMode="numeric" />
           <TextField label="Chave Pix (opcional)" value={draft.pixKey} onChange={(e) => set('pixKey', e.target.value)} maxLength={140} />
         </div>
+        {draft.pixKey.trim() !== '' && (
+          <SelectField
+            label="Tipo da chave Pix"
+            value={draft.pixKeyType}
+            onChange={(e) => set('pixKeyType', e.target.value as SupplierInput['pixKeyType'])}
+            hint={
+              draft.pixKeyType
+                ? 'Usado para pagar este fornecedor por Pix pela AbacatePay.'
+                : detectKeyType(draft.pixKey)
+                  ? `Pelo formato: ${KEY_TYPE_LABELS[detectKeyType(draft.pixKey) as PixKeyType]}.`
+                  : 'Não dá para saber pelo formato (11 dígitos podem ser CPF ou celular): escolha o tipo.'
+            }
+          >
+            <option value="">Pelo formato da chave</option>
+            {(['CPF', 'CNPJ', 'PHONE', 'EMAIL', 'RANDOM'] as const).map((t) => (
+              <option key={t} value={t}>
+                {KEY_TYPE_LABELS[t]}
+              </option>
+            ))}
+          </SelectField>
+        )}
         <div className={pageStyles.formRow}>
           <TextField label="E-mail (opcional)" type="email" value={draft.email} onChange={(e) => set('email', e.target.value)} />
           <TextField label="Telefone (opcional)" value={draft.phone} onChange={(e) => set('phone', e.target.value)} maxLength={40} />

@@ -1002,9 +1002,57 @@ export interface Supplier {
   email: string;
   phone: string;
   pixKey: string;
+  /** Tipo da chave Pix; vazio quando o servidor deduz pelo formato. */
+  pixKeyType: '' | PixKeyType;
   notes: string;
   active: boolean;
   createdAt: string;
+}
+
+/** Tipos de chave Pix (BR_CODE: o Pix copia-e-cola da conta). */
+export type PixKeyType = 'CPF' | 'CNPJ' | 'PHONE' | 'EMAIL' | 'RANDOM' | 'BR_CODE';
+
+/**
+ * Um Pix a fornecedor pela AbacatePay. SENDING: enviando; COMPLETE: saiu;
+ * FAILED: recusado ou falhou (a conta segue em aberto); UNKNOWN: sem
+ * resposta — conferir no painel da AbacatePay.
+ */
+export interface PixTransfer {
+  id: string;
+  entryId: string;
+  providerId: string;
+  status: 'SENDING' | 'COMPLETE' | 'FAILED' | 'UNKNOWN';
+  amountCents: number;
+  feeCents: number;
+  key: string;
+  keyType: PixKeyType;
+  receiptUrl: string;
+  devMode: boolean;
+  error: string;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+/** O Pix pela AbacatePay: ligado, modo e saldo. */
+export interface PixInfo {
+  enabled: boolean;
+  devMode: boolean;
+  availableCents: number | null;
+  balanceError: string;
+}
+
+/** Para onde e quanto sai, antes de confirmar. */
+export interface PixPlan {
+  entryId: string;
+  description: string;
+  supplierName: string;
+  amountCents: number;
+  /** code: o Pix copia-e-cola da conta; key: a chave do fornecedor. */
+  source: 'code' | 'key';
+  key: string;
+  keyType: PixKeyType;
+  /** O recebedor como está no copia-e-cola. */
+  recipient: string;
 }
 
 export interface FinanceAttachment {
@@ -1041,6 +1089,8 @@ export interface FinanceEntry {
   installments: number | null;
   stockMovementId: string | null;
   attachments: FinanceAttachment[];
+  /** O último Pix pela AbacatePay (nulo se nunca houve). */
+  pix: PixTransfer | null;
   createdAt: string;
   updatedAt: string;
 }

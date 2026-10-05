@@ -254,6 +254,31 @@ func (s *Server) handleBiometricLogin(w http.ResponseWriter, r *http.Request) {
 	writeCode(w, http.StatusUnauthorized, "não foi possível entrar com a biometria", codeBiometricFailed)
 }
 
+// requireTeamStepUp exige de quem estiver logado (a equipe também) o
+// comprovante da confirmação: para o que tira dinheiro da conta.
+func (s *Server) requireTeamStepUp(w http.ResponseWriter, r *http.Request, purpose string) bool {
+	principal, ok := auth.FromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "não autenticado")
+		return false
+	}
+	if s.StepUp == nil {
+		return true
+	}
+	method, err := s.StepUp.Consume(r.Context(), principal.UserID, purpose, r.Header.Get(stepUpHeader))
+	if err != nil {
+		if !errors.Is(err, stepup.ErrNoGrant) {
+			s.Log.Error("falha ao conferir a confirmação extra", "err", err)
+			writeError(w, http.StatusInternalServerError, "erro interno")
+			return false
+		}
+		writeCode(w, http.StatusForbidden, "confirme com a biometria ou a senha para continuar", codeStepUpRequired)
+		return false
+	}
+	s.Log.Info("ação confirmada", "purpose", purpose, "method", method, "user", principal.UserID)
+	return true
+}
+
 // requireStepUp exige do cliente o comprovante da confirmação (biometria ou
 // senha) para a ação. A equipe da central segue como antes. Devolve false se
 // já respondeu.

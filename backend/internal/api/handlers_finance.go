@@ -15,6 +15,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/finance"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
 )
 
 // Gestão da empresa (só o admin): contas a pagar e receitas avulsas, anexos,
@@ -513,4 +514,87 @@ func (s *Server) handleMoveStock(w http.ResponseWriter, r *http.Request) {
 		"movement": movement.ID, "item": movement.ItemID, "type": movement.Type, "quantity": movement.Quantity,
 		"unitCostCents": movement.UnitCostCents, "payables": len(entries)})
 	writeJSON(w, http.StatusCreated, map[string]any{"movement": movement, "payables": entries})
+}
+
+// ---------------------------------------------------------------------------
+// Pagar fornecedores por Pix (AbacatePay)
+// ---------------------------------------------------------------------------
+
+// handleFinancePixInfo: se o Pix está ligado, o modo e o saldo disponível.
+func (s *Server) handleFinancePixInfo(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.Finance.PixInfo(r.Context()))
+}
+
+// handleEntryPixPlan: para onde e quanto vai sair, e os envios anteriores.
+func (s *Server) handleEntryPixPlan(w http.ResponseWriter, r *http.Request) {
+	id, ok := idOr400(w, r)
+	if !ok {
+		return
+	}
+	transfers, err := s.Finance.PixTransfers(r.Context(), id)
+	if err != nil {
+		financeError(w, err, "lançamento não encontrado")
+		return
+	}
+	out := map[string]any{"plan": nil, "problem": "", "transfers": transfers}
+	plan, err := s.Finance.PlanPix(r.Context(), id)
+	var v finance.ValidationError
+	switch {
+	case errors.As(err, &v):
+		out["problem"] = v.Message
+	case err != nil:
+		financeError(w, err, "lançamento não encontrado")
+		return
+	default:
+		out["plan"] = plan
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleSendEntryPix paga a conta por Pix. O dinheiro sai da conta: pede a
+// confirmação extra (biometria ou senha) de quem paga.
+func (s *Server) handleSendEntryPix(w http.ResponseWriter, r *http.Request) {
+	id, ok := idOr400(w, r)
+	if !ok {
+		return
+	}
+	if !s.requireTeamStepUp(w, r, stepup.PurposeSupplierPix) {
+		return
+	}
+	transfer, err := s.Finance.SendPix(r.Context(), id, actor(r))
+	if err != nil {
+		s.recordAudit(r, audit.ActionSupplierPix, nil, nil, map[string]any{"entry": id, "result": "erro", "error": err.Error()})
+		financeError(w, err, "lançamento não encontrado")
+		return
+	}
+	s.recordAudit(r, audit.ActionSupplierPix, nil, nil, map[string]any{
+		"entry": id, "transfer": transfer.ID, "provider": transfer.ProviderID, "status": transfer.Status,
+		"amountCents": transfer.AmountCents, "keyType": transfer.KeyType, "devMode": transfer.DevMode,
+	})
+	writeJSON(w, http.StatusOK, transfer)
+}
+
+// handleResolvePix: quem conferiu no painel da AbacatePay diz se um Pix sem
+// resposta saiu ou não.
+func (s *Server) handleResolvePix(w http.ResponseWriter, r *http.Request) {
+	id, ok := idOr400(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Sent       bool   `json:"sent"`
+		ProviderID string `json:"providerId"`
+	}
+	if !decodeOr400(w, r, &req) {
+		return
+	}
+	transfer, err := s.Finance.ResolvePix(r.Context(), id, req.Sent, req.ProviderID)
+	if err != nil {
+		financeError(w, err, "envio não encontrado")
+		return
+	}
+	s.recordAudit(r, audit.ActionSupplierPix, nil, nil, map[string]any{
+		"transfer": id, "result": "conferido", "sent": req.Sent, "provider": req.ProviderID, "status": transfer.Status,
+	})
+	writeJSON(w, http.StatusOK, transfer)
 }

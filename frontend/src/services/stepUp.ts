@@ -8,7 +8,7 @@ import type { AuthTokens } from '@/types';
  */
 
 /** As ações que pedem a confirmação: bloquear, desbloquear e dar acesso a um veículo. */
-export type StepUpPurpose = 'engine_cut' | 'engine_resume' | 'vehicle_share';
+export type StepUpPurpose = 'engine_cut' | 'engine_resume' | 'vehicle_share' | 'supplier_pix';
 
 export interface StepUpGrant {
   token: string;

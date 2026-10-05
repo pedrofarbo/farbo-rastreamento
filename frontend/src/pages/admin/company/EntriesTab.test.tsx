@@ -15,7 +15,7 @@ function entry(over: Partial<FinanceEntry>): FinanceEntry {
     id: 'e1', kind: 'PAYABLE', description: 'Contador', categoryId: 'c1', categoryName: 'Contabilidade', group: 'OPERATING',
     supplierId: null, supplierName: '', amountCents: 30000, dueDate: '2026-10-18', status: 'OPEN', paidOn: null, paidCents: null,
     overdue: false, paymentMethod: '', paymentCode: '', notes: '', recurrenceId: null, installment: null, installments: null,
-    stockMovementId: null, attachments: [], createdAt: '', updatedAt: '', ...over,
+    stockMovementId: null, attachments: [], pix: null, createdAt: '', updatedAt: '', ...over,
   };
 }
 
@@ -27,12 +27,15 @@ const LIST = [
 
 const asked: unknown[] = [];
 const paid: unknown[] = [];
+let pixEnabled = false;
+let list = LIST;
 vi.mock('@/api/resources', () => ({
   financeApi: {
     entries: async (f: unknown) => {
       asked.push(f);
-      return LIST;
+      return list;
     },
+    pixInfo: async () => ({ enabled: pixEnabled, devMode: true, availableCents: 500000, balanceError: '' }),
     categories: async () => [{ id: 'c1', name: 'Contabilidade', kind: 'EXPENSE', group: 'OPERATING', active: true }],
     suppliers: async () => [],
     pay: async (id: string, input: unknown) => {
@@ -53,7 +56,27 @@ afterEach(() => {
   document.body.innerHTML = '';
   asked.length = 0;
   paid.length = 0;
+  pixEnabled = false;
+  list = LIST;
 });
+
+async function renderTab() {
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  await act(async () =>
+    createRoot(host).render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter>
+          <ToastProvider>
+            <EntriesTab kind="PAYABLE" />
+          </ToastProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    ),
+  );
+  await flush();
+  return host;
+}
 
 describe('totals', () => {
   it('soma o valor, o pago nas pagas e o vencido', () => {
@@ -98,5 +121,33 @@ describe('EntriesTab', () => {
     await act(async () => button('Confirmar').click());
     await flush();
     expect(paid[0]).toEqual(['e1', { paidOn: '2026-10-15', paidCents: 30000, method: '' }]);
+  });
+
+  it('com a AbacatePay: pagar por Pix, o comprovante e o Pix a conferir', async () => {
+    pixEnabled = true;
+    const pix = (status: 'COMPLETE' | 'UNKNOWN' | 'FAILED', error = '') => ({
+      id: `t-${status}`, entryId: 'x', providerId: 'tran_1', status, amountCents: 1000, feeCents: 80, key: 'a@b.c',
+      keyType: 'EMAIL' as const, receiptUrl: 'https://app.abacatepay.com/receipt/tran_1', devMode: false, error,
+      createdAt: '', completedAt: null,
+    });
+    list = [
+      entry({ id: 'a', description: 'Aberta' }),
+      entry({ id: 'p', description: 'Paga por Pix', status: 'PAID', paidCents: 1000, paidOn: '2026-10-15', paymentMethod: 'PIX', pix: pix('COMPLETE') }),
+      entry({ id: 'u', description: 'Sem resposta', pix: pix('UNKNOWN') }),
+      entry({ id: 'f', description: 'Recusada', pix: pix('FAILED', 'Saldo insuficiente') }),
+    ];
+    const host = await renderTab();
+    const row = (text: string) => Array.from(host.querySelectorAll('tr')).find((tr) => tr.textContent?.includes(text))!;
+    const buttons = (tr: HTMLElement) => Array.from(tr.querySelectorAll('button')).map((b) => b.textContent);
+    expect(buttons(row('Aberta'))).toEqual(['Pagar por Pix', 'Pagar', 'Editar', 'Anexos', 'Cancelar', 'Excluir']);
+    // Paga por Pix: o comprovante; não se reabre nem se exclui.
+    expect(buttons(row('Paga por Pix'))).toEqual(['Anexos']);
+    expect(row('Paga por Pix').querySelector('a')?.getAttribute('href')).toBe('https://app.abacatepay.com/receipt/tran_1');
+    // Sem resposta: só conferir.
+    expect(buttons(row('Sem resposta'))).toEqual(['Conferir Pix', 'Anexos']);
+    expect(row('Sem resposta').textContent).toContain('Pix a conferir');
+    // Recusada: o motivo, e dá para tentar de novo.
+    expect(row('Recusada').textContent).toContain('Pix não saiu: Saldo insuficiente');
+    expect(buttons(row('Recusada'))).toContain('Pagar por Pix');
   });
 });

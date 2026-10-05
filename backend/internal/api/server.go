@@ -386,7 +386,11 @@ func (s *Server) routes() chi.Router {
 							r.Post("/reopen", s.handleReopenEntry)
 							r.Post("/cancel", s.handleCancelEntry)
 							r.Post("/attachments", s.handleAddAttachment)
+							r.Get("/pix", s.handleEntryPixPlan)
+							r.Post("/pix", s.handleSendEntryPix)
 						})
+						r.Get("/pix", s.handleFinancePixInfo)
+						r.Post("/pix/{id}/resolve", s.handleResolvePix)
 						r.Get("/attachments/{id}", s.handleGetAttachment)
 						r.Delete("/attachments/{id}", s.handleDeleteAttachment)
 

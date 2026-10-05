@@ -115,6 +115,8 @@ services:
       # Pix das faturas pela AbacatePay. Sem chave, o Pix online fica desligado.
       ABACATEPAY_API_KEY: ${ABACATEPAY_API_KEY:-}
       ABACATEPAY_WEBHOOK_SECRET: ${ABACATEPAY_WEBHOOK_SECRET:-}
+      ABACATEPAY_SUPPLIER_PIX: ${ABACATEPAY_SUPPLIER_PIX:-true}
+      ABACATEPAY_TRANSFER_API_KEY: ${ABACATEPAY_TRANSFER_API_KEY:-}
       PIX_EXPIRES_IN: ${PIX_EXPIRES_IN:-24h}
 
       # Histórico guardado (7, 14 ou 30 dias; cliente e veículo podem ter o próprio).

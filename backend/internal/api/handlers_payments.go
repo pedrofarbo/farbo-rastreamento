@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -291,7 +292,17 @@ func (s *Server) handleAbacatePayWebhook(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusOK, map[string]string{"status": "duplicado"})
 		return
 	}
-	if err := s.Payments.HandleWebhook(r.Context(), event); err != nil {
+	handle := s.Payments.HandleWebhook
+	if event.IsTransferEvent() {
+		// Os Pix enviados a fornecedores (Empresa).
+		handle = func(ctx context.Context, ev *abacatepay.Event) error {
+			if s.Finance == nil {
+				return nil
+			}
+			return s.Finance.HandleTransferWebhook(ctx, ev.TransferIDs())
+		}
+	}
+	if err := handle(r.Context(), event); err != nil {
 		// 500 faz a AbacatePay tentar de novo mais tarde.
 		s.Log.Error("falha ao processar webhook da AbacatePay", "event", event.Event, "id", event.ID, "err", err)
 		writeError(w, http.StatusInternalServerError, "falha ao processar o evento")

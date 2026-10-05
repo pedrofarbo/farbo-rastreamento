@@ -9,6 +9,9 @@ import type {
   AffiliateSettings,
   CustomerReferral,
   PartnerReport,
+  PixInfo,
+  PixPlan,
+  PixTransfer,
   PublicAffiliate,
   CashFlow,
   DreMonth,
@@ -727,6 +730,17 @@ export const financeApi = {
   pay: (id: string, input: { paidOn: string; paidCents: number; method: PaymentMethod }) =>
     api.post<FinanceEntry>(`/api/finance/entries/${id}/pay`, input),
   reopen: (id: string) => api.post<FinanceEntry>(`/api/finance/entries/${id}/reopen`),
+  /** Pix pela AbacatePay: ligado, modo e saldo. */
+  pixInfo: () => api.get<PixInfo>('/api/finance/pix'),
+  /** Para onde e quanto vai sair (ou o problema), e os envios anteriores. */
+  entryPix: (id: string) =>
+    api.get<{ plan: PixPlan | null; problem: string; transfers: PixTransfer[] }>(`/api/finance/entries/${id}/pix`),
+  /** Paga por Pix (pede o comprovante da confirmação da senha ou biometria). */
+  sendPix: (id: string, stepUpToken: string) =>
+    request<PixTransfer>(`/api/finance/entries/${id}/pix`, { method: 'POST', headers: { 'X-Step-Up-Token': stepUpToken } }),
+  /** Conferido no painel da AbacatePay: o Pix sem resposta saiu ou não. */
+  resolvePix: (transferId: string, input: { sent: boolean; providerId: string }) =>
+    api.post<PixTransfer>(`/api/finance/pix/${transferId}/resolve`, input),
   cancel: (id: string) => api.post<FinanceEntry>(`/api/finance/entries/${id}/cancel`),
   removeEntry: (id: string) => api.delete<void>(`/api/finance/entries/${id}`),
   attach: (entryId: string, file: File) => {

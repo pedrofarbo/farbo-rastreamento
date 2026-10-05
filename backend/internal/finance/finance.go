@@ -122,15 +122,17 @@ func (in CategoryInput) Normalize() (CategoryInput, string, error) {
 }
 
 type Supplier struct {
-	ID        uuid.UUID `json:"id"`
-	Name      string    `json:"name"`
-	Document  string    `json:"document"`
-	Email     string    `json:"email"`
-	Phone     string    `json:"phone"`
-	PixKey    string    `json:"pixKey"`
-	Notes     string    `json:"notes"`
-	Active    bool      `json:"active"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID       uuid.UUID `json:"id"`
+	Name     string    `json:"name"`
+	Document string    `json:"document"`
+	Email    string    `json:"email"`
+	Phone    string    `json:"phone"`
+	PixKey   string    `json:"pixKey"`
+	// PixKeyType: CPF, CNPJ, PHONE, EMAIL ou RANDOM (vazio: deduzido da chave).
+	PixKeyType string    `json:"pixKeyType"`
+	Notes      string    `json:"notes"`
+	Active     bool      `json:"active"`
+	CreatedAt  time.Time `json:"createdAt"`
 }
 
 type SupplierInput struct {
@@ -139,8 +141,10 @@ type SupplierInput struct {
 	Email    string `json:"email"`
 	Phone    string `json:"phone"`
 	PixKey   string `json:"pixKey"`
-	Notes    string `json:"notes"`
-	Active   bool   `json:"active"`
+	// PixKeyType: vazio deduz da chave (11 dígitos precisam dizer se é CPF ou celular).
+	PixKeyType string `json:"pixKeyType"`
+	Notes      string `json:"notes"`
+	Active     bool   `json:"active"`
 }
 
 func (in SupplierInput) Normalize() (SupplierInput, error) {
@@ -161,6 +165,20 @@ func (in SupplierInput) Normalize() (SupplierInput, error) {
 		return in, invalid("Telefone ou chave Pix longos demais.")
 	case utf8.RuneCountInString(in.Notes) > maxNotes:
 		return in, invalid("Observações longas demais.")
+	}
+	in.PixKeyType = strings.ToUpper(strings.TrimSpace(in.PixKeyType))
+	if in.PixKey == "" {
+		in.PixKeyType = ""
+		return in, nil
+	}
+	if in.PixKeyType == "" {
+		in.PixKeyType = DetectKeyType(in.PixKey)
+	}
+	if in.PixKeyType == "" {
+		return in, invalid("Diga o tipo da chave Pix (11 dígitos podem ser CPF ou celular).")
+	}
+	if _, err := PixKeyFor(in.PixKey, in.PixKeyType); err != nil {
+		return in, err
 	}
 	return in, nil
 }
@@ -194,8 +212,10 @@ type Entry struct {
 	Installments    *int         `json:"installments"`
 	StockMovementID *uuid.UUID   `json:"stockMovementId"`
 	Attachments     []Attachment `json:"attachments"`
-	CreatedAt       time.Time    `json:"createdAt"`
-	UpdatedAt       time.Time    `json:"updatedAt"`
+	// Pix: o último envio por Pix pela AbacatePay (nulo se nunca houve).
+	Pix       *PixTransfer `json:"pix"`
+	CreatedAt time.Time    `json:"createdAt"`
+	UpdatedAt time.Time    `json:"updatedAt"`
 }
 
 // EntryInput é um lançamento novo. O valor é o total: com parcelas, ele é

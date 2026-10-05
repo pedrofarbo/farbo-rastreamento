@@ -72,3 +72,9 @@ func validCNPJ(d string) bool {
 	}
 	return true
 }
+
+// ValidCPF confere os dígitos verificadores de um CPF (só os 11 dígitos).
+func ValidCPF(d string) bool { return len(d) == 11 && onlyDigits(d) == d && validCPF(d) }
+
+// ValidCNPJ confere os dígitos verificadores de um CNPJ (só os 14 dígitos).
+func ValidCNPJ(d string) bool { return len(d) == 14 && onlyDigits(d) == d && validCNPJ(d) }
