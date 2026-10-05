@@ -25,6 +25,7 @@ const InstallersPage = page(() => import('@/pages/admin/InstallersPage'), 'Insta
 const OrdersPage = page(() => import('@/pages/admin/OrdersPage'), 'OrdersPage');
 const SupportPage = page(() => import('@/pages/admin/SupportPage'), 'SupportPage');
 const UsersPage = page(() => import('@/pages/admin/UsersPage'), 'UsersPage');
+const CompanyPage = page(() => import('@/pages/admin/company/CompanyPage'), 'CompanyPage');
 const TermsPage = page(() => import('@/pages/legal/TermsPage'), 'TermsPage');
 const PrivacyPage = page(() => import('@/pages/legal/PrivacyPage'), 'PrivacyPage');
 const AlertsPage = page(() => import('@/pages/customer/AlertsPage'), 'AlertsPage');
@@ -96,6 +97,7 @@ export function App() {
                       <Route path="clientes" element={<CustomersPage />} />
                       <Route path="clientes/:id" element={<CustomerDetailsPage />} />
                       <Route path="prestadores" element={<InstallersPage />} />
+                      <Route path="empresa" element={<CompanyPage />} />
                       <Route path="usuarios" element={<UsersPage />} />
                     </Route>
                   </Route>

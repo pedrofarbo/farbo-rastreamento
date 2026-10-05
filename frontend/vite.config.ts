@@ -57,10 +57,14 @@ function pwaServiceWorker(): Plugin {
       const brand = ['/assets/logo-header.png', '/assets/logo-mark.png'];
       const precache = ['/app/index.html', '/app/manifest.webmanifest', ...icons, ...brand, ...[...files].sort().map((f) => `/${f}`)];
       const version = createHash('sha256').update(precache.join('\n')).digest('hex').slice(0, 12);
-      const source = readFileSync(path.resolve(__dirname, 'src/app/sw-template.js'), 'utf8')
+      const template = readFileSync(path.resolve(__dirname, 'src/app/sw-template.js'), 'utf8');
+      // Confere o modelo, não o resultado: o nome de um arquivo do build pode
+      // ter "__" no hash (aconteceu), e isso não é marcador esquecido.
+      const unknown = template.replaceAll('__VERSION__', '').replaceAll('__PRECACHE__', '').match(/__[A-Z][A-Z_]*__/);
+      if (unknown) this.error(`marcador sem valor no modelo do sw.js: ${unknown[0]}`);
+      const source = template
         .replaceAll('__VERSION__', version)
         .replaceAll('__PRECACHE__', JSON.stringify(precache, null, 2));
-      if (source.includes('__')) this.error('marcador não preenchido no sw.js');
       this.emitFile({ type: 'asset', fileName: 'app/sw.js', source });
     },
   };

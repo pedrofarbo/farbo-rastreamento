@@ -1,0 +1,468 @@
+/* Gestão da empresa. */
+
+.tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tabs button {
+  white-space: nowrap;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+}
+
+.chip {
+  padding: var(--space-1) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chipActive {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.search,
+.select {
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.search {
+  flex: 1 1 200px;
+}
+
+.select {
+  max-width: 220px;
+}
+
+.monthSelect {
+  min-width: 7.5rem;
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.summary strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.danger {
+  color: var(--danger);
+}
+
+.positive {
+  color: var(--accent);
+}
+
+.negative {
+  color: var(--danger);
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.desc {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.desc strong {
+  overflow-wrap: anywhere;
+}
+
+.amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.right,
+table th.right,
+table td.right {
+  text-align: right;
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+/* Lista simples (contas vencendo, estoque baixo). */
+.list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.listItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
+}
+
+.listItem:last-child {
+  border-bottom: none;
+}
+
+.listEnd {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* Projeções do caixa. */
+.projections {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.projection {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg, var(--radius-md));
+}
+
+.projectionValue {
+  font-size: var(--text-lg);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Resultado do mês (DRE). */
+.statement {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(2, minmax(90px, auto));
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.line > span:not(:first-child) {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.lineHead {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lineTotal {
+  font-weight: 800;
+}
+
+.lineResult {
+  font-size: var(--text-md, var(--text-base));
+  font-weight: 800;
+  border-bottom: 2px solid var(--border-strong);
+}
+
+.lineSub {
+  padding-left: var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.lineToggle {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lineToggle::before {
+  content: '▸ ';
+  color: var(--text-muted);
+}
+
+.lineToggleOpen::before {
+  content: '▾ ';
+}
+
+/* Barras mês a mês. */
+.bars {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  align-items: end;
+  gap: var(--space-2);
+  height: 140px;
+  padding-top: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.barGroup {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  height: 100%;
+}
+
+.bar {
+  width: min(14px, 40%);
+  min-height: 1px;
+  border-radius: 3px 3px 0 0;
+}
+
+.barIn {
+  background: var(--accent);
+}
+
+.barOut {
+  background: #f87171;
+}
+
+.barAxis {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.legend {
+  display: flex;
+  gap: var(--space-4);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.legend span::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.legendIn {
+  color: var(--accent);
+}
+
+.legendOut {
+  color: #f87171;
+}
+
+/* Formulários. */
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.preview {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+}
+
+.textarea {
+  width: 100%;
+  min-height: 70px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  resize: vertical;
+}
+
+.code {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.code input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.attachments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attachment {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.attachmentName {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .projections {
+    grid-template-columns: 1fr;
+  }
+
+  /* Os filtros de situação rolam de lado em vez de quebrar a cápsula. */
+  .chips {
+    flex-wrap: nowrap;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .chip {
+    white-space: nowrap;
+  }
+
+  /* Conta vencendo: a descrição numa linha, valor, situação e botão na outra. */
+  .listItem {
+    flex-wrap: wrap;
+  }
+
+  .listEnd {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .select {
+    max-width: none;
+    flex: 1 1 140px;
+  }
+
+  .rowActions {
+    justify-content: flex-end;
+  }
+
+  .line {
+    grid-template-columns: minmax(0, 1fr) minmax(80px, auto);
+  }
+
+  /* No celular, só o mês escolhido (sem a coluna de comparação). */
+  .line > span:nth-child(3) {
+    display: none;
+  }
+}

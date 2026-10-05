@@ -132,7 +132,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const { body, retrying, anonymous, headers, ...rest } = options;
 
   const finalHeaders = new Headers(headers);
-  if (body !== undefined) {
+  // Arquivo (FormData): o navegador monta o Content-Type com a fronteira.
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
+  if (body !== undefined && !isForm) {
     finalHeaders.set('Content-Type', 'application/json');
   }
   if (!anonymous && tokens.accessToken) {
@@ -142,7 +144,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const response = await fetch(`${API_URL}${path}`, {
     ...rest,
     headers: finalHeaders,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
   });
 
   if (response.status === 401 && !anonymous && !retrying) {
@@ -179,6 +181,41 @@ async function parseBody(response: Response): Promise<unknown> {
   } catch {
     return text;
   }
+}
+
+/**
+ * Baixa um arquivo protegido (o link comum não leva o token) e entrega ao
+ * navegador com o nome que o servidor mandou.
+ */
+export async function download(path: string, retrying = false): Promise<void> {
+  const headers = new Headers();
+  if (tokens.accessToken) headers.set('Authorization', `Bearer ${tokens.accessToken}`);
+  const response = await fetch(`${API_URL}${path}`, { headers });
+  if (response.status === 401 && !retrying) {
+    if (await refreshSession()) return download(path, true);
+    tokens.clear();
+    notifyUnauthorized();
+    throw new ApiError(401, 'sessão expirada');
+  }
+  if (!response.ok) {
+    const payload = await parseBody(response);
+    const message =
+      typeof payload === 'object' && payload !== null && 'error' in payload
+        ? String((payload as { error: unknown }).error)
+        : `falha ao baixar (${response.status})`;
+    throw new ApiError(response.status, message, payload);
+  }
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const match = /filename\*=utf-8''([^;]+)/i.exec(disposition) ?? /filename="?([^";]+)"?/i.exec(disposition);
+  const filename = match ? decodeURIComponent(match[1]) : 'arquivo';
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 export const api = {

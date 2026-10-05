@@ -29,6 +29,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/events"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/finance"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geocoding"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geofences"
@@ -286,6 +287,9 @@ func run() error {
 	// Visitas da landing page, sem cookies.
 	analyticsSvc := analytics.NewService(db, log)
 
+	// Gestão da empresa: contas, caixa, resultado e estoque (admin).
+	financeSvc := finance.NewService(db, mail.NewFinanceMailer(mailer, cfg.Mail.AppURL), log)
+
 	// Infraestrutura: CPU, memória e disco da máquina a cada 10 s (o
 	// histórico de 24 h fica em memória), banco, Redis, backups e erros.
 	hostMonitor := infra.NewMonitor("/proc", "/")
@@ -318,7 +322,7 @@ func run() error {
 		Leads: leads.NewService(leads.NewRepository(db),
 			leads.MailNotifier{Mailer: mail.NewLeadMailer(mailer, cfg.Mail.AppURL), To: cfg.Leads.NotifyEmails}, log),
 		Alerts: alertEngine, AlertStore: alertStore, Push: pushSvc, Shares: sharesSvc, Analytics: analyticsSvc,
-		Infra:     infraSvc,
+		Infra: infraSvc, Finance: financeSvc,
 		StepUp:    stepup.NewService(db, cfg.StepUp, authSvc),
 		Positions: positionRepo, States: stateStore,
 		Raw: rawRepo, Ingestor: ingestor, Conns: connManager, Registry: registry,
@@ -356,7 +360,7 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, log)
+		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, log)
 	}()
 
 	log.Info("plataforma no ar",
@@ -390,6 +394,7 @@ func runWorkers(
 	geocodingSvc *geocoding.Service,
 	analyticsSvc *analytics.Service,
 	infraSvc *infra.Service,
+	financeSvc *finance.Service,
 	log *slog.Logger,
 ) {
 	statusTicker := time.NewTicker(cfg.Tracking.StatusSweepInterval)
@@ -431,6 +436,8 @@ func runWorkers(
 	// Primeira varredura imediata para o painel já abrir com o status correto.
 	ingestor.SweepStatuses(ctx)
 	billingSvc.GenerateInvoices(ctx)
+	financeSvc.GenerateRecurring(ctx)
+	financeSvc.SendReminders(ctx)
 
 	for {
 		select {
@@ -445,6 +452,9 @@ func runWorkers(
 
 		case <-billingTicker.C:
 			billingSvc.GenerateInvoices(ctx)
+			// As contas do mês e o resumo dos vencimentos (uma vez por dia).
+			financeSvc.GenerateRecurring(ctx)
+			financeSvc.SendReminders(ctx)
 
 		case <-paymentsTicker.C:
 			paymentsSvc.SyncPending(ctx)

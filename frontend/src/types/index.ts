@@ -947,3 +947,206 @@ export interface SystemLogPage {
   groups: { level: 'WARN' | 'ERROR'; component: string; message: string; count: number; lastAt: string }[];
   entries: SystemLogEntry[];
 }
+
+// ---------------------------------------------------------------------------
+// Gestão da empresa (admin)
+// ---------------------------------------------------------------------------
+
+export type EntryKind = 'PAYABLE' | 'RECEIVABLE';
+export type EntryStatus = 'OPEN' | 'PAID' | 'CANCELED';
+export type PaymentMethod = '' | 'PIX' | 'BOLETO' | 'CARD' | 'TRANSFER' | 'CASH' | 'DEBIT';
+/** A linha do resultado do mês (DRE) de cada categoria. */
+export type DreGroup =
+  | 'REVENUE'
+  | 'OTHER_INCOME'
+  | 'CAPITAL_IN'
+  | 'TAX'
+  | 'COST'
+  | 'OPERATING'
+  | 'FINANCIAL'
+  | 'INVESTMENT'
+  | 'CAPITAL_OUT';
+
+export interface FinanceCategory {
+  id: string;
+  name: string;
+  kind: 'EXPENSE' | 'INCOME';
+  group: DreGroup;
+  active: boolean;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  document: string;
+  email: string;
+  phone: string;
+  pixKey: string;
+  notes: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface FinanceAttachment {
+  id: string;
+  entryId: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+/** Uma conta a pagar ou uma receita avulsa. */
+export interface FinanceEntry {
+  id: string;
+  kind: EntryKind;
+  description: string;
+  categoryId: string;
+  categoryName: string;
+  group: DreGroup;
+  supplierId: string | null;
+  supplierName: string;
+  amountCents: number;
+  dueDate: DateOnly;
+  status: EntryStatus;
+  paidOn: DateOnly | null;
+  paidCents: number | null;
+  /** Em aberto com o vencimento no passado. */
+  overdue: boolean;
+  paymentMethod: PaymentMethod;
+  paymentCode: string;
+  notes: string;
+  recurrenceId: string | null;
+  installment: number | null;
+  installments: number | null;
+  stockMovementId: string | null;
+  attachments: FinanceAttachment[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FinanceRecurrence {
+  id: string;
+  kind: EntryKind;
+  description: string;
+  categoryId: string;
+  categoryName: string;
+  supplierId: string | null;
+  supplierName: string;
+  amountCents: number;
+  dueDay: number;
+  nextDueDate: DateOnly;
+  endsOn: DateOnly | null;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface FinanceSum {
+  count: number;
+  cents: number;
+}
+
+export interface CashMonth {
+  month: string;
+  invoicesCents: number;
+  otherInCents: number;
+  inCents: number;
+  outCents: number;
+  netCents: number;
+  /** null nos meses antes do saldo inicial. */
+  endBalanceCents: number | null;
+}
+
+export interface CashProjection {
+  days: number;
+  until: DateOnly;
+  inCents: number;
+  outCents: number;
+  balanceCents: number;
+}
+
+export interface FinanceSettings {
+  openingBalanceCents: number;
+  openingDate: DateOnly;
+}
+
+export interface CashFlow {
+  settings: FinanceSettings;
+  today: DateOnly;
+  balanceCents: number;
+  months: CashMonth[];
+  projections: CashProjection[];
+}
+
+export interface DreMonth {
+  month: string;
+  invoicesCents: number;
+  revenueCents: number;
+  taxesCents: number;
+  netRevenueCents: number;
+  costsCents: number;
+  stockCostCents: number;
+  stockLossCents: number;
+  grossProfitCents: number;
+  operatingCents: number;
+  financialCents: number;
+  otherIncomeCents: number;
+  resultCents: number;
+  investmentsCents: number;
+  capitalInCents: number;
+  capitalOutCents: number;
+  categories: { categoryId: string; name: string; group: DreGroup; cents: number }[];
+}
+
+export type StockKind = 'TRACKER' | 'SIM' | 'ACCESSORY' | 'OTHER';
+export type StockMoveType = 'IN' | 'OUT' | 'LOSS' | 'ADJUST';
+
+export interface StockItem {
+  id: string;
+  name: string;
+  kind: StockKind;
+  minQuantity: number;
+  quantity: number;
+  avgCostCents: number;
+  valueCents: number;
+  low: boolean;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface StockMovement {
+  id: string;
+  itemId: string;
+  itemName: string;
+  type: StockMoveType;
+  /** Com sinal: entrada positiva, saída negativa. */
+  quantity: number;
+  unitCostCents: number;
+  totalCents: number;
+  occurredOn: DateOnly;
+  supplierId: string | null;
+  supplierName: string;
+  notes: string;
+  createdAt: string;
+}
+
+export interface FinanceOverview {
+  today: DateOnly;
+  balanceCents: number;
+  overdue: FinanceSum;
+  dueToday: FinanceSum;
+  dueWeek: FinanceSum;
+  receivableOverdue: FinanceSum;
+  month: CashMonth;
+  monthResultCents: number;
+  upcoming: FinanceEntry[];
+  lowStock: StockItem[];
+  stockValueCents: number;
+  projections: CashProjection[];
+}
+
+export interface FinanceAlerts {
+  overdue: number;
+  dueToday: number;
+  lowStock: number;
+}

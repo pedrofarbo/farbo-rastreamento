@@ -23,6 +23,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/events"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/finance"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geocoding"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geofences"
@@ -84,6 +85,8 @@ type Deps struct {
 	Analytics *analytics.Service
 	// Infra: a saúde do sistema (máquina, banco, backups, erros).
 	Infra *infra.Service
+	// Finance: a gestão da empresa (contas, caixa, resultado, estoque).
+	Finance *finance.Service
 	// StepUp: confirmação extra (biometria ou senha) antes de ações
 	// sensíveis. Nil desliga a exigência (só em testes).
 	StepUp       *stepup.Service
@@ -346,6 +349,50 @@ func (s *Server) routes() chi.Router {
 						r.Use(auth.RequireRole(auth.RoleAdmin))
 						r.Get("/status", s.handleInfraStatus)
 						r.Get("/logs", s.handleInfraLogs)
+					})
+				}
+
+				// Gestão da empresa: contas a pagar e receitas, caixa,
+				// resultado do mês e estoque (admin).
+				if s.Finance != nil {
+					r.Route("/finance", func(r chi.Router) {
+						r.Use(auth.RequireRole(auth.RoleAdmin))
+						r.Get("/alerts", s.handleFinanceAlerts)
+						r.Get("/overview", s.handleFinanceOverview)
+						r.Get("/cashflow", s.handleFinanceCashFlow)
+						r.Get("/dre", s.handleFinanceDRE)
+						r.Put("/settings", s.handleFinanceSettings)
+
+						r.Get("/entries", s.handleListEntries)
+						r.Post("/entries", s.handleCreateEntries)
+						r.Route("/entries/{id}", func(r chi.Router) {
+							r.Patch("/", s.handleUpdateEntry)
+							r.Delete("/", s.handleDeleteEntry)
+							r.Post("/pay", s.handlePayEntry)
+							r.Post("/reopen", s.handleReopenEntry)
+							r.Post("/cancel", s.handleCancelEntry)
+							r.Post("/attachments", s.handleAddAttachment)
+						})
+						r.Get("/attachments/{id}", s.handleGetAttachment)
+						r.Delete("/attachments/{id}", s.handleDeleteAttachment)
+
+						r.Get("/recurrences", s.handleListRecurrences)
+						r.Post("/recurrences", s.handleCreateRecurrence)
+						r.Patch("/recurrences/{id}", s.handleUpdateRecurrence)
+						r.Post("/recurrences/{id}/end", s.handleEndRecurrence)
+
+						r.Get("/categories", s.handleListFinanceCategories)
+						r.Post("/categories", s.handleSaveFinanceCategory)
+						r.Patch("/categories/{id}", s.handleSaveFinanceCategory)
+						r.Get("/suppliers", s.handleListSuppliers)
+						r.Post("/suppliers", s.handleSaveSupplier)
+						r.Patch("/suppliers/{id}", s.handleSaveSupplier)
+
+						r.Get("/stock/items", s.handleListStockItems)
+						r.Post("/stock/items", s.handleSaveStockItem)
+						r.Patch("/stock/items/{id}", s.handleSaveStockItem)
+						r.Get("/stock/movements", s.handleListStockMovements)
+						r.Post("/stock/movements", s.handleMoveStock)
 					})
 				}
 

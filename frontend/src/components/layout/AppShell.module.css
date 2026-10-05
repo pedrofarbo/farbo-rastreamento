@@ -173,7 +173,7 @@
 
 /* Notebook: o menu da central tem muitos itens. Mais justos, e o "Ao vivo"
    só com o ponto (o texto fica na dica), cabem todos sem rolar. */
-@media (max-width: 1536px) {
+@media (max-width: 1680px) {
   .header {
     gap: var(--space-3);
   }
@@ -191,10 +191,33 @@
   }
 }
 
-/* Telas de 1280 px: o nome de quem está logado sai (como no celular). */
-@media (max-width: 1320px) {
+/* Até 1440 px: o nome de quem está logado sai (como no celular). */
+@media (max-width: 1440px) {
   .user {
     display: none;
+  }
+}
+
+/* 1280 a 1400 px: os 11 itens do admin ainda cabem, mais apertados. */
+@media (max-width: 1400px) {
+  .header {
+    gap: var(--space-2);
+  }
+
+  .nav {
+    gap: 2px;
+  }
+
+  .navLink {
+    padding: var(--space-2) var(--space-2);
+    font-size: 13px;
+  }
+}
+
+/* 1280 px: a logo um pouco menor dá o espaço que falta. */
+@media (max-width: 1320px) {
+  .logo {
+    height: 27px;
   }
 }
 

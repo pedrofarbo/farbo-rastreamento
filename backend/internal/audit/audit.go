@@ -64,6 +64,8 @@ const (
 	ActionInvoiceCanceled      = "INVOICE_CANCELED"
 	ActionTrackerOrdered       = "TRACKER_ORDERED"
 	ActionInstallerChanged     = "INSTALLER_CHANGED"
+	ActionFinanceChanged       = "FINANCE_CHANGED"
+	ActionStockMoved           = "STOCK_MOVED"
 	ActionDeliveryAddressSaved = "DELIVERY_ADDRESS_SAVED"
 	ActionFulfillmentChanged   = "FULFILLMENT_CHANGED"
 	ActionShippingLabelBought  = "SHIPPING_LABEL_BOUGHT"

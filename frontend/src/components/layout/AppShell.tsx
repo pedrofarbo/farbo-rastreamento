@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { NavLink, Outlet } from 'react-router-dom';
 
-import { leadsApi, meApi, whatsappApi } from '@/api/resources';
+import { financeApi, leadsApi, meApi, whatsappApi } from '@/api/resources';
 import { Spinner } from '@/components/ui/Spinner';
 import { useRealtime } from '@/hooks/useRealtime';
 import { ROLE_LABELS } from '@/services/roles';
@@ -38,6 +38,14 @@ export function AppShell() {
     refetchInterval: 60_000,
   });
   const newLeads = leadStats.data?.new ?? 0;
+  // Para o admin, as contas da empresa vencidas e as que vencem hoje.
+  const financeAlerts = useQuery({
+    queryKey: ['finance', 'alerts'],
+    queryFn: financeApi.alerts,
+    enabled: canManage,
+    refetchInterval: 5 * 60_000,
+  });
+  const billsDue = (financeAlerts.data?.overdue ?? 0) + (financeAlerts.data?.dueToday ?? 0);
   const { connected } = useRealtime();
   const { theme, toggle } = useTheme();
 
@@ -115,6 +123,14 @@ export function AppShell() {
                     {newLeads > 0 && (
                       <span className={styles.navBadge} title={`${newLeads} pré-cliente(s) novo(s)`}>
                         {newLeads}
+                      </span>
+                    )}
+                  </NavLink>
+                  <NavLink to="/empresa" className={navClass}>
+                    Empresa
+                    {billsDue > 0 && (
+                      <span className={styles.navBadge} title={`${billsDue} conta(s) vencida(s) ou vencendo hoje`}>
+                        {billsDue}
                       </span>
                     )}
                   </NavLink>

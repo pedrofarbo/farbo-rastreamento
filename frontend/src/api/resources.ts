@@ -1,7 +1,22 @@
 import type { TeamRole } from '@/services/roles';
 
-import { api, request } from './client';
+import { api, download, request } from './client';
 import type {
+  CashFlow,
+  DreMonth,
+  EntryKind,
+  FinanceAlerts,
+  FinanceAttachment,
+  FinanceCategory,
+  FinanceEntry,
+  FinanceOverview,
+  FinanceRecurrence,
+  FinanceSettings,
+  PaymentMethod,
+  StockItem,
+  StockMovement,
+  StockMoveType,
+  Supplier,
   AlertSettings,
   AlertSettingsInput,
   PushStatus,
@@ -586,3 +601,128 @@ export interface PixApi {
   charge: (id: string) => Promise<PixCharge>;
   simulateCharge: (id: string) => Promise<PixCharge>;
 }
+
+// ---------------------------------------------------------------------------
+// Gestão da empresa (admin)
+// ---------------------------------------------------------------------------
+
+export interface EntryInput {
+  kind: EntryKind;
+  description: string;
+  categoryId: string;
+  supplierId: string | null;
+  /** O total: com parcelas, é dividido e cada uma vence um mês depois. */
+  amountCents: number;
+  dueDate: string;
+  installments: number;
+  paymentCode: string;
+  notes: string;
+  /** Lançar já pago (nessa data e forma). */
+  paidOn: string | null;
+  paymentMethod: PaymentMethod;
+}
+
+export type EntryUpdate = Pick<
+  EntryInput,
+  'description' | 'categoryId' | 'supplierId' | 'amountCents' | 'dueDate' | 'paymentCode' | 'notes'
+>;
+
+export interface EntryFilter {
+  kind: EntryKind;
+  status: 'open' | 'overdue' | 'paid' | 'canceled' | 'all';
+  from?: string;
+  to?: string;
+  category?: string;
+  supplier?: string;
+  q?: string;
+}
+
+export interface RecurrenceInput {
+  kind: EntryKind;
+  description: string;
+  categoryId: string;
+  supplierId: string | null;
+  amountCents: number;
+  firstDueDate: string;
+  endsOn: string | null;
+}
+
+export type SupplierInput = Omit<Supplier, 'id' | 'createdAt'>;
+export type CategoryInput = Pick<FinanceCategory, 'name' | 'group' | 'active'>;
+export type StockItemInput = Pick<StockItem, 'name' | 'kind' | 'minQuantity' | 'active'>;
+
+export interface MovementInput {
+  itemId: string;
+  type: StockMoveType;
+  quantity: number;
+  unitCostCents: number;
+  occurredOn: string;
+  supplierId: string | null;
+  notes: string;
+  /** A conta a pagar da compra (só na entrada). */
+  payable: {
+    categoryId: string;
+    dueDate: string;
+    installments: number;
+    paidOn: string | null;
+    paymentMethod: PaymentMethod;
+  } | null;
+}
+
+export const financeApi = {
+  alerts: () => api.get<FinanceAlerts>('/api/finance/alerts'),
+  overview: () => api.get<FinanceOverview>('/api/finance/overview'),
+  cashflow: (months = 12) => api.get<CashFlow>(`/api/finance/cashflow?months=${months}`),
+  dre: (months = 12) => api.get<DreMonth[]>(`/api/finance/dre?months=${months}`),
+  saveSettings: (input: FinanceSettings) => api.put<FinanceSettings>('/api/finance/settings', input),
+
+  entries: (f: EntryFilter) => {
+    const params = new URLSearchParams({ kind: f.kind, status: f.status });
+    for (const key of ['from', 'to', 'category', 'supplier', 'q'] as const) {
+      const value = f[key];
+      if (value) params.set(key, value);
+    }
+    return api.get<FinanceEntry[]>(`/api/finance/entries?${params}`);
+  },
+  createEntries: (input: EntryInput) => api.post<FinanceEntry[]>('/api/finance/entries', input),
+  updateEntry: (id: string, input: EntryUpdate) => api.patch<FinanceEntry>(`/api/finance/entries/${id}`, input),
+  pay: (id: string, input: { paidOn: string; paidCents: number; method: PaymentMethod }) =>
+    api.post<FinanceEntry>(`/api/finance/entries/${id}/pay`, input),
+  reopen: (id: string) => api.post<FinanceEntry>(`/api/finance/entries/${id}/reopen`),
+  cancel: (id: string) => api.post<FinanceEntry>(`/api/finance/entries/${id}/cancel`),
+  removeEntry: (id: string) => api.delete<void>(`/api/finance/entries/${id}`),
+  attach: (entryId: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<FinanceAttachment>(`/api/finance/entries/${entryId}/attachments`, { method: 'POST', body: form });
+  },
+  downloadAttachment: (id: string) => download(`/api/finance/attachments/${id}`),
+  removeAttachment: (id: string) => api.delete<void>(`/api/finance/attachments/${id}`),
+
+  recurrences: () => api.get<FinanceRecurrence[]>('/api/finance/recurrences'),
+  createRecurrence: (input: RecurrenceInput) => api.post<FinanceRecurrence>('/api/finance/recurrences', input),
+  updateRecurrence: (id: string, input: Omit<RecurrenceInput, 'kind' | 'firstDueDate'>) =>
+    api.patch<FinanceRecurrence>(`/api/finance/recurrences/${id}`, input),
+  endRecurrence: (id: string) => api.post<FinanceRecurrence>(`/api/finance/recurrences/${id}/end`),
+
+  categories: () => api.get<FinanceCategory[]>('/api/finance/categories'),
+  saveCategory: (id: string | null, input: CategoryInput) =>
+    id
+      ? api.patch<FinanceCategory>(`/api/finance/categories/${id}`, input)
+      : api.post<FinanceCategory>('/api/finance/categories', input),
+  suppliers: () => api.get<Supplier[]>('/api/finance/suppliers'),
+  saveSupplier: (id: string | null, input: SupplierInput) =>
+    id ? api.patch<Supplier>(`/api/finance/suppliers/${id}`, input) : api.post<Supplier>('/api/finance/suppliers', input),
+
+  stockItems: () =>
+    api.get<{ items: StockItem[]; trackers: { withVehicle: number; withoutVehicle: number } }>('/api/finance/stock/items'),
+  saveStockItem: (id: string | null, input: StockItemInput) =>
+    id
+      ? api.patch<StockItem>(`/api/finance/stock/items/${id}`, input)
+      : api.post<StockItem>('/api/finance/stock/items', input),
+  movements: (itemId?: string) =>
+    api.get<StockMovement[]>(`/api/finance/stock/movements${itemId ? `?item=${itemId}` : ''}`),
+  move: (input: MovementInput) =>
+    api.post<{ movement: StockMovement; payables: FinanceEntry[] }>('/api/finance/stock/movements', input),
+};
+
