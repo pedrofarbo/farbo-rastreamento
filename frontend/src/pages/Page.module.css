@@ -151,13 +151,22 @@
   word-break: break-all;
 }
 
+/* No celular, as abas rolam para o lado em vez de quebrar os nomes. */
 .tabs {
   display: flex;
   gap: var(--space-1);
   border-bottom: 1px solid var(--border-subtle);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
+  flex-shrink: 0;
+  white-space: nowrap;
   padding: var(--space-2) var(--space-4);
   background: none;
   border: none;

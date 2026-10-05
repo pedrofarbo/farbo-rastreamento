@@ -46,6 +46,7 @@ import { HISTORY_RETENTION_OPTIONS } from '@/types';
 import type { HistoryRetention, Invoice, PixPayment, Subscription, VehicleView } from '@/types';
 
 import styles from '../Page.module.css';
+import { CustomerReferralCard } from './affiliates/CustomerReferralCard';
 
 interface Confirmation {
   title: string;
@@ -260,6 +261,8 @@ export function CustomerDetailsPage() {
             ))}
           </select>
         </Card>
+
+        <CustomerReferralCard customerId={id} referral={data.affiliate} />
 
         <Card
           title="Veículos"

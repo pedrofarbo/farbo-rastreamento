@@ -34,6 +34,8 @@ type publicLeadRequest struct {
 	JoinLaunch bool `json:"joinLaunch"`
 	// Website é a isca: campo escondido que só robô preenche.
 	Website string `json:"website"`
+	// Ref: o código do link de indicação do afiliado.
+	Ref string `json:"ref"`
 }
 
 // handlePublicCreateLead: o cadastro de interesse da landing. Público, com
@@ -53,7 +55,7 @@ func (s *Server) handlePublicCreateLead(w http.ResponseWriter, r *http.Request) 
 	if _, err := s.Leads.Submit(r.Context(), leads.Input{
 		Name: req.Name, Email: req.Email, Phone: req.Phone, City: req.City, Plan: req.Plan,
 		VehicleType: req.VehicleType, VehicleCount: req.VehicleCount, Message: req.Message, Consent: req.Consent,
-		JoinLaunch: req.JoinLaunch,
+		JoinLaunch: req.JoinLaunch, AffiliateID: s.referralFor(r, req.Ref),
 	}); err != nil {
 		writeLeadError(w, err)
 		return
@@ -114,6 +116,8 @@ type publicWaitlistRequest struct {
 	Event string `json:"event"`
 	// City: a cidade da instalação (a tela do evento pede).
 	City string `json:"city"`
+	// Ref: o código do link de indicação do afiliado.
+	Ref string `json:"ref"`
 }
 
 // handlePublicJoinWaitlist: "me avise quando lançar", da landing ou da tela
@@ -132,6 +136,7 @@ func (s *Server) handlePublicJoinWaitlist(w http.ResponseWriter, r *http.Request
 	}
 	if _, err := s.Leads.JoinWaitlist(r.Context(), leads.WaitlistInput{
 		Name: req.Name, Email: req.Email, Phone: req.Phone, Consent: req.Consent, Event: req.Event, City: req.City,
+		AffiliateID: s.referralFor(r, req.Ref),
 	}); err != nil {
 		writeLeadError(w, err)
 		return

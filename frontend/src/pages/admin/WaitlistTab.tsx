@@ -25,20 +25,28 @@ export function eventLabel(event: string): string {
     .join(' ');
 }
 
+/** A origem da inscrição: o afiliado que indicou ("Indicação @fulano"), o evento ou o site. */
+export function originLabel(e: Pick<WaitlistEntry, 'event' | 'referrer'>): string {
+  return e.referrer ? `Indicação ${e.referrer}` : eventLabel(e.event);
+}
+
 /** Quantos vieram de cada origem, da que mais trouxe gente. */
-export function byOrigin(list: WaitlistEntry[]): { label: string; count: number }[] {
+export function byOrigin(list: Pick<WaitlistEntry, 'event' | 'referrer'>[]): { label: string; count: number }[] {
   const counts = new Map<string, number>();
-  for (const e of list) counts.set(e.event, (counts.get(e.event) ?? 0) + 1);
+  for (const e of list) {
+    const label = originLabel(e);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([event, count]) => ({ label: eventLabel(event), count }));
+    .map(([label, count]) => ({ label, count }));
 }
 
 /** CSV com ";" e BOM: o Excel em português abre direto, com acentos. */
 export function waitlistCsv(list: WaitlistEntry[]): string {
   const cell = (value: string) => `"${value.replace(/"/g, '""')}"`;
   const rows = list.map((e) =>
-    [e.name, e.email, e.phone, e.city, eventLabel(e.event), formatDateTime(e.createdAt)].map(cell).join(';'),
+    [e.name, e.email, e.phone, e.city, originLabel(e), formatDateTime(e.createdAt)].map(cell).join(';'),
   );
   return '\uFEFF' + ['Nome;E-mail;WhatsApp;Cidade da instalação;Origem;Inscrito em', ...rows].join('\r\n');
 }
@@ -123,7 +131,7 @@ export function WaitlistTab() {
             ? `Por origem: ${byOrigin(list)
                 .map((o) => `${o.label} ${o.count}`)
                 .join(' · ')}`
-            : 'Inscritas pela landing e pelo QR Code dos eventos.'
+            : 'Inscritas pela landing, pelo QR Code dos eventos e pelos links dos afiliados.'
         }
         actions={
           list.length > 0 && (
@@ -179,7 +187,9 @@ export function WaitlistTab() {
                     </td>
                     <td data-label="Cidade">{entry.city || <span className={billing.muted}>—</span>}</td>
                     <td data-label="Origem">
-                      {entry.event ? (
+                      {entry.referrer ? (
+                        <Badge tone="success">{originLabel(entry)}</Badge>
+                      ) : entry.event ? (
                         <Badge tone="accent">{eventLabel(entry.event)}</Badge>
                       ) : (
                         <span className={billing.muted}>Site</span>

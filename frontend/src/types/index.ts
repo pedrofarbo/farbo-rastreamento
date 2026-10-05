@@ -533,6 +533,8 @@ export interface CustomerDetail extends CustomerSummary {
   /** Prazo do histórico no cliente; nulo = padrão da central. */
   historyRetentionDays: HistoryRetention | null;
   defaultHistoryDays: number;
+  /** Quem indicou o cliente (programa de afiliados); nulo se ninguém. */
+  affiliate: CustomerReferral | null;
 }
 
 /**
@@ -787,6 +789,8 @@ export interface LeadInput {
   joinLaunch: boolean;
   /** Isca: escondido, só robô preenche. */
   website: string;
+  /** O código do link de indicação do afiliado. */
+  ref?: string;
 }
 
 export interface Lead {
@@ -809,6 +813,9 @@ export interface Lead {
   consentAt: string;
   createdAt: string;
   updatedAt: string;
+  /** O afiliado do link por onde chegou: o @ (ou o nome); vazio se nenhum. */
+  affiliateId: string | null;
+  referrer: string;
 }
 
 /** "Me avise quando lançar": o que a seção de pré-lançamento manda. */
@@ -824,6 +831,8 @@ export interface WaitlistInput {
   event?: string;
   /** A cidade da instalação (a tela do evento pede). */
   city?: string;
+  /** O código do link de indicação do afiliado. */
+  ref?: string;
 }
 
 /** Inscrição na lista de lançamento. */
@@ -844,6 +853,9 @@ export interface WaitlistEntry {
   customerId: string | null;
   /** Contratou com a promoção de pré-lançamento. */
   promoClaimed: boolean;
+  /** O afiliado do link por onde chegou: o @ (ou o nome); vazio se nenhum. */
+  affiliateId: string | null;
+  referrer: string;
 }
 
 /** Uma linha de ranking das visitas: visitantes (únicos por dia) e vezes. */
@@ -1157,4 +1169,125 @@ export interface FinanceAlerts {
   overdue: number;
   dueToday: number;
   lowStock: number;
+}
+
+// ---------------------------------------------------------------------------
+// Programa de afiliados
+// ---------------------------------------------------------------------------
+
+/** Um afiliado (influenciador), com os números do programa. */
+export interface Affiliate {
+  id: string;
+  name: string;
+  /** O @ do Instagram, sem a arroba. */
+  handle: string;
+  /** O código do link de cadastro (/indicacao/<code>). */
+  code: string;
+  /** O segredo da página do afiliado (/parceiro/<token>). */
+  reportToken: string;
+  /** Por cliente indicado, por mês pago. */
+  commissionCents: number;
+  email: string;
+  phone: string;
+  pixKey: string;
+  notes: string;
+  supplierId: string | null;
+  active: boolean;
+  createdAt: string;
+  /** Pessoas que se cadastraram pelo link (lista ou pré-cadastro). */
+  signups: number;
+  customers: number;
+  /** Clientes indicados com assinatura ativa. */
+  activeCustomers: number;
+  /** Ainda não fechado. */
+  pendingCents: number;
+  /** Fechado, a pagar na Empresa. */
+  openCents: number;
+  paidCents: number;
+}
+
+export interface AffiliateInput {
+  name: string;
+  handle: string;
+  code: string;
+  /** Nulo: o valor padrão. */
+  commissionCents: number | null;
+  email: string;
+  phone: string;
+  pixKey: string;
+  notes: string;
+  active: boolean;
+}
+
+export interface AffiliateSettings {
+  defaultCommissionCents: number;
+  categoryId: string | null;
+}
+
+/** O afiliado como a tela de cadastro mostra ("Indicado por @fulano"). */
+export interface PublicAffiliate {
+  name: string;
+  handle: string;
+  code: string;
+}
+
+/** Quem indicou o cliente. */
+export interface CustomerReferral {
+  affiliateId: string;
+  name: string;
+  handle: string;
+  /** lead (pré-cadastro), waitlist (lista de lançamento) ou admin. */
+  source: 'lead' | 'waitlist' | 'admin';
+  since: string;
+}
+
+/** O que um afiliado tem a receber no fechamento do mês. */
+export interface AffiliateClosingLine {
+  affiliateId: string;
+  name: string;
+  handle: string;
+  pixKey: string;
+  commissions: number;
+  amountCents: number;
+}
+
+/** Um fechamento: as comissões de um afiliado viram uma conta a pagar. */
+export interface AffiliatePayout {
+  id: string;
+  affiliateId: string;
+  affiliateName: string;
+  /** AAAA-MM: o mês fechado (entram as comissões até ele). */
+  month: string;
+  amountCents: number;
+  commissions: number;
+  entryId: string | null;
+  /** MISSING: a conta foi excluída ou cancelada na Empresa. */
+  status: 'OPEN' | 'PAID' | 'MISSING';
+  dueDate: string | null;
+  paidOn: string | null;
+  createdAt: string;
+}
+
+/** Um mês na página do afiliado. */
+export interface PartnerMonth {
+  month: string;
+  customers: number;
+  amountCents: number;
+  /** pending: o mês não foi fechado; closed: fechado, a pagar; paid: pago. */
+  status: 'pending' | 'closed' | 'paid';
+}
+
+/** A página do afiliado (link secreto): os números, sem dado de ninguém. */
+export interface PartnerReport {
+  name: string;
+  handle: string;
+  code: string;
+  active: boolean;
+  commissionCents: number;
+  signups: number;
+  customers: number;
+  activeCustomers: number;
+  toReceiveCents: number;
+  paidCents: number;
+  months: PartnerMonth[];
 }

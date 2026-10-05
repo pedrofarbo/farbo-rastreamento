@@ -15,6 +15,8 @@ vi.mock('@/api/resources', () => ({
   },
 }));
 
+import { saveReferral } from '@/services/referral';
+
 import { LaunchSection } from './LaunchSection';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -43,6 +45,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   document.body.innerHTML = '';
+  localStorage.clear();
 });
 
 describe('LaunchSection (pré-lançamento)', () => {
@@ -59,7 +62,9 @@ describe('LaunchSection (pré-lançamento)', () => {
     }
   });
 
-  it('pede só o e-mail e o aceite; inscreve e confirma', async () => {
+  it('pede só o e-mail e o aceite; inscreve e confirma (com o link do afiliado)', async () => {
+    // Veio pelo link de um afiliado: a inscrição vai com o código.
+    saveReferral('Joao-Moto');
     const host = render();
     expect(submit(host).disabled).toBe(true);
     type(input(host, 'input[type="email"]'), 'bruno@exemplo.com.br');
@@ -76,7 +81,7 @@ describe('LaunchSection (pré-lançamento)', () => {
       submit(host).click();
     });
     expect(sent).toEqual([
-      { name: '', email: 'bruno@exemplo.com.br', phone: '(11) 97777-6666', consent: true, website: '' },
+      { name: '', email: 'bruno@exemplo.com.br', phone: '(11) 97777-6666', consent: true, website: '', ref: 'joao-moto' },
     ]);
     expect(host.textContent).toContain('Você está na lista!');
     expect(host.textContent).toContain('use este mesmo e-mail');

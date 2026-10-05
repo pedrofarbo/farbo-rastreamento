@@ -2,6 +2,14 @@ import type { TeamRole } from '@/services/roles';
 
 import { api, download, fetchBlob, request } from './client';
 import type {
+  Affiliate,
+  AffiliateClosingLine,
+  AffiliateInput,
+  AffiliatePayout,
+  AffiliateSettings,
+  CustomerReferral,
+  PartnerReport,
+  PublicAffiliate,
   CashFlow,
   DreMonth,
   EntryKind,
@@ -423,6 +431,9 @@ export const customersApi = {
   /** Prazo do histórico de todos os veículos do cliente (nulo = padrão da central). */
   setHistoryRetention: (id: string, days: HistoryRetention | null) =>
     api.put<{ effectiveDays: number }>(`/api/customers/${id}/history-retention`, { days }),
+  /** Quem indicou o cliente (null tira a indicação). */
+  setAffiliate: (id: string, affiliateId: string | null) =>
+    api.put<{ affiliate: CustomerReferral | null }>(`/api/customers/${id}/affiliate`, { affiliateId }),
 
   updateSubscription: (id: string, input: { planName: string; priceCents: number }) =>
     api.patch<Subscription>(`/api/subscriptions/${id}`, input),
@@ -528,6 +539,29 @@ export const publicApi = {
   /** "Me avise quando lançar" (lista de lançamento). */
   joinLaunch: (input: WaitlistInput) =>
     request<{ status: string }>('/api/public/launch', { method: 'POST', body: input, anonymous: true }),
+  /** O afiliado do link de indicação ("Indicado por @fulano"). */
+  affiliate: (code: string) =>
+    request<PublicAffiliate>(`/api/public/affiliates/${encodeURIComponent(code)}`, { anonymous: true }),
+  /** A página do afiliado, pelo link secreto. */
+  partner: (token: string) =>
+    request<PartnerReport>(`/api/public/partner/${encodeURIComponent(token)}`, { anonymous: true }),
+};
+
+/** Programa de afiliados (admin). */
+export const affiliatesApi = {
+  list: () => api.get<Affiliate[]>('/api/affiliates'),
+  create: (input: AffiliateInput) => api.post<Affiliate>('/api/affiliates', input),
+  update: (id: string, input: AffiliateInput) => api.patch<Affiliate>(`/api/affiliates/${id}`, input),
+  /** Troca o link secreto da página do afiliado (o antigo para de abrir). */
+  renewReportLink: (id: string) => api.post<Affiliate>(`/api/affiliates/${id}/report-token`),
+  settings: () => api.get<AffiliateSettings>('/api/affiliates/settings'),
+  saveSettings: (input: { defaultCommissionCents: number; applyToAll: boolean }) =>
+    api.put<AffiliateSettings>('/api/affiliates/settings', input),
+  /** month: AAAA-MM. */
+  closing: (month: string) => api.get<AffiliateClosingLine[]>(`/api/affiliates/closing?month=${month}`),
+  close: (input: { month: string; dueDate: string }) => api.post<AffiliatePayout[]>('/api/affiliates/closing', input),
+  payouts: () => api.get<AffiliatePayout[]>('/api/affiliates/payouts'),
+  undoPayout: (id: string) => api.delete<void>(`/api/affiliates/payouts/${id}`),
 };
 
 /** Infraestrutura: máquina, banco, backups e erros do servidor (admin). */

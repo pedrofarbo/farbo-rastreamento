@@ -18,6 +18,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/addresses"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/affiliates"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/alerts"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/analytics"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/api"
@@ -289,6 +290,7 @@ func run() error {
 
 	// Gestão da empresa: contas, caixa, resultado e estoque (admin).
 	financeSvc := finance.NewService(db, mail.NewFinanceMailer(mailer, cfg.Mail.AppURL), log)
+	affiliatesSvc := affiliates.NewService(db, log)
 
 	// Infraestrutura: CPU, memória e disco da máquina a cada 10 s (o
 	// histórico de 24 h fica em memória), banco, Redis, backups e erros.
@@ -322,7 +324,7 @@ func run() error {
 		Leads: leads.NewService(leads.NewRepository(db),
 			leads.MailNotifier{Mailer: mail.NewLeadMailer(mailer, cfg.Mail.AppURL), To: cfg.Leads.NotifyEmails}, log),
 		Alerts: alertEngine, AlertStore: alertStore, Push: pushSvc, Shares: sharesSvc, Analytics: analyticsSvc,
-		Infra: infraSvc, Finance: financeSvc,
+		Infra: infraSvc, Finance: financeSvc, Affiliates: affiliatesSvc,
 		StepUp:    stepup.NewService(db, cfg.StepUp, authSvc),
 		Positions: positionRepo, States: stateStore,
 		Raw: rawRepo, Ingestor: ingestor, Conns: connManager, Registry: registry,
@@ -360,7 +362,7 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, log)
+		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, log)
 	}()
 
 	log.Info("plataforma no ar",
@@ -395,6 +397,7 @@ func runWorkers(
 	analyticsSvc *analytics.Service,
 	infraSvc *infra.Service,
 	financeSvc *finance.Service,
+	affiliatesSvc *affiliates.Service,
 	log *slog.Logger,
 ) {
 	statusTicker := time.NewTicker(cfg.Tracking.StatusSweepInterval)
@@ -438,6 +441,7 @@ func runWorkers(
 	billingSvc.GenerateInvoices(ctx)
 	financeSvc.GenerateRecurring(ctx)
 	financeSvc.SendReminders(ctx)
+	affiliatesSvc.Work(ctx)
 
 	for {
 		select {
@@ -455,6 +459,7 @@ func runWorkers(
 			// As contas do mês e o resumo dos vencimentos (uma vez por dia).
 			financeSvc.GenerateRecurring(ctx)
 			financeSvc.SendReminders(ctx)
+			affiliatesSvc.Work(ctx)
 
 		case <-paymentsTicker.C:
 			paymentsSvc.SyncPending(ctx)

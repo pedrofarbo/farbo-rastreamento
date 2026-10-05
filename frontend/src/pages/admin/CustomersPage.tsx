@@ -17,6 +17,7 @@ import { formatMoney } from '@/services/format';
 import type { Lead } from '@/types';
 
 import styles from '../Page.module.css';
+import { AffiliatesTab } from './affiliates/AffiliatesTab';
 import { LeadsTab } from './LeadsTab';
 import { SiteAnalyticsTab } from './SiteAnalyticsTab';
 import { WaitlistTab } from './WaitlistTab';
@@ -52,7 +53,9 @@ export function CustomersPage() {
   const showWaitlist = tab === 'lancamento';
   // As visitas da landing: o começo do funil (visita → pré-cliente → cliente).
   const showVisits = tab === 'visitas';
-  const showCustomers = !showLeads && !showWaitlist && !showVisits;
+  // Programa de afiliados: os links dos influenciadores e as comissões.
+  const showAffiliates = tab === 'afiliados';
+  const showCustomers = !showLeads && !showWaitlist && !showVisits && !showAffiliates;
   const leadStats = useQuery({ queryKey: ['leads', 'stats'], queryFn: leadsApi.stats, refetchInterval: 60_000 });
   const newLeads = leadStats.data?.new ?? 0;
 
@@ -170,9 +173,20 @@ export function CustomersPage() {
           >
             Visitas do site
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={showAffiliates}
+            className={`${styles.tab} ${showAffiliates ? styles.tabActive : ''}`}
+            onClick={() => setParams({ aba: 'afiliados' }, { replace: true })}
+          >
+            Afiliados
+          </button>
         </div>
 
-        {showVisits ? (
+        {showAffiliates ? (
+          <AffiliatesTab />
+        ) : showVisits ? (
           <SiteAnalyticsTab />
         ) : showWaitlist ? (
           <WaitlistTab />

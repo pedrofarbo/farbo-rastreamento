@@ -28,6 +28,9 @@ type WaitlistEntry struct {
 	Event string `json:"event"`
 	// City: a cidade da instalação (a tela do evento pede).
 	City string `json:"city"`
+	// AffiliateID: o afiliado do link de indicação; Referrer, o @ (ou o nome).
+	AffiliateID *uuid.UUID `json:"affiliateId"`
+	Referrer    string     `json:"referrer"`
 }
 
 // WaitlistInput é o que a seção de pré-lançamento manda: o nome é opcional;
@@ -41,6 +44,8 @@ type WaitlistInput struct {
 	Event string
 	// City: a cidade da instalação (opcional; a tela do evento pede).
 	City string
+	// AffiliateID: o afiliado do link de indicação (o primeiro fica).
+	AffiliateID *uuid.UUID
 }
 
 // maxEvent: o nome do evento no link do QR Code.
@@ -103,8 +108,8 @@ func normalizeWaitlist(in WaitlistInput) (WaitlistInput, error) {
 }
 
 // JoinWaitlist põe o e-mail na lista. Quem já está fica (com o nome
-// atualizado, se veio): mandar de novo não duplica. O evento é o primeiro
-// que trouxe a pessoa; a cidade, a última informada.
+// atualizado, se veio): mandar de novo não duplica. O evento e o afiliado
+// são os primeiros que trouxeram a pessoa; a cidade, a última informada.
 func (s *Service) JoinWaitlist(ctx context.Context, in WaitlistInput) (*WaitlistEntry, error) {
 	in, err := normalizeWaitlist(in)
 	if err != nil {
@@ -112,16 +117,20 @@ func (s *Service) JoinWaitlist(ctx context.Context, in WaitlistInput) (*Waitlist
 	}
 	var e WaitlistEntry
 	err = s.repo.db.QueryRow(ctx, `
-		INSERT INTO launch_waitlist (name, email, phone, event, city, consent_at) VALUES ($1, $2, $3, $4, $5, NOW())
+		INSERT INTO launch_waitlist (name, email, phone, event, city, affiliate_id, consent_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW())
 		ON CONFLICT (lower(email)) DO UPDATE SET
 			name = COALESCE(NULLIF(EXCLUDED.name, ''), launch_waitlist.name),
 			phone = EXCLUDED.phone,
 			event = COALESCE(NULLIF(launch_waitlist.event, ''), EXCLUDED.event),
 			city = COALESCE(NULLIF(EXCLUDED.city, ''), launch_waitlist.city),
+			affiliate_id = COALESCE(launch_waitlist.affiliate_id, EXCLUDED.affiliate_id),
 			consent_at = NOW(), updated_at = NOW()
-		RETURNING id, name, email, phone, event, city, consent_at, created_at, updated_at`,
-		in.Name, in.Email, in.Phone, in.Event, in.City).
-		Scan(&e.ID, &e.Name, &e.Email, &e.Phone, &e.Event, &e.City, &e.ConsentAt, &e.CreatedAt, &e.UpdatedAt)
+		RETURNING id, name, email, phone, event, city, consent_at, created_at, updated_at, affiliate_id,
+			COALESCE((SELECT `+ReferrerLabel+` FROM affiliates a WHERE a.id = launch_waitlist.affiliate_id), '')`,
+		in.Name, in.Email, in.Phone, in.Event, in.City, in.AffiliateID).
+		Scan(&e.ID, &e.Name, &e.Email, &e.Phone, &e.Event, &e.City, &e.ConsentAt, &e.CreatedAt, &e.UpdatedAt,
+			&e.AffiliateID, &e.Referrer)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -132,10 +141,12 @@ func (s *Service) JoinWaitlist(ctx context.Context, in WaitlistInput) (*Waitlist
 // Waitlist traz a lista inteira, as inscrições mais recentes primeiro.
 func (r *Repository) Waitlist(ctx context.Context) ([]*WaitlistEntry, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT w.id, w.name, w.email, w.phone, w.event, w.city, w.consent_at, w.created_at, w.updated_at, u.id, c.customer_id IS NOT NULL
+		SELECT w.id, w.name, w.email, w.phone, w.event, w.city, w.consent_at, w.created_at, w.updated_at, u.id, c.customer_id IS NOT NULL,
+			w.affiliate_id, COALESCE(`+ReferrerLabel+`, '')
 		FROM launch_waitlist w
 		LEFT JOIN users u ON lower(u.email) = lower(w.email) AND u.role = 'customer'
 		LEFT JOIN launch_promo_claims c ON c.customer_id = u.id
+		LEFT JOIN affiliates a ON a.id = w.affiliate_id
 		ORDER BY w.created_at DESC`)
 	if err != nil {
 		return nil, database.MapError(err)
@@ -145,7 +156,7 @@ func (r *Repository) Waitlist(ctx context.Context) ([]*WaitlistEntry, error) {
 	for rows.Next() {
 		var e WaitlistEntry
 		if err := rows.Scan(&e.ID, &e.Name, &e.Email, &e.Phone, &e.Event, &e.City, &e.ConsentAt, &e.CreatedAt, &e.UpdatedAt,
-			&e.CustomerID, &e.PromoClaimed); err != nil {
+			&e.CustomerID, &e.PromoClaimed, &e.AffiliateID, &e.Referrer); err != nil {
 			return nil, database.MapError(err)
 		}
 		out = append(out, &e)

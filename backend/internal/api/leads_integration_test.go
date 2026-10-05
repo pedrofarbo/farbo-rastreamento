@@ -18,12 +18,14 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/addresses"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/affiliates"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/events"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/finance"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geofences"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
@@ -115,6 +117,8 @@ func newLeadsEnv(t *testing.T) (*credEnv, *recordingLeadNotifier) {
 		Fulfillment: fulfillment.NewService(db, fulfillment.NewRepository(db), nil, nil, cfg.Shipping, "", log),
 		Retention:   retention.NewService(db, cfg.Tracking.HistoryRetentionDays, log),
 		Leads:       leads.NewService(leads.NewRepository(db), notifier, log),
+		Finance:     finance.NewService(db, &fakeFinanceMailer{}, log),
+		Affiliates:  affiliates.NewService(db, log),
 		WS:          ws.NewHandler(hub, nil), Hub: hub,
 	})
 	srv := httptest.NewServer(server.Handler())

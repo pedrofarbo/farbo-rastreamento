@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/cors"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/addresses"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/affiliates"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/alerts"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/analytics"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
@@ -87,6 +88,8 @@ type Deps struct {
 	Infra *infra.Service
 	// Finance: a gestão da empresa (contas, caixa, resultado, estoque).
 	Finance *finance.Service
+	// Affiliates: o programa de afiliados (links de indicação e comissões).
+	Affiliates *affiliates.Service
 	// StepUp: confirmação extra (biometria ou senha) antes de ações
 	// sensíveis. Nil desliga a exigência (só em testes).
 	StepUp       *stepup.Service
@@ -162,6 +165,8 @@ func (s *Server) routes() chi.Router {
 	// Lista de lançamento: mais folgado que o pré-cadastro, porque num evento
 	// (QR Code) muita gente se inscreve pela mesma rede, ou no mesmo tablet.
 	launchLimiter := newRateLimiter(0.5, 20)
+	// A tela do link de indicação e a página do afiliado.
+	affiliateLimiter := newRateLimiter(0.5, 30)
 	// Visitas da landing: uma página manda a visita, as seções e os cliques.
 	analyticsLimiter := newRateLimiter(1, 40)
 	// Senha da confirmação extra: além do teto por usuário (stepup).
@@ -201,6 +206,12 @@ func (s *Server) routes() chi.Router {
 		if s.Leads != nil {
 			r.With(leadLimiter.middleware).Post("/public/leads", s.handlePublicCreateLead)
 			r.With(launchLimiter.middleware).Post("/public/launch", s.handlePublicJoinWaitlist)
+		}
+		// Afiliados: o "Indicado por" da tela de cadastro e a página do
+		// afiliado (link secreto).
+		if s.Affiliates != nil {
+			r.With(affiliateLimiter.middleware).Get("/public/affiliates/{code}", s.handlePublicAffiliate)
+			r.With(affiliateLimiter.middleware).Get("/public/partner/{token}", s.handlePartnerReport)
 		}
 
 		// Melhor Envios: volta da autorização (o navegador, sem o token do
@@ -399,6 +410,23 @@ func (s *Server) routes() chi.Router {
 					})
 				}
 
+				// Programa de afiliados (admin): links, valores e fechamentos.
+				if s.Affiliates != nil {
+					r.Route("/affiliates", func(r chi.Router) {
+						r.Use(auth.RequireRole(auth.RoleAdmin))
+						r.Get("/", s.handleListAffiliates)
+						r.Post("/", s.handleCreateAffiliate)
+						r.Get("/settings", s.handleAffiliateSettings)
+						r.Put("/settings", s.handleSaveAffiliateSettings)
+						r.Get("/closing", s.handleAffiliateClosingPreview)
+						r.Post("/closing", s.handleAffiliateClose)
+						r.Get("/payouts", s.handleAffiliatePayouts)
+						r.Delete("/payouts/{id}", s.handleUndoAffiliatePayout)
+						r.Patch("/{id}", s.handleUpdateAffiliate)
+						r.Post("/{id}/report-token", s.handleAffiliateToken)
+					})
+				}
+
 				// Visitas da landing page (admin).
 				if s.Analytics != nil {
 					r.With(auth.RequireRole(auth.RoleAdmin)).Get("/analytics/landing", s.handleLandingAnalytics)
@@ -431,6 +459,9 @@ func (s *Server) routes() chi.Router {
 							r.Post("/invoices", s.handleCreateInvoice)
 							r.Post("/trackers", s.handleAdminOrderTracker)
 							r.Get("/launch-promo", s.handleCustomerLaunchPromo)
+							if s.Affiliates != nil {
+								r.Put("/affiliate", s.handleSetCustomerAffiliate)
+							}
 							r.Post("/subscriptions/{subscriptionId}/vehicle", s.handleAdminAttachVehicle)
 							r.Post("/vehicles/{vehicleId}/subscription", s.handleReactivateSubscription)
 						})

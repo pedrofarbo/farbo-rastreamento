@@ -16,6 +16,7 @@ import { WhatsAppFloat } from '@/components/landing/WhatsAppFloat';
 import { HIRE_VIA_WHATSAPP, WHATSAPP_NUMBER } from '@/config/contact';
 import { PRE_LAUNCH } from '@/config/landing';
 import { clickEvent, track, trackPageview } from '@/services/analytics';
+import { referralCode, saveReferral } from '@/services/referral';
 import styles from './LandingPage.module.css';
 
 export const LandingPage: React.FC = () => {
@@ -44,7 +45,10 @@ export const LandingPage: React.FC = () => {
     if (window.location.hash.length > 1) {
       document.getElementById(decodeURIComponent(window.location.hash.slice(1)))?.scrollIntoView();
     }
-    trackPageview();
+    // ?ref=<código>: o link de um afiliado que aponta direto para a landing.
+    const ref = new URLSearchParams(window.location.search).get('ref');
+    if (ref) saveReferral(ref);
+    trackPageview(ref ? { source: 'indicacao', campaign: referralCode(ref) } : {});
     const root = wrapper.current;
     if (!root || typeof IntersectionObserver === 'undefined') return;
     const seen = new Set<string>();

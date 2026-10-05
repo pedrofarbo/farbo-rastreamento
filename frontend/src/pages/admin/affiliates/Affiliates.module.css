@@ -1,0 +1,121 @@
+/* A aba Afiliados (Clientes → Afiliados). O resto vem de Page, Billing e
+   Company.module.css. */
+.modal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.links {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.linkBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+.linkLabel {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.linkText {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-sm);
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.linkButtons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.open {
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--danger);
+}
+
+.who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.code {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs);
+}
+
+.copy {
+  padding: 0 var(--space-1);
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3) var(--space-4);
+}
+
+.settings > :first-child {
+  width: 180px;
+}
+
+.closing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.closingFields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3) var(--space-4);
+}
+
+.closingFields > div {
+  width: 180px;
+}
+
+@media (max-width: 600px) {
+  .settings > :first-child,
+  .closingFields > div {
+    width: 100%;
+  }
+}

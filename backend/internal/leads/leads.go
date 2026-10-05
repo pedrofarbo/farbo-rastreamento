@@ -53,6 +53,10 @@ type Lead struct {
 	ConsentAt    time.Time `json:"consentAt"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
+	// AffiliateID: o afiliado do link por onde chegou; Referrer, o @ (ou o
+	// nome) dele.
+	AffiliateID *uuid.UUID `json:"affiliateId"`
+	Referrer    string     `json:"referrer"`
 }
 
 // Input é o que a landing manda.
@@ -68,6 +72,8 @@ type Input struct {
 	Consent      bool
 	// JoinLaunch também inscreve o e-mail na lista de lançamento.
 	JoinLaunch bool
+	// AffiliateID: o afiliado do link de indicação (o primeiro fica).
+	AffiliateID *uuid.UUID
 }
 
 // Normalize limpa e confere o cadastro de interesse.
@@ -150,7 +156,11 @@ func NewRepository(db *database.DB) *Repository { return &Repository{db: db} }
 
 const leadColumns = `id, name, email, phone, city, plan, vehicle_type, vehicle_count, message, status, notes,
 	customer_id, EXISTS (SELECT 1 FROM launch_waitlist w WHERE lower(w.email) = lower(leads.email)),
-	source, consent_at, created_at, updated_at`
+	source, consent_at, created_at, updated_at, affiliate_id,
+	COALESCE((SELECT ` + ReferrerLabel + ` FROM affiliates a WHERE a.id = leads.affiliate_id), '')`
+
+// ReferrerLabel é como o afiliado aparece no painel: o @, ou o nome.
+const ReferrerLabel = `CASE WHEN a.handle <> '' THEN '@' || a.handle ELSE a.name END`
 
 const selectLead = `SELECT ` + leadColumns + ` FROM leads`
 
@@ -158,7 +168,7 @@ func scan(row database.Scanner) (*Lead, error) {
 	var l Lead
 	if err := row.Scan(&l.ID, &l.Name, &l.Email, &l.Phone, &l.City, &l.Plan, &l.VehicleType, &l.VehicleCount,
 		&l.Message, &l.Status, &l.Notes, &l.CustomerID, &l.OnLaunchList, &l.Source, &l.ConsentAt,
-		&l.CreatedAt, &l.UpdatedAt); err != nil {
+		&l.CreatedAt, &l.UpdatedAt, &l.AffiliateID, &l.Referrer); err != nil {
 		return nil, database.MapError(err)
 	}
 	return &l, nil
@@ -179,16 +189,16 @@ func (r *Repository) save(ctx context.Context, in Input) (*Lead, bool, error) {
 		case errors.Is(err, pgx.ErrNoRows):
 			created = true
 			err = tx.QueryRow(ctx, `
-				INSERT INTO leads (name, email, phone, city, plan, vehicle_type, vehicle_count, message, consent_at)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW()) RETURNING id`,
-				in.Name, in.Email, in.Phone, in.City, in.Plan, in.VehicleType, in.VehicleCount, in.Message).Scan(&id)
+				INSERT INTO leads (name, email, phone, city, plan, vehicle_type, vehicle_count, message, affiliate_id, consent_at)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW()) RETURNING id`,
+				in.Name, in.Email, in.Phone, in.City, in.Plan, in.VehicleType, in.VehicleCount, in.Message, in.AffiliateID).Scan(&id)
 		case err == nil:
 			_, err = tx.Exec(ctx, `
 				UPDATE leads SET name = $2, phone = COALESCE(NULLIF($3, ''), phone), city = COALESCE(NULLIF($4, ''), city),
 					plan = $5, vehicle_type = $6, vehicle_count = $7, message = COALESCE(NULLIF($8, ''), message),
-					consent_at = NOW(), updated_at = NOW()
+					affiliate_id = COALESCE(affiliate_id, $9), consent_at = NOW(), updated_at = NOW()
 				WHERE id = $1`,
-				id, in.Name, in.Phone, in.City, in.Plan, in.VehicleType, in.VehicleCount, in.Message)
+				id, in.Name, in.Phone, in.City, in.Plan, in.VehicleType, in.VehicleCount, in.Message, in.AffiliateID)
 		}
 		if err != nil {
 			return err
@@ -289,7 +299,9 @@ func (s *Service) Submit(ctx context.Context, in Input) (*Lead, error) {
 	}
 	// Na lista primeiro: o pré-cliente gravado em seguida já sai com ela.
 	if in.JoinLaunch {
-		if _, err := s.JoinWaitlist(ctx, WaitlistInput{Name: in.Name, Email: in.Email, Phone: in.Phone, Consent: true}); err != nil {
+		if _, err := s.JoinWaitlist(ctx, WaitlistInput{
+			Name: in.Name, Email: in.Email, Phone: in.Phone, Consent: true, AffiliateID: in.AffiliateID,
+		}); err != nil {
 			return nil, err
 		}
 	}

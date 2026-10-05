@@ -29,6 +29,8 @@ const CompanyPage = page(() => import('@/pages/admin/company/CompanyPage'), 'Com
 const TermsPage = page(() => import('@/pages/legal/TermsPage'), 'TermsPage');
 const PrivacyPage = page(() => import('@/pages/legal/PrivacyPage'), 'PrivacyPage');
 const EventSignupPage = page(() => import('@/pages/EventSignupPage'), 'EventSignupPage');
+const ReferralSignupPage = page(() => import('@/pages/ReferralSignupPage'), 'ReferralSignupPage');
+const PartnerPage = page(() => import('@/pages/PartnerPage'), 'PartnerPage');
 const AlertsPage = page(() => import('@/pages/customer/AlertsPage'), 'AlertsPage');
 const InvoicesPage = page(() => import('@/pages/customer/InvoicesPage'), 'InvoicesPage');
 const MyVehiclesPage = page(() => import('@/pages/customer/MyVehiclesPage'), 'MyVehiclesPage');
@@ -72,6 +74,9 @@ export function App() {
                 {/* Cadastro no pré-lançamento em eventos (o QR Code do estande). */}
                 <Route path="/evento" element={<EventSignupPage />} />
                 <Route path="/evento/:evento" element={<EventSignupPage />} />
+                {/* Afiliados: o link de cadastro e a página do afiliado (link secreto). */}
+                <Route path="/indicacao/:codigo" element={<ReferralSignupPage />} />
+                <Route path="/parceiro/:token" element={<PartnerPage />} />
 
                 <Route element={<RequireAuth />}>
                   <Route element={<AppShell />}>

@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { publicApi } from '@/api/resources';
 import { PRIVACY_PATH } from '@/config/legal';
 import { track } from '@/services/analytics';
+import { currentReferral } from '@/services/referral';
 import { CONTACT_EMAIL } from '@/config/contact';
 import { INSANOS_MONTHLY, LAUNCH_OFFER } from '@/config/landing';
 import { formatPhoneInput, isPhoneComplete } from '@/services/format';
@@ -34,7 +35,7 @@ export const LaunchSection: React.FC = () => {
     setError('');
     setSending(true);
     try {
-      await publicApi.joinLaunch({ name, email, phone, consent, website });
+      await publicApi.joinLaunch({ name, email, phone, consent, website, ref: currentReferral() });
       setJoined(true);
       track('waitlist_submit');
     } catch (err) {

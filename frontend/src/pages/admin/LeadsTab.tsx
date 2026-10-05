@@ -96,6 +96,7 @@ export function LeadsTab({ onConvert }: { onConvert: (lead: Lead) => void }) {
                       <div className={billing.muted}>{lead.email}</div>
                       {lead.onLaunchList && <div className={billing.muted}>na lista de lançamento</div>}
                       {lead.phone && <div className={billing.muted}>{lead.phone}</div>}
+                      {lead.referrer && <Badge tone="success">Indicação {lead.referrer}</Badge>}
                     </td>
                     <td data-label="Interesse">
                       {interest(lead)}
@@ -201,6 +202,7 @@ function LeadDetailsModal({
                 ? 'Sim: tem direito à promoção de pré-lançamento enquanto houver vaga (contratando com este e-mail).'
                 : 'Não'}
             </Info>
+            {lead.referrer && <Info label="Indicado por">{lead.referrer} (link de afiliado)</Info>}
             {lead.message && (
               <Info label="Mensagem">
                 <span style={{ whiteSpace: 'pre-wrap' }}>{lead.message}</span>

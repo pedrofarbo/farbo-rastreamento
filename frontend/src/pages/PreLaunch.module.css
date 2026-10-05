@@ -1,4 +1,5 @@
-/* Cadastro no pré-lançamento em eventos: celular primeiro, o mesmo fundo
+/* As telas do pré-lançamento fora da landing (o cadastro do evento e o do
+   link de indicação, e a página do afiliado): celular primeiro, o mesmo fundo
    escuro e o verde da landing. Campos com 16px ou mais (o iPhone não dá zoom
    ao tocar) e botões grandes para o polegar. */
 .page {
@@ -61,7 +62,8 @@
   color: #cbd5e1;
 }
 
-/* O destaque: o preço exclusivo do Insanos MC. */
+/* O destaque: o preço exclusivo do Insanos MC (eventos) ou o da promoção
+   (link de indicação). */
 .insanos {
   display: flex;
   flex-direction: column;
@@ -401,4 +403,38 @@
 /* Um valor ("R$ 39,90") nunca se parte na quebra de linha. */
 .nowrap {
   white-space: nowrap;
+}
+
+/* "Indicado por @fulano": o selo do link de indicação. */
+.referral {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0.4rem 1rem 0.4rem 0.4rem;
+  border: 1px solid rgba(59, 229, 88, 0.35);
+  border-radius: 999px;
+  background: rgba(59, 229, 88, 0.08);
+  font-size: 0.9375rem;
+  color: #cbd5e1;
+}
+
+.referral strong {
+  color: #ffffff;
+  overflow-wrap: anywhere;
+}
+
+.referralAvatar {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--color-neon-green);
+  color: #060907;
+  font-size: 1rem;
+  font-weight: 900;
+  text-transform: uppercase;
 }

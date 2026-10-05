@@ -5,6 +5,7 @@ import { CONTACT_EMAIL, WHATSAPP_NUMBER, whatsappDisplay, whatsappUrl } from '@/
 import { PRIVACY_PATH } from '@/config/legal';
 import { LAUNCH_OFFER, PRE_LAUNCH } from '@/config/landing';
 import { track } from '@/services/analytics';
+import { currentReferral } from '@/services/referral';
 import { formatPhoneInput, isPhoneComplete } from '@/services/format';
 import type { LeadVehicleType } from '@/types';
 
@@ -98,7 +99,7 @@ export const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, defaultPl
     try {
       await publicApi.createLead({
         name, email, phone, city, plan, vehicleType, vehicleCount, message, consent, website,
-        joinLaunch: PRE_LAUNCH && joinLaunch,
+        joinLaunch: PRE_LAUNCH && joinLaunch, ref: currentReferral(),
       });
       setSent(true);
       track('lead_submit', plan);

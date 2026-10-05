@@ -1,0 +1,190 @@
+/* A página do afiliado: os mesmos fundo e verde do pré-lançamento
+   (PreLaunch.module.css), com os cartões dos números. */
+.white {
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.label {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.linkCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  border: 1px solid rgba(59, 229, 88, 0.35);
+  border-radius: 20px;
+  background: rgba(59, 229, 88, 0.06);
+}
+
+.link {
+  padding: 0.75rem 0.875rem;
+  border-radius: 12px;
+  background: #0d130e;
+  color: var(--color-neon-green);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.linkActions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.money {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.money > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem 1.125rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: #0d130e;
+}
+
+.money strong {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.money .moneyMain {
+  border-color: var(--color-neon-green);
+  box-shadow: 0 0 24px rgba(59, 229, 88, 0.15);
+}
+
+.moneyMain strong {
+  color: var(--color-neon-green);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.625rem;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.875rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  text-align: center;
+}
+
+.stat strong {
+  font-size: 1.625rem;
+  font-weight: 900;
+  color: #ffffff;
+}
+
+.stat span {
+  font-size: 0.75rem;
+  line-height: 1.3;
+  color: #94a3b8;
+}
+
+.months {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.heading {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.monthList {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: #0d130e;
+}
+
+.month {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+}
+
+.month + .month {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.month > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.month strong {
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.monthRight {
+  align-items: flex-end;
+}
+
+.muted {
+  font-size: 0.8125rem;
+  color: #94a3b8;
+}
+
+.status {
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pending {
+  background: rgba(148, 163, 184, 0.15);
+  color: #cbd5e1;
+}
+
+.closed {
+  background: rgba(250, 204, 21, 0.15);
+  color: #fde68a;
+}
+
+.paid {
+  background: rgba(59, 229, 88, 0.15);
+  color: var(--color-neon-green);
+}
+
+@media (max-width: 360px) {
+  .money strong {
+    font-size: 1.25rem;
+  }
+
+  .stat strong {
+    font-size: 1.375rem;
+  }
+}
