@@ -12,6 +12,7 @@ const (
 	samsung       = "Mozilla/5.0 (Linux; Android 14; SM-A546B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0.0.0 Mobile Safari/537.36"
 	googlebot     = "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
 	headless      = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/126.0.0.0 Safari/537.36"
+	androidTikTok = "Mozilla/5.0 (Linux; Android 14; SM-S918B Build/UP1A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/126.0.0.0 Mobile Safari/537.36 musical_ly_2023405030 BytedanceWebview/d8a21c6"
 )
 
 func TestUserAgent(t *testing.T) {
@@ -27,6 +28,7 @@ func TestUserAgent(t *testing.T) {
 		{windowsEdge, 1366, "desktop", "Edge", "Windows"},
 		{macSafari, 1440, "desktop", "Safari", "macOS"},
 		{samsung, 384, "mobile", "Samsung Internet", "Android"},
+		{androidTikTok, 412, "mobile", "TikTok", "Android"},
 		// Navegador que não se diz celular, com a tela de celular.
 		{"Mozilla/5.0 (X11; Linux x86_64) Firefox/127.0", 360, "mobile", "Firefox", "Linux"},
 	}
@@ -77,5 +79,44 @@ func TestReferrerHost(t *testing.T) {
 	}
 	if got := ReferrerHost("https://google.com/", "localhost:5173"); got != "google.com" {
 		t.Errorf("com porta no próprio host: %q", got)
+	}
+}
+
+func TestChannel(t *testing.T) {
+	cases := []struct {
+		host, source, browser, want string
+	}{
+		// A campanha vale primeiro, pelo nome ou pelo começo dele.
+		{"", "instagram", "Chrome", "instagram"},
+		{"google.com", "instagram_bio", "Chrome", "instagram"},
+		{"", "IG", "Safari", "instagram"},
+		{"", "fb", "", "facebook"},
+		{"", "zap", "", "whatsapp"},
+		{"", "yt", "", "youtube"},
+		{"", "googleads", "", "google"},
+		{"", "Panfleto", "Chrome", "panfleto"},
+		// Sem campanha, o navegador de dentro do app.
+		{"", "", "Instagram", "instagram"},
+		{"google.com", "", "Facebook", "facebook"},
+		{"", "", "TikTok", "tiktok"},
+		// Depois, o domínio de onde veio.
+		{"l.instagram.com", "", "Safari", "instagram"},
+		{"lm.facebook.com", "", "Chrome", "facebook"},
+		{"wa.me", "", "Chrome", "whatsapp"},
+		{"youtu.be", "", "Chrome", "youtube"},
+		{"google.com.br", "", "Chrome", "google"},
+		{"news.google.com", "", "Chrome", "google"},
+		{"duckduckgo.com", "", "Firefox", "busca"},
+		{"search.yahoo.com", "", "Chrome", "busca"},
+		{"exemplo.com.br", "", "Chrome", "exemplo.com.br"},
+		{"notgoogle.com", "", "Chrome", "notgoogle.com"},
+		// Nada: direto.
+		{"", "", "Chrome", ChannelDirect},
+		{"", "  ", "", ChannelDirect},
+	}
+	for _, c := range cases {
+		if got := Channel(c.host, c.source, c.browser); got != c.want {
+			t.Errorf("Channel(%q, %q, %q) = %q, quer %q", c.host, c.source, c.browser, got, c.want)
+		}
 	}
 }

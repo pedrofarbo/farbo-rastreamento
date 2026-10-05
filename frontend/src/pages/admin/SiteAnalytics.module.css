@@ -14,6 +14,56 @@
   gap: var(--space-3);
 }
 
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.originPicker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.select {
+  max-width: 220px;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.filterNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.filterNote button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .periods {
   display: inline-flex;
   gap: var(--space-1);
@@ -113,6 +163,45 @@
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
   font-weight: 600;
+}
+
+/* Funil por origem: a linha inteira é um botão que filtra a página. */
+.originRow {
+  width: 100%;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid transparent;
+  background: none;
+  text-align: left;
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.originRow:hover {
+  border-color: var(--border-subtle);
+}
+
+.originActive,
+.originActive:hover {
+  border-color: var(--accent);
+}
+
+.originHead {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.originSteps {
+  position: relative;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.originSteps strong {
+  color: var(--text-primary);
 }
 
 .split {

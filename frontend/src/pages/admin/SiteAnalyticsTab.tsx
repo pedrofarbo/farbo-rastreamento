@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
 import { analyticsApi } from '@/api/resources';
 import billing from '@/components/billing/Billing.module.css';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
-import type { AnalyticsCount, LandingAnalytics } from '@/types';
+import type { AnalyticsCount, AnalyticsOrigin, LandingAnalytics } from '@/types';
 
 import styles from './SiteAnalytics.module.css';
 
@@ -40,6 +40,32 @@ const CLICKS: Record<string, string> = {
 
 const DEVICES: Record<string, string> = { mobile: 'Celular', tablet: 'Tablet', desktop: 'Computador' };
 
+/** As origens conhecidas; uma campanha ou um site fora da lista aparece como veio. */
+const CHANNELS: Record<string, string> = {
+  direto: 'Direto',
+  instagram: 'Instagram',
+  facebook: 'Facebook',
+  whatsapp: 'WhatsApp',
+  tiktok: 'TikTok',
+  youtube: 'YouTube',
+  google: 'Google',
+  busca: 'Outros buscadores',
+};
+
+export function channelLabel(channel: string): string {
+  return CHANNELS[channel] ?? channel;
+}
+
+/** As origens para escolher: as do período, mais a escolhida (se sumiu dele). */
+export function originOptions(origins: AnalyticsOrigin[], selected: string): string[] {
+  const list = origins.map((o) => o.channel);
+  return selected && !list.includes(selected) ? [...list, selected] : list;
+}
+
+function plural(n: number, one: string, many: string): string {
+  return `${n.toLocaleString('pt-BR')} ${n === 1 ? one : many}`;
+}
+
 /** "12,5%" do total (ou "—" sem base). */
 export function percent(part: number, total: number): string {
   if (total <= 0) return '—';
@@ -60,28 +86,48 @@ export function sectionReach(data: Pick<LandingAnalytics, 'sections'>): { id: st
  */
 export function SiteAnalyticsTab() {
   const [days, setDays] = useState<(typeof PERIODS)[number]>(30);
+  // Só os visitantes que chegaram por essa origem ("" = todas).
+  const [origin, setOrigin] = useState('');
   const query = useQuery({
-    queryKey: ['analytics', 'landing', days],
-    queryFn: () => analyticsApi.landing(days),
+    queryKey: ['analytics', 'landing', days, origin],
+    queryFn: () => analyticsApi.landing(days, origin),
     refetchInterval: 60_000,
+    // Trocar o período ou a origem mantém a tela até chegar o novo resumo.
+    placeholderData: keepPreviousData,
   });
   const data = query.data;
+  const originName = channelLabel(origin);
 
   return (
     <div className={styles.tab}>
       <div className={styles.toolbar}>
-        <div className={styles.periods} role="group" aria-label="Período">
-          {PERIODS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              className={`${styles.period} ${days === p ? styles.periodActive : ''}`}
-              aria-pressed={days === p}
-              onClick={() => setDays(p)}
-            >
-              {p} dias
-            </button>
-          ))}
+        <div className={styles.filters}>
+          <div className={styles.periods} role="group" aria-label="Período">
+            {PERIODS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                className={`${styles.period} ${days === p ? styles.periodActive : ''}`}
+                aria-pressed={days === p}
+                onClick={() => setDays(p)}
+              >
+                {p} dias
+              </button>
+            ))}
+          </div>
+          {data && (
+            <label className={styles.originPicker}>
+              Origem
+              <select className={styles.select} value={origin} onChange={(event) => setOrigin(event.target.value)}>
+                <option value="">Todas</option>
+                {originOptions(data.origins, origin).map((channel) => (
+                  <option key={channel} value={channel}>
+                    {channelLabel(channel)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
         {data && (
           <span className={styles.live} title="Visitantes nos últimos 10 minutos">
@@ -99,6 +145,17 @@ export function SiteAnalyticsTab() {
         </Card>
       ) : (
         <>
+          {origin && (
+            <div className={styles.filterNote} role="status">
+              <span>
+                Mostrando só quem chegou por <strong>{originName}</strong>.
+              </span>
+              <button type="button" onClick={() => setOrigin('')}>
+                Ver todas as origens
+              </button>
+            </div>
+          )}
+
           <div className={billing.tiles}>
             <div className={billing.tile}>
               <span className={billing.tileLabel}>Visitantes</span>
@@ -126,7 +183,7 @@ export function SiteAnalyticsTab() {
           </Card>
 
           <div className={styles.grid}>
-            <Card title="Funil">
+            <Card title="Funil" subtitle={origin ? `Só quem veio de ${originName}` : 'Todas as origens'}>
               <Ranking
                 total={data.visitors}
                 rows={[
@@ -139,18 +196,15 @@ export function SiteAnalyticsTab() {
               />
             </Card>
 
+            <Card title="Funil por origem" subtitle="De onde vêm e quantos viram contato. Escolha uma para filtrar a página.">
+              <OriginsFunnel origins={data.origins} selected={origin} onSelect={setOrigin} />
+            </Card>
+
             <Card title="Até onde leem" subtitle="Visitantes que chegaram a cada parte da página">
               <Ranking
                 total={data.visitors}
                 rows={sectionReach(data).map((s) => ({ label: s.label, visitors: s.visitors }))}
                 empty="Ainda sem leitura registrada."
-              />
-            </Card>
-
-            <Card title="De onde vêm">
-              <Ranking
-                total={data.visitors}
-                rows={data.referrers.map((r) => ({ label: r.key || 'Direto ou sem origem', visitors: r.visitors }))}
               />
             </Card>
 
@@ -188,10 +242,62 @@ export function SiteAnalyticsTab() {
           <p className={styles.note}>
             Sem cookies e sem dados pessoais: cada visitante vira um código anônimo que muda todo dia, e o
             IP não é guardado. Por isso a mesma pessoa conta uma vez por dia. Visitas de robôs ficam de fora.
+            A origem é a primeira de fora com que a pessoa chegou no dia (link de campanha, rede social,
+            buscador ou outro site); quem chega sem nenhuma conta como direto, inclusive quem abre um link
+            mandado pelo WhatsApp, que não diz de onde veio. Para separar, use links com ?utm_source=whatsapp.
           </p>
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * O funil de cada origem: visitantes (com a barra) e, embaixo, quantos
+ * abriram e mandaram o pré-cadastro, entraram na lista e viraram contato.
+ * Escolher uma filtra a página; escolher de novo volta a todas.
+ */
+function OriginsFunnel({
+  origins,
+  selected,
+  onSelect,
+}: {
+  origins: AnalyticsOrigin[];
+  selected: string;
+  onSelect: (channel: string) => void;
+}) {
+  if (origins.length === 0) return <p className={styles.muted}>Nada no período.</p>;
+  const total = origins.reduce((sum, o) => sum + o.visitors, 0);
+  return (
+    <ul className={styles.ranking}>
+      {origins.map((o) => {
+        const active = o.channel === selected;
+        return (
+          <li key={o.channel}>
+            <button
+              type="button"
+              className={`${styles.row} ${styles.originRow} ${active ? styles.originActive : ''}`}
+              aria-pressed={active}
+              onClick={() => onSelect(active ? '' : o.channel)}
+            >
+              <span className={styles.bar} style={{ width: total > 0 ? `${Math.min(100, (o.visitors / total) * 100)}%` : 0 }} />
+              <span className={styles.originHead}>
+                <span className={styles.rowLabel}>{channelLabel(o.channel)}</span>
+                <span className={styles.rowValue}>
+                  {o.visitors.toLocaleString('pt-BR')}
+                  <span className={styles.muted}> · {percent(o.visitors, total)}</span>
+                </span>
+              </span>
+              <span className={styles.originSteps}>
+                {plural(o.leadOpens, 'abriu o pré-cadastro', 'abriram o pré-cadastro')} ·{' '}
+                {plural(o.leads, 'pré-cadastro', 'pré-cadastros')} · {o.waitlist.toLocaleString('pt-BR')} na lista ·{' '}
+                <strong>{percent(o.converted, o.visitors)}</strong> viraram contato
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

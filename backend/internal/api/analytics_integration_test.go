@@ -18,6 +18,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/telemetry"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/migrations"
 )
 
 // Visitas da landing de ponta a ponta: a página manda as visitas e os
@@ -85,6 +86,8 @@ func TestLandingAnalyticsEndToEnd(t *testing.T) {
 	event(iphone, "cta_click", "hero-pre-lancamento")
 	event(iphone, "lead_open", "Plano Mensal - R$ 69,90")
 	event(iphone, "lead_submit", "Plano Mensal - R$ 69,90")
+	// Voltou depois direto: no dia, continua vindo do Instagram.
+	event(iphone, "pageview", "")
 	// Computador, direto: voltou à página e entrou na lista.
 	event(windows, "pageview", "")
 	event(windows, "section_view", "beneficios")
@@ -105,14 +108,15 @@ func TestLandingAnalyticsEndToEnd(t *testing.T) {
 	env.must(env.login(auth.RoleOperator+"@visitas.test"), http.MethodGet, "/api/analytics/landing", nil, http.StatusForbidden)
 	env.must("", http.MethodGet, "/api/analytics/landing", nil, http.StatusUnauthorized)
 
-	summary := func() analytics.Summary {
+	summaryOf := func(origin string) analytics.Summary {
 		t.Helper()
 		var s analytics.Summary
-		_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/analytics/landing?days=7", nil, http.StatusOK), &s)
+		_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/analytics/landing?days=7&origem="+origin, nil, http.StatusOK), &s)
 		return s
 	}
+	summary := func() analytics.Summary { return summaryOf("") }
 	s := summary()
-	if s.Visitors != 2 || s.Pageviews != 3 || s.Leads != 1 || s.LeadOpens != 1 || s.Waitlist != 1 || s.ActiveNow != 2 {
+	if s.Visitors != 2 || s.Pageviews != 4 || s.Leads != 1 || s.LeadOpens != 1 || s.Waitlist != 1 || s.ActiveNow != 2 {
 		t.Fatalf("totais = %+v", s)
 	}
 	if len(s.Days) != 7 || s.Days[6].Day != "2026-10-04" || s.Days[6].Visitors != 2 || s.Days[0].Visitors != 0 {
@@ -125,8 +129,35 @@ func TestLandingAnalyticsEndToEnd(t *testing.T) {
 		}
 		return m
 	}
-	if r := keys(s.Referrers); r["instagram.com"] != 1 || r[""] != 1 {
-		t.Errorf("origens = %+v", s.Referrers)
+	// O funil de cada origem: o celular veio do Instagram e se cadastrou; o
+	// computador veio direto e entrou na lista.
+	byChannel := map[string]analytics.Origin{}
+	for _, o := range s.Origins {
+		byChannel[o.Channel] = o
+	}
+	if o := byChannel["instagram"]; o.Visitors != 1 || o.LeadOpens != 1 || o.Leads != 1 || o.Converted != 1 || o.Clicked != 1 {
+		t.Errorf("origem instagram = %+v", o)
+	}
+	if o := byChannel["direto"]; o.Visitors != 1 || o.Waitlist != 1 || o.Leads != 0 || o.Converted != 1 || o.Clicked != 0 {
+		t.Errorf("origem direto = %+v", o)
+	}
+	if len(s.Origins) != 2 || s.Channel != "" {
+		t.Errorf("origens = %+v (filtro %q)", s.Origins, s.Channel)
+	}
+	// Filtrado por origem: o resumo inteiro é só de quem veio por ela, e a
+	// lista das origens continua completa.
+	insta := summaryOf("Instagram")
+	if insta.Channel != "instagram" || insta.Visitors != 1 || insta.Pageviews != 2 || insta.Leads != 1 || insta.Waitlist != 0 ||
+		len(insta.Origins) != 2 || keys(insta.Clicks)["hero-pre-lancamento"] != 1 || keys(insta.Sections)["planos"] != 1 ||
+		keys(insta.Devices)["mobile"] != 1 || keys(insta.Devices)["desktop"] != 0 {
+		t.Errorf("só Instagram = %+v", insta)
+	}
+	if direct := summaryOf("direto"); direct.Visitors != 1 || direct.Waitlist != 1 || direct.Leads != 0 || len(direct.Clicks) != 0 ||
+		direct.Days[6].Visitors != 1 {
+		t.Errorf("só direto = %+v", direct)
+	}
+	if none := summaryOf("google"); none.Visitors != 0 || none.Leads != 0 || len(none.Sections) != 0 {
+		t.Errorf("origem sem visitas = %+v", none)
 	}
 	if c := keys(s.Campaigns); len(c) != 1 || c["instagram · lancamento"] != 1 {
 		t.Errorf("campanhas = %+v", s.Campaigns)
@@ -151,5 +182,52 @@ func TestLandingAnalyticsEndToEnd(t *testing.T) {
 	var salts int
 	if err := db.QueryRow(ctx, `SELECT count(*) FROM analytics_salts WHERE day < '2026-10-05'`).Scan(&salts); err != nil || salts != 0 {
 		t.Fatalf("sal de ontem ainda guardado: %d %v", salts, err)
+	}
+}
+
+// A migração que classificou as visitas antigas segue as mesmas regras de
+// analytics.Channel. Precisa de FARBO_TEST_DATABASE_URL.
+func TestChannelMigrationMatchesCode(t *testing.T) {
+	db := integrationDB(t)
+	ctx := context.Background()
+	body, err := migrations.FS.ReadFile("0027_analytics_channel.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	update := string(body[bytes.Index(body, []byte("UPDATE analytics_events")):])
+
+	sources := []string{"", "instagram", "instagram_bio", "ig", "insta", "facebook", "fb", "meta", "whatsapp", "wa", "zap",
+		"tiktok", "youtube", "yt", "google", "googleads", "bing", "panfleto", "qrcode"}
+	browsers := []string{"", "Instagram", "Facebook", "TikTok", "Chrome"}
+	hosts := []string{"", "instagram.com", "l.instagram.com", "facebook.com", "m.facebook.com", "fb.me", "wa.me",
+		"web.whatsapp.com", "tiktok.com", "youtube.com", "youtu.be", "google.com", "google.com.br", "news.google.com",
+		"bing.com", "duckduckgo.com", "search.yahoo.com", "exemplo.com.br", "notgoogle.com", "googleusercontent.com"}
+	if _, err := db.Exec(ctx, `
+		INSERT INTO analytics_events (day, visitor, name, referrer_host, utm_source, browser)
+		SELECT '2026-10-01', 'teste', 'pageview', h, u, b
+		FROM unnest($1::text[]) h, unnest($2::text[]) u, unnest($3::text[]) b`, hosts, sources, browsers); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(ctx, update); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.Query(ctx, `SELECT referrer_host, utm_source, browser, channel FROM analytics_events`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	n := 0
+	for rows.Next() {
+		var host, source, browser, channel string
+		if err := rows.Scan(&host, &source, &browser, &channel); err != nil {
+			t.Fatal(err)
+		}
+		if want := analytics.Channel(host, source, browser); channel != want {
+			t.Errorf("migração deu %q para (%q, %q, %q); o código dá %q", channel, host, source, browser, want)
+		}
+		n++
+	}
+	if n != len(hosts)*len(sources)*len(browsers) {
+		t.Fatalf("conferidas %d visitas", n)
 	}
 }

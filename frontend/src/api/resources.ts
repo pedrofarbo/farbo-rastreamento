@@ -526,7 +526,9 @@ export const infraApi = {
 
 /** Visitas da landing page (admin). */
 export const analyticsApi = {
-  landing: (days: number) => api.get<LandingAnalytics>(`/api/analytics/landing?days=${days}`),
+  /** origin: só os visitantes que chegaram por ela ("" = todas). */
+  landing: (days: number, origin = '') =>
+    api.get<LandingAnalytics>(`/api/analytics/landing?days=${days}&origem=${encodeURIComponent(origin)}`),
 };
 
 /** Pré-clientes (admin). */

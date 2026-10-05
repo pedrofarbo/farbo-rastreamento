@@ -846,9 +846,23 @@ export interface AnalyticsCount {
 }
 
 /** As visitas da landing num período (sem cookies; ver o pacote analytics). */
+/** O funil de uma origem (Instagram, Google, direto...) no período. */
+export interface AnalyticsOrigin {
+  channel: string;
+  visitors: number;
+  leadOpens: number;
+  leads: number;
+  waitlist: number;
+  /** Viraram contato: mandaram o pré-cadastro ou entraram na lista. */
+  converted: number;
+  clicked: number;
+}
+
 export interface LandingAnalytics {
   from: string;
   to: string;
+  /** O resumo é só de quem veio por essa origem ("" = todas). */
+  channel: string;
   visitors: number;
   pageviews: number;
   /** Visitantes nos últimos 10 minutos. */
@@ -858,7 +872,8 @@ export interface LandingAnalytics {
   waitlist: number;
   installerOpens: number;
   days: { day: string; visitors: number; pageviews: number }[];
-  referrers: AnalyticsCount[];
+  /** O funil de cada origem, sempre de todas. */
+  origins: AnalyticsOrigin[];
   campaigns: AnalyticsCount[];
   devices: AnalyticsCount[];
   browsers: AnalyticsCount[];
@@ -867,7 +882,6 @@ export interface LandingAnalytics {
   clicks: AnalyticsCount[];
 }
 
-/** O painel de infraestrutura (Diagnóstico → Servidor). */
 /** Último envio da cópia criptografada do banco para fora da VPS. */
 export interface InfraOffsite {
   configured: boolean;
@@ -877,6 +891,7 @@ export interface InfraOffsite {
   error: string;
 }
 
+/** O painel de infraestrutura (Diagnóstico → Servidor). */
 export interface InfraStatus {
   host: {
     at: string;

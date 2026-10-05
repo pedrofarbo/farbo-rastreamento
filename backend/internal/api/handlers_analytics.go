@@ -21,9 +21,10 @@ func (s *Server) handlePublicAnalytics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
-// handleLandingAnalytics: o painel das visitas dos últimos ?days= dias.
+// handleLandingAnalytics: o painel das visitas dos últimos ?days= dias, só
+// dos visitantes que chegaram pela ?origem= (sem ela, de todas).
 func (s *Server) handleLandingAnalytics(w http.ResponseWriter, r *http.Request) {
-	summary, err := s.Analytics.Summary(r.Context(), queryInt(r, "days", 30))
+	summary, err := s.Analytics.Summary(r.Context(), queryInt(r, "days", 30), r.URL.Query().Get("origem"))
 	if err != nil {
 		handleStoreError(w, err, "")
 		return

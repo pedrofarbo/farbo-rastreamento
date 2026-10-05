@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -99,20 +100,23 @@ func (s *Service) Record(ctx context.Context, hit Hit, ip, userAgent, ownHost st
 	sum := sha256.Sum256([]byte(string(salt) + "\x00" + ip + "\x00" + userAgent))
 	visitor := hex.EncodeToString(sum[:12])
 
-	// A origem e a campanha são da chegada à página.
-	var referrer, source, medium, campaign string
+	// A origem e a campanha são da chegada à página; os outros eventos herdam
+	// a do visitante no dia (ver Summary).
+	var referrer, source, medium, campaign, channel string
+	browser := Browser(userAgent)
 	if hit.Name == "pageview" {
 		referrer = ReferrerHost(hit.Referrer, ownHost)
 		source = clip(strings.ToLower(strings.TrimSpace(hit.UTMSource)), maxUTM)
 		medium = clip(strings.ToLower(strings.TrimSpace(hit.UTMMedium)), maxUTM)
 		campaign = clip(strings.ToLower(strings.TrimSpace(hit.UTMCampaign)), maxUTM)
+		channel = Channel(referrer, source, browser)
 	}
 	_, err = s.db.Exec(ctx, `
 		INSERT INTO analytics_events (day, visitor, name, label, path, referrer_host, utm_source, utm_medium,
-			utm_campaign, device, browser, os)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+			utm_campaign, channel, device, browser, os)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
 		day, visitor, hit.Name, clip(strings.TrimSpace(hit.Label), maxLabel), clip(hit.Path, maxPath),
-		referrer, source, medium, campaign, Device(userAgent, hit.ScreenWidth), Browser(userAgent), OS(userAgent))
+		referrer, source, medium, campaign, channel, Device(userAgent, hit.ScreenWidth), browser, OS(userAgent))
 	return database.MapError(err)
 }
 
@@ -181,13 +185,28 @@ type Day struct {
 	Pageviews int    `json:"pageviews"`
 }
 
+// Origin é o funil de uma origem: dos visitantes que chegaram por ela,
+// quantos abriram e mandaram o pré-cadastro, entraram na lista, viraram
+// contato (pré-cadastro ou lista) e clicaram em algum botão.
+type Origin struct {
+	Channel   string `json:"channel"`
+	Visitors  int    `json:"visitors"`
+	LeadOpens int    `json:"leadOpens"`
+	Leads     int    `json:"leads"`
+	Waitlist  int    `json:"waitlist"`
+	Converted int    `json:"converted"`
+	Clicked   int    `json:"clicked"`
+}
+
 // Summary é o painel das visitas de um período.
 type Summary struct {
-	From      string `json:"from"`
-	To        string `json:"to"`
+	From string `json:"from"`
+	To   string `json:"to"`
+	// Channel: o resumo é só dos visitantes dessa origem ("" = todas).
+	Channel   string `json:"channel"`
 	Visitors  int    `json:"visitors"`
 	Pageviews int    `json:"pageviews"`
-	// ActiveNow: visitantes nos últimos 10 minutos.
+	// ActiveNow: visitantes nos últimos 10 minutos (de qualquer origem).
 	ActiveNow int `json:"activeNow"`
 	// Conversões: quantos visitantes fizeram cada coisa.
 	LeadOpens      int `json:"leadOpens"`
@@ -195,27 +214,51 @@ type Summary struct {
 	Waitlist       int `json:"waitlist"`
 	InstallerOpens int `json:"installerOpens"`
 
-	Days      []Day   `json:"days"`
-	Referrers []Count `json:"referrers"`
-	Campaigns []Count `json:"campaigns"`
-	Devices   []Count `json:"devices"`
-	Browsers  []Count `json:"browsers"`
-	Systems   []Count `json:"systems"`
-	Sections  []Count `json:"sections"`
-	Clicks    []Count `json:"clicks"`
+	Days []Day `json:"days"`
+	// Origins é o funil de cada origem, sempre de todas (é de onde se escolhe
+	// o filtro).
+	Origins   []Origin `json:"origins"`
+	Campaigns []Count  `json:"campaigns"`
+	Devices   []Count  `json:"devices"`
+	Browsers  []Count  `json:"browsers"`
+	Systems   []Count  `json:"systems"`
+	Sections  []Count  `json:"sections"`
+	Clicks    []Count  `json:"clicks"`
 }
 
-// Summary resume os últimos days dias (hoje incluso).
-func (s *Service) Summary(ctx context.Context, days int) (*Summary, error) {
+// origins dá a origem de cada visitante em cada dia ($1 a $2): a primeira de
+// fora com que ele chegou (campanha, rede, buscador, outro site); sem
+// nenhuma, direto. Os eventos dele no dia (abrir o pré-cadastro, clicar...)
+// contam para essa origem.
+const origins = `origins AS (
+	SELECT day, visitor, COALESCE(
+		(array_agg(channel ORDER BY channel = '` + ChannelDirect + `', occurred_at)
+			FILTER (WHERE name = 'pageview' AND channel <> ''))[1],
+		'` + ChannelDirect + `') AS channel
+	FROM analytics_events WHERE day BETWEEN $1 AND $2
+	GROUP BY day, visitor
+)`
+
+// scoped são os eventos do período ($1 a $2) dos visitantes da origem $3
+// ("" = todas).
+const scoped = `WITH ` + origins + `, scoped AS (
+	SELECT e.* FROM analytics_events e JOIN origins o USING (day, visitor)
+	WHERE e.day BETWEEN $1 AND $2 AND ($3::text = '' OR o.channel = $3::text)
+) `
+
+// Summary resume os últimos days dias (hoje incluso), só dos visitantes que
+// chegaram pela origem channel ("" = todas).
+func (s *Service) Summary(ctx context.Context, days int, channel string) (*Summary, error) {
 	if days < 1 || days > RetentionDays {
 		days = 30
 	}
+	channel = clip(strings.ToLower(strings.TrimSpace(channel)), maxLabel)
 	today := s.now().In(s.loc)
 	from := today.AddDate(0, 0, -(days - 1)).Format(time.DateOnly)
 	to := today.Format(time.DateOnly)
-	out := &Summary{From: from, To: to}
+	out := &Summary{From: from, To: to, Channel: channel}
 
-	err := s.db.QueryRow(ctx, `
+	err := s.db.QueryRow(ctx, scoped+`
 		SELECT
 			count(DISTINCT (day, visitor)) FILTER (WHERE name = 'pageview'),
 			count(*) FILTER (WHERE name = 'pageview'),
@@ -223,7 +266,7 @@ func (s *Service) Summary(ctx context.Context, days int) (*Summary, error) {
 			count(DISTINCT (day, visitor)) FILTER (WHERE name = 'lead_submit'),
 			count(DISTINCT (day, visitor)) FILTER (WHERE name = 'waitlist_submit'),
 			count(DISTINCT (day, visitor)) FILTER (WHERE name = 'installers_open')
-		FROM analytics_events WHERE day BETWEEN $1 AND $2`, from, to).
+		FROM scoped`, from, to, channel).
 		Scan(&out.Visitors, &out.Pageviews, &out.LeadOpens, &out.Leads, &out.Waitlist, &out.InstallerOpens)
 	if err != nil {
 		return nil, database.MapError(err)
@@ -234,11 +277,11 @@ func (s *Service) Summary(ctx context.Context, days int) (*Summary, error) {
 		return nil, database.MapError(err)
 	}
 
-	rows, err := s.db.Query(ctx, `
+	rows, err := s.db.Query(ctx, scoped+`
 		SELECT d::date::text, count(DISTINCT e.visitor), count(e.id)
 		FROM generate_series($1::date, $2::date, interval '1 day') d
-		LEFT JOIN analytics_events e ON e.day = d::date AND e.name = 'pageview'
-		GROUP BY d ORDER BY d`, from, to)
+		LEFT JOIN scoped e ON e.day = d::date AND e.name = 'pageview'
+		GROUP BY d ORDER BY d`, from, to, channel)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -255,6 +298,10 @@ func (s *Service) Summary(ctx context.Context, days int) (*Summary, error) {
 		return nil, err
 	}
 
+	if out.Origins, err = s.origins(ctx, from, to); err != nil {
+		return nil, err
+	}
+
 	// Os rankings: a expressão da chave é fixa, daqui (nunca do pedido).
 	for _, r := range []struct {
 		dst   *[]Count
@@ -262,7 +309,6 @@ func (s *Service) Summary(ctx context.Context, days int) (*Summary, error) {
 		where string
 		limit int
 	}{
-		{&out.Referrers, `referrer_host`, `name = 'pageview'`, 10},
 		{&out.Campaigns, `concat_ws(' · ', utm_source, NULLIF(utm_campaign, ''))`, `name = 'pageview' AND utm_source <> ''`, 10},
 		{&out.Devices, `device`, `name = 'pageview'`, 5},
 		{&out.Browsers, `browser`, `name = 'pageview'`, 8},
@@ -270,7 +316,7 @@ func (s *Service) Summary(ctx context.Context, days int) (*Summary, error) {
 		{&out.Sections, `label`, `name = 'section_view'`, 20},
 		{&out.Clicks, `label`, `name IN ('cta_click', 'outbound_click')`, 20},
 	} {
-		list, err := s.counts(ctx, r.key, r.where, r.limit, from, to)
+		list, err := s.counts(ctx, r.key, r.where, r.limit, from, to, channel)
 		if err != nil {
 			return nil, err
 		}
@@ -279,13 +325,47 @@ func (s *Service) Summary(ctx context.Context, days int) (*Summary, error) {
 	return out, nil
 }
 
-func (s *Service) counts(ctx context.Context, key, where string, limit int, from, to string) ([]Count, error) {
-	rows, err := s.db.Query(ctx, `
+// origins: o funil de cada origem no período, das que mais trazem visitantes.
+func (s *Service) origins(ctx context.Context, from, to string) ([]Origin, error) {
+	rows, err := s.db.Query(ctx, `WITH `+origins+`, visits AS (
+			SELECT o.channel,
+				bool_or(e.name = 'pageview') AS visited,
+				bool_or(e.name = 'lead_open') AS opened,
+				bool_or(e.name = 'lead_submit') AS lead,
+				bool_or(e.name = 'waitlist_submit') AS waitlist,
+				bool_or(e.name IN ('cta_click', 'outbound_click')) AS clicked
+			FROM analytics_events e JOIN origins o USING (day, visitor)
+			WHERE e.day BETWEEN $1 AND $2
+			GROUP BY o.channel, e.day, e.visitor
+		)
+		SELECT channel, count(*) FILTER (WHERE visited), count(*) FILTER (WHERE opened),
+			count(*) FILTER (WHERE lead), count(*) FILTER (WHERE waitlist),
+			count(*) FILTER (WHERE lead OR waitlist), count(*) FILTER (WHERE clicked)
+		FROM visits GROUP BY channel
+		ORDER BY 2 DESC, 6 DESC, 1
+		LIMIT 20`, from, to)
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	defer rows.Close()
+	out := []Origin{}
+	for rows.Next() {
+		var o Origin
+		if err := rows.Scan(&o.Channel, &o.Visitors, &o.LeadOpens, &o.Leads, &o.Waitlist, &o.Converted, &o.Clicked); err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+func (s *Service) counts(ctx context.Context, key, where string, limit int, from, to, channel string) ([]Count, error) {
+	rows, err := s.db.Query(ctx, scoped+`
 		SELECT `+key+` AS key, count(DISTINCT (day, visitor)) AS visitors, count(*)
-		FROM analytics_events
-		WHERE day BETWEEN $1 AND $2 AND `+where+`
+		FROM scoped
+		WHERE `+where+`
 		GROUP BY 1 ORDER BY 2 DESC, 3 DESC, 1
-		LIMIT $3`, from, to, limit)
+		LIMIT $4`, from, to, channel, limit)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -304,6 +384,71 @@ func (s *Service) counts(ctx context.Context, key, where string, limit int, from
 // ---------------------------------------------------------------------------
 // O navegador e a origem
 // ---------------------------------------------------------------------------
+
+// ChannelDirect é a visita sem origem: digitou o endereço, favorito, ou um
+// app que não diz de onde veio (o WhatsApp, sem link de campanha).
+const ChannelDirect = "direto"
+
+// channels são as origens conhecidas: os nomes da campanha (utm_source —
+// prefixes pelo começo, como "instagram_bio"; aliases exatos), os domínios
+// (e os subdomínios deles) e o navegador de dentro do app. A migração
+// 0027_analytics_channel classifica as visitas antigas com as mesmas regras.
+var channels = []struct {
+	key      string
+	prefixes []string
+	aliases  []string
+	hosts    []string
+	browser  string
+}{
+	{"instagram", []string{"instagram"}, []string{"ig", "insta"}, []string{"instagram.com"}, "Instagram"},
+	{"facebook", []string{"facebook"}, []string{"fb", "meta"}, []string{"facebook.com", "fb.com", "fb.me"}, "Facebook"},
+	{"whatsapp", []string{"whatsapp"}, []string{"wa", "zap"}, []string{"whatsapp.com", "wa.me"}, ""},
+	{"tiktok", []string{"tiktok"}, nil, []string{"tiktok.com"}, "TikTok"},
+	{"youtube", []string{"youtube"}, []string{"yt"}, []string{"youtube.com", "youtu.be"}, ""},
+	{"google", []string{"google"}, nil, nil, ""}, // google.com, google.com.br... (ver isGoogle)
+	{"busca", []string{"bing"}, nil, []string{"bing.com", "duckduckgo.com", "yahoo.com", "ecosia.org", "search.brave.com"}, ""},
+}
+
+// Channel é a origem da visita: a campanha (utm_source) vale primeiro; depois
+// o navegador de dentro do Instagram, do Facebook ou do TikTok (que muitas
+// vezes não manda o site de origem); depois o domínio de onde veio. Uma
+// campanha ou um site fora da lista aparece pelo próprio nome; sem nada,
+// ChannelDirect.
+func Channel(referrerHost, utmSource, browser string) string {
+	if source := strings.ToLower(strings.TrimSpace(utmSource)); source != "" {
+		for _, c := range channels {
+			if slices.Contains(c.aliases, source) || slices.ContainsFunc(c.prefixes, func(p string) bool {
+				return strings.HasPrefix(source, p)
+			}) {
+				return c.key
+			}
+		}
+		return clip(source, maxUTM)
+	}
+	for _, c := range channels {
+		if c.browser != "" && browser == c.browser {
+			return c.key
+		}
+	}
+	host := bareHost(referrerHost)
+	if host == "" {
+		return ChannelDirect
+	}
+	if isGoogle(host) {
+		return "google"
+	}
+	for _, c := range channels {
+		if slices.ContainsFunc(c.hosts, func(h string) bool { return host == h || strings.HasSuffix(host, "."+h) }) {
+			return c.key
+		}
+	}
+	return host
+}
+
+// isGoogle: google.com, google.com.br, www.google.co.uk...
+func isGoogle(host string) bool {
+	return strings.HasPrefix(host, "google.") || strings.Contains(host, ".google.")
+}
 
 // ReferrerHost é o domínio de fora de onde a pessoa veio ("" se direto ou do
 // próprio site), sem "www." nem porta.
@@ -349,6 +494,8 @@ func Browser(ua string) string {
 	switch {
 	case strings.Contains(l, "instagram"):
 		return "Instagram"
+	case strings.Contains(l, "musical_ly") || strings.Contains(l, "bytedancewebview") || strings.Contains(l, "tiktok"):
+		return "TikTok"
 	case strings.Contains(l, "fban") || strings.Contains(l, "fbav"):
 		return "Facebook"
 	case strings.Contains(l, "edg/") || strings.Contains(l, "edga/") || strings.Contains(l, "edgios/"):
