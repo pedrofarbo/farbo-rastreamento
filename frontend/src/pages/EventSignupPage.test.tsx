@@ -62,8 +62,12 @@ describe('EventSignupPage', () => {
     );
     const inputs = () => Array.from(host.querySelectorAll('input')) as HTMLInputElement[];
     const field = (type: string) => inputs().find((i) => i.type === type && i.name !== 'website') as HTMLInputElement;
+    const city = () => inputs().find((i) => i.autocomplete === 'address-level2') as HTMLInputElement;
     const submit = () => host.querySelector('button[type=submit]') as HTMLButtonElement;
     expect(host.textContent).toContain('Garanta o preço de pré-lançamento');
+    // O destaque é o preço do Insanos MC.
+    expect(host.textContent).toContain('Preço exclusivo Insanos MC');
+    expect(host.textContent).toContain('R$27,90/mês');
     expect(submit().disabled).toBe(true);
 
     await act(async () => {
@@ -72,14 +76,18 @@ describe('EventSignupPage', () => {
       type(field('email'), 'ana@cliente.test');
     });
     expect(field('tel').value).toBe('(11) 98765-4321');
-    expect(submit().disabled).toBe(true); // falta o aceite
     await act(async () => field('checkbox').click());
+    expect(submit().disabled).toBe(true); // falta a cidade
+    await act(async () => type(city(), 'São Paulo - SP'));
     expect(submit().disabled).toBe(false);
 
     await act(async () => submit().click());
     await flush();
     expect(sent).toEqual([
-      { name: 'Ana Souza', email: 'ana@cliente.test', phone: '(11) 98765-4321', consent: true, website: '', event: 'encontro-insanos-mc' },
+      {
+        name: 'Ana Souza', email: 'ana@cliente.test', phone: '(11) 98765-4321', consent: true, website: '',
+        event: 'encontro-insanos-mc', city: 'São Paulo - SP',
+      },
     ]);
     expect(host.textContent).toContain('Pronto, Ana!');
     expect(host.textContent).toContain('ana@cliente.test');
@@ -88,6 +96,7 @@ describe('EventSignupPage', () => {
     const again = Array.from(host.querySelectorAll('button')).find((b) => b.textContent === 'Cadastrar outra pessoa') as HTMLButtonElement;
     await act(async () => again.click());
     expect(field('text').value).toBe('');
+    expect(city().value).toBe('');
     expect(field('checkbox').checked).toBe(false);
     expect(submit().disabled).toBe(true);
   });

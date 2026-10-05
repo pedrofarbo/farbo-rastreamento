@@ -5,12 +5,14 @@ import { Link, useParams } from 'react-router-dom';
 import { ApiError } from '@/api/client';
 import { publicApi } from '@/api/resources';
 import { INSTAGRAM_HANDLE, INSTAGRAM_URL } from '@/config/contact';
-import { INSANOS_MONTHLY, LAUNCH_OFFER, eventSlug } from '@/config/landing';
+import { INSANOS_MONTHLY, LAUNCH_OFFER, eventSlug, priceParts } from '@/config/landing';
 import { PRIVACY_PATH } from '@/config/legal';
 import { track, trackPageview } from '@/services/analytics';
 import { formatPhoneInput, isPhoneComplete } from '@/services/format';
 
 import styles from './EventSignup.module.css';
+
+const insanos = priceParts(LAUNCH_OFFER.insanosMonthlyCents);
 
 /**
  * Cadastro no pré-lançamento em eventos: a tela que o QR Code do estande abre
@@ -24,6 +26,7 @@ export function EventSignupPage() {
   const event = eventSlug(evento);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [city, setCity] = useState('');
   const [email, setEmail] = useState('');
   const [consent, setConsent] = useState(false);
   const [website, setWebsite] = useState('');
@@ -37,7 +40,7 @@ export function EventSignupPage() {
     trackPageview({ source: 'evento', campaign: event });
   }, [event]);
 
-  const ready = name.trim() !== '' && isPhoneComplete(phone) && email.trim() !== '' && consent;
+  const ready = name.trim() !== '' && isPhoneComplete(phone) && city.trim() !== '' && email.trim() !== '' && consent;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -45,7 +48,7 @@ export function EventSignupPage() {
     setError('');
     setSending(true);
     try {
-      await publicApi.joinLaunch({ name, email, phone, consent, website, event });
+      await publicApi.joinLaunch({ name, email, phone, consent, website, event, city });
       track('waitlist_submit', event || 'evento');
       setDone({ name: name.trim().split(' ')[0], email: email.trim() });
       window.scrollTo({ top: 0 });
@@ -65,6 +68,7 @@ export function EventSignupPage() {
   const next = () => {
     setName('');
     setPhone('');
+    setCity('');
     setEmail('');
     setConsent(false);
     setDone(null);
@@ -113,22 +117,35 @@ export function EventSignupPage() {
               Rastreador para moto e carro, com app, alertas e bloqueio pelo celular. Cadastre-se e seja avisado no
               lançamento.
             </p>
+            <div className={styles.insanos}>
+              <span className={styles.insanosTag}>Preço exclusivo Insanos MC</span>
+              <p className={styles.insanosPrice}>
+                <span className={styles.insanosCurrency}>R$</span>
+                <span className={styles.insanosReais}>{insanos.reais}</span>
+                <span className={styles.insanosCents}>
+                  {insanos.cents}
+                  <small>/mês</small>
+                </span>
+              </p>
+              <p className={styles.insanosNote}>
+                nos {LAUNCH_OFFER.months} primeiros meses · depois,{' '}
+                <span className={styles.nowrap}>{INSANOS_MONTHLY.label}</span> · o preço normal é{' '}
+                <s className={styles.nowrap}>{LAUNCH_OFFER.monthlyRegular}</s>
+              </p>
+              <p className={styles.insanosEquipment}>
+                Rastreador: <s className={styles.nowrap}>{LAUNCH_OFFER.equipmentRegular}</s>{' '}
+                <strong className={styles.nowrap}>{LAUNCH_OFFER.equipment}</strong>
+              </p>
+            </div>
             <div className={styles.offer}>
               <div className={styles.offerRow}>
-                <span>Rastreador</span>
-                <span>
-                  <s>{LAUNCH_OFFER.equipmentRegular}</s> <strong>{LAUNCH_OFFER.equipment}</strong>
-                </span>
-              </div>
-              <div className={styles.offerRow}>
-                <span>Mensalidade por {LAUNCH_OFFER.months} meses</span>
+                <span>Não é do Insanos MC? Mensalidade por {LAUNCH_OFFER.months} meses</span>
                 <span>
                   <s>{LAUNCH_OFFER.monthlyRegular}</s> <strong>{LAUNCH_OFFER.monthly}</strong>
                 </span>
               </div>
               <p className={styles.offerNote}>
-                Insanos MC: {LAUNCH_OFFER.insanosMonthly} por mês nos {LAUNCH_OFFER.months} meses (depois,{' '}
-                {INSANOS_MONTHLY.label}). Para os {LAUNCH_OFFER.slots} primeiros da lista, 1 veículo por pessoa.
+                Para os {LAUNCH_OFFER.slots} primeiros da lista, 1 veículo por pessoa.
               </p>
             </div>
           </section>
@@ -159,6 +176,19 @@ export function EventSignupPage() {
                 placeholder="(11) 99999-9999"
                 value={phone}
                 onChange={(e) => setPhone(formatPhoneInput(e.target.value, phone))}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Cidade da instalação</span>
+              <input
+                type="text"
+                autoComplete="address-level2"
+                autoCapitalize="words"
+                enterKeyHint="next"
+                maxLength={120}
+                placeholder="Ex.: São Paulo - SP"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
               />
             </label>
             <label className={styles.field}>

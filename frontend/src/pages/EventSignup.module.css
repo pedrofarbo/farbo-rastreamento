@@ -61,15 +61,100 @@
   color: #cbd5e1;
 }
 
+/* O destaque: o preço exclusivo do Insanos MC. */
+.insanos {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  padding: 1.25rem 1rem 1.125rem;
+  border: 2px solid var(--color-neon-green);
+  border-radius: 20px;
+  background: radial-gradient(circle at 50% 0%, rgba(59, 229, 88, 0.28) 0%, rgba(59, 229, 88, 0.06) 70%);
+  box-shadow: 0 0 36px rgba(59, 229, 88, 0.22);
+  text-align: center;
+}
+
+.insanosTag {
+  white-space: nowrap;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  background: var(--color-neon-green);
+  color: #060907;
+  font-size: 0.8125rem;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.insanosPrice {
+  display: flex;
+  align-items: flex-start;
+  margin: 0.5rem 0 0;
+  line-height: 1;
+  color: #ffffff;
+}
+
+.insanosCurrency {
+  margin: 0.55rem 0.3rem 0 0;
+  font-size: 1.375rem;
+  font-weight: 800;
+}
+
+.insanosReais {
+  font-size: 4.5rem;
+  font-weight: 900;
+  letter-spacing: -2px;
+}
+
+.insanosCents {
+  display: flex;
+  flex-direction: column;
+  margin: 0.45rem 0 0 0.15rem;
+  font-size: 1.75rem;
+  font-weight: 900;
+}
+
+.insanosCents small {
+  margin-top: 0.3rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+
+.insanosNote {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #cbd5e1;
+}
+
+.insanosNote s,
+.insanosEquipment s {
+  color: #64748b;
+}
+
+.insanosEquipment {
+  margin: 0.25rem 0 0;
+  font-size: 0.9375rem;
+  color: #cbd5e1;
+}
+
+.insanosEquipment strong {
+  color: #ffffff;
+  font-size: 1.0625rem;
+}
+
 .offer {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   margin-top: 0.25rem;
-  padding: 1rem 1.125rem;
-  border: 1px solid var(--color-neon-green);
+  padding: 0.875rem 1.125rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 16px;
-  background: rgba(59, 229, 88, 0.08);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .offerRow {
@@ -86,7 +171,7 @@
 }
 
 .offerRow strong {
-  font-size: 1.375rem;
+  font-size: 1.125rem;
   font-weight: 900;
   color: #ffffff;
   white-space: nowrap;
@@ -296,6 +381,12 @@
     height: 21px;
   }
 
+  .insanosTag {
+    padding: 0.35rem 0.7rem;
+    font-size: 0.6875rem;
+    letter-spacing: 0.5px;
+  }
+
   .badge {
     letter-spacing: 0.5px;
   }
@@ -305,4 +396,9 @@
   .doneIcon {
     animation: none;
   }
+}
+
+/* Um valor ("R$ 39,90") nunca se parte na quebra de linha. */
+.nowrap {
+  white-space: nowrap;
 }

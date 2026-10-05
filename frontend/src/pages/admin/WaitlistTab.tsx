@@ -38,9 +38,9 @@ export function byOrigin(list: WaitlistEntry[]): { label: string; count: number 
 export function waitlistCsv(list: WaitlistEntry[]): string {
   const cell = (value: string) => `"${value.replace(/"/g, '""')}"`;
   const rows = list.map((e) =>
-    [e.name, e.email, e.phone, eventLabel(e.event), formatDateTime(e.createdAt)].map(cell).join(';'),
+    [e.name, e.email, e.phone, e.city, eventLabel(e.event), formatDateTime(e.createdAt)].map(cell).join(';'),
   );
-  return '\uFEFF' + ['Nome;E-mail;WhatsApp;Origem;Inscrito em', ...rows].join('\r\n');
+  return '\uFEFF' + ['Nome;E-mail;WhatsApp;Cidade da instalação;Origem;Inscrito em', ...rows].join('\r\n');
 }
 
 /** Conversa no WhatsApp com o número da inscrição (com o 55 do Brasil). */
@@ -154,6 +154,7 @@ export function WaitlistTab() {
                   <th>Nome</th>
                   <th>E-mail</th>
                   <th>WhatsApp</th>
+                  <th>Cidade</th>
                   <th>Origem</th>
                   <th>Inscrito</th>
                   <th>Situação</th>
@@ -176,6 +177,7 @@ export function WaitlistTab() {
                         <span className={billing.muted}>—</span>
                       )}
                     </td>
+                    <td data-label="Cidade">{entry.city || <span className={billing.muted}>—</span>}</td>
                     <td data-label="Origem">
                       {entry.event ? (
                         <Badge tone="accent">{eventLabel(entry.event)}</Badge>

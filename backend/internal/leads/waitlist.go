@@ -26,6 +26,8 @@ type WaitlistEntry struct {
 	PromoClaimed bool `json:"promoClaimed"`
 	// Event: o evento em que se inscreveu (pelo QR Code); vazio: pela landing.
 	Event string `json:"event"`
+	// City: a cidade da instalação (a tela do evento pede).
+	City string `json:"city"`
 }
 
 // WaitlistInput é o que a seção de pré-lançamento manda: o nome é opcional;
@@ -37,6 +39,8 @@ type WaitlistInput struct {
 	Consent bool
 	// Event: o evento da tela aberta pelo QR Code (vira EventSlug).
 	Event string
+	// City: a cidade da instalação (opcional; a tela do evento pede).
+	City string
 }
 
 // maxEvent: o nome do evento no link do QR Code.
@@ -79,8 +83,12 @@ func normalizeWaitlist(in WaitlistInput) (WaitlistInput, error) {
 	in.Email = strings.ToLower(strings.TrimSpace(in.Email))
 	in.Phone = strings.TrimSpace(in.Phone)
 	in.Event = EventSlug(in.Event)
+	in.City = strings.Join(strings.Fields(in.City), " ")
 	if utf8.RuneCountInString(in.Name) > 120 {
 		return in, ValidationError{"nome longo demais"}
+	}
+	if utf8.RuneCountInString(in.City) > 120 {
+		return in, ValidationError{"cidade longa demais"}
 	}
 	if !validEmail(in.Email) {
 		return in, ValidationError{"informe um e-mail válido"}
@@ -96,7 +104,7 @@ func normalizeWaitlist(in WaitlistInput) (WaitlistInput, error) {
 
 // JoinWaitlist põe o e-mail na lista. Quem já está fica (com o nome
 // atualizado, se veio): mandar de novo não duplica. O evento é o primeiro
-// que trouxe a pessoa.
+// que trouxe a pessoa; a cidade, a última informada.
 func (s *Service) JoinWaitlist(ctx context.Context, in WaitlistInput) (*WaitlistEntry, error) {
 	in, err := normalizeWaitlist(in)
 	if err != nil {
@@ -104,14 +112,16 @@ func (s *Service) JoinWaitlist(ctx context.Context, in WaitlistInput) (*Waitlist
 	}
 	var e WaitlistEntry
 	err = s.repo.db.QueryRow(ctx, `
-		INSERT INTO launch_waitlist (name, email, phone, event, consent_at) VALUES ($1, $2, $3, $4, NOW())
+		INSERT INTO launch_waitlist (name, email, phone, event, city, consent_at) VALUES ($1, $2, $3, $4, $5, NOW())
 		ON CONFLICT (lower(email)) DO UPDATE SET
 			name = COALESCE(NULLIF(EXCLUDED.name, ''), launch_waitlist.name),
 			phone = EXCLUDED.phone,
 			event = COALESCE(NULLIF(launch_waitlist.event, ''), EXCLUDED.event),
+			city = COALESCE(NULLIF(EXCLUDED.city, ''), launch_waitlist.city),
 			consent_at = NOW(), updated_at = NOW()
-		RETURNING id, name, email, phone, event, consent_at, created_at, updated_at`, in.Name, in.Email, in.Phone, in.Event).
-		Scan(&e.ID, &e.Name, &e.Email, &e.Phone, &e.Event, &e.ConsentAt, &e.CreatedAt, &e.UpdatedAt)
+		RETURNING id, name, email, phone, event, city, consent_at, created_at, updated_at`,
+		in.Name, in.Email, in.Phone, in.Event, in.City).
+		Scan(&e.ID, &e.Name, &e.Email, &e.Phone, &e.Event, &e.City, &e.ConsentAt, &e.CreatedAt, &e.UpdatedAt)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -122,7 +132,7 @@ func (s *Service) JoinWaitlist(ctx context.Context, in WaitlistInput) (*Waitlist
 // Waitlist traz a lista inteira, as inscrições mais recentes primeiro.
 func (r *Repository) Waitlist(ctx context.Context) ([]*WaitlistEntry, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT w.id, w.name, w.email, w.phone, w.event, w.consent_at, w.created_at, w.updated_at, u.id, c.customer_id IS NOT NULL
+		SELECT w.id, w.name, w.email, w.phone, w.event, w.city, w.consent_at, w.created_at, w.updated_at, u.id, c.customer_id IS NOT NULL
 		FROM launch_waitlist w
 		LEFT JOIN users u ON lower(u.email) = lower(w.email) AND u.role = 'customer'
 		LEFT JOIN launch_promo_claims c ON c.customer_id = u.id
@@ -134,7 +144,7 @@ func (r *Repository) Waitlist(ctx context.Context) ([]*WaitlistEntry, error) {
 	out := []*WaitlistEntry{}
 	for rows.Next() {
 		var e WaitlistEntry
-		if err := rows.Scan(&e.ID, &e.Name, &e.Email, &e.Phone, &e.Event, &e.ConsentAt, &e.CreatedAt, &e.UpdatedAt,
+		if err := rows.Scan(&e.ID, &e.Name, &e.Email, &e.Phone, &e.Event, &e.City, &e.ConsentAt, &e.CreatedAt, &e.UpdatedAt,
 			&e.CustomerID, &e.PromoClaimed); err != nil {
 			return nil, database.MapError(err)
 		}

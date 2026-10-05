@@ -263,7 +263,7 @@ func TestEventSignupEndToEnd(t *testing.T) {
 	env, _ := newLeadsEnv(t)
 	for i := range 20 {
 		body := map[string]any{"name": fmt.Sprintf("Pessoa %d", i), "email": fmt.Sprintf("pessoa%d@evento.test", i),
-			"phone": "(11) 98888-7777", "consent": true, "event": "Encontro Insanos MC — Out/26"}
+			"phone": "(11) 98888-7777", "consent": true, "event": "Encontro Insanos MC — Out/26", "city": "  São   Paulo - SP "}
 		env.must("", http.MethodPost, "/api/public/launch", body, http.StatusCreated)
 	}
 	// Folgado, mas com limite: a 21ª seguida espera.
@@ -273,8 +273,8 @@ func TestEventSignupEndToEnd(t *testing.T) {
 	admin := env.login(auth.RoleAdmin + "@leads.test")
 	var list []leads.WaitlistEntry
 	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/leads/waitlist", nil, http.StatusOK), &list)
-	if len(list) != 20 || list[0].Event != "encontro-insanos-mc-out-26" {
-		t.Fatalf("inscrições do evento = %d, evento %q", len(list), list[0].Event)
+	if len(list) != 20 || list[0].Event != "encontro-insanos-mc-out-26" || list[0].City != "São Paulo - SP" {
+		t.Fatalf("inscrições do evento = %d, evento %q, cidade %q", len(list), list[0].Event, list[0].City)
 	}
 	// Inscrita de novo pela landing: o evento que a trouxe continua.
 	if _, err := env.db.Exec(context.Background(), `DELETE FROM launch_waitlist WHERE email <> 'pessoa0@evento.test'`); err != nil {
@@ -284,7 +284,7 @@ func TestEventSignupEndToEnd(t *testing.T) {
 	env.must("", http.MethodPost, "/api/public/launch", map[string]any{"email": "pessoa0@evento.test", "phone": "(11) 98888-7777",
 		"consent": true}, http.StatusCreated)
 	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/leads/waitlist", nil, http.StatusOK), &list)
-	if len(list) != 1 || list[0].Event != "encontro-insanos-mc-out-26" || list[0].Name != "Pessoa 0" {
+	if len(list) != 1 || list[0].Event != "encontro-insanos-mc-out-26" || list[0].Name != "Pessoa 0" || list[0].City != "São Paulo - SP" {
 		t.Fatalf("reinscrição pela landing = %+v", list)
 	}
 

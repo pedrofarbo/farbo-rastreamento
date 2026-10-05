@@ -112,6 +112,8 @@ type publicWaitlistRequest struct {
 	Website string `json:"website"`
 	// Event: o evento da tela aberta pelo QR Code (/evento/<nome>).
 	Event string `json:"event"`
+	// City: a cidade da instalação (a tela do evento pede).
+	City string `json:"city"`
 }
 
 // handlePublicJoinWaitlist: "me avise quando lançar", da landing ou da tela
@@ -129,7 +131,7 @@ func (s *Server) handlePublicJoinWaitlist(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if _, err := s.Leads.JoinWaitlist(r.Context(), leads.WaitlistInput{
-		Name: req.Name, Email: req.Email, Phone: req.Phone, Consent: req.Consent, Event: req.Event,
+		Name: req.Name, Email: req.Email, Phone: req.Phone, Consent: req.Consent, Event: req.Event, City: req.City,
 	}); err != nil {
 		writeLeadError(w, err)
 		return

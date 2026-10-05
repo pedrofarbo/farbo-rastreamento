@@ -822,6 +822,8 @@ export interface WaitlistInput {
   website: string;
   /** O evento da tela aberta pelo QR Code (/evento/<nome>). */
   event?: string;
+  /** A cidade da instalação (a tela do evento pede). */
+  city?: string;
 }
 
 /** Inscrição na lista de lançamento. */
@@ -833,6 +835,8 @@ export interface WaitlistEntry {
   phone: string;
   /** O evento em que se inscreveu (QR Code); vazio: pela landing. */
   event: string;
+  /** A cidade da instalação; vazio quando não informou. */
+  city: string;
   consentAt: string;
   createdAt: string;
   updatedAt: string;
