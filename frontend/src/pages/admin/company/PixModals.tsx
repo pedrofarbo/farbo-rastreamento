@@ -84,6 +84,9 @@ export function PixPayModal({ entry, onClose }: { entry: FinanceEntry; onClose: 
 
   const p = plan.data?.plan ?? null;
   const available = info.data?.availableCents ?? null;
+  // O saldo que a API da AbacatePay informa pode vir atrasado (em produção,
+  // ficou em zero com saldo no painel deles): só avisa. Sem saldo de verdade,
+  // a AbacatePay recusa o envio e a conta continua em aberto.
   const short = p !== null && available !== null && available < p.amountCents + PIX_FEE_CENTS;
 
   return (
@@ -101,7 +104,7 @@ export function PixPayModal({ entry, onClose }: { entry: FinanceEntry; onClose: 
             <Button variant="ghost" onClick={onClose}>
               Cancelar
             </Button>
-            <Button variant="primary" disabled={!p || short} onClick={() => setStep('confirm')}>
+            <Button variant="primary" disabled={!p} onClick={() => setStep('confirm')}>
               Continuar
             </Button>
           </>
@@ -152,9 +155,11 @@ export function PixPayModal({ entry, onClose }: { entry: FinanceEntry; onClose: 
                 <span className={styles.muted}> + tarifa da AbacatePay ({formatMoney(PIX_FEE_CENTS)})</span>
               </dd>
               <dt>Saldo</dt>
-              <dd className={short ? styles.danger : undefined}>
+              <dd className={short ? styles.warn : undefined}>
                 {available !== null
-                  ? `${formatMoney(available)} disponível na AbacatePay${short ? ': não dá para este Pix' : ''}`
+                  ? short
+                    ? `A API da AbacatePay informa ${formatMoney(available)}, mas pode estar atrasada: confira no painel dela. Sem saldo, o envio é recusado e a conta continua em aberto.`
+                    : `${formatMoney(available)} disponível na AbacatePay`
                   : `não deu para consultar${info.data?.balanceError ? ` (${info.data.balanceError})` : ''}`}
               </dd>
             </dl>

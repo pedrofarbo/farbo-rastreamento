@@ -535,3 +535,7 @@ table td.right {
   color: var(--accent);
   font-weight: 600;
 }
+
+.warn {
+  color: var(--warning);
+}

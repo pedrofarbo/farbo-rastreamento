@@ -115,12 +115,12 @@ describe('PixPayModal', () => {
     expect(button('Continuar')).toBeTruthy();
   });
 
-  it('sem saldo ou sem destino, não continua', async () => {
+  it('saldo baixo só avisa (a API pode atrasar); sem destino, não continua', async () => {
     plan = { plan: PLAN, problem: '', transfers: [] };
-    available = 40000;
+    available = 0;
     await render();
-    expect(text()).toContain('não dá para este Pix');
-    expect(button('Continuar').disabled).toBe(true);
+    expect(text()).toContain('A API da AbacatePay informa R$ 0,00, mas pode estar atrasada');
+    expect(button('Continuar').disabled).toBe(false);
     document.body.innerHTML = '';
     plan = { plan: null, problem: 'Sem Chave não tem chave Pix: cadastre em Empresa → Cadastros.', transfers: [] };
     available = 500000;
