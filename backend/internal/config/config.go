@@ -452,9 +452,22 @@ type Shipping struct {
 	// SyncInterval é de quanto em quanto tempo o rastreio é consultado.
 	SyncInterval time.Duration
 	// ArrangeCities são as cidades ("São Paulo/SP") onde o cliente pode
-	// combinar a entrega com a central, sem frete.
+	// combinar a entrega com a central, sem frete; o padrão é a Grande São
+	// Paulo.
 	ArrangeCities []string
 }
+
+// GreaterSaoPaulo são os 39 municípios da Região Metropolitana de São Paulo
+// (a Grande São Paulo): onde o cliente pode, por padrão, combinar a entrega
+// com a central (SHIPPING_ARRANGE_CITIES).
+const GreaterSaoPaulo = "Arujá/SP,Barueri/SP,Biritiba-Mirim/SP,Caieiras/SP,Cajamar/SP,Carapicuíba/SP,Cotia/SP," +
+	"Diadema/SP,Embu das Artes/SP,Embu-Guaçu/SP,Ferraz de Vasconcelos/SP,Francisco Morato/SP," +
+	"Franco da Rocha/SP,Guararema/SP,Guarulhos/SP,Itapecerica da Serra/SP,Itapevi/SP," +
+	"Itaquaquecetuba/SP,Jandira/SP,Juquitiba/SP,Mairiporã/SP,Mauá/SP,Mogi das Cruzes/SP," +
+	"Osasco/SP,Pirapora do Bom Jesus/SP,Poá/SP,Ribeirão Pires/SP,Rio Grande da Serra/SP," +
+	"Salesópolis/SP,Santa Isabel/SP,Santana de Parnaíba/SP,Santo André/SP," +
+	"São Bernardo do Campo/SP,São Caetano do Sul/SP,São Lourenço da Serra/SP,São Paulo/SP," +
+	"Suzano/SP,Taboão da Serra/SP,Vargem Grande Paulista/SP"
 
 // ShippingAddress é o remetente das etiquetas.
 type ShippingAddress struct {
@@ -746,7 +759,7 @@ func Load() (*Config, error) {
 			NonCommercial:  bl("MELHORENVIO_NON_COMMERCIAL", true),
 			Services:       str("MELHORENVIO_SERVICES", ""),
 			SyncInterval:   dur("MELHORENVIO_SYNC_INTERVAL", 15*time.Minute),
-			ArrangeCities:  csv("SHIPPING_ARRANGE_CITIES", "São Paulo/SP"),
+			ArrangeCities:  csv("SHIPPING_ARRANGE_CITIES", GreaterSaoPaulo),
 		},
 		Billing: Billing{
 			InvoiceLeadDays:  num("BILLING_INVOICE_LEAD_DAYS", 10),

@@ -85,7 +85,7 @@ func TestOrderShippingEndToEnd(t *testing.T) {
 				Number: "1000", District: "Bela Vista", City: "São Paulo", State: "SP",
 			},
 			WeightKg: 0.3, HeightCm: 4, WidthCm: 12, LengthCm: 16, InsuranceCents: 15000,
-			ArrangeCities: []string{"São Paulo/SP"},
+			ArrangeCities: strings.Split(config.GreaterSaoPaulo, ","),
 		}
 		d.Config.Shipping = shipping
 		carrier := melhorenvio.New(melhorenvio.Config{BaseURL: me.URL, StaticToken: "token", ContactEmail: "t@farbo.test"}, nil)
@@ -149,7 +149,7 @@ func TestOrderShippingEndToEnd(t *testing.T) {
 	order(token, "/api/me/trackers", map[string]any{"vehicle": vehicle("FRT1A11"), "shippingServiceId": 3}, http.StatusBadRequest)
 	// Combinar a entrega é só para São Paulo.
 	if out := order(token, "/api/me/trackers", map[string]any{"vehicle": vehicle("FRT1A11"), "arrangeDelivery": true},
-		http.StatusBadRequest); !strings.Contains(out["error"].(string), "só vale para São Paulo/SP") {
+		http.StatusBadRequest); !strings.Contains(out["error"].(string), "não vale para Rio de Janeiro/RJ") {
 		t.Errorf("combinar fora de SP = %+v", out)
 	}
 	// Escolheu o PAC: o frete entra na fatura do equipamento (com o preço do servidor).

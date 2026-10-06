@@ -101,7 +101,7 @@ const ArrangedService = "Entrega combinada"
 
 // CanArrange diz se o endereço fica numa das cidades onde o cliente pode
 // combinar a entrega com a central ("São Paulo/SP"; sem a UF, vale a cidade
-// em qualquer estado). Maiúsculas e acentos não importam.
+// em qualquer estado). Maiúsculas, acentos e hífens não importam.
 func (s *Service) CanArrange(city, state string) bool {
 	city, state = fold(city), fold(state)
 	if city == "" {
@@ -122,17 +122,23 @@ func (s *Service) CanArrange(city, state string) bool {
 // Arrange é a entrega combinada com a central, para quem pode.
 func (s *Service) Arrange(city, state string) (*Choice, error) {
 	if !s.CanArrange(city, state) {
-		return nil, RuleError{"combinar a entrega só vale para " + strings.Join(s.shipping.ArrangeCities, ", ") + "; escolha uma transportadora"}
+		place := strings.TrimSpace(city)
+		if uf := strings.ToUpper(strings.TrimSpace(state)); uf != "" {
+			place += "/" + uf
+		}
+		return nil, RuleError{"combinar a entrega não vale para " + place + "; escolha uma transportadora"}
 	}
 	return &Choice{Name: ArrangedService, Arranged: true}, nil
 }
 
-// fold deixa minúsculo e sem acento: "São Paulo" acha "sao paulo".
+// fold deixa minúsculo, sem acento e sem hífen: "São Paulo" acha "sao
+// paulo"; "Biritiba-Mirim", "biritiba mirim".
 func fold(s string) string {
+	s = strings.Join(strings.Fields(strings.ReplaceAll(strings.ToLower(s), "-", " ")), " ")
 	t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
-	out, _, err := transform.String(t, strings.ToLower(strings.TrimSpace(s)))
+	out, _, err := transform.String(t, s)
 	if err != nil {
-		return strings.ToLower(strings.TrimSpace(s))
+		return s
 	}
 	return out
 }
