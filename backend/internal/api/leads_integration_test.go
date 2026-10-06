@@ -500,19 +500,22 @@ func TestLaunchPromoEndToEnd(t *testing.T) {
 // para a lista (e para a promoção); desmarcado, não.
 func TestLeadJoinsLaunchList(t *testing.T) {
 	env, _ := newLeadsEnv(t)
-	lead := func(name, email string, join bool) {
+	lead := func(name, email, city string, join bool) {
 		env.must("", http.MethodPost, "/api/public/leads", map[string]any{
-			"name": name, "email": email, "phone": "(19) 98888-1111", "plan": "Plano Mensal - R$ 69,90", "vehicleType": "moto",
-			"vehicleCount": 1, "consent": true, "joinLaunch": join, "website": "",
+			"name": name, "email": email, "phone": "(19) 98888-1111", "city": city, "plan": "Plano Mensal - R$ 69,90",
+			"vehicleType": "moto", "vehicleCount": 1, "consent": true, "joinLaunch": join, "website": "",
 		}, http.StatusCreated)
 	}
-	lead("Bruna", "bruna@exemplo.com.br", true)
-	lead("Carla", "carla@exemplo.com.br", false)
+	lead("Bruna", "bruna@exemplo.com.br", "Campinas - SP", true)
+	lead("Carla", "carla@exemplo.com.br", "Santos", false)
+	// Mandou de novo sem a cidade: a da lista fica.
+	lead("Bruna", "bruna@exemplo.com.br", "", true)
 
 	admin := env.login(auth.RoleAdmin + "@leads.test")
 	var list []leads.WaitlistEntry
 	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/leads/waitlist", nil, http.StatusOK), &list)
-	if len(list) != 1 || list[0].Email != "bruna@exemplo.com.br" || list[0].Name != "Bruna" || list[0].Phone != "(19) 98888-1111" {
+	if len(list) != 1 || list[0].Email != "bruna@exemplo.com.br" || list[0].Name != "Bruna" || list[0].Phone != "(19) 98888-1111" ||
+		list[0].City != "Campinas - SP" {
 		t.Fatalf("lista de lançamento = %+v", list)
 	}
 	var pre []leads.Lead

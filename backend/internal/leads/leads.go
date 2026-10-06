@@ -300,7 +300,7 @@ func (s *Service) Submit(ctx context.Context, in Input) (*Lead, error) {
 	// Na lista primeiro: o pré-cliente gravado em seguida já sai com ela.
 	if in.JoinLaunch {
 		if _, err := s.JoinWaitlist(ctx, WaitlistInput{
-			Name: in.Name, Email: in.Email, Phone: in.Phone, Consent: true, AffiliateID: in.AffiliateID,
+			Name: in.Name, Email: in.Email, Phone: in.Phone, City: in.City, Consent: true, AffiliateID: in.AffiliateID,
 		}); err != nil {
 			return nil, err
 		}
