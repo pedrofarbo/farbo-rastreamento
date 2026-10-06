@@ -601,6 +601,10 @@ export const leadsApi = {
   /** Lista de lançamento: quem pediu o aviso. */
   waitlist: () => api.get<WaitlistEntry[]>('/api/leads/waitlist'),
   removeFromWaitlist: (id: string) => api.delete<void>(`/api/leads/waitlist/${id}`),
+  /** Tira o pré-cliente da lista de lançamento (perde a promoção; ele fica). */
+  removeFromLaunch: (id: string) => api.delete<void>(`/api/leads/${id}/launch-list`),
+  /** Apaga o pré-cliente e a inscrição na lista (pedido da pessoa, LGPD). */
+  remove: (id: string) => api.delete<void>(`/api/leads/${id}`),
   /** Vagas da promoção de pré-lançamento. */
   promo: () => api.get<PromoUsage>('/api/leads/promo'),
   /** O QR Code de um link (o da tela do evento), para ver e para imprimir. */

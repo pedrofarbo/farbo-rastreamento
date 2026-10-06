@@ -244,19 +244,38 @@ func TestLaunchWaitlistEndToEnd(t *testing.T) {
 	if len(list) != 1 || list[0].Name != "Bruno" || list[0].Email != "bruno@exemplo.com.br" || list[0].Phone != "(11) 97777-6666" {
 		t.Fatalf("lista = %+v (a isca não entra; o reenvio não duplica)", list)
 	}
-	// A lista de lançamento não vira pré-cliente nem avisa a equipe.
+	// A inscrição vira um pré-cliente (um só), na lista, sem avisar a equipe.
 	var pre []leads.Lead
 	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/leads", nil, http.StatusOK), &pre)
-	if len(pre) != 0 || notifier.count() != 0 {
-		t.Errorf("pré-clientes = %d, avisos = %d", len(pre), notifier.count())
+	if len(pre) != 1 || pre[0].Email != "bruno@exemplo.com.br" || pre[0].Name != "Bruno" || pre[0].Status != leads.StatusNew ||
+		pre[0].Source != "lancamento" || !pre[0].OnLaunchList || notifier.count() != 0 {
+		t.Fatalf("pré-clientes = %+v, avisos = %d", pre, notifier.count())
 	}
+	lead := pre[0].ID.String()
 
+	// Tirar da lista: perde a promoção, o pré-cliente fica.
+	env.must(admin, http.MethodDelete, "/api/leads/"+lead+"/launch-list", nil, http.StatusNoContent)
+	env.must(admin, http.MethodDelete, "/api/leads/"+lead+"/launch-list", nil, http.StatusBadRequest)
+	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/leads", nil, http.StatusOK), &pre)
+	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/leads/waitlist", nil, http.StatusOK), &list)
+	if len(pre) != 1 || pre[0].OnLaunchList || len(list) != 0 {
+		t.Fatalf("fora da lista: pré-clientes %+v, lista %+v", pre, list)
+	}
+	// Volta para a lista (inscreve de novo) e pede para apagar tudo (LGPD).
+	env.must("", http.MethodPost, "/api/public/launch", signup, http.StatusCreated)
+	env.must(admin, http.MethodDelete, "/api/leads/"+lead, nil, http.StatusNoContent)
+	env.must(admin, http.MethodDelete, "/api/leads/"+lead, nil, http.StatusNotFound)
+	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/leads", nil, http.StatusOK), &pre)
+	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/leads/waitlist", nil, http.StatusOK), &list)
+	if len(pre) != 0 || len(list) != 0 {
+		t.Errorf("depois de apagar: pré-clientes %+v, lista %+v", pre, list)
+	}
+	// A rota antiga de tirar da lista continua valendo.
+	env.must("", http.MethodPost, "/api/public/launch", signup, http.StatusCreated)
+	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/leads/waitlist", nil, http.StatusOK), &list)
 	env.must(admin, http.MethodDelete, "/api/leads/waitlist/"+list[0].ID.String(), nil, http.StatusNoContent)
 	env.must(admin, http.MethodDelete, "/api/leads/waitlist/"+list[0].ID.String(), nil, http.StatusNotFound)
-	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/leads/waitlist", nil, http.StatusOK), &list)
-	if len(list) != 0 {
-		t.Errorf("depois de remover: %+v", list)
-	}
+	env.must(env.login(auth.RoleOperator+"@leads.test"), http.MethodDelete, "/api/leads/"+lead, nil, http.StatusForbidden)
 }
 
 // Cadastro no evento (a tela aberta pelo QR Code): muita gente pela mesma
@@ -499,7 +518,7 @@ func TestLaunchPromoEndToEnd(t *testing.T) {
 // Pré-cadastro com "entrar também na lista de pré-lançamento": o e-mail vai
 // para a lista (e para a promoção); desmarcado, não.
 func TestLeadJoinsLaunchList(t *testing.T) {
-	env, _ := newLeadsEnv(t)
+	env, notifier := newLeadsEnv(t)
 	lead := func(name, email, city string, join bool) {
 		env.must("", http.MethodPost, "/api/public/leads", map[string]any{
 			"name": name, "email": email, "phone": "(19) 98888-1111", "city": city, "plan": "Plano Mensal - R$ 69,90",
@@ -510,12 +529,23 @@ func TestLeadJoinsLaunchList(t *testing.T) {
 	lead("Carla", "carla@exemplo.com.br", "Santos", false)
 	// Mandou de novo sem a cidade: a da lista fica.
 	lead("Bruna", "bruna@exemplo.com.br", "", true)
+	// Quem só estava na lista (evento) e depois fez o pré-cadastro: o mesmo
+	// pré-cliente, e a equipe é avisada (uma vez).
+	env.must("", http.MethodPost, "/api/public/launch",
+		map[string]any{"name": "Davi", "email": "davi@exemplo.com.br", "phone": "(19) 97777-1111", "consent": true, "event": "feira-sp", "city": "Sorocaba"},
+		http.StatusCreated)
+	lead("Davi", "davi@exemplo.com.br", "", false)
+	lead("Davi", "davi@exemplo.com.br", "", false)
 
 	admin := env.login(auth.RoleAdmin + "@leads.test")
 	var list []leads.WaitlistEntry
 	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/leads/waitlist", nil, http.StatusOK), &list)
-	if len(list) != 1 || list[0].Email != "bruna@exemplo.com.br" || list[0].Name != "Bruna" || list[0].Phone != "(19) 98888-1111" ||
-		list[0].City != "Campinas - SP" {
+	inList := map[string]leads.WaitlistEntry{}
+	for _, e := range list {
+		inList[e.Email] = e
+	}
+	if b := inList["bruna@exemplo.com.br"]; len(list) != 2 || b.Name != "Bruna" || b.Phone != "(19) 98888-1111" || b.City != "Campinas - SP" ||
+		inList["davi@exemplo.com.br"].Event != "feira-sp" {
 		t.Fatalf("lista de lançamento = %+v", list)
 	}
 	var pre []leads.Lead
@@ -524,7 +554,21 @@ func TestLeadJoinsLaunchList(t *testing.T) {
 	for _, l := range pre {
 		onList[l.Email] = l.OnLaunchList
 	}
-	if len(pre) != 2 || !onList["bruna@exemplo.com.br"] || onList["carla@exemplo.com.br"] {
+	if len(pre) != 3 || !onList["bruna@exemplo.com.br"] || onList["carla@exemplo.com.br"] || !onList["davi@exemplo.com.br"] {
 		t.Errorf("pré-clientes na lista = %v", onList)
+	}
+	for _, l := range pre {
+		if l.Email == "davi@exemplo.com.br" && (l.Event != "feira-sp" || l.City != "Sorocaba" || l.Plan != "Plano Mensal - R$ 69,90" || l.Source != "landing") {
+			t.Errorf("davi = %+v", l)
+		}
+	}
+	// Avisos: Bruna, Carla e Davi (no pré-cadastro, não na lista nem no reenvio).
+	deadline := time.Now().Add(2 * time.Second)
+	for notifier.count() < 3 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if notifier.count() != 3 {
+		t.Errorf("avisos à equipe = %d, quer 3", notifier.count())
 	}
 }

@@ -805,10 +805,11 @@ export interface Lead {
   message: string;
   status: LeadStatus;
   notes: string;
-  /** O cliente cadastrado a partir dele. */
+  /** O cliente cadastrado a partir dele (ou a conta de cliente com o mesmo e-mail). */
   customerId: string | null;
-  /** O e-mail também está na lista de lançamento (e na promoção). */
+  /** Está na lista de lançamento (o direito à promoção). */
   onLaunchList: boolean;
+  /** landing (pré-cadastro), lancamento (a caixa da landing), evento ou indicacao. */
   source: string;
   consentAt: string;
   createdAt: string;
@@ -816,6 +817,10 @@ export interface Lead {
   /** O afiliado do link por onde chegou: o @ (ou o nome); vazio se nenhum. */
   affiliateId: string | null;
   referrer: string;
+  /** O evento (QR Code) em que se inscreveu; vazio se não foi num. */
+  event: string;
+  /** Já contratou com a promoção de pré-lançamento. */
+  promoClaimed: boolean;
 }
 
 /** "Me avise quando lançar": o que a seção de pré-lançamento manda. */

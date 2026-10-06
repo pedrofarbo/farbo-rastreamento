@@ -15,7 +15,7 @@ export function Card({ title, subtitle, actions, flush = false, children, classN
     <section className={`${styles.card} ${className ?? ''}`}>
       {(title || actions) && (
         <header className={styles.header}>
-          <div>
+          <div className={styles.heading}>
             <div className={styles.title}>{title}</div>
             {subtitle && <div className={styles.subtitle}>{subtitle}</div>}
           </div>

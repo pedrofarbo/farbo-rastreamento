@@ -20,7 +20,6 @@ import styles from '../Page.module.css';
 import { AffiliatesTab } from './affiliates/AffiliatesTab';
 import { LeadsTab } from './LeadsTab';
 import { SiteAnalyticsTab } from './SiteAnalyticsTab';
-import { WaitlistTab } from './WaitlistTab';
 
 interface CustomerDraft {
   name: string;
@@ -49,13 +48,13 @@ export function CustomersPage() {
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
   const tab = params.get('aba');
-  const showLeads = tab === 'pre-clientes';
-  const showWaitlist = tab === 'lancamento';
+  // A lista de lançamento entrou nos pré-clientes (o endereço antigo leva para lá).
+  const showLeads = tab === 'pre-clientes' || tab === 'lancamento';
   // As visitas da landing: o começo do funil (visita → pré-cliente → cliente).
   const showVisits = tab === 'visitas';
   // Programa de afiliados: os links dos influenciadores e as comissões.
   const showAffiliates = tab === 'afiliados';
-  const showCustomers = !showLeads && !showWaitlist && !showVisits && !showAffiliates;
+  const showCustomers = !showLeads && !showVisits && !showAffiliates;
   const leadStats = useQuery({ queryKey: ['leads', 'stats'], queryFn: leadsApi.stats, refetchInterval: 60_000 });
   const newLeads = leadStats.data?.new ?? 0;
 
@@ -158,15 +157,6 @@ export function CustomersPage() {
           <button
             type="button"
             role="tab"
-            aria-selected={showWaitlist}
-            className={`${styles.tab} ${showWaitlist ? styles.tabActive : ''}`}
-            onClick={() => setParams({ aba: 'lancamento' }, { replace: true })}
-          >
-            Lista de lançamento
-          </button>
-          <button
-            type="button"
-            role="tab"
             aria-selected={showVisits}
             className={`${styles.tab} ${showVisits ? styles.tabActive : ''}`}
             onClick={() => setParams({ aba: 'visitas' }, { replace: true })}
@@ -188,8 +178,6 @@ export function CustomersPage() {
           <AffiliatesTab />
         ) : showVisits ? (
           <SiteAnalyticsTab />
-        ) : showWaitlist ? (
-          <WaitlistTab />
         ) : showLeads ? (
           <LeadsTab
             onConvert={(lead) => {

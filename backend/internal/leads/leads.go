@@ -57,6 +57,10 @@ type Lead struct {
 	// nome) dele.
 	AffiliateID *uuid.UUID `json:"affiliateId"`
 	Referrer    string     `json:"referrer"`
+	// Event: o evento (QR Code) em que se inscreveu; vazio se não foi num.
+	Event string `json:"event"`
+	// PromoClaimed: já contratou com a promoção de pré-lançamento.
+	PromoClaimed bool `json:"promoClaimed"`
 }
 
 // Input é o que a landing manda.
@@ -154,10 +158,14 @@ type Repository struct{ db *database.DB }
 
 func NewRepository(db *database.DB) *Repository { return &Repository{db: db} }
 
+// O cliente é o cadastrado a partir do pré-cliente ou, se não, a conta de
+// cliente com o mesmo e-mail (quem se inscreveu na lista e contratou).
 const leadColumns = `id, name, email, phone, city, plan, vehicle_type, vehicle_count, message, status, notes,
-	customer_id, EXISTS (SELECT 1 FROM launch_waitlist w WHERE lower(w.email) = lower(leads.email)),
+	COALESCE(customer_id, (SELECT u.id FROM users u WHERE lower(u.email) = lower(leads.email) AND u.role = 'customer' LIMIT 1)),
+	EXISTS (SELECT 1 FROM launch_waitlist w WHERE lower(w.email) = lower(leads.email)),
 	source, consent_at, created_at, updated_at, affiliate_id,
-	COALESCE((SELECT ` + ReferrerLabel + ` FROM affiliates a WHERE a.id = leads.affiliate_id), '')`
+	COALESCE((SELECT ` + ReferrerLabel + ` FROM affiliates a WHERE a.id = leads.affiliate_id), ''), event,
+	EXISTS (SELECT 1 FROM launch_promo_claims c JOIN users u ON u.id = c.customer_id WHERE lower(u.email) = lower(leads.email))`
 
 // ReferrerLabel é como o afiliado aparece no painel: o @, ou o nome.
 const ReferrerLabel = `CASE WHEN a.handle <> '' THEN '@' || a.handle ELSE a.name END`
@@ -168,7 +176,7 @@ func scan(row database.Scanner) (*Lead, error) {
 	var l Lead
 	if err := row.Scan(&l.ID, &l.Name, &l.Email, &l.Phone, &l.City, &l.Plan, &l.VehicleType, &l.VehicleCount,
 		&l.Message, &l.Status, &l.Notes, &l.CustomerID, &l.OnLaunchList, &l.Source, &l.ConsentAt,
-		&l.CreatedAt, &l.UpdatedAt, &l.AffiliateID, &l.Referrer); err != nil {
+		&l.CreatedAt, &l.UpdatedAt, &l.AffiliateID, &l.Referrer, &l.Event, &l.PromoClaimed); err != nil {
 		return nil, database.MapError(err)
 	}
 	return &l, nil
@@ -176,15 +184,20 @@ func scan(row database.Scanner) (*Lead, error) {
 
 // save grava o interesse. Quem já está na fila (novo ou em contato) com o
 // mesmo e-mail é atualizado, em vez de virar outro pré-cliente: created diz
-// qual dos dois aconteceu.
+// se é um pré-cadastro novo para a equipe (o aviso por e-mail).
 func (r *Repository) save(ctx context.Context, in Input) (*Lead, bool, error) {
 	var lead *Lead
 	created := false
 	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
 		var id uuid.UUID
+		var listOnly bool
 		err := tx.QueryRow(ctx, `
-			SELECT id FROM leads WHERE lower(email) = $1 AND status IN ('NEW', 'CONTACTED')
-			ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, in.Email).Scan(&id)
+			SELECT id, source <> 'landing' FROM leads WHERE lower(email) = $1 AND status IN ('NEW', 'CONTACTED')
+			ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, in.Email).Scan(&id, &listOnly)
+		// Quem só tinha a inscrição na lista (evento, indicação, a caixa da
+		// landing) agora fez o pré-cadastro: para a equipe, é um pré-cadastro
+		// novo (sai o aviso, uma vez: ele passa a ser da landing).
+		created = listOnly
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			created = true
@@ -196,7 +209,7 @@ func (r *Repository) save(ctx context.Context, in Input) (*Lead, bool, error) {
 			_, err = tx.Exec(ctx, `
 				UPDATE leads SET name = $2, phone = COALESCE(NULLIF($3, ''), phone), city = COALESCE(NULLIF($4, ''), city),
 					plan = $5, vehicle_type = $6, vehicle_count = $7, message = COALESCE(NULLIF($8, ''), message),
-					affiliate_id = COALESCE(affiliate_id, $9), consent_at = NOW(), updated_at = NOW()
+					affiliate_id = COALESCE(affiliate_id, $9), source = 'landing', consent_at = NOW(), updated_at = NOW()
 				WHERE id = $1`,
 				id, in.Name, in.Phone, in.City, in.Plan, in.VehicleType, in.VehicleCount, in.Message, in.AffiliateID)
 		}
@@ -212,7 +225,7 @@ func (r *Repository) save(ctx context.Context, in Input) (*Lead, bool, error) {
 // List traz os pré-clientes, os mais recentes primeiro; status vazio traz
 // todos.
 func (r *Repository) List(ctx context.Context, status string) ([]*Lead, error) {
-	rows, err := r.db.Query(ctx, selectLead+` WHERE $1 = '' OR status = $1 ORDER BY created_at DESC LIMIT 500`, status)
+	rows, err := r.db.Query(ctx, selectLead+` WHERE $1 = '' OR status = $1 ORDER BY created_at DESC LIMIT 5000`, status)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -253,6 +266,43 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, status, notes str
 	return scan(r.db.QueryRow(ctx, `
 		UPDATE leads SET status = $2, notes = $3, updated_at = NOW() WHERE id = $1
 		RETURNING `+leadColumns, id, status, notes))
+}
+
+// RemoveFromLaunch tira o pré-cliente da lista de lançamento (ele perde o
+// direito à promoção; o pré-cliente fica).
+func (r *Repository) RemoveFromLaunch(ctx context.Context, id uuid.UUID) error {
+	tag, err := r.db.Exec(ctx, `
+		DELETE FROM launch_waitlist w USING leads l WHERE l.id = $1 AND lower(w.email) = lower(l.email)`, id)
+	if err != nil {
+		return database.MapError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		if _, err := r.Get(ctx, id); err != nil {
+			return err
+		}
+		return ValidationError{"este pré-cliente não está na lista de lançamento"}
+	}
+	return nil
+}
+
+// Delete apaga o pré-cliente a pedido dele (LGPD): os pré-cadastros com o
+// mesmo e-mail e a inscrição na lista de lançamento. Uma conta de cliente,
+// se houver, fica.
+func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
+	return database.MapError(pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
+		var email string
+		if err := tx.QueryRow(ctx, `SELECT email FROM leads WHERE id = $1`, id).Scan(&email); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM launch_waitlist WHERE lower(email) = lower($1)`, email); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `DELETE FROM leads WHERE lower(email) = lower($1)`, email)
+		return err
+	}))
 }
 
 // MarkConverted liga o pré-cliente ao cliente cadastrado a partir dele.
@@ -297,11 +347,12 @@ func (s *Service) Submit(ctx context.Context, in Input) (*Lead, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Na lista primeiro: o pré-cliente gravado em seguida já sai com ela.
+	// Na lista primeiro: o pré-cliente gravado em seguida já sai com ela. O
+	// pré-cliente é este pré-cadastro (a inscrição não cria outro).
 	if in.JoinLaunch {
-		if _, err := s.JoinWaitlist(ctx, WaitlistInput{
+		if _, err := s.joinWaitlist(ctx, WaitlistInput{
 			Name: in.Name, Email: in.Email, Phone: in.Phone, City: in.City, Consent: true, AffiliateID: in.AffiliateID,
-		}); err != nil {
+		}, false); err != nil {
 			return nil, err
 		}
 	}

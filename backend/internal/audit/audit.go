@@ -89,6 +89,8 @@ const (
 	ActionLeadUpdated = "LEAD_UPDATED"
 	// Lista de lançamento: alguém pediu para sair.
 	ActionWaitlistRemoved = "WAITLIST_REMOVED"
+	// Pré-cliente apagado a pedido dele (LGPD).
+	ActionLeadDeleted = "LEAD_DELETED"
 	// Afiliados: cadastro, valores, indicação de um cliente e fechamentos.
 	ActionAffiliateChanged = "AFFILIATE_CHANGED"
 	// ActionPaymentUnmatched: Pix pago para fatura que não estava mais em

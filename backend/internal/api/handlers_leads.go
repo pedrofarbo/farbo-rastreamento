@@ -168,6 +168,38 @@ func (s *Server) handleRemoveFromWaitlist(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
+// handleRemoveLeadFromLaunch tira o pré-cliente da lista de lançamento
+// (perde o direito à promoção; o pré-cliente fica).
+func (s *Server) handleRemoveLeadFromLaunch(w http.ResponseWriter, r *http.Request) {
+	id, err := urlUUID(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	if err := s.Leads.Repo().RemoveFromLaunch(r.Context(), id); err != nil {
+		writeLeadError(w, err)
+		return
+	}
+	s.recordAudit(r, audit.ActionWaitlistRemoved, nil, nil, map[string]any{"leadId": id})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleDeleteLead apaga o pré-cliente a pedido dele (LGPD), com a inscrição
+// na lista de lançamento.
+func (s *Server) handleDeleteLead(w http.ResponseWriter, r *http.Request) {
+	id, err := urlUUID(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	if err := s.Leads.Repo().Delete(r.Context(), id); err != nil {
+		writeLeadError(w, err)
+		return
+	}
+	s.recordAudit(r, audit.ActionLeadDeleted, nil, nil, map[string]any{"leadId": id})
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleLeadQR desenha o QR Code de um link (o da tela do evento), para
 // imprimir: ?format=svg (vetor) ou png. Só o admin.
 func (s *Server) handleLeadQR(w http.ResponseWriter, r *http.Request) {

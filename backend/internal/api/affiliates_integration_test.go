@@ -88,11 +88,20 @@ func TestAffiliatesEndToEnd(t *testing.T) {
 	if referrer["ana@indicada.test"] != "@joao.moto" || referrer["sem@link.test"] != "" || referrer["link@quebrado.test"] != "" {
 		t.Errorf("indicações na lista = %v", referrer)
 	}
+	// Todos viram pré-clientes; a Bia, pelo pré-cadastro, a Ana, pela lista.
 	var leadList []*leads.Lead
 	call(http.MethodGet, "/api/leads", nil, http.StatusOK, &leadList)
-	if len(leadList) != 1 || leadList[0].Referrer != "Maria Influencer" || leadList[0].AffiliateID == nil {
-		t.Fatalf("pré-cliente = %+v", leadList)
+	byEmail := map[string]*leads.Lead{}
+	for _, l := range leadList {
+		byEmail[l.Email] = l
 	}
+	if l := byEmail["bia@indicada.test"]; l == nil || l.Referrer != "Maria Influencer" || l.AffiliateID == nil || l.Source != "landing" {
+		t.Fatalf("pré-cliente bia = %+v", l)
+	}
+	if l := byEmail["ana@indicada.test"]; l == nil || l.Referrer != "@joao.moto" || l.Source != "indicacao" || !l.OnLaunchList {
+		t.Fatalf("pré-cliente ana = %+v", l)
+	}
+	leadList = []*leads.Lead{byEmail["bia@indicada.test"]}
 
 	// Os clientes: pelo e-mail na lista (Ana), pelo pré-cadastro (Bia), sem
 	// indicação (Caio).

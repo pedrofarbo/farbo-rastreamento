@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -15,10 +15,12 @@ import fieldStyles from '@/components/ui/Field.module.css';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { formatDateTime, formatRelative } from '@/services/format';
+import { formatDateTime, formatMoney, formatRelative } from '@/services/format';
 import type { Lead, LeadStatus } from '@/types';
 
 import styles from '../Page.module.css';
+import { EventQrCard } from './EventQrCard';
+import local from './Leads.module.css';
 
 export const LEAD_STATUS: Record<LeadStatus, { label: string; tone: BadgeTone }> = {
   NEW: { label: 'Novo', tone: 'warning' },
@@ -29,41 +31,205 @@ export const LEAD_STATUS: Record<LeadStatus, { label: string; tone: BadgeTone }>
 
 const VEHICLE_LABELS: Record<string, string> = { moto: 'moto', carro: 'carro', frota: 'frota' };
 
-function interest(lead: Lead): string {
+/** O plano e os veículos do pré-cadastro; vazio para quem só entrou na lista. */
+export function interest(lead: Pick<Lead, 'plan' | 'vehicleType' | 'vehicleCount'>): string {
+  if (!lead.plan && !lead.vehicleType) return '';
   const type = VEHICLE_LABELS[lead.vehicleType];
   const vehicles = `${lead.vehicleCount} ${lead.vehicleCount === 1 ? 'veículo' : 'veículos'}${type ? ` (${type})` : ''}`;
   return [lead.plan, vehicles].filter(Boolean).join(' · ');
 }
 
+/** O nome do evento no link ("encontro-insanos" → "Encontro Insanos"). */
+export function eventLabel(event: string): string {
+  return event
+    .split('-')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/** De onde veio: a indicação, o evento, o pré-cadastro ou a lista da landing. */
+export function originLabel(lead: Pick<Lead, 'referrer' | 'event' | 'source'>): string {
+  if (lead.referrer) return `Indicação ${lead.referrer}`;
+  if (lead.event) return eventLabel(lead.event);
+  return lead.source === 'landing' ? 'Pré-cadastro' : 'Lista (site)';
+}
+
+/** Quantos vieram de cada origem, da que mais trouxe gente. */
+export function byOrigin(list: Pick<Lead, 'referrer' | 'event' | 'source'>[]): { label: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const l of list) {
+    const label = originLabel(l);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([label, count]) => ({ label, count }));
+}
+
+/** CSV com ";" e BOM: o Excel em português abre direto, com acentos. */
+export function leadsCsv(list: Lead[]): string {
+  const cell = (value: string) => `"${value.replace(/"/g, '""')}"`;
+  const rows = list.map((l) =>
+    [
+      l.name, l.email, l.phone, l.city, originLabel(l), interest(l), l.onLaunchList ? 'Sim' : 'Não',
+      LEAD_STATUS[l.status].label, formatDateTime(l.createdAt),
+    ]
+      .map(cell)
+      .join(';'),
+  );
+  return (
+    '﻿' +
+    ['Nome;E-mail;WhatsApp;Cidade da instalação;Origem;Interesse;Lista de lançamento;Situação;Recebido em', ...rows].join('\r\n')
+  );
+}
+
+/** Busca por nome, e-mail, WhatsApp ou cidade, sem acento nem caixa. */
+export function matches(lead: Pick<Lead, 'name' | 'email' | 'city' | 'phone'>, search: string): boolean {
+  const plain = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const q = plain(search.trim());
+  if (!q) return true;
+  const digits = q.replace(/\D/g, '');
+  return (
+    [lead.name, lead.email, lead.city].some((v) => plain(v).includes(q)) ||
+    (digits.length >= 4 && lead.phone.replace(/\D/g, '').includes(digits))
+  );
+}
+
+/** Conversa no WhatsApp com o número (com o 55 do Brasil). */
+function whatsappLink(phone: string): string {
+  const d = phone.replace(/\D/g, '');
+  return `https://wa.me/${d.length <= 11 ? `55${d}` : d}`;
+}
+
+function download(list: Lead[]) {
+  const blob = new Blob([leadsCsv(list)], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `pre-clientes-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 /**
- * Pré-clientes: quem deixou o interesse na landing. A equipe entra em
- * contato, anota e, fechando, cadastra o cliente a partir daqui.
+ * Pré-clientes: todo mundo que deixou o contato — o pré-cadastro da landing
+ * e a lista de lançamento (landing, QR Code dos eventos, link dos
+ * afiliados). A equipe entra em contato, anota e, fechando, cadastra o
+ * cliente daqui. Estar na lista de lançamento é o direito à promoção.
  */
 export function LeadsTab({ onConvert }: { onConvert: (lead: Lead) => void }) {
+  const { notify } = useToast();
   const [status, setStatus] = useState<LeadStatus | ''>('');
+  const [onList, setOnList] = useState<'' | 'on' | 'off'>('');
+  const [origin, setOrigin] = useState('');
+  const [search, setSearch] = useState('');
   const [opened, setOpened] = useState<Lead | null>(null);
 
-  const leads = useQuery({
-    queryKey: ['leads', status],
-    queryFn: () => leadsApi.list(status || undefined),
-    refetchInterval: 60_000,
-  });
-  const list = leads.data ?? [];
+  const leads = useQuery({ queryKey: ['leads', 'all'], queryFn: () => leadsApi.list(), refetchInterval: 60_000 });
+  const promo = useQuery({ queryKey: ['leads', 'promo'], queryFn: leadsApi.promo, refetchInterval: 60_000 });
+  const all = useMemo(() => leads.data ?? [], [leads.data]);
+  const origins = useMemo(() => byOrigin(all), [all]);
+  const list = all.filter(
+    (l) =>
+      (!status || l.status === status) &&
+      (!onList || l.onLaunchList === (onList === 'on')) &&
+      (!origin || originLabel(l) === origin) &&
+      matches(l, search),
+  );
+  const usage = promo.data;
+  const filtered = list.length !== all.length;
+  const onLaunch = all.filter((l) => l.onLaunchList).length;
+
+  const copyEmails = async () => {
+    try {
+      await navigator.clipboard.writeText(list.map((l) => l.email).join(', '));
+      notify({ tone: 'success', title: `${list.length} e-mail(s) copiados`, description: 'Cole no campo Cco do e-mail.' });
+    } catch {
+      notify({ tone: 'error', title: 'Não deu para copiar', description: 'Use Baixar CSV.' });
+    }
+  };
 
   return (
     <>
-      <Card flush>
-        <div style={{ padding: 'var(--space-3)', maxWidth: 280 }}>
+      {usage && (
+        <div className={styles.note}>
+          {usage.enabled ? (
+            <>
+              <strong>
+                Promoção de pré-lançamento: {usage.used} de {usage.slots} vagas usadas.
+              </strong>{' '}
+              Quem está na lista de lançamento contrata o primeiro rastreador por {formatMoney(usage.offer.equipmentCents)} e
+              paga {formatMoney(usage.offer.monthlyCents)} de mensalidade ({formatMoney(usage.offer.insanosMonthlyCents)} no plano{' '}
+              {usage.offer.insanosPlanName}) nos {usage.offer.months} primeiros meses. A vaga é ocupada na contratação (1
+              veículo por cliente), pelo e-mail da conta.
+            </>
+          ) : (
+            <>
+              Promoção de pré-lançamento encerrada ({usage.used} {usage.used === 1 ? 'cliente usou' : 'clientes usaram'}).
+            </>
+          )}
+        </div>
+      )}
+
+      <Card
+        flush
+        title={`${filtered ? `${list.length} de ${all.length}` : all.length} ${all.length === 1 ? 'pré-cliente' : 'pré-clientes'}`}
+        subtitle={
+          all.length > 0
+            ? `${onLaunch} na lista de lançamento · por origem: ${origins.map((o) => `${o.label} ${o.count}`).join(' · ')}`
+            : 'Pré-cadastro e lista de lançamento (landing, QR Code dos eventos e links dos afiliados).'
+        }
+        actions={
+          list.length > 0 && (
+            <div className={styles.actions}>
+              <Button size="small" variant="ghost" onClick={() => void copyEmails()}>
+                Copiar e-mails
+              </Button>
+              <Button size="small" variant="secondary" onClick={() => download(list)}>
+                Baixar CSV
+              </Button>
+            </div>
+          )
+        }
+      >
+        <div className={local.filters}>
+          <input
+            className={fieldStyles.input}
+            type="search"
+            aria-label="Buscar"
+            placeholder="Buscar por nome, e-mail, WhatsApp ou cidade"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
           <select
             className={fieldStyles.select}
             aria-label="Situação"
             value={status}
-            onChange={(event) => setStatus(event.target.value as LeadStatus | '')}
+            onChange={(e) => setStatus(e.target.value as LeadStatus | '')}
           >
             <option value="">Todas as situações</option>
             {(Object.keys(LEAD_STATUS) as LeadStatus[]).map((s) => (
               <option key={s} value={s}>
                 {LEAD_STATUS[s].label}
+              </option>
+            ))}
+          </select>
+          <select
+            className={fieldStyles.select}
+            aria-label="Lista de lançamento"
+            value={onList}
+            onChange={(e) => setOnList(e.target.value as '' | 'on' | 'off')}
+          >
+            <option value="">Na lista ou não</option>
+            <option value="on">Na lista de lançamento</option>
+            <option value="off">Fora da lista</option>
+          </select>
+          <select className={fieldStyles.select} aria-label="Origem" value={origin} onChange={(e) => setOrigin(e.target.value)}>
+            <option value="">Todas as origens</option>
+            {origins.map((o) => (
+              <option key={o.label} value={o.label}>
+                {o.label} ({o.count})
               </option>
             ))}
           </select>
@@ -73,8 +239,12 @@ export function LeadsTab({ onConvert }: { onConvert: (lead: Lead) => void }) {
         ) : list.length === 0 ? (
           <EmptyState
             icon="📝"
-            title="Nenhum pré-cliente aqui"
-            description="Quem preenche o pré-cadastro na landing (Quero meu rastreador) aparece nesta lista."
+            title={all.length === 0 ? 'Nenhum pré-cliente ainda' : 'Ninguém com esses filtros'}
+            description={
+              all.length === 0
+                ? 'Quem faz o pré-cadastro ou entra na lista de lançamento — pela landing, pelo QR Code de um evento ou pelo link de um afiliado — aparece aqui.'
+                : 'Mude a busca ou os filtros.'
+            }
           />
         ) : (
           <div className={styles.tableWrap}>
@@ -82,6 +252,8 @@ export function LeadsTab({ onConvert }: { onConvert: (lead: Lead) => void }) {
               <thead>
                 <tr>
                   <th>Pré-cliente</th>
+                  <th>Cidade</th>
+                  <th>Origem</th>
                   <th>Interesse</th>
                   <th>Recebido</th>
                   <th>Situação</th>
@@ -92,21 +264,33 @@ export function LeadsTab({ onConvert }: { onConvert: (lead: Lead) => void }) {
                 {list.map((lead) => (
                   <tr key={lead.id}>
                     <td data-label="Pré-cliente">
-                      <strong>{lead.name}</strong>
-                      <div className={billing.muted}>{lead.email}</div>
-                      {lead.onLaunchList && <div className={billing.muted}>na lista de lançamento</div>}
-                      {lead.phone && <div className={billing.muted}>{lead.phone}</div>}
-                      {lead.referrer && <Badge tone="success">Indicação {lead.referrer}</Badge>}
+                      <span className={local.who}>
+                        <strong>{lead.name || <span className={billing.muted}>sem nome</span>}</strong>
+                        <span className={billing.muted}>{lead.email}</span>
+                        {lead.phone && (
+                          <a href={whatsappLink(lead.phone)} target="_blank" rel="noreferrer">
+                            {lead.phone}
+                          </a>
+                        )}
+                      </span>
                     </td>
-                    <td data-label="Interesse">
-                      {interest(lead)}
-                      {lead.city && <div className={billing.muted}>{lead.city}</div>}
+                    <td data-label="Cidade">{lead.city || <span className={billing.muted}>—</span>}</td>
+                    <td data-label="Origem">
+                      <Badge tone={lead.referrer ? 'success' : lead.event ? 'accent' : 'neutral'}>{originLabel(lead)}</Badge>
                     </td>
+                    <td data-label="Interesse">{interest(lead) || <span className={billing.muted}>—</span>}</td>
                     <td data-label="Recebido" title={formatDateTime(lead.createdAt)}>
                       {formatRelative(lead.createdAt)}
                     </td>
                     <td data-label="Situação">
-                      <Badge tone={LEAD_STATUS[lead.status].tone}>{LEAD_STATUS[lead.status].label}</Badge>
+                      <span className={local.badges}>
+                        <Badge tone={LEAD_STATUS[lead.status].tone}>{LEAD_STATUS[lead.status].label}</Badge>
+                        {lead.promoClaimed ? (
+                          <Badge tone="success">Usou a promoção</Badge>
+                        ) : (
+                          lead.onLaunchList && <Badge tone="accent">Na lista</Badge>
+                        )}
+                      </span>
                     </td>
                     <td>
                       <Button size="small" variant="secondary" onClick={() => setOpened(lead)}>
@@ -120,6 +304,8 @@ export function LeadsTab({ onConvert }: { onConvert: (lead: Lead) => void }) {
           </div>
         )}
       </Card>
+
+      <EventQrCard />
 
       <LeadDetailsModal
         lead={opened}
@@ -146,22 +332,43 @@ function LeadDetailsModal({
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<LeadStatus>('NEW');
   const [notes, setNotes] = useState('');
+  const [confirm, setConfirm] = useState<'' | 'list' | 'delete'>('');
 
   useEffect(() => {
     if (lead) {
       setStatus(lead.status);
       setNotes(lead.notes);
+      setConfirm('');
     }
   }, [lead]);
 
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['leads'] });
   const save = useMutation({
     mutationFn: () => leadsApi.update(lead!.id, { status, notes }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      refresh();
       notify({ tone: 'success', title: 'Pré-cliente atualizado' });
       onClose();
     },
     onError: (err: Error) => notify({ tone: 'error', title: 'Não foi possível salvar', description: err.message }),
+  });
+  const leaveList = useMutation({
+    mutationFn: () => leadsApi.removeFromLaunch(lead!.id),
+    onSuccess: () => {
+      refresh();
+      notify({ tone: 'success', title: 'Fora da lista de lançamento', description: lead?.email });
+      onClose();
+    },
+    onError: (err: Error) => notify({ tone: 'error', title: 'Não foi possível', description: err.message }),
+  });
+  const remove = useMutation({
+    mutationFn: () => leadsApi.remove(lead!.id),
+    onSuccess: () => {
+      refresh();
+      notify({ tone: 'success', title: 'Pré-cliente apagado', description: lead?.email });
+      onClose();
+    },
+    onError: (err: Error) => notify({ tone: 'error', title: 'Não foi possível apagar', description: err.message }),
   });
 
   const changed = lead !== null && (status !== lead.status || notes.trim() !== lead.notes);
@@ -170,22 +377,42 @@ function LeadDetailsModal({
     <Modal
       open={lead !== null}
       wide
-      title={lead ? lead.name : 'Pré-cliente'}
+      title={lead ? lead.name || lead.email : 'Pré-cliente'}
       onClose={onClose}
       footer={
-        <>
-          {lead && lead.status !== 'CONVERTED' && (
-            <Button variant="secondary" onClick={() => onConvert(lead)}>
-              Cadastrar como cliente
+        confirm ? (
+          <>
+            <span className={local.confirm}>
+              {confirm === 'list'
+                ? 'Tirar da lista de lançamento? Perde o direito à promoção; o pré-cliente fica.'
+                : 'Apagar o pré-cliente e a inscrição na lista? Use quando a pessoa pedir (LGPD).'}
+            </span>
+            <Button variant="ghost" onClick={() => setConfirm('')}>
+              Não
             </Button>
-          )}
-          <Button variant="ghost" onClick={onClose}>
-            Fechar
-          </Button>
-          <Button variant="primary" loading={save.isPending} disabled={!changed} onClick={() => save.mutate()}>
-            Salvar
-          </Button>
-        </>
+            <Button
+              variant="danger"
+              loading={leaveList.isPending || remove.isPending}
+              onClick={() => (confirm === 'list' ? leaveList.mutate() : remove.mutate())}
+            >
+              {confirm === 'list' ? 'Tirar da lista' : 'Apagar'}
+            </Button>
+          </>
+        ) : (
+          <>
+            {lead && lead.status !== 'CONVERTED' && !lead.customerId && (
+              <Button variant="secondary" onClick={() => onConvert(lead)}>
+                Cadastrar como cliente
+              </Button>
+            )}
+            <Button variant="ghost" onClick={onClose}>
+              Fechar
+            </Button>
+            <Button variant="primary" loading={save.isPending} disabled={!changed} onClick={() => save.mutate()}>
+              Salvar
+            </Button>
+          </>
+        )
       }
     >
       {lead && (
@@ -194,15 +421,26 @@ function LeadDetailsModal({
             <Info label="E-mail">
               <a href={`mailto:${lead.email}`}>{lead.email}</a>
             </Info>
-            {lead.phone && <Info label="Telefone">{lead.phone}</Info>}
-            {lead.city && <Info label="Cidade">{lead.city}</Info>}
-            <Info label="Interesse">{interest(lead)}</Info>
-            <Info label="Lista de lançamento">
-              {lead.onLaunchList
-                ? 'Sim: tem direito à promoção de pré-lançamento enquanto houver vaga (contratando com este e-mail).'
-                : 'Não'}
+            {lead.phone && (
+              <Info label="WhatsApp">
+                <a href={whatsappLink(lead.phone)} target="_blank" rel="noreferrer">
+                  {lead.phone}
+                </a>
+              </Info>
+            )}
+            {lead.city && <Info label="Cidade da instalação">{lead.city}</Info>}
+            <Info label="Origem">
+              {originLabel(lead)}
+              {lead.referrer && ' (link de afiliado)'}
             </Info>
-            {lead.referrer && <Info label="Indicado por">{lead.referrer} (link de afiliado)</Info>}
+            {interest(lead) && <Info label="Interesse">{interest(lead)}</Info>}
+            <Info label="Lista de lançamento">
+              {lead.promoClaimed
+                ? 'Já contratou com a promoção de pré-lançamento.'
+                : lead.onLaunchList
+                  ? 'Sim: tem direito à promoção de pré-lançamento enquanto houver vaga (contratando com este e-mail).'
+                  : 'Não'}
+            </Info>
             {lead.message && (
               <Info label="Mensagem">
                 <span style={{ whiteSpace: 'pre-wrap' }}>{lead.message}</span>
@@ -238,6 +476,16 @@ function LeadDetailsModal({
               onChange={(e) => setNotes(e.target.value)}
             />
           </label>
+          <div className={local.dangerZone}>
+            {lead.onLaunchList && !lead.promoClaimed && (
+              <Button size="small" variant="ghost" onClick={() => setConfirm('list')}>
+                Tirar da lista de lançamento
+              </Button>
+            )}
+            <Button size="small" variant="ghost" onClick={() => setConfirm('delete')}>
+              Apagar (pedido da pessoa, LGPD)
+            </Button>
+          </div>
         </div>
       )}
     </Modal>

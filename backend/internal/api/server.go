@@ -496,6 +496,8 @@ func (s *Server) routes() chi.Router {
 						r.Get("/promo", s.handleLaunchPromoUsage)
 						r.Get("/qr", s.handleLeadQR)
 						r.Delete("/waitlist/{id}", s.handleRemoveFromWaitlist)
+						r.Delete("/{id}", s.handleDeleteLead)
+						r.Delete("/{id}/launch-list", s.handleRemoveLeadFromLaunch)
 						r.Patch("/{id}", s.handleUpdateLead)
 					})
 					r.Patch("/subscriptions/{id}", s.handleUpdateSubscription)

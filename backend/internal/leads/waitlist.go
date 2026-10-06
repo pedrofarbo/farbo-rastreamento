@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 )
@@ -110,13 +111,20 @@ func normalizeWaitlist(in WaitlistInput) (WaitlistInput, error) {
 // JoinWaitlist põe o e-mail na lista. Quem já está fica (com o nome
 // atualizado, se veio): mandar de novo não duplica. O evento e o afiliado
 // são os primeiros que trouxeram a pessoa; a cidade, a última informada.
+// Quem se inscreve vira pré-cliente também (ou completa o que já é).
 func (s *Service) JoinWaitlist(ctx context.Context, in WaitlistInput) (*WaitlistEntry, error) {
+	return s.joinWaitlist(ctx, in, true)
+}
+
+// joinWaitlist: ensureLead cria (ou completa) o pré-cliente da inscrição.
+func (s *Service) joinWaitlist(ctx context.Context, in WaitlistInput, ensureLead bool) (*WaitlistEntry, error) {
 	in, err := normalizeWaitlist(in)
 	if err != nil {
 		return nil, err
 	}
 	var e WaitlistEntry
-	err = s.repo.db.QueryRow(ctx, `
+	err = pgx.BeginFunc(ctx, s.repo.db, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `
 		INSERT INTO launch_waitlist (name, email, phone, event, city, affiliate_id, consent_at)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW())
 		ON CONFLICT (lower(email)) DO UPDATE SET
@@ -128,9 +136,16 @@ func (s *Service) JoinWaitlist(ctx context.Context, in WaitlistInput) (*Waitlist
 			consent_at = NOW(), updated_at = NOW()
 		RETURNING id, name, email, phone, event, city, consent_at, created_at, updated_at, affiliate_id,
 			COALESCE((SELECT `+ReferrerLabel+` FROM affiliates a WHERE a.id = launch_waitlist.affiliate_id), '')`,
-		in.Name, in.Email, in.Phone, in.Event, in.City, in.AffiliateID).
-		Scan(&e.ID, &e.Name, &e.Email, &e.Phone, &e.Event, &e.City, &e.ConsentAt, &e.CreatedAt, &e.UpdatedAt,
-			&e.AffiliateID, &e.Referrer)
+			in.Name, in.Email, in.Phone, in.Event, in.City, in.AffiliateID).
+			Scan(&e.ID, &e.Name, &e.Email, &e.Phone, &e.Event, &e.City, &e.ConsentAt, &e.CreatedAt, &e.UpdatedAt,
+				&e.AffiliateID, &e.Referrer); err != nil {
+			return err
+		}
+		if !ensureLead {
+			return nil
+		}
+		return ensureLeadFor(ctx, tx, in)
+	})
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -174,4 +189,40 @@ func (r *Repository) RemoveFromWaitlist(ctx context.Context, id uuid.UUID) error
 		return ErrNotFound
 	}
 	return nil
+}
+
+// ensureLeadFor faz da inscrição um pré-cliente: completa o mais recente com
+// o mesmo e-mail (nome e WhatsApp se faltarem, a cidade mais nova, o evento
+// e o afiliado se não tiver) ou cria um, com a origem. Quem já é cliente
+// entra como convertido. Não avisa a equipe: o aviso é do pré-cadastro.
+func ensureLeadFor(ctx context.Context, tx pgx.Tx, in WaitlistInput) error {
+	source := "lancamento"
+	switch {
+	case in.AffiliateID != nil:
+		source = "indicacao"
+	case in.Event != "":
+		source = "evento"
+	}
+	_, err := tx.Exec(ctx, `
+		WITH latest AS (
+			SELECT id FROM leads WHERE lower(email) = lower($2) ORDER BY created_at DESC LIMIT 1
+		), touched AS (
+			UPDATE leads l SET
+				name = COALESCE(NULLIF(l.name, ''), $1),
+				phone = COALESCE(NULLIF(l.phone, ''), $3),
+				city = COALESCE(NULLIF($5, ''), l.city),
+				event = COALESCE(NULLIF(l.event, ''), $4),
+				affiliate_id = COALESCE(l.affiliate_id, $6),
+				updated_at = NOW()
+			FROM latest WHERE l.id = latest.id
+			RETURNING l.id
+		), customer AS (
+			SELECT id FROM users WHERE lower(email) = lower($2) AND role = 'customer' LIMIT 1
+		)
+		INSERT INTO leads (name, email, phone, city, event, affiliate_id, source, status, customer_id, consent_at)
+		SELECT $1, $2, $3, $5, $4, $6, $7,
+			CASE WHEN EXISTS (SELECT 1 FROM customer) THEN 'CONVERTED' ELSE 'NEW' END, (SELECT id FROM customer), NOW()
+		WHERE NOT EXISTS (SELECT 1 FROM latest)`,
+		in.Name, in.Email, in.Phone, in.Event, in.City, in.AffiliateID, source)
+	return err
 }
