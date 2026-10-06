@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/melhorenvio"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 )
@@ -100,6 +103,9 @@ type adminTrackerOrderRequest struct {
 	// LaunchPromo aplica a promoção de pré-lançamento (o cliente precisa ter
 	// direito; ver /customers/{id}/launch-promo).
 	LaunchPromo bool `json:"launchPromo"`
+	// ShippingServiceID: o frete cobrado do cliente (zero: sem frete —
+	// entregue em mãos, instalado na base).
+	ShippingServiceID int `json:"shippingServiceId"`
 }
 
 func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request) {
@@ -113,9 +119,17 @@ func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	var shipping *fulfillment.Choice
+	if req.ShippingServiceID > 0 && req.Vehicle.DeviceID == nil {
+		var err error
+		if shipping, err = s.chooseShipping(r.Context(), customerID, req.ShippingServiceID); err != nil {
+			writeShippingError(w, err)
+			return
+		}
+	}
 	result, err := s.Orders.Place(r.Context(), customerID, orders.Order{
 		Vehicle: req.Vehicle, EquipmentCents: req.EquipmentCents, SetupDueDate: req.SetupDueDate, Plan: req.Plan,
-		LaunchPromo: req.LaunchPromo,
+		LaunchPromo: req.LaunchPromo, Shipping: shipping,
 	})
 	if err != nil {
 		writeOrderError(w, r, err, "cliente não encontrado")
@@ -132,6 +146,12 @@ type customerTrackerOrderRequest struct {
 	// LaunchPromo: o painel mostrou os preços da promoção (catálogo) e o
 	// cliente confirmou com eles.
 	LaunchPromo bool `json:"launchPromo"`
+	// ShippingServiceID: a forma de entrega escolhida (obrigatória com o
+	// frete ligado); o preço é cotado de novo aqui.
+	ShippingServiceID int `json:"shippingServiceId"`
+	// ArrangeDelivery: em vez da transportadora, combinar a entrega com a
+	// central (só nas cidades de SHIPPING_ARRANGE_CITIES).
+	ArrangeDelivery bool `json:"arrangeDelivery"`
 }
 
 func (s *Server) handleMyOrderTracker(w http.ResponseWriter, r *http.Request) {
@@ -147,6 +167,34 @@ func (s *Server) handleMyOrderTracker(w http.ResponseWriter, r *http.Request) {
 		writeOrderError(w, r, err, "cliente não encontrado")
 		return
 	}
+	// O frete: com o Melhor Envios ligado e o endereço salvo, o cliente
+	// escolhe a entrega e paga junto com o equipamento — ou, perto da base,
+	// combina a entrega com a central, sem frete.
+	if s.Fulfillment != nil && s.Fulfillment.ShippingEnabled() {
+		address, err := s.Addresses.Get(r.Context(), customerID)
+		if err != nil {
+			handleStoreError(w, err, "")
+			return
+		}
+		if address != nil {
+			switch {
+			case req.ArrangeDelivery && req.ShippingServiceID > 0:
+				writeError(w, http.StatusBadRequest, "escolha só uma forma de entrega")
+				return
+			case req.ArrangeDelivery:
+				order.Shipping, err = s.Fulfillment.Arrange(address.City, address.State)
+			case req.ShippingServiceID <= 0:
+				writeError(w, http.StatusBadRequest, "escolha a forma de entrega")
+				return
+			default:
+				order.Shipping, err = s.chooseShipping(r.Context(), customerID, req.ShippingServiceID)
+			}
+			if err != nil {
+				writeShippingError(w, err)
+				return
+			}
+		}
+	}
 	result, err := s.Orders.Place(r.Context(), customerID, order)
 	if err != nil {
 		writeOrderError(w, r, err, "cliente não encontrado")
@@ -154,6 +202,102 @@ func (s *Server) handleMyOrderTracker(w http.ResponseWriter, r *http.Request) {
 	}
 	s.orderPlaced(r, customerID.String(), result, "CLIENTE")
 	writeJSON(w, http.StatusCreated, result)
+}
+
+// shippingQuoteView é a cotação do frete para a tela do pedido.
+type shippingQuoteView struct {
+	// Enabled: o frete é cotado (Melhor Envios ligado); sem isso, o pedido
+	// segue sem frete.
+	Enabled bool                `json:"enabled"`
+	ZipCode string              `json:"zipCode"`
+	Quotes  []melhorenvio.Quote `json:"quotes"`
+	// Problem: o que impediu a cotação (sem endereço, Melhor Envios fora).
+	Problem string `json:"problem"`
+	// Arrange: o endereço fica onde dá para combinar a entrega com a
+	// central (vale mesmo com o Melhor Envios fora).
+	Arrange bool `json:"arrange"`
+}
+
+// shippingQuote cota o frete até o endereço de entrega do cliente.
+func (s *Server) shippingQuote(r *http.Request, customerID uuid.UUID) shippingQuoteView {
+	out := shippingQuoteView{Quotes: []melhorenvio.Quote{}}
+	if s.Fulfillment == nil || !s.Fulfillment.ShippingEnabled() {
+		return out
+	}
+	out.Enabled = true
+	address, err := s.Addresses.Get(r.Context(), customerID)
+	if err != nil {
+		out.Problem = "não deu para ler o endereço de entrega"
+		return out
+	}
+	if address == nil {
+		out.Problem = "cadastre o endereço de entrega para calcular o frete"
+		return out
+	}
+	out.ZipCode = address.ZipCode
+	out.Arrange = s.Fulfillment.CanArrange(address.City, address.State)
+	quotes, err := s.Fulfillment.QuoteTo(r.Context(), address.ZipCode)
+	if err != nil {
+		s.Log.Warn("falha ao cotar o frete do pedido", "customer", customerID, "err", err)
+		out.Problem = shippingProblem(err)
+		return out
+	}
+	if len(quotes) == 0 {
+		out.Problem = "nenhuma transportadora atende este CEP"
+	}
+	out.Quotes = quotes
+	return out
+}
+
+// shippingProblem traduz a falha da cotação para a tela.
+func shippingProblem(err error) string {
+	var rule fulfillment.RuleError
+	if errors.As(err, &rule) {
+		return rule.Message
+	}
+	return "não deu para calcular o frete agora; tente de novo em instantes"
+}
+
+// chooseShipping acha a forma de entrega escolhida, cotada de novo para o
+// endereço do cliente (o preço é o do servidor).
+func (s *Server) chooseShipping(ctx context.Context, customerID uuid.UUID, serviceID int) (*fulfillment.Choice, error) {
+	address, err := s.Addresses.Get(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+	if address == nil {
+		return nil, orders.ErrAddressRequired
+	}
+	return s.Fulfillment.Choose(ctx, address.ZipCode, serviceID)
+}
+
+func writeShippingError(w http.ResponseWriter, err error) {
+	var rule fulfillment.RuleError
+	switch {
+	case errors.Is(err, orders.ErrAddressRequired):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error(), "code": codeAddressRequired})
+	case errors.As(err, &rule):
+		writeError(w, http.StatusBadRequest, rule.Message)
+	case errors.Is(err, fulfillment.ErrShippingDisabled):
+		writeError(w, http.StatusBadRequest, "o frete não está configurado")
+	default:
+		writeError(w, http.StatusServiceUnavailable, "não deu para calcular o frete agora; tente de novo em instantes")
+	}
+}
+
+// handleMyShippingQuote: as formas de entrega para o pedido do cliente.
+func (s *Server) handleMyShippingQuote(w http.ResponseWriter, r *http.Request) {
+	customerID, _ := customerOf(r)
+	writeJSON(w, http.StatusOK, s.shippingQuote(r, customerID))
+}
+
+// handleCustomerShippingQuote: as formas de entrega no pedido feito pela central.
+func (s *Server) handleCustomerShippingQuote(w http.ResponseWriter, r *http.Request) {
+	customerID, ok := s.customerFromURL(w, r)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, s.shippingQuote(r, customerID))
 }
 
 // orderPlaced atualiza os caches e audita o pedido.
@@ -170,6 +314,13 @@ func (s *Server) orderPlaced(r *http.Request, customerID string, result *orders.
 	}
 	if result.Subscription.PromoPriceCents != nil {
 		meta["launchPromo"] = true
+	}
+	if result.Shipping != nil {
+		meta["shippingService"] = result.Shipping.Name
+		meta["shippingCents"] = result.Shipping.PriceCents
+		if result.Shipping.Arranged {
+			meta["deliveryArranged"] = true
+		}
 	}
 	s.recordAudit(r, audit.ActionTrackerOrdered, &result.Vehicle.ID, result.Vehicle.DeviceID, meta)
 }

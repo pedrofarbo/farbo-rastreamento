@@ -60,7 +60,9 @@ func (n *recordingLeadNotifier) count() int {
 
 // newLeadsEnv sobe a API com os pré-clientes e um admin e um operador
 // (ver integrationDB).
-func newLeadsEnv(t *testing.T) (*credEnv, *recordingLeadNotifier) {
+// tweak ajusta as dependências antes de subir a API (ex.: o Melhor Envios
+// de mentira dos testes de frete).
+func newLeadsEnv(t *testing.T, tweak ...func(*Deps)) (*credEnv, *recordingLeadNotifier) {
 	t.Helper()
 	db := integrationDB(t)
 	ctx := context.Background()
@@ -104,7 +106,7 @@ func newLeadsEnv(t *testing.T) (*credEnv, *recordingLeadNotifier) {
 	fences := geofences.NewService(geofences.NewRepository(db))
 	ingestor := tracking.NewIngestor(devicesSvc, vehiclesSvc, positions, states,
 		events.NewService(events.NewRepository(db), hub, log), fences, nil, nil, hub, cfg.Tracking, metrics, log)
-	server := NewServer(Deps{
+	deps := Deps{
 		Config: cfg, Log: log, Metrics: metrics, DB: db, Auth: authSvc, Audit: auditSvc,
 		Billing:   billingSvc,
 		Payments:  payments.NewService(payments.NewRepository(db), billingSvc, nil, auditSvc, cfg.Payments, log),
@@ -120,7 +122,11 @@ func newLeadsEnv(t *testing.T) (*credEnv, *recordingLeadNotifier) {
 		Finance:     finance.NewService(db, &fakeFinanceMailer{}, log),
 		Affiliates:  affiliates.NewService(db, log),
 		WS:          ws.NewHandler(hub, nil), Hub: hub,
-	})
+	}
+	for _, f := range tweak {
+		f(&deps)
+	}
+	server := NewServer(deps)
 	srv := httptest.NewServer(server.Handler())
 	t.Cleanup(srv.Close)
 	env := &credEnv{t: t, db: db, srv: srv}

@@ -161,6 +161,8 @@ function OrderRow({ f, onOpen }: { f: Fulfillment; onOpen: () => void }) {
             <div>{f.trackingCode}</div>
             <div className={billing.muted}>{f.shippingService}</div>
           </>
+        ) : f.deliveryArranged ? (
+          <span>Entrega combinada</span>
         ) : (
           <span className={billing.muted}>—</span>
         )}

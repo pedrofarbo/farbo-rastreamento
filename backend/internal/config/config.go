@@ -451,6 +451,9 @@ type Shipping struct {
 	Services string
 	// SyncInterval é de quanto em quanto tempo o rastreio é consultado.
 	SyncInterval time.Duration
+	// ArrangeCities são as cidades ("São Paulo/SP") onde o cliente pode
+	// combinar a entrega com a central, sem frete.
+	ArrangeCities []string
 }
 
 // ShippingAddress é o remetente das etiquetas.
@@ -743,6 +746,7 @@ func Load() (*Config, error) {
 			NonCommercial:  bl("MELHORENVIO_NON_COMMERCIAL", true),
 			Services:       str("MELHORENVIO_SERVICES", ""),
 			SyncInterval:   dur("MELHORENVIO_SYNC_INTERVAL", 15*time.Minute),
+			ArrangeCities:  csv("SHIPPING_ARRANGE_CITIES", "São Paulo/SP"),
 		},
 		Billing: Billing{
 			InvoiceLeadDays:  num("BILLING_INVOICE_LEAD_DAYS", 10),

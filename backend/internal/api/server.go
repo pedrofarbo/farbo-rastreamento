@@ -322,6 +322,7 @@ func (s *Server) routes() chi.Router {
 				// Novo veículo (veículo → rastreador → assinatura): bloqueado com o
 				// acesso suspenso.
 				r.With(s.requireActiveCustomer).Post("/trackers", s.handleMyOrderTracker)
+				r.Get("/shipping-quote", s.handleMyShippingQuote)
 				// Assinatura antiga sem veículo: o cliente informa qual é.
 				r.Post("/subscriptions/{subscriptionId}/vehicle", s.handleMyAttachVehicle)
 				// Acompanhamento do chip e do rastreador até a casa dele.
@@ -478,6 +479,7 @@ func (s *Server) routes() chi.Router {
 							r.Post("/invite", s.handleInviteCustomer)
 							r.Post("/invoices", s.handleCreateInvoice)
 							r.Post("/trackers", s.handleAdminOrderTracker)
+							r.Get("/shipping-quote", s.handleCustomerShippingQuote)
 							r.Get("/launch-promo", s.handleCustomerLaunchPromo)
 							if s.Affiliates != nil {
 								r.Put("/affiliate", s.handleSetCustomerAffiliate)

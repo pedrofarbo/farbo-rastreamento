@@ -6,6 +6,7 @@ import { catalogApi, customersApi, meApi } from '@/api/resources';
 import type { VehicleInput } from '@/api/resources';
 import { AddressFields, EMPTY_ADDRESS, isAddressComplete } from '@/components/address/AddressFields';
 import { DeliveryBox } from '@/components/address/DeliveryBox';
+import { ARRANGE_DELIVERY, ShippingOptions, deliveryLabel, quoteName } from '@/components/billing/ShippingOptions';
 import { promoMonthlyFor } from '@/components/billing/MonthlyPrice';
 import {
   DEFAULT_SUBSCRIPTION,
@@ -120,6 +121,10 @@ export function NewVehicleWizard({
   const [adminDraft, setAdminDraft] = useState<AdminDraft | null>(null);
   const [error, setError] = useState('');
   const [showInstallers, setShowInstallers] = useState(false);
+  // O frete escolhido (serviço do Melhor Envios); 0: sem frete;
+  // ARRANGE_DELIVERY: combinar a entrega. Nulo: ainda não escolhido (o mais
+  // barato vem marcado quando a cotação chega).
+  const [shippingId, setShippingId] = useState<number | null>(null);
 
   const catalog = useQuery({ queryKey: ['catalog'], queryFn: catalogApi.get, enabled: open });
   // Para a central: se o cliente pode contratar com a promoção de pré-lançamento.
@@ -139,6 +144,7 @@ export function NewVehicleWizard({
     setAddressDraft(null);
     setAdminDraft(null);
     setError('');
+    setShippingId(null);
   }, [open]);
 
   // Os valores da central partem do catálogo, uma vez por abertura: uma nova
@@ -181,7 +187,13 @@ export function NewVehicleWizard({
 
   const order = useMutation({
     mutationFn: async () => {
-      if (!admin) return meApi.orderTracker({ vehicle, launchPromo: Boolean(customerPromo) });
+      if (!admin) {
+        return meApi.orderTracker({
+          vehicle,
+          launchPromo: Boolean(customerPromo),
+          ...(arranged ? { arrangeDelivery: true } : freight ? { shippingServiceId: freight.serviceId } : {}),
+        });
+      }
       const d = adminDraft as AdminDraft;
       const plan = subscriptionFromDraft(d.plan);
       if (typeof plan === 'string') throw new Error(plan);
@@ -191,6 +203,7 @@ export function NewVehicleWizard({
         setupDueDate: d.dueDate || null,
         plan,
         launchPromo: d.promo,
+        shippingServiceId: freight?.serviceId ?? 0,
       });
     },
     onSuccess: onDone,
@@ -210,6 +223,8 @@ export function NewVehicleWizard({
         setStep(1);
         queryClient.invalidateQueries({ queryKey: ['me', 'account'] });
       }
+      // A forma de entrega mudou (ou o frete não deu para calcular): cota de novo.
+      if (/entrega|frete/.test(err.message)) void shippingQuote.refetch();
     },
   });
 
@@ -235,6 +250,27 @@ export function NewVehicleWizard({
       ? { name: c.planName, cents: c.planPriceCents, dueDay: c.defaultDueDay }
       : null;
   const installedDevice = isAdmin && Boolean(adminDraft?.deviceId);
+
+  // O frete: as formas de entrega até o endereço salvo, na última etapa.
+  const ships = !installedDevice && Boolean(address);
+  const shippingQuote = useQuery({
+    queryKey: ['shipping-quote', admin?.customerId ?? 'me', address?.zipCode ?? ''],
+    queryFn: () => (admin ? customersApi.shippingQuote(admin.customerId) : meApi.shippingQuote()),
+    enabled: open && step === 2 && ships,
+    staleTime: 5 * 60_000,
+  });
+  const quotes = shippingQuote.data?.enabled ? shippingQuote.data.quotes : [];
+  // O mais barato vem marcado.
+  useEffect(() => {
+    if (shippingId === null && quotes.length > 0) setShippingId(quotes[0].serviceId);
+  }, [shippingId, quotes]);
+  const chosen = ships ? quotes.find((q) => q.serviceId === shippingId) : undefined;
+  const freight = chosen ? { serviceId: chosen.serviceId, name: quoteName(chosen), cents: chosen.priceCents, days: chosen.deliveryDays } : null;
+  // Perto da base, o cliente pode combinar a entrega com a central (sem frete).
+  const arranged = ships && shippingId === ARRANGE_DELIVERY && shippingQuote.data?.arrange === true;
+  // O cliente só confirma com a entrega escolhida (quando o frete é cotado).
+  const needsShipping = !isAdmin && ships && shippingQuote.data?.enabled === true;
+  const totalNow = (equipmentCents ?? 0) + (freight?.cents ?? 0);
 
   const goTo = (next: number) => {
     setError('');
@@ -262,7 +298,7 @@ export function NewVehicleWizard({
       ? vehicle.name.trim() !== ''
       : step === 1
         ? !editingAddress || isAddressComplete(addressDraft ?? EMPTY_ADDRESS)
-        : true;
+        : !needsShipping || ((freight !== null || arranged) && !shippingQuote.isFetching);
 
   const primaryLabel =
     step === 0
@@ -273,7 +309,7 @@ export function NewVehicleWizard({
           : 'Continuar'
         : isAdmin
           ? 'Confirmar'
-          : `Confirmar pedido${equipmentCents ? ` · ${formatMoney(equipmentCents)}` : ''}`;
+          : `Confirmar pedido${totalNow ? ` · ${formatMoney(totalNow)}` : ''}`;
 
   return (
     <>
@@ -474,6 +510,17 @@ export function NewVehicleWizard({
                   </p>
                 )}
 
+                {ships && (
+                  <ShippingOptions
+                    view={shippingQuote.data}
+                    loading={shippingQuote.isLoading}
+                    value={shippingId ?? -1}
+                    onChange={setShippingId}
+                    onRetry={() => void shippingQuote.refetch()}
+                    allowNone={isAdmin}
+                  />
+                )}
+
                 <div className={styles.orderSummary}>
                   <div className={styles.orderLine}>
                     <span>Veículo</span>
@@ -489,12 +536,32 @@ export function NewVehicleWizard({
                           : 'entrega em mãos'}
                     </span>
                   </div>
+                  {freight && (
+                    <>
+                      <div className={styles.orderLine}>
+                        <span>Equipamento</span>
+                        <span>{equipmentCents ? formatMoney(equipmentCents) : 'sem cobrança'}</span>
+                      </div>
+                      <div className={styles.orderLine}>
+                        <span>
+                          Frete: {freight.name} ({deliveryLabel(freight.days)})
+                        </span>
+                        <span>{formatMoney(freight.cents)}</span>
+                      </div>
+                    </>
+                  )}
+                  {arranged && (
+                    <div className={styles.orderLine}>
+                      <span>Entrega: combinar com a Farbo</span>
+                      <span>sem frete</span>
+                    </div>
+                  )}
                   <div className={`${styles.orderLine} ${styles.orderTotal}`}>
                     <span>
-                      Agora: equipamento
-                      {isAdmin && adminDraft && equipmentCents ? ` · vence ${formatDateOnly(adminDraft.dueDate)}` : ''}
+                      Agora: {freight ? 'equipamento e frete' : 'equipamento'}
+                      {isAdmin && adminDraft && totalNow ? ` · vence ${formatDateOnly(adminDraft.dueDate)}` : ''}
                     </span>
-                    <span>{equipmentCents ? formatMoney(equipmentCents) : 'sem cobrança'}</span>
+                    <span>{totalNow ? formatMoney(totalNow) : 'sem cobrança'}</span>
                   </div>
                   {monthly && (
                     <div className={`${styles.orderLine} ${styles.orderMonthly}`}>

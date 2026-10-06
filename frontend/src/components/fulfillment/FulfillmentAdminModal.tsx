@@ -104,7 +104,9 @@ export function FulfillmentAdminModal({
     mutationFn: () => fulfillmentsApi.quote(fulfillmentId as string),
     onSuccess: (list) => {
       setQuotes(list);
-      setServiceId(list.find((q) => !q.error)?.serviceId ?? null);
+      // O serviço que o cliente escolheu (e pagou) no pedido vem marcado.
+      const paid = f?.quotedServiceId ? list.find((q) => !q.error && q.serviceId === f.quotedServiceId) : undefined;
+      setServiceId(paid?.serviceId ?? list.find((q) => !q.error)?.serviceId ?? null);
       setError('');
     },
     onError: fail,
@@ -155,6 +157,7 @@ export function FulfillmentAdminModal({
         <>
           <p className={styles.hint}>
             Cliente: <Link to={`/clientes/${f.customerId}`}>{f.customerName}</Link>
+            {f.deliveryArranged && ' · Entrega combinada: fale com o cliente para marcar o dia e o local (sem frete).'}
           </p>
           <FulfillmentTimeline
             chipStatus={f.chipStatus}
@@ -297,7 +300,13 @@ export function FulfillmentAdminModal({
                     <Button size="small" variant="primary" loading={quote.isPending} disabled={busy} onClick={() => quote.mutate()}>
                       Cotar frete
                     </Button>
-                    <span className={styles.hint}>Para o endereço de entrega do pedido.</span>
+                    <span className={styles.hint}>
+                      Para o endereço de entrega do pedido.
+                      {f.deliveryArranged
+                        ? ' O cliente escolheu combinar a entrega e não pagou frete.'
+                        : f.quotedService &&
+                          ` O cliente escolheu ${f.quotedService}${f.quotedPriceCents !== null ? ` e pagou ${formatMoney(f.quotedPriceCents)}` : ''}.`}
+                    </span>
                   </div>
                 ) : (
                   <>
@@ -374,7 +383,11 @@ export function FulfillmentAdminModal({
                     <Button size="small" variant="ghost" disabled={busy} onClick={() => setHanding(true)}>
                       Marcar como entregue em mãos
                     </Button>
-                    <span className={styles.hint}>Sem etiqueta: retirada na base ou entrega própria.</span>
+                    <span className={styles.hint}>
+                      {f.deliveryArranged
+                        ? 'O cliente escolheu combinar a entrega: entregue e marque aqui.'
+                        : 'Sem etiqueta: retirada na base ou entrega própria.'}
+                    </span>
                   </div>
                 ))}
 

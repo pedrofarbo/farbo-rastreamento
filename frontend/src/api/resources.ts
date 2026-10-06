@@ -12,6 +12,7 @@ import type {
   PixInfo,
   PixPlan,
   PixTransfer,
+  ShippingQuoteView,
   SmsSession,
   SmsSetupView,
   PublicAffiliate,
@@ -460,6 +461,8 @@ export const customersApi = {
   /** Novo veículo: veículo → rastreador (fatura do equipamento) → assinatura. */
   orderTracker: (customerId: string, input: AdminTrackerOrder) =>
     api.post<TrackerOrderResult>(`/api/customers/${customerId}/trackers`, input),
+  /** As formas de entrega até o endereço do cliente (pedido pela central). */
+  shippingQuote: (customerId: string) => api.get<ShippingQuoteView>(`/api/customers/${customerId}/shipping-quote`),
   /** Se o cliente pode contratar com a promoção de pré-lançamento. */
   launchPromo: (id: string) => api.get<PromoStatus>(`/api/customers/${id}/launch-promo`),
   /** Assinatura antiga sem veículo: informa qual veículo ela cobre. */
@@ -478,6 +481,8 @@ export interface AdminTrackerOrder {
   plan: SubscriptionInput;
   /** Aplica a promoção de pré-lançamento (o cliente precisa ter direito). */
   launchPromo?: boolean;
+  /** O frete cobrado do cliente; 0 ou ausente: sem frete (entrega em mãos). */
+  shippingServiceId?: number;
 }
 
 export interface InstallerInput {
@@ -631,8 +636,16 @@ export const meApi = {
   saveAddress: (input: DeliveryAddress) => api.put<DeliveryAddress>('/api/me/address', input),
   /** Novo veículo; equipamento e plano vêm do catálogo e da conta do cliente. */
   /** launchPromo: o cliente confirmou com os preços da promoção que o catálogo mostrou. */
-  orderTracker: (input: { vehicle: VehicleInput; launchPromo?: boolean }) =>
+  orderTracker: (input: {
+    vehicle: VehicleInput;
+    launchPromo?: boolean;
+    shippingServiceId?: number;
+    /** Combinar a entrega com a central, em vez da transportadora. */
+    arrangeDelivery?: boolean;
+  }) =>
     api.post<TrackerOrderResult>('/api/me/trackers', input),
+  /** As formas de entrega até o endereço do cliente (preço e prazo). */
+  shippingQuote: () => api.get<ShippingQuoteView>('/api/me/shipping-quote'),
   /** Acompanhamento do chip e do rastreador de cada pedido. */
   fulfillments: () => api.get<CustomerFulfillment[]>('/api/me/fulfillments'),
   /** Assinatura antiga sem veículo: o cliente informa qual veículo ela cobre. */

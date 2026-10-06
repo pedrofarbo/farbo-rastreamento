@@ -180,6 +180,8 @@ services:
       MELHORENVIO_FROM_DISTRICT: ${MELHORENVIO_FROM_DISTRICT:-}
       MELHORENVIO_FROM_CITY: ${MELHORENVIO_FROM_CITY:-}
       MELHORENVIO_FROM_STATE: ${MELHORENVIO_FROM_STATE:-}
+      # Cidades onde o cliente pode combinar a entrega com a central ("Cidade/UF").
+      SHIPPING_ARRANGE_CITIES: ${SHIPPING_ARRANGE_CITIES:-São Paulo/SP}
 
       # Promoção de pré-lançamento (quem está na lista de lançamento).
       LAUNCH_PROMO_ENABLED: ${LAUNCH_PROMO_ENABLED:-true}

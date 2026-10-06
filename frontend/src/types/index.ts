@@ -479,6 +479,13 @@ export interface Fulfillment {
   shippingStatus: string;
   trackingCode: string;
   labelUrl: string;
+  /** O frete escolhido no pedido (e cobrado do cliente); nulo se o pedido saiu sem frete. */
+  quotedServiceId: number | null;
+  quotedService: string;
+  quotedPriceCents: number | null;
+  quotedDays: number | null;
+  /** O cliente combina a entrega com a central (sem frete nem etiqueta). */
+  deliveryArranged: boolean;
   events: FulfillmentEvent[];
   createdAt: string;
   updatedAt: string;
@@ -493,6 +500,11 @@ export interface CustomerFulfillment {
   trackerStatus: TrackerStatus;
   carrier: string;
   trackingCode: string;
+  /** A entrega escolhida no pedido e o prazo (dias úteis). */
+  deliveryService: string;
+  deliveryDays: number | null;
+  /** A entrega é combinada com a central. */
+  deliveryArranged: boolean;
   events: FulfillmentEvent[];
   createdAt: string;
 }
@@ -505,6 +517,29 @@ export interface ShippingQuote {
   deliveryDays: number;
   /** Preenchido quando o serviço não atende o trecho. */
   error: string;
+}
+
+/** As formas de entrega para o pedido de um rastreador. */
+export interface ShippingQuoteView {
+  /** O frete é cotado (Melhor Envios ligado); sem isso, o pedido segue sem frete. */
+  enabled: boolean;
+  zipCode: string;
+  /** Só os serviços que atendem o CEP, do mais barato ao mais caro. */
+  quotes: ShippingQuote[];
+  /** O que impediu a cotação (sem endereço, Melhor Envios fora). */
+  problem: string;
+  /** O endereço fica onde dá para combinar a entrega com a central (sem frete). */
+  arrange: boolean;
+}
+
+/** O frete cobrado no pedido. */
+export interface ShippingChoice {
+  serviceId: number;
+  name: string;
+  priceCents: number;
+  deliveryDays: number;
+  /** Entrega combinada com a central (sem frete). */
+  arranged: boolean;
 }
 
 export interface ShippingIntegration {
@@ -608,8 +643,10 @@ export interface Installer extends PublicInstaller {
 export interface TrackerOrderResult {
   vehicle: Vehicle;
   subscription: Subscription;
-  /** Fatura do equipamento; nula quando nada foi cobrado. */
+  /** Fatura do equipamento (com o frete); nula quando nada foi cobrado. */
   setupInvoice: Invoice | null;
+  /** O frete cobrado; nulo se o pedido saiu sem frete. */
+  shipping: ShippingChoice | null;
 }
 
 /** Resumo da conta que o cliente vê. */

@@ -65,15 +65,21 @@ type Order struct {
 	// valor dela (se for cobrado) e a mensalidade, pelo dela nos primeiros
 	// meses. Sem direito, o pedido é recusado com PromoUnavailable.
 	LaunchPromo bool
+	// Shipping é o frete escolhido (cotado de novo no servidor): entra na
+	// fatura do equipamento e fica no acompanhamento. Nulo: sem frete; na
+	// entrega combinada, só fica no acompanhamento.
+	Shipping *fulfillment.Choice
 }
 
 // Result é o que a contratação criou.
 type Result struct {
 	Vehicle      *vehicles.Vehicle     `json:"vehicle"`
 	Subscription *billing.Subscription `json:"subscription"`
-	// SetupInvoice é a fatura do equipamento; nula quando nada foi cobrado
-	// (aparelho do cliente, cortesia...).
+	// SetupInvoice é a fatura do equipamento (com o frete); nula quando nada
+	// foi cobrado (aparelho do cliente, cortesia, sem frete...).
 	SetupInvoice *billing.Invoice `json:"setupInvoice"`
+	// Shipping é a entrega escolhida (nula: sem frete).
+	Shipping *fulfillment.Choice `json:"shipping"`
 }
 
 type Service struct {
@@ -115,11 +121,11 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 	if o.EquipmentCents < 0 {
 		return nil, ValidationError{"o valor do equipamento não pode ser negativo"}
 	}
+	due := s.billing.Today().AddDays(s.catalog.SetupDueDays)
+	if o.SetupDueDate != nil {
+		due = *o.SetupDueDate
+	}
 	if o.EquipmentCents > 0 {
-		due := s.billing.Today().AddDays(s.catalog.SetupDueDays)
-		if o.SetupDueDate != nil {
-			due = *o.SetupDueDate
-		}
 		setup, err = s.billing.NewInvoice(customerID, billing.InvoiceInput{
 			Description: s.catalog.EquipmentName,
 			AmountCents: o.EquipmentCents,
@@ -140,6 +146,25 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 			if setup, err = s.applyPromo(ctx, tx, customerID, sub, setup); err != nil {
 				return err
 			}
+		}
+		// O frete entra na fatura do equipamento (ou é a fatura, se o
+		// equipamento não for cobrado).
+		if o.Shipping != nil && o.Vehicle.DeviceID == nil {
+			if o.Shipping.PriceCents > 0 {
+				freight := fmt.Sprintf("frete %s (%s)", o.Shipping.Name, money(o.Shipping.PriceCents))
+				if setup == nil {
+					var err error
+					if setup, err = s.billing.NewInvoice(customerID, billing.InvoiceInput{
+						Description: "Frete do rastreador: " + o.Shipping.Name, AmountCents: o.Shipping.PriceCents, DueDate: due,
+					}); err != nil {
+						return err
+					}
+				} else {
+					setup.AmountCents += o.Shipping.PriceCents
+					setup.Description += " + " + freight
+				}
+			}
+			result.Shipping = o.Shipping
 		}
 		address, err := addresses.GetWith(ctx, tx, customerID)
 		if err != nil {
@@ -170,8 +195,14 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 		// Sem aparelho instalado na hora, o rastreador (e o chip) passam a ser
 		// acompanhados até a casa do cliente.
 		if result.Vehicle.DeviceID == nil {
-			if _, err = fulfillment.Create(ctx, tx, customerID, result.Vehicle.ID, &result.Subscription.ID); err != nil {
+			id, err := fulfillment.Create(ctx, tx, customerID, result.Vehicle.ID, &result.Subscription.ID)
+			if err != nil {
 				return err
+			}
+			if result.Shipping != nil {
+				if err := fulfillment.RecordChoice(ctx, tx, id, *result.Shipping); err != nil {
+					return err
+				}
 			}
 		}
 		if setup != nil {
@@ -193,8 +224,13 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 
 	// Primeira mensalidade, se já estiver dentro da antecedência.
 	s.billing.GenerateInvoices(ctx)
+	freightCents := 0
+	if result.Shipping != nil {
+		freightCents = result.Shipping.PriceCents
+	}
 	s.log.Info("rastreador contratado", "customer", customerID, "vehicle", result.Vehicle.ID,
-		"subscription", result.Subscription.ID, "equipment_cents", o.EquipmentCents, "promo", o.LaunchPromo)
+		"subscription", result.Subscription.ID, "equipment_cents", o.EquipmentCents, "promo", o.LaunchPromo,
+		"freight_cents", freightCents)
 	return result, nil
 }
 
@@ -360,4 +396,9 @@ func (s *Service) Reactivate(ctx context.Context, customerID, vehicleID uuid.UUI
 
 	s.billing.GenerateInvoices(ctx)
 	return s.billing.GetSubscription(ctx, created.ID)
+}
+
+// money: 2240 → "R$ 22,40".
+func money(cents int) string {
+	return fmt.Sprintf("R$ %d,%02d", cents/100, cents%100)
 }
