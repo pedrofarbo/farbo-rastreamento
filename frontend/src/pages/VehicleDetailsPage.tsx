@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 
 import { Address } from '@/components/ui/Address';
 
@@ -17,6 +17,7 @@ import { CommandPanel } from '@/components/vehicle/CommandPanel';
 import { EventList } from '@/components/vehicle/EventList';
 import { Playback } from '@/components/vehicle/Playback';
 import { TelemetryBar } from '@/components/vehicle/TelemetryBar';
+import { TheftPanel } from '@/components/vehicle/TheftPanel';
 import { useVehicle } from '@/hooks/useVehicles';
 import { useAuth } from '@/stores/AuthContext';
 import {
@@ -46,6 +47,8 @@ export function VehicleDetailsPage() {
   const { data: vehicle, isLoading, error } = useVehicle(id);
   const { isCustomer } = useAuth();
   const backTo = isCustomer ? '/meus-veiculos' : '/dashboard';
+  // Aberto pelo alerta de bateria desconectada ou de movimento sem ignição.
+  const [params] = useSearchParams();
 
   const [rangeHours, setRangeHours] = useState<number | null>(null);
   const [frame, setFrame] = useState<Position | null>(null);
@@ -193,6 +196,12 @@ export function VehicleDetailsPage() {
       </div>
 
       <aside className={styles.sidebar}>
+        <TheftPanel
+          vehicle={vehicle}
+          prompt={params.get('roubo') === '1'}
+          reportUrl={owned ? `/relatorio-roubo/${vehicle.id}` : undefined}
+        />
+
         <Card title="Comandos">
           <CommandPanel vehicle={vehicle} />
         </Card>

@@ -13,6 +13,8 @@ import type {
   PixPlan,
   PixTransfer,
   ShippingQuoteView,
+  TheftView,
+  PublicTheftView,
   SmsSession,
   SmsSetupView,
   PublicAffiliate,
@@ -243,6 +245,26 @@ export const commandsApi = {
     api.post<DeviceCommand>(`/api/vehicles/${vehicleId}/commands/request-status`),
   generic: (vehicleId: string, body: { command: string; params?: Record<string, string>; raw?: string }) =>
     api.post<DeviceCommand>(`/api/vehicles/${vehicleId}/commands`, body),
+};
+
+// ---------------------------------------------------------------------------
+// Modo roubo
+// ---------------------------------------------------------------------------
+
+export const theftApi = {
+  get: (vehicleId: string) => api.get<TheftView>(`/api/vehicles/${vehicleId}/theft`),
+  /** Liga (sem confirmação extra: na hora do roubo, cada segundo conta). */
+  activate: (vehicleId: string) => api.post<TheftView>(`/api/vehicles/${vehicleId}/theft`),
+  /** Desliga: só o dono, com a biometria ou a senha. */
+  end: (vehicleId: string, outcome: 'RECOVERED' | 'CANCELLED', stepUpToken: string) =>
+    request<TheftView>(`/api/vehicles/${vehicleId}/theft/end`, {
+      method: 'POST',
+      body: { outcome },
+      headers: { 'X-Step-Up-Token': stepUpToken },
+    }),
+  /** O link público (sem login). */
+  publicView: (token: string) =>
+    request<PublicTheftView>(`/api/public/theft/${encodeURIComponent(token)}`, { anonymous: true }),
 };
 
 // ---------------------------------------------------------------------------

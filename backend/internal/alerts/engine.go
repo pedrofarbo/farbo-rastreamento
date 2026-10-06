@@ -779,7 +779,7 @@ func (e *Engine) notification(t *Target, kind string, a mail.Alert) push.Notific
 	url, vehicle := "/app/", "central"
 	if t.VehicleID != nil {
 		vehicle = t.VehicleID.String()
-		url = "/app/veiculos/" + vehicle
+		url = "/app/veiculos/" + vehicle + theftQuery(kind)
 	}
 	body := a.Summary
 	if a.Suppressed > 0 {

@@ -807,3 +807,20 @@ func TestGeofenceAlertsGoOnlyToTheFenceOwner(t *testing.T) {
 		t.Fatalf("cliente suspenso não recebe, veio %+v", got)
 	}
 }
+
+// A bateria desconectada (como o movimento com a ignição desligada) pode ser
+// o roubo acontecendo: a mensagem lembra do modo roubo e o link abre o
+// veículo com ele à mão.
+func TestPowerCutAlertPointsToTheftMode(t *testing.T) {
+	h := newHarness(t, nil)
+	p := &memPusher{}
+	h.e.SetPusher(p)
+	got := h.event(events.PowerLoss, h.now, nil)
+	if len(got) != 1 || !strings.HasSuffix(got[0].Summary, "Se foi roubo, ative o modo roubo no app.") ||
+		got[0].ActionURL != "https://painel.farbo.test/veiculos/"+vehicleID.String()+"?roubo=1" {
+		t.Fatalf("bateria desconectada = %+v", got)
+	}
+	if n := p.sent[ownerID]; len(n) != 1 || n[0].URL != "/app/veiculos/"+vehicleID.String()+"?roubo=1" {
+		t.Errorf("push = %+v", n)
+	}
+}

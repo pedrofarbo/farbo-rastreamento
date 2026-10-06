@@ -487,6 +487,35 @@ func rank(status string) int {
 	return 0
 }
 
+// ErrNoSMS: sem o Twilio configurado, ou o chip sem número.
+var ErrNoSMS = errors.New("SMS indisponível para este rastreador")
+
+// SendText manda um comando avulso por SMS ao chip do rastreador (o modo
+// roubo, com o rastreador fora do ar) e guarda no histórico de SMS.
+func (s *Service) SendText(ctx context.Context, dev *devices.Device, text string) error {
+	phone := E164(dev.PhoneNumber)
+	if !s.Enabled() || phone == "" {
+		return ErrNoSMS
+	}
+	msg, sendErr := s.sender.Send(ctx, phone, text, s.callbackURL)
+	status, sid, code, message := "failed", "", "", ""
+	if sendErr != nil {
+		message = providerMessage(sendErr)
+	} else {
+		status, sid, message = orDefault(msg.Status, "queued"), msg.SID, msg.ErrorMessage
+		if msg.ErrorCode != nil {
+			code = fmt.Sprint(*msg.ErrorCode)
+		}
+	}
+	if _, err := s.db.Exec(ctx, `
+		INSERT INTO sms_messages (device_id, direction, phone, body, provider_sid, status, error_code, error_message)
+		VALUES ($1, 'OUT', $2, $3, NULLIF($4, ''), $5, $6, $7)`,
+		dev.ID, phone, devices.RedactText(text, dev.Secrets()), sid, status, code, message); err != nil {
+		s.log.Error("falha ao guardar o SMS avulso", "device", dev.ID, "err", err)
+	}
+	return sendErr
+}
+
 // UpdateStatus grava o status de um SMS enviado (aviso do Twilio ou consulta).
 func (s *Service) UpdateStatus(ctx context.Context, sid, status, errorCode, errorMessage string) error {
 	status = strings.ToLower(strings.TrimSpace(status))

@@ -45,7 +45,10 @@ const (
 	ActionVehicleShareUpdated = "VEHICLE_SHARE_UPDATED"
 	ActionVehicleShareRemoved = "VEHICLE_SHARE_REMOVED"
 	ActionSharedEngineCut     = "SHARED_ENGINE_CUT"
-	ActionGeofenceChanged     = "GEOFENCE_CHANGED"
+	// Modo roubo: ligado pelo dono (ou por quem pode bloquear) e encerrado.
+	ActionTheftActivated  = "THEFT_ACTIVATED"
+	ActionTheftEnded      = "THEFT_ENDED"
+	ActionGeofenceChanged = "GEOFENCE_CHANGED"
 
 	// Equipe da central (usuários do painel).
 	ActionUserCreated = "USER_CREATED"

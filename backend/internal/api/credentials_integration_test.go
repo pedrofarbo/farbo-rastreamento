@@ -37,6 +37,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tcp"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/telemetry"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/theft"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 	ws "github.com/pedrofarbo/farbo-rastreamento/backend/internal/websocket"
@@ -143,6 +144,18 @@ func (c *captureSender) Send(imei string, payload []byte) error {
 	return nil
 }
 
+func (c *captureSender) isConnected(imei string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.connected[imei]
+}
+
+func (c *captureSender) setConnected(imei string, on bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.connected[imei] = on
+}
+
 func (c *captureSender) texts(t *testing.T, imei string) []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -174,6 +187,7 @@ type credEnv struct {
 	positions *tracking.Repository
 	sender    *captureSender
 	stepUp    *stepup.Service
+	theft     *theft.Service
 
 	fwdMu     sync.Mutex
 	forwarded [][]byte // o que iria para o Redis (outras instâncias)
@@ -192,6 +206,8 @@ type credEnvOptions struct {
 	stepUp bool
 	// shares liga os acessos de terceiros, com os avisos neste Notifier.
 	shares shares.Notifier
+	// theft liga o modo roubo, com os e-mails neste Mailer.
+	theft theft.Mailer
 }
 
 func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
@@ -260,8 +276,15 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 		sharesSvc = shares.NewService(db, authSvc, opts.shares, log)
 		sharesSvc.SetSync()
 	}
+	if opts.theft != nil {
+		env.theft = theft.NewService(db, env.devices, env.commands, env.sender.isConnected, opts.theft, theft.Config{
+			Duration: 72 * time.Hour, Reminder: 24 * time.Hour, ParkedSeconds: 30, ReportSeconds: 10,
+			NormalParkedSeconds: 3600, AppURL: "https://painel.farbo.test", LinkSecret: cfg.Auth.JWTSecret,
+		}, log)
+		env.theft.SetSync()
+	}
 	server := NewServer(Deps{
-		StepUp: stepUpSvc, Shares: sharesSvc,
+		StepUp: stepUpSvc, Shares: sharesSvc, Theft: env.theft,
 		Config: cfg, Log: log, Metrics: metrics, DB: db, Auth: authSvc,
 		Devices: env.devices, Vehicles: env.vehicles, Events: eventSvc, Commands: env.commands,
 		Audit: auditSvc, Billing: billingSvc,
@@ -276,6 +299,12 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 }
 
 func (e *credEnv) do(token, method, path string, body any) (int, []byte) {
+	e.t.Helper()
+	return e.doWith(token, method, path, body, nil)
+}
+
+// doWith é o do com cabeçalhos a mais (o comprovante da confirmação extra).
+func (e *credEnv) doWith(token, method, path string, body any, headers map[string]string) (int, []byte) {
 	e.t.Helper()
 	var reader io.Reader
 	if body != nil {
@@ -292,6 +321,9 @@ func (e *credEnv) do(token, method, path string, body any) (int, []byte) {
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

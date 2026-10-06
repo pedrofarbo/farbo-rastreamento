@@ -109,6 +109,11 @@ export function MapScreen() {
             >
               <span className={styles.vehicleTop}>
                 <span className={styles.vehicleName}>{vehicle.name}</span>
+                {vehicle.theft && (
+                  <Badge tone="danger" dot pulse>
+                    Roubo
+                  </Badge>
+                )}
                 <Badge tone={statusTone(vehicle)} dot>
                   {vehicle.device ? formatDeviceStatus(vehicle.device.status) : 'Sem rastreador'}
                 </Badge>

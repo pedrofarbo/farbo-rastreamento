@@ -43,6 +43,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/support"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tcp"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/telemetry"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/theft"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 	ws "github.com/pedrofarbo/farbo-rastreamento/backend/internal/websocket"
@@ -93,6 +94,9 @@ type Deps struct {
 	Affiliates *affiliates.Service
 	// SMSSetup: a configuração do rastreador por SMS (Twilio) na ativação.
 	SMSSetup *smssetup.Service
+	// Theft: o modo roubo (o cliente avisa; o rastreador acelera; o link
+	// público mostra a posição à polícia). Nil: rotas respondem 404.
+	Theft *theft.Service
 	// StepUp: confirmação extra (biometria ou senha) antes de ações
 	// sensíveis. Nil desliga a exigência (só em testes).
 	StepUp       *stepup.Service
@@ -176,6 +180,9 @@ func (s *Server) routes() chi.Router {
 	analyticsLimiter := newRateLimiter(1, 40)
 	// Senha da confirmação extra: além do teto por usuário (stepup).
 	stepUpLimiter := newRateLimiter(0.2, 5)
+	// O link do modo roubo: a página pergunta a cada 10 s; numa delegacia,
+	// várias pessoas podem abrir pela mesma rede.
+	theftLinkLimiter := newRateLimiter(2, 60)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(limiter.middleware)
@@ -223,6 +230,11 @@ func (s *Server) routes() chi.Router {
 		if s.Affiliates != nil {
 			r.With(affiliateLimiter.middleware).Get("/public/affiliates/{code}", s.handlePublicAffiliate)
 			r.With(affiliateLimiter.middleware).Get("/public/partner/{token}", s.handlePartnerReport)
+		}
+		// Modo roubo: a posição ao vivo pelo link secreto (a tela atualiza a
+		// cada poucos segundos, aberta por quem recebeu o link).
+		if s.Theft != nil {
+			r.With(theftLinkLimiter.middleware).Get("/public/theft/{token}", s.handlePublicTheft)
 		}
 
 		// Melhor Envios: volta da autorização (o navegador, sem o token do
@@ -291,6 +303,12 @@ func (s *Server) routes() chi.Router {
 					})
 					// Comandos de configuração e texto livre ficam com a central.
 					r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator)).Post("/commands", s.handleGenericCommand)
+
+					// Modo roubo: o dono e quem pode bloquear ligam; só o dono
+					// (com a biometria ou a senha) desliga.
+					r.Get("/theft", s.handleTheftStatus)
+					r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator, auth.RoleCustomer)).Post("/theft", s.handleTheftActivate)
+					r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleCustomer)).Post("/theft/end", s.handleTheftEnd)
 				})
 			})
 

@@ -24,7 +24,7 @@ func (e *Engine) compose(t *Target, c candidate, r recipient, suppressed int) ma
 		AppURL: e.appURL, ActionURL: e.appURL + "/dashboard",
 	}
 	if t.VehicleID != nil {
-		a.ActionURL = e.appURL + "/veiculos/" + t.VehicleID.String()
+		a.ActionURL = e.appURL + "/veiculos/" + t.VehicleID.String() + theftQuery(r.kind)
 	}
 	// A central não tem tela de preferências: recebe pelo ALERTS_CENTRAL_EMAILS.
 	if !r.central {
@@ -39,6 +39,19 @@ func (e *Engine) compose(t *Target, c candidate, r recipient, suppressed int) ma
 	return a
 }
 
+// theftHint: os alertas que podem ser o roubo acontecendo. A mensagem
+// lembra do modo roubo e o link abre o veículo com ele à mão (?roubo=1).
+func theftHint(kind string) bool { return kind == KindTowing || kind == KindPowerCut }
+
+const theftSentence = " Se foi roubo, ative o modo roubo no app."
+
+func theftQuery(kind string) string {
+	if theftHint(kind) {
+		return "?roubo=1"
+	}
+	return ""
+}
+
 // describe escreve a manchete, a explicação e a gravidade de cada alerta.
 func (e *Engine) describe(kind string, c candidate, vehicle string, s Settings) (title, summary, severity string) {
 	clock := c.at.In(e.loc).Format("15:04")
@@ -49,16 +62,16 @@ func (e *Engine) describe(kind string, c candidate, vehicle string, s Settings) 
 			mail.SeverityCritical
 	case KindPowerCut:
 		return "Bateria do veículo desconectada",
-			fmt.Sprintf("O rastreador do veículo %s deixou de receber energia da bateria às %s. Pode ser uma manutenção — ou alguém tentando desligar o rastreador.", vehicle, clock),
+			fmt.Sprintf("O rastreador do veículo %s deixou de receber energia da bateria às %s. Pode ser uma manutenção — ou alguém tentando desligar o rastreador.", vehicle, clock) + theftSentence,
 			mail.SeverityCritical
 	case KindTowing:
 		if c.variant == variantAlarm {
 			return "Veículo em movimento com a ignição desligada",
-				fmt.Sprintf("O rastreador do veículo %s detectou às %s que ele saiu do lugar com a ignição desligada. Pode ser um reboque ou furto.", vehicle, clock),
+				fmt.Sprintf("O rastreador do veículo %s detectou às %s que ele saiu do lugar com a ignição desligada. Pode ser um reboque ou furto.", vehicle, clock) + theftSentence,
 				mail.SeverityCritical
 		}
 		return "Veículo em movimento com a ignição desligada",
-			fmt.Sprintf("O veículo %s se deslocou %s do lugar onde estava estacionado, com a ignição desligada (%s). Pode ser um reboque ou furto.", vehicle, formatDistance(c.distance), clock),
+			fmt.Sprintf("O veículo %s se deslocou %s do lugar onde estava estacionado, com a ignição desligada (%s). Pode ser um reboque ou furto.", vehicle, formatDistance(c.distance), clock) + theftSentence,
 			mail.SeverityCritical
 	case KindIgnitionGuard:
 		return "Ignição ligada no horário de vigilância",

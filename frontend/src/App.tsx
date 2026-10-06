@@ -31,6 +31,8 @@ const PrivacyPage = page(() => import('@/pages/legal/PrivacyPage'), 'PrivacyPage
 const EventSignupPage = page(() => import('@/pages/EventSignupPage'), 'EventSignupPage');
 const ReferralSignupPage = page(() => import('@/pages/ReferralSignupPage'), 'ReferralSignupPage');
 const PartnerPage = page(() => import('@/pages/PartnerPage'), 'PartnerPage');
+const PublicTheftPage = page(() => import('@/pages/PublicTheftPage'), 'PublicTheftPage');
+const TheftReportPage = page(() => import('@/pages/TheftReportPage'), 'TheftReportPage');
 const AlertsPage = page(() => import('@/pages/customer/AlertsPage'), 'AlertsPage');
 const InvoicesPage = page(() => import('@/pages/customer/InvoicesPage'), 'InvoicesPage');
 const MyVehiclesPage = page(() => import('@/pages/customer/MyVehiclesPage'), 'MyVehiclesPage');
@@ -77,8 +79,12 @@ export function App() {
                 {/* Afiliados: o link de cadastro e a página do afiliado (link secreto). */}
                 <Route path="/indicacao/:codigo" element={<ReferralSignupPage />} />
                 <Route path="/parceiro/:token" element={<PartnerPage />} />
+                {/* Modo roubo: a posição ao vivo pelo link (sem login), para a polícia. */}
+                <Route path="/localizar/:token" element={<PublicTheftPage />} />
 
                 <Route element={<RequireAuth />}>
+                  {/* O relatório para o boletim de ocorrência: sem o menu (vai para a impressora). */}
+                  <Route path="relatorio-roubo/:id" element={<TheftReportPage />} />
                   <Route element={<AppShell />}>
                     {/* Comuns: a API filtra o que o cliente vê. */}
                     <Route path="dashboard" element={<DashboardPage />} />

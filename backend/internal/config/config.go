@@ -41,6 +41,7 @@ type Config struct {
 	Leads     Leads
 	Infra     Infra
 	SMS       SMS
+	Theft     Theft
 }
 
 // SMS configura o envio pelo Twilio e a configuração do rastreador por SMS
@@ -457,6 +458,17 @@ type Shipping struct {
 	ArrangeCities []string
 }
 
+// Theft é o modo roubo.
+type Theft struct {
+	// ParkedSeconds: a posição com o veículo parado, no modo roubo (o normal
+	// é SMS_TRACKER_PARKED_SECONDS).
+	ParkedSeconds int
+	// Duration: desliga sozinho depois disso (poupa a bateria do veículo).
+	Duration time.Duration
+	// Reminder: de quanto em quanto tempo o dono é lembrado.
+	Reminder time.Duration
+}
+
 // GreaterSaoPaulo são os 39 municípios da Região Metropolitana de São Paulo
 // (a Grande São Paulo): onde o cliente pode, por padrão, combinar a entrega
 // com a central (SHIPPING_ARRANGE_CITIES).
@@ -823,6 +835,11 @@ func Load() (*Config, error) {
 		// Testado em campo com o J16: 10 s com a ignição ligada.
 		ReportSeconds: num("TRACKER_REPORT_INTERVAL_SECONDS", 10),
 		ParkedSeconds: num("TRACKER_PARKED_INTERVAL_SECONDS", 3600),
+	}
+	cfg.Theft = Theft{
+		ParkedSeconds: num("THEFT_PARKED_INTERVAL_SECONDS", 30),
+		Duration:      dur("THEFT_DURATION", 72*time.Hour),
+		Reminder:      dur("THEFT_REMINDER_INTERVAL", 24*time.Hour),
 	}
 
 	// Sem APP_URL, usa a primeira origem do CORS: ela já é o endereço em que

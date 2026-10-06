@@ -634,3 +634,18 @@
   color: var(--warning);
   font-size: var(--text-sm);
 }
+
+/* O veículo em modo roubo, no topo do cartão (leva ao passo a passo). */
+.theftAlert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  text-decoration: none;
+}

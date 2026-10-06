@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { CommandPanel } from '@/components/vehicle/CommandPanel';
+import { TheftPanel } from '@/components/vehicle/TheftPanel';
 import { useVehicle } from '@/hooks/useVehicles';
 import {
   eventSeverity,
@@ -212,6 +213,13 @@ export function VehicleScreen() {
           {vehicle.device ? 'Aguardando o primeiro sinal do rastreador.' : 'Este veículo ainda não tem rastreador instalado.'}
         </p>
       )}
+
+      {/* Modo roubo: aberto pelo alerta (?roubo=1), já pergunta se é para ligar. */}
+      <TheftPanel
+        vehicle={vehicle}
+        prompt={params.get('roubo') === '1'}
+        reportUrl={owned ? `/relatorio-roubo/${vehicle.id}` : undefined}
+      />
 
       {vehicle.device && (
         <section className={styles.section}>

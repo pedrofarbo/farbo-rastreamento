@@ -40,6 +40,9 @@ const (
 	// PurposeSupplierPix é pagar um fornecedor por Pix pela AbacatePay (o
 	// dinheiro sai da conta): vale para a equipe também.
 	PurposeSupplierPix = "supplier_pix"
+	// PurposeTheftEnd é desligar o modo roubo: quem está com o celular
+	// roubado (junto com o veículo) não para o rastreamento.
+	PurposeTheftEnd = "theft_end"
 )
 
 // Métodos de confirmação (no comprovante e na auditoria).
@@ -63,7 +66,7 @@ const (
 	maxNameLength       = 60
 )
 
-var purposes = []string{PurposeEngineCut, PurposeEngineResume, PurposeVehicleShare, PurposeSupplierPix}
+var purposes = []string{PurposeEngineCut, PurposeEngineResume, PurposeVehicleShare, PurposeSupplierPix, PurposeTheftEnd}
 
 var (
 	ErrWrongPassword      = errors.New("senha incorreta")

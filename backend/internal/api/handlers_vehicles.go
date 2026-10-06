@@ -12,6 +12,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/shares"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/theft"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 )
@@ -34,6 +35,8 @@ type vehicleView struct {
 	// (posição ao vivo e, se liberado, o bloqueio). Nulo para o dono e para a
 	// equipe.
 	Shared *sharedAccess `json:"shared,omitempty"`
+	// Theft: o modo roubo ligado (nulo: desligado).
+	Theft *theft.Brief `json:"theft,omitempty"`
 }
 
 // customerOf devolve o id do cliente quando quem chama é um cliente final.
@@ -148,10 +151,23 @@ func (s *Server) vehicleViews(ctx context.Context, list []*vehicles.Vehicle, aud
 	if err != nil {
 		return nil, err
 	}
+	stolen := map[uuid.UUID]theft.Brief{}
+	if s.Theft != nil {
+		ids := make([]uuid.UUID, 0, len(list))
+		for _, vehicle := range list {
+			ids = append(ids, vehicle.ID)
+		}
+		if stolen, err = s.Theft.ActiveBriefs(ctx, ids); err != nil {
+			return nil, err
+		}
+	}
 
 	views := make([]vehicleView, 0, len(list))
 	for _, vehicle := range list {
 		view := vehicleView{Vehicle: vehicle}
+		if b, ok := stolen[vehicle.ID]; ok {
+			view.Theft = &b
+		}
 		var ownerDays *int
 		if vehicle.OwnerID != nil {
 			if d, ok := customerDays[*vehicle.OwnerID]; ok {
@@ -179,6 +195,16 @@ func (s *Server) handleGetVehicle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := vehicleView{Vehicle: vehicle, Shared: sharedAccessOf(share)}
+	if s.Theft != nil {
+		stolen, err := s.Theft.ActiveBriefs(r.Context(), []uuid.UUID{vehicle.ID})
+		if err != nil {
+			handleStoreError(w, err, "veículo não encontrado")
+			return
+		}
+		if b, ok := stolen[vehicle.ID]; ok {
+			view.Theft = &b
+		}
+	}
 	if share == nil {
 		days, err := s.historyDays(r.Context(), vehicle)
 		if err != nil {

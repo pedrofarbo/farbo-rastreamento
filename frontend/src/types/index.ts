@@ -154,6 +154,66 @@ export interface VehicleView extends Vehicle {
    * nos seus veículos e para a equipe.
    */
   shared?: SharedAccess | null;
+  /** O modo roubo ligado (ausente: desligado). */
+  theft?: TheftBrief | null;
+}
+
+/** O modo roubo ligado, na lista de veículos. */
+export interface TheftBrief {
+  since: string;
+  expiresAt: string;
+}
+
+/** Situação de um comando do modo roubo no rastreador. */
+export type TheftCommandStatus = 'PENDING' | 'SENT' | 'SKIPPED';
+
+/** O modo roubo de um veículo. */
+export interface TheftMode {
+  id: string;
+  vehicleId: string;
+  activatedByName: string;
+  activatedAt: string;
+  expiresAt: string;
+  /** O intervalo curto chegou ao rastreador? (fora do ar: vai quando ele voltar) */
+  boostStatus: TheftCommandStatus;
+  /** O comando pela conexão do rastreador: SENT, ACKNOWLEDGED, TIMEOUT... */
+  boostCommandStatus: string;
+  /** Quando foi também por SMS (rastreador fora do ar na ativação). */
+  boostSmsAt: string | null;
+  endedAt: string | null;
+  outcome: '' | 'RECOVERED' | 'CANCELLED' | 'EXPIRED';
+  restoreStatus: '' | TheftCommandStatus;
+}
+
+/** O modo roubo na tela do veículo. */
+export interface TheftView {
+  mode: TheftMode | null;
+  /** O link da posição ao vivo, sem login (para a polícia). */
+  publicUrl: string;
+  /** O dono, a equipe e quem pode bloquear o motor ligam. */
+  canActivate: boolean;
+  /** Só o dono (e a equipe) desliga. */
+  canEnd: boolean;
+  parkedSeconds: number;
+  durationHours: number;
+}
+
+/** O que o link público mostra: o veículo e onde ele está. */
+export interface PublicTheftView {
+  vehicle: { name: string; plate: string; brand: string; model: string; year: number | null; color: string };
+  activatedAt: string;
+  expiresAt: string;
+  position: {
+    latitude: number;
+    longitude: number;
+    speedKmh: number;
+    heading: number | null;
+    gpsTimestamp: string;
+    receivedAt: string;
+  } | null;
+  address: string;
+  ignition: boolean | null;
+  online: boolean;
 }
 
 export interface SharedAccess {

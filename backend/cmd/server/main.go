@@ -56,6 +56,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/support"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tcp"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/telemetry"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/theft"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/twilio"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
@@ -318,6 +319,22 @@ func run() error {
 		sharesSvc.SetPusher(pushSvc)
 	}
 
+	// Modo roubo: o cliente avisa; o rastreador manda a posição com mais
+	// frequência (fora do ar, quando voltar; ou por SMS); quem tem acesso é
+	// avisado; e o link público mostra a posição à polícia.
+	theftSvc := theft.NewService(db, deviceSvc, commandSvc,
+		func(imei string) bool { _, ok := connManager.Get(imei); return ok },
+		mail.NewTheftMailer(mailer, cfg.Mail.AppURL),
+		theft.Config{
+			Duration: cfg.Theft.Duration, Reminder: cfg.Theft.Reminder, ParkedSeconds: cfg.Theft.ParkedSeconds,
+			ReportSeconds: cfg.SMS.ReportSeconds, NormalParkedSeconds: cfg.SMS.ParkedSeconds,
+			AppURL: cfg.Mail.AppURL, LinkSecret: []byte(cfg.Auth.JWTSecret),
+		}, log)
+	theftSvc.SetTexter(smsSvc)
+	if pushSvc.Enabled() {
+		theftSvc.SetPusher(pushSvc)
+	}
+
 	// ---- Servidores ----
 	tcpServer := tcp.NewServer(cfg.TCP, registry, connManager, ingestor, log, metrics)
 
@@ -335,7 +352,7 @@ func run() error {
 		Leads: leads.NewService(leads.NewRepository(db),
 			leads.MailNotifier{Mailer: mail.NewLeadMailer(mailer, cfg.Mail.AppURL), To: cfg.Leads.NotifyEmails}, log),
 		Alerts: alertEngine, AlertStore: alertStore, Push: pushSvc, Shares: sharesSvc, Analytics: analyticsSvc,
-		Infra: infraSvc, Finance: financeSvc, Affiliates: affiliatesSvc, SMSSetup: smsSvc,
+		Infra: infraSvc, Finance: financeSvc, Affiliates: affiliatesSvc, SMSSetup: smsSvc, Theft: theftSvc,
 		StepUp:    stepup.NewService(db, cfg.StepUp, authSvc),
 		Positions: positionRepo, States: stateStore,
 		Raw: rawRepo, Ingestor: ingestor, Conns: connManager, Registry: registry,
@@ -373,7 +390,7 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, log)
+		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, theftSvc, log)
 	}()
 
 	log.Info("plataforma no ar",
@@ -410,6 +427,7 @@ func runWorkers(
 	financeSvc *finance.Service,
 	affiliatesSvc *affiliates.Service,
 	smsSvc *smssetup.Service,
+	theftSvc *theft.Service,
 	log *slog.Logger,
 ) {
 	statusTicker := time.NewTicker(cfg.Tracking.StatusSweepInterval)
@@ -417,6 +435,10 @@ func runWorkers(
 	// A configuração por SMS: o próximo comando, a conexão do rastreador.
 	smsTicker := time.NewTicker(10 * time.Second)
 	defer smsTicker.Stop()
+	// Modo roubo: o intervalo que ficou pendente (o rastreador voltou), o
+	// prazo de 72 h e o lembrete diário.
+	theftTicker := time.NewTicker(30 * time.Second)
+	defer theftTicker.Stop()
 	cleanupTicker := time.NewTicker(6 * time.Hour)
 	// As faturas vencem por dia; conferir de hora em hora basta para a fatura
 	// nova aparecer no mesmo dia em que entra na antecedência configurada.
@@ -468,6 +490,9 @@ func runWorkers(
 
 		case <-smsTicker.C:
 			smsSvc.Work(ctx)
+
+		case <-theftTicker.C:
+			theftSvc.Work(ctx)
 
 		case <-commandTicker.C:
 			commandSvc.SweepTimeouts(ctx)

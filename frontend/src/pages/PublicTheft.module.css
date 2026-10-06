@@ -1,0 +1,129 @@
+/* O link do modo roubo: celular primeiro, o mapa grande e o endereço. */
+
+.page {
+  gap: 1rem;
+}
+
+:global(body):has(.page) {
+  background: radial-gradient(circle at 50% -10%, rgba(239, 91, 82, 0.18) 0%, #060907 55%) #060907 fixed;
+}
+
+.badge {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid rgba(239, 91, 82, 0.6);
+  border-radius: 999px;
+  color: #ff7a72;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(13, 19, 14, 0.85);
+}
+
+.title {
+  margin: 0;
+  font-size: 1.375rem;
+  line-height: 1.2;
+}
+
+.plate {
+  align-self: flex-start;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+.text {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+.muted {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.label {
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.address {
+  font-size: 1.0625rem;
+  line-height: 1.4;
+}
+
+.map {
+  overflow: hidden;
+  height: min(52dvh, 420px);
+  border: 1px solid rgba(239, 91, 82, 0.5);
+  border-radius: 16px;
+}
+
+.leaflet {
+  width: 100%;
+  height: 100%;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0.25rem 0;
+}
+
+.facts div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.facts dt {
+  color: #94a3b8;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.facts dd {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  margin-top: 0.25rem;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #060907;
+  font-size: 1rem;
+  font-weight: 800;
+  text-decoration: none;
+}

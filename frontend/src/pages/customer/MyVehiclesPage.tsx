@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 import { meApi, sharesApi, vehiclesApi, vehicleInputFrom } from '@/api/resources';
 import type { VehicleInput } from '@/api/resources';
@@ -22,7 +22,7 @@ import { TextField } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { formatDeviceStatus, formatRelative } from '@/services/format';
+import { formatDateTime, formatDeviceStatus, formatRelative } from '@/services/format';
 import { stepOf, trackerTone } from '@/services/fulfillment';
 import { subscriptionsByVehicle, subscriptionsWithoutVehicle } from '@/services/subscriptions';
 import { SharesModal, sharesKey } from '@/components/vehicle/SharesModal';
@@ -422,6 +422,15 @@ function VehicleCard({
         </div>
         {vehicle.plate && <span className={billing.plate}>{vehicle.plate}</span>}
       </div>
+
+      {vehicle.theft && (
+        <Link to={`/veiculos/${vehicle.id}`} className={billing.theftAlert}>
+          <Badge tone="danger" dot pulse>
+            Modo roubo ativo
+          </Badge>
+          <span>desde {formatDateTime(vehicle.theft.since)} · abrir o veículo</span>
+        </Link>
+      )}
 
       <div>
         <div className={billing.deliveryLabel}>Rastreador</div>
