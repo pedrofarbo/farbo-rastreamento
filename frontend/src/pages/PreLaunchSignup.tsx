@@ -30,6 +30,8 @@ interface PreLaunchSignupProps {
   highlight: 'insanos' | 'launch';
   /** Depois do cadastro, o botão para cadastrar a próxima pessoa (o tablet do estande). */
   allowNext?: boolean;
+  /** Com o preço da promoção em destaque, lembra o preço do Insanos MC (o QR Code do público geral não). */
+  mentionInsanos?: boolean;
 }
 
 /**
@@ -38,7 +40,16 @@ interface PreLaunchSignupProps {
  * promoção em destaque; a inscrição vai para a lista de lançamento com o
  * evento ou o afiliado.
  */
-export function PreLaunchSignup({ source, campaign, event = '', referral = '', referrer, highlight, allowNext }: PreLaunchSignupProps) {
+export function PreLaunchSignup({
+  source,
+  campaign,
+  event = '',
+  referral = '',
+  referrer,
+  highlight,
+  allowNext,
+  mentionInsanos = true,
+}: PreLaunchSignupProps) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [city, setCity] = useState('');
@@ -185,8 +196,14 @@ export function PreLaunchSignup({ source, campaign, event = '', referral = '', r
                 </div>
                 <div className={styles.offer}>
                   <p className={styles.offerNote}>
-                    Para os {LAUNCH_OFFER.slots} primeiros da lista, 1 veículo por pessoa. É do Insanos MC? A sua
-                    mensalidade é <span className={styles.nowrap}>{LAUNCH_OFFER.insanosMonthly}</span>.
+                    Para os {LAUNCH_OFFER.slots} primeiros da lista, 1 veículo por pessoa.
+                    {mentionInsanos && (
+                      <>
+                        {' '}
+                        É do Insanos MC? A sua mensalidade é{' '}
+                        <span className={styles.nowrap}>{LAUNCH_OFFER.insanosMonthly}</span>.
+                      </>
+                    )}
                   </p>
                 </div>
               </>

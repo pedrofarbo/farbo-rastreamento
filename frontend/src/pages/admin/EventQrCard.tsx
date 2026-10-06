@@ -6,19 +6,28 @@ import { Card } from '@/components/ui/Card';
 import { TextField } from '@/components/ui/Field';
 import { useToast } from '@/components/ui/Toast';
 import { eventSlug, eventUrl } from '@/config/landing';
+import type { EventAudience } from '@/config/landing';
 
 import styles from './EventQr.module.css';
 
+const AUDIENCES: { id: EventAudience; label: string; hint: string }[] = [
+  { id: 'insanos', label: 'Insanos MC', hint: 'Destaca o preço exclusivo do Insanos MC.' },
+  { id: 'geral', label: 'Público geral', hint: 'Destaca o preço de pré-lançamento, sem falar do Insanos MC.' },
+];
+
 /**
  * O QR Code do estande: o nome do evento vira o link da tela de cadastro
- * (/evento/<nome>), e quem se inscreve por ele aparece na lista com o evento.
+ * (/evento/<nome>), e quem se inscreve por ele aparece nos pré-clientes com o
+ * evento. Um QR Code para o Insanos MC (o preço deles) e outro para o público
+ * geral (o preço de pré-lançamento).
  */
 export function EventQrCard() {
   const { notify } = useToast();
   const [name, setName] = useState('');
+  const [audience, setAudience] = useState<EventAudience>('insanos');
   const [debounced, setDebounced] = useState('');
   const [preview, setPreview] = useState('');
-  const link = eventUrl(debounced);
+  const link = eventUrl(debounced, audience);
   const slug = eventSlug(debounced);
 
   // Espera parar de digitar para pedir o QR.
@@ -46,7 +55,7 @@ export function EventQrCard() {
 
   const save = (format: 'svg' | 'png') =>
     leadsApi
-      .downloadQr(link, slug || 'pre-lancamento', format)
+      .downloadQr(link, `${slug || 'pre-lancamento'}-${audience === 'geral' ? 'publico-geral' : 'insanos'}`, format)
       .catch((err: Error) => notify({ tone: 'error', title: 'Não foi possível baixar', description: err.message }));
 
   const copy = async () => {
@@ -65,6 +74,21 @@ export function EventQrCard() {
     >
       <div className={styles.layout}>
         <div className={styles.form}>
+          <div className={styles.audience} role="radiogroup" aria-label="Para quem é o QR Code">
+            {AUDIENCES.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                role="radio"
+                aria-checked={audience === a.id}
+                className={`${styles.audienceOption} ${audience === a.id ? styles.audienceActive : ''}`}
+                onClick={() => setAudience(a.id)}
+              >
+                <strong>{a.label}</strong>
+                <span>{a.hint}</span>
+              </button>
+            ))}
+          </div>
           <TextField
             label="Nome do evento"
             value={name}

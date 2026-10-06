@@ -51,10 +51,17 @@ export function eventSlug(name: string): string {
     .replace(/-+$/, '');
 }
 
-/** O link da tela de cadastro do evento (o que o QR Code abre). */
-export function eventUrl(name: string): string {
+/**
+ * Para quem é o QR Code do evento: o do Insanos MC destaca o preço deles; o
+ * do público geral, o preço de pré-lançamento (sem falar do Insanos).
+ */
+export type EventAudience = 'insanos' | 'geral';
+
+/** O link da tela de cadastro do evento (o que o QR Code abre). O do Insanos
+ *  MC é o link sem nada a mais — o dos QR Codes já impressos. */
+export function eventUrl(name: string, audience: EventAudience = 'insanos'): string {
   const slug = eventSlug(name);
-  return `${SITE_URL}/evento${slug ? `/${slug}` : ''}`;
+  return `${SITE_URL}/evento${slug ? `/${slug}` : ''}${audience === 'geral' ? '?publico=geral' : ''}`;
 }
 
 /** A âncora da seção de pré-lançamento (lista de lançamento). */

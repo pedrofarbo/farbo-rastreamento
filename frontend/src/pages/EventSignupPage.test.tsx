@@ -43,6 +43,9 @@ describe('nome do evento no link', () => {
     expect(eventSlug('evento muito longo '.repeat(10)).length).toBeLessThanOrEqual(60);
     expect(eventUrl('Encontro Insanos MC')).toBe('https://farborastreadores.com.br/evento/encontro-insanos-mc');
     expect(eventUrl('')).toBe('https://farborastreadores.com.br/evento');
+    // O do público geral leva a marca; o do Insanos MC é o link de sempre.
+    expect(eventUrl('Feira de Motos', 'geral')).toBe('https://farborastreadores.com.br/evento/feira-de-motos?publico=geral');
+    expect(eventUrl('Feira de Motos', 'insanos')).toBe('https://farborastreadores.com.br/evento/feira-de-motos');
   });
 });
 
@@ -99,5 +102,23 @@ describe('EventSignupPage', () => {
     expect(city().value).toBe('');
     expect(field('checkbox').checked).toBe(false);
     expect(submit().disabled).toBe(true);
+  });
+
+  it('o QR Code do público geral destaca o preço de pré-lançamento, sem o Insanos', async () => {
+    window.scrollTo = () => undefined;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    await act(async () =>
+      createRoot(host).render(
+        <MemoryRouter initialEntries={['/evento/feira-de-motos?publico=geral']}>
+          <Routes>
+            <Route path="/evento/:evento" element={<EventSignupPage />} />
+          </Routes>
+        </MemoryRouter>,
+      ),
+    );
+    expect(host.textContent).toContain('Preço de pré-lançamento');
+    expect(host.textContent).toContain('R$34,90/mês');
+    expect(host.textContent).not.toContain('Insanos');
   });
 });

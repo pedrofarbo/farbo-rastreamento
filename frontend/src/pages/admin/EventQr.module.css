@@ -13,6 +13,46 @@
   min-width: 0;
 }
 
+/* Para quem é o QR Code: Insanos MC ou público geral. */
+.audience {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.audienceOption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.audienceOption strong {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.audienceOption span {
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.audienceActive {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.audienceActive strong {
+  color: var(--accent);
+}
+
 .link {
   display: flex;
   flex-wrap: wrap;
