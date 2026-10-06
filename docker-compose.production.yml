@@ -3,6 +3,9 @@ services:
     environment:
       # A biometria vale no app (app.) e no painel (painel.): o domínio comum.
       WEBAUTHN_RP_ID: farborastreadores.com.br
+      # Para onde a configuração por SMS aponta os rastreadores (o endereço
+      # testado em campo com o J16; o cadastro de cada rastreador manda).
+      TRACKER_PUBLIC_HOST: tcp.farborastreadores.com.br
       # Diagnóstico → Servidor mostra o último backup do banco.
       BACKUP_DIR: /backups
       # Os rastreadores chegam pelo Traefik: o IP real vem no cabeçalho PROXY

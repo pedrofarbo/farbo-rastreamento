@@ -1341,3 +1341,65 @@ export interface PartnerReport {
   paidCents: number;
   months: PartnerMonth[];
 }
+
+// ---------------------------------------------------------------------------
+// Configuração do rastreador por SMS (Twilio) na ativação
+// ---------------------------------------------------------------------------
+
+/** Um comando de configuração (texto redigido: as senhas viram ***). */
+export interface SmsStep {
+  kind: 'UNLOCK' | 'APN' | 'SERVER' | 'GMT' | 'TIMER' | 'PARAM';
+  label: string;
+  text: string;
+}
+
+/** Os comandos que vão sair e o que falta no cadastro. */
+export interface SmsPlan {
+  /** O número do chip (E.164); vazio se não cadastrado. */
+  phone: string;
+  steps: SmsStep[];
+  problems: string[];
+  /** Os opcionais: destravar o canal (CMDLOCK) e pedir a configuração de volta (PARAM#). */
+  unlock: SmsStep;
+  query: SmsStep;
+}
+
+export interface SmsStepView extends SmsStep {
+  /** pending (ainda não saiu), queued, sending, sent, delivered, undelivered, failed. */
+  status: string;
+  error: string;
+  sentAt: string | null;
+}
+
+/**
+ * Uma configuração por SMS. SENDING: mandando os comandos; WAITING: todos
+ * enviados, esperando o rastreador conectar; DONE: conectou; FAILED: um SMS
+ * não saiu ou não chegou; TIMEOUT: não conectou a tempo; CANCELED.
+ */
+export interface SmsSession {
+  id: string;
+  deviceId: string;
+  fulfillmentId: string | null;
+  phone: string;
+  status: 'SENDING' | 'WAITING' | 'DONE' | 'FAILED' | 'TIMEOUT' | 'CANCELED';
+  error: string;
+  note: string;
+  steps: SmsStepView[];
+  replies: { body: string; at: string }[];
+  waitingSince: string | null;
+  connectedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+}
+
+export interface SmsSetupView {
+  /** O Twilio está configurado. */
+  enabled: boolean;
+  /** Quem envia (o número do Twilio). */
+  from: string;
+  /** O endereço a cadastrar no número do Twilio para receber as respostas. */
+  inboundUrl: string;
+  plan: SmsPlan;
+  /** A última configuração deste rastreador. */
+  session: SmsSession | null;
+}

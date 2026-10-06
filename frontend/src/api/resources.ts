@@ -12,6 +12,8 @@ import type {
   PixInfo,
   PixPlan,
   PixTransfer,
+  SmsSession,
+  SmsSetupView,
   PublicAffiliate,
   CashFlow,
   DreMonth,
@@ -548,6 +550,14 @@ export const publicApi = {
   /** A página do afiliado, pelo link secreto. */
   partner: (token: string) =>
     request<PartnerReport>(`/api/public/partner/${encodeURIComponent(token)}`, { anonymous: true }),
+};
+
+/** Configuração do rastreador por SMS (Twilio) na ativação. */
+export const smsSetupApi = {
+  get: (deviceId: string) => api.get<SmsSetupView>(`/api/devices/${deviceId}/sms-setup`),
+  start: (deviceId: string, input: { fulfillmentId: string | null; unlock: boolean; query: boolean }) =>
+    api.post<SmsSession>(`/api/devices/${deviceId}/sms-setup`, input),
+  cancel: (sessionId: string) => api.post<SmsSession>(`/api/sms-setup/${sessionId}/cancel`),
 };
 
 /** Programa de afiliados (admin). */

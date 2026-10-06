@@ -38,6 +38,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/push"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/shares"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smssetup"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/support"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tcp"
@@ -90,6 +91,8 @@ type Deps struct {
 	Finance *finance.Service
 	// Affiliates: o programa de afiliados (links de indicação e comissões).
 	Affiliates *affiliates.Service
+	// SMSSetup: a configuração do rastreador por SMS (Twilio) na ativação.
+	SMSSetup *smssetup.Service
 	// StepUp: confirmação extra (biometria ou senha) antes de ações
 	// sensíveis. Nil desliga a exigência (só em testes).
 	StepUp       *stepup.Service
@@ -167,6 +170,8 @@ func (s *Server) routes() chi.Router {
 	launchLimiter := newRateLimiter(0.5, 20)
 	// A tela do link de indicação e a página do afiliado.
 	affiliateLimiter := newRateLimiter(0.5, 30)
+	// Os avisos do Twilio (vêm em rajada: um por mudança de status).
+	twilioLimiter := newRateLimiter(10, 100)
 	// Visitas da landing: uma página manda a visita, as seções e os cliques.
 	analyticsLimiter := newRateLimiter(1, 40)
 	// Senha da confirmação extra: além do teto por usuário (stepup).
@@ -206,6 +211,12 @@ func (s *Server) routes() chi.Router {
 		if s.Leads != nil {
 			r.With(leadLimiter.middleware).Post("/public/leads", s.handlePublicCreateLead)
 			r.With(launchLimiter.middleware).Post("/public/launch", s.handlePublicJoinWaitlist)
+		}
+		// Twilio: o status dos SMS enviados e as respostas dos rastreadores
+		// (assinatura conferida em cada um).
+		if s.SMSSetup != nil {
+			r.With(twilioLimiter.middleware).Post("/twilio/status", s.handleTwilioStatus)
+			r.With(twilioLimiter.middleware).Post("/twilio/inbound", s.handleTwilioInbound)
 		}
 		// Afiliados: o "Indicado por" da tela de cadastro e a página do
 		// afiliado (link secreto).
@@ -354,6 +365,11 @@ func (s *Server) routes() chi.Router {
 						// Configuração do aparelho: só o admin (a tela de
 						// rastreadores também é só dele).
 						r.With(auth.RequireRole(auth.RoleAdmin)).Get("/provisioning", s.handleDeviceProvisioning)
+						// Configuração por SMS na ativação: quem avança os pedidos.
+						if s.SMSSetup != nil {
+							r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator)).Get("/sms-setup", s.handleDeviceSMSSetup)
+							r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator)).Post("/sms-setup", s.handleStartSMSSetup)
+						}
 					})
 				})
 
@@ -496,6 +512,9 @@ func (s *Server) routes() chi.Router {
 				// Pedidos: o chip e o rastreador até o cliente. A equipe
 				// operacional avança as etapas; comprar etiqueta (gasta saldo)
 				// e conectar o Melhor Envios é do admin.
+				if s.SMSSetup != nil {
+					r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator)).Post("/sms-setup/{id}/cancel", s.handleCancelSMSSetup)
+				}
 				r.Route("/fulfillments", func(r chi.Router) {
 					r.Use(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator))
 					r.Get("/", s.handleListFulfillments)

@@ -15,6 +15,7 @@ import { useAuth } from '@/stores/AuthContext';
 import type { Fulfillment, FulfillmentTrack, ShippingQuote } from '@/types';
 
 import { FulfillmentTimeline } from './FulfillmentTimeline';
+import { SmsSetupPanel } from './SmsSetupPanel';
 import styles from './Fulfillment.module.css';
 
 /** Status do Melhor Envios que pedem atenção da central. */
@@ -242,6 +243,7 @@ export function FulfillmentAdminModal({
                       </option>
                     ))}
                   </SelectField>
+                  {deviceId && <SmsSetupPanel deviceId={deviceId} fulfillmentId={f.id} />}
                   <div className={styles.actionRow}>
                     <Button
                       size="small"

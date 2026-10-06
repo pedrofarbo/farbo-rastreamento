@@ -128,6 +128,26 @@ type ChangeRequest struct {
 // Change aplica a mudança da central (com as regras) e avisa o cliente se o
 // rastreador chegou.
 func (s *Service) Change(ctx context.Context, id uuid.UUID, req ChangeRequest, actor uuid.UUID) (*Fulfillment, error) {
+	return s.change(ctx, id, req, &actor)
+}
+
+// AutoConfigure marca o rastreador como "Configurado" e vincula o aparelho ao
+// veículo, sem alguém da central: o rastreador conectou no servidor depois
+// da configuração por SMS. Só vale para o pedido ainda em configuração.
+func (s *Service) AutoConfigure(ctx context.Context, id, deviceID uuid.UUID, note string) error {
+	f, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if f.TrackerStatus != TrackerConfiguring {
+		return nil
+	}
+	_, err = s.change(ctx, id, ChangeRequest{Track: TrackTracker, Status: TrackerConfigured, Note: note, DeviceID: &deviceID}, nil)
+	return err
+}
+
+// change aplica a mudança; sem actor, ela fica no histórico como automática.
+func (s *Service) change(ctx context.Context, id uuid.UUID, req ChangeRequest, actor *uuid.UUID) (*Fulfillment, error) {
 	req.Note = strings.TrimSpace(req.Note)
 	if len([]rune(req.Note)) > 300 {
 		return nil, RuleError{"observação: até 300 caracteres"}
@@ -170,7 +190,7 @@ func (s *Service) Change(ctx context.Context, id uuid.UUID, req ChangeRequest, a
 			if i > 0 {
 				note = "O chip M2M ainda não chegou à base"
 			}
-			if err := setStatus(ctx, tx, id, req.Track, status, note, &actor); err != nil {
+			if err := setStatus(ctx, tx, id, req.Track, status, note, actor); err != nil {
 				return err
 			}
 		}

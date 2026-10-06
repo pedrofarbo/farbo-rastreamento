@@ -40,6 +40,33 @@ type Config struct {
 	WhatsApp  WhatsApp
 	Leads     Leads
 	Infra     Infra
+	SMS       SMS
+}
+
+// SMS configura o envio pelo Twilio e a configuração do rastreador por SMS
+// na ativação (APN, servidor, fuso e intervalo, para o número do chip).
+type SMS struct {
+	TwilioAccountSID          string
+	TwilioAuthToken           string
+	TwilioFrom                string
+	TwilioMessagingServiceSID string
+	TwilioBaseURL             string
+	// WebhookBaseURL é o endereço público em que o Twilio avisa o status dos
+	// SMS e entrega as respostas; o padrão é o APP_URL.
+	WebhookBaseURL string
+	// TrackerHost e TrackerPort são para onde o rastreador manda as posições
+	// (o padrão é o host do APP_URL e a TCP_PORT).
+	TrackerHost string
+	TrackerPort int
+	// O APN dos chips, quando o cadastro do rastreador não diz.
+	APN         string
+	APNUser     string
+	APNPassword string
+	// ReportSeconds e ParkedSeconds são os intervalos das posições com a
+	// ignição ligada e desligada (TIMER); o cadastro do rastreador pode ter
+	// o próprio intervalo ligado.
+	ReportSeconds int
+	ParkedSeconds int
 }
 
 type HTTP struct {
@@ -764,11 +791,36 @@ func Load() (*Config, error) {
 	}
 	cfg.Leads = Leads{NotifyEmails: csv("LEADS_NOTIFY_EMAILS", centralEmails())}
 	cfg.Infra = Infra{BackupDir: strings.TrimSpace(str("BACKUP_DIR", ""))}
+	cfg.SMS = SMS{
+		TwilioAccountSID:          strings.TrimSpace(str("TWILIO_ACCOUNT_SID", "")),
+		TwilioAuthToken:           strings.TrimSpace(str("TWILIO_AUTH_TOKEN", "")),
+		TwilioFrom:                strings.TrimSpace(str("TWILIO_FROM", "")),
+		TwilioMessagingServiceSID: strings.TrimSpace(str("TWILIO_MESSAGING_SERVICE_SID", "")),
+		TwilioBaseURL:             strings.TrimRight(str("TWILIO_BASE_URL", ""), "/"),
+		WebhookBaseURL:            strings.TrimRight(str("TWILIO_WEBHOOK_BASE_URL", ""), "/"),
+		TrackerHost:               strings.TrimSpace(str("TRACKER_PUBLIC_HOST", "")),
+		TrackerPort:               num("TRACKER_PUBLIC_PORT", cfg.TCP.Port),
+		APN:                       strings.TrimSpace(str("TRACKER_APN", "")),
+		APNUser:                   strings.TrimSpace(str("TRACKER_APN_USER", "")),
+		APNPassword:               strings.TrimSpace(str("TRACKER_APN_PASSWORD", "")),
+		// Testado em campo com o J16: 10 s com a ignição ligada.
+		ReportSeconds: num("TRACKER_REPORT_INTERVAL_SECONDS", 10),
+		ParkedSeconds: num("TRACKER_PARKED_INTERVAL_SECONDS", 3600),
+	}
 
 	// Sem APP_URL, usa a primeira origem do CORS: ela já é o endereço em que
 	// o navegador abre o painel.
 	if cfg.Mail.AppURL == "" && len(cfg.HTTP.CORSOrigins) > 0 {
 		cfg.Mail.AppURL = strings.TrimRight(cfg.HTTP.CORSOrigins[0], "/")
+	}
+	// SMS: os avisos do Twilio e o servidor dos rastreadores no endereço do painel.
+	if cfg.SMS.WebhookBaseURL == "" {
+		cfg.SMS.WebhookBaseURL = cfg.Mail.AppURL
+	}
+	if cfg.SMS.TrackerHost == "" {
+		if u, err := url.Parse(cfg.Mail.AppURL); err == nil && u.Hostname() != "localhost" {
+			cfg.SMS.TrackerHost = strings.ToLower(u.Hostname())
+		}
 	}
 	// Os serviços de push pedem um contato de quem envia (RFC 8292).
 	if cfg.Push.VAPIDSubject == "" {
