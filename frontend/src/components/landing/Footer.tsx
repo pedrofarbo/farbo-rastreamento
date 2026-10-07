@@ -11,7 +11,7 @@ import {
   whatsappUrl,
 } from '@/config/contact';
 import { ANATEL_HOMOLOGATION, SOCIAL_SECTION } from '@/config/landing';
-import { CONTRACT_PATH, PRIVACY_PATH, TERMS_PATH } from '@/config/legal';
+import { COMPANY, CONTRACT_PATH, PRIVACY_PATH, TERMS_PATH } from '@/config/legal';
 
 import styles from './Footer.module.css';
 
@@ -102,7 +102,11 @@ export const Footer: React.FC = () => {
         </div>
 
         <div className={styles.bottomBar}>
-          <span>© {new Date().getFullYear()} Farbo Rastreadores. Todos os direitos reservados.</span>
+          <div className={styles.copyright}>
+            <span>© {new Date().getFullYear()} Farbo Rastreadores. Todos os direitos reservados.</span>
+            {/* A empresa por trás da marca: razão social e CNPJ. */}
+            <span className={styles.company}>Farbo Tecnologia de Sistemas e Cloud LTDA - {COMPANY.cnpj}</span>
+          </div>
           <div className={styles.legalLinks}>
             <Link to={TERMS_PATH}>Termos de Uso</Link>
             <Link to={PRIVACY_PATH}>Política de Privacidade</Link>

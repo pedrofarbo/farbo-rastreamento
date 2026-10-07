@@ -35,6 +35,14 @@ type fakePixSender struct {
 	respond func(req abacatepay.TransferRequest) (*abacatepay.Transfer, error)
 	lookup  map[string]*abacatepay.Transfer
 	delay   time.Duration
+	// payouts são os saques do mês feitos pelo painel da AbacatePay.
+	payouts int
+}
+
+func (f *fakePixSender) PayoutsSince(context.Context, time.Time) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.payouts, nil
 }
 
 func (f *fakePixSender) SendPix(_ context.Context, req abacatepay.TransferRequest) (*abacatepay.Transfer, error) {
@@ -226,7 +234,7 @@ func TestSupplierPixEndToEnd(t *testing.T) {
 	// O plano: a chave do fornecedor; sem chave, o motivo.
 	honorarios := entry("Honorários de outubro", contador.ID, 45000, "")
 	if p := plan(honorarios.ID.String()); p.Plan == nil || p.Plan.Key != "52998224725" || p.Plan.KeyType != "CPF" ||
-		p.Plan.Source != "key" || p.Plan.AmountCents != 45000 {
+		p.Plan.Source != "key" || p.Plan.AmountCents != 45000 || p.Plan.FeeCents != 80 || p.Plan.SendCents != 45080 {
 		t.Fatalf("plano = %+v", p)
 	}
 	semPix := entry("Conta sem Pix", semChave.ID, 1000, "")
@@ -241,14 +249,17 @@ func TestSupplierPixEndToEnd(t *testing.T) {
 	if fake.count() != 0 {
 		t.Fatal("enviou sem a confirmação")
 	}
-	// Com ela: sai, a conta é baixada e a tarifa entra nas contas.
+	// Com ela: sai com a tarifa somada (a AbacatePay a desconta do envio: o
+	// fornecedor recebe a conta inteira), a conta é baixada e a tarifa entra
+	// nas contas.
 	status, body := send(honorarios.ID.String(), grant())
 	var sent finance.PixTransfer
 	_ = json.Unmarshal(body, &sent)
-	if status != http.StatusOK || sent.Status != finance.PixComplete || sent.ProviderID == "" || sent.FeeCents != 80 {
+	if status != http.StatusOK || sent.Status != finance.PixComplete || sent.ProviderID == "" || sent.FeeCents != 80 ||
+		sent.AmountCents != 45000 || sent.SentCents != 45080 || sent.DeliveredCents != 45000 {
 		t.Fatalf("envio: %d %s", status, body)
 	}
-	if req := fake.sent[0]; req.AmountCents != 45000 || req.Key != "52998224725" || req.KeyType != "CPF" ||
+	if req := fake.sent[0]; req.AmountCents != 45080 || req.Key != "52998224725" || req.KeyType != "CPF" ||
 		!strings.HasPrefix(req.ExternalID, "farbo-pix-") || req.Description != "Honorários de outubro" {
 		t.Errorf("pedido à AbacatePay = %+v", req)
 	}
@@ -334,12 +345,27 @@ func TestSupplierPixEndToEnd(t *testing.T) {
 	providerID := fmt.Sprintf("tran_%d", fake.count())
 	fake.lookup[providerID].Amount = 99 // valor diferente: recusado
 	env.must(admin, http.MethodPost, "/api/finance/pix/"+unknown.ID.String()+"/resolve", map[string]any{"sent": true, "providerId": providerID}, http.StatusBadRequest)
-	fake.lookup[providerID].Amount = 12990
+	fake.lookup[providerID].Amount = 13070 // a conta + a tarifa
 	call(http.MethodPost, "/api/finance/pix/"+unknown.ID.String()+"/resolve", map[string]any{"sent": true, "providerId": providerID}, http.StatusOK, &resolved)
 	if e := get(internet.ID.String()); resolved.Status != finance.PixComplete || resolved.ProviderID != providerID || e.Status != finance.StatusPaid {
 		t.Fatalf("conferido (saiu) = %+v %+v", resolved, e)
 	}
 	fake.respond = fake.completes
+
+	// Passou dos 20 envios do mês (com os saques do painel): a tarifa é a
+	// cheia. Se a AbacatePay cobrar outra, o que chegou fica registrado.
+	fake.payouts = 25
+	cheia := entry("Frete", contador.ID, 5000, "")
+	if p := plan(cheia.ID.String()); p.Plan == nil || p.Plan.FeeCents != 250 || p.Plan.SendCents != 5250 {
+		t.Fatalf("tarifa cheia = %+v", p.Plan)
+	}
+	if status, _ := send(cheia.ID.String(), grant()); status != http.StatusOK || fake.sent[len(fake.sent)-1].AmountCents != 5250 {
+		t.Fatalf("envio com a tarifa cheia: %d", status)
+	}
+	if e := get(cheia.ID.String()); e.Pix == nil || e.Pix.DeliveredCents != 5170 || e.PaidCents == nil || *e.PaidCents != 5170 {
+		t.Errorf("tarifa cobrada diferente da estimada = %+v %+v", e, e.Pix)
+	}
+	fake.payouts = 0
 
 	// Dois cliques ao mesmo tempo: um Pix só.
 	fake.delay = 300 * time.Millisecond

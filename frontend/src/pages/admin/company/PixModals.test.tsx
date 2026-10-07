@@ -43,7 +43,7 @@ const button = (label: string | RegExp) =>
 const ENTRY = { id: 'e1', description: 'Honorários de outubro' } as FinanceEntry;
 const PLAN: PixPlan = {
   entryId: 'e1', description: 'Honorários de outubro', supplierName: 'Silva Contabilidade', amountCents: 45000,
-  source: 'key', key: '52998224725', keyType: 'CPF', recipient: '',
+  source: 'key', key: '52998224725', keyType: 'CPF', recipient: '', feeCents: 80, sendCents: 45080,
 };
 
 async function render() {
@@ -85,11 +85,14 @@ describe('PixPayModal', () => {
   it('confere, confirma e envia', async () => {
     plan = { plan: PLAN, problem: '', transfers: [] };
     sendResult = async () => ({
-      id: 't1', entryId: 'e1', providerId: 'tran_1', status: 'COMPLETE', amountCents: 45000, feeCents: 80, key: '52998224725',
+      id: 't1', entryId: 'e1', providerId: 'tran_1', status: 'COMPLETE', amountCents: 45000, sentCents: 45080,
+      deliveredCents: 45000, feeCents: 80, key: '52998224725',
       keyType: 'CPF', receiptUrl: 'https://app.abacatepay.com/receipt/tran_1', devMode: false, error: '', createdAt: '', completedAt: '',
     });
     await render();
-    for (const part of ['Silva Contabilidade', '529.982.247-25', 'R$ 450,00', 'tarifa da AbacatePay (R$ 0,80)', 'R$ 5.000,00 disponível']) {
+    // O fornecedor recebe a conta inteira; a tarifa é por fora, paga por quem envia.
+    for (const part of ['Silva Contabilidade', '529.982.247-25', 'RecebeR$ 450,00 (o valor da conta, inteiro)',
+      'TarifaR$ 0,80 da AbacatePay, paga por você (até o 20º envio do mês)', 'Sai do saldoR$ 450,80', 'R$ 5.000,00 disponível']) {
       expect(text()).toContain(part);
     }
     expect(sent).toEqual([]);
@@ -97,9 +100,26 @@ describe('PixPayModal', () => {
     await act(async () => button(/Para enviar R\$\s450,00 por Pix/).click());
     await flush();
     expect(sent).toEqual([['e1', 'comprovante-1']]);
-    expect(text()).toContain('Pix enviado: R$ 450,00');
+    expect(text()).toContain('Pix enviado: R$ 450,00 para o fornecedor');
     expect(text()).toContain('tarifa de R$ 0,80');
+    expect(text()).not.toContain('a menos que a conta');
     expect(document.querySelector('a[href="https://app.abacatepay.com/receipt/tran_1"]')).not.toBeNull();
+  });
+
+  it('tarifa cheia (depois do 20º envio) e tarifa cobrada maior que a prevista', async () => {
+    plan = { plan: { ...PLAN, feeCents: 250, sendCents: 45250 }, problem: '', transfers: [] };
+    sendResult = async () => ({
+      id: 't2', entryId: 'e1', providerId: 'tran_2', status: 'COMPLETE', amountCents: 45000, sentCents: 45080,
+      deliveredCents: 44830, feeCents: 250, key: '52998224725', keyType: 'CPF', receiptUrl: '', devMode: false, error: '',
+      createdAt: '', completedAt: '',
+    });
+    await render();
+    expect(text()).toContain('a partir do 21º envio do mês');
+    expect(text()).toContain('Sai do saldoR$ 452,50');
+    await act(async () => button('Continuar').click());
+    await act(async () => button(/Para enviar/).click());
+    await flush();
+    expect(text()).toContain('chegaram R$ 448,30, R$ 1,70 a menos que a conta');
   });
 
   it('a recusa volta para a conferência com o motivo', async () => {

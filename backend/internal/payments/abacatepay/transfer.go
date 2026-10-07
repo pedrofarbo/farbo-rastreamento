@@ -34,6 +34,43 @@ const (
 // MinTransferCents é o mínimo de um envio (R$ 1,00).
 const MinTransferCents = 100
 
+// A tarifa de cada envio (Pix a terceiros e saques): os 20 primeiros do mês
+// a R$ 0,80, os seguintes a R$ 2,50. A AbacatePay desconta a tarifa do valor
+// enviado ("o destinatário recebe amount menos a taxa"): para entregar um
+// valor exato, soma-se a tarifa ao amount.
+const (
+	TransferFeeCents     = 80
+	TransferFeeFullCents = 250
+	TransfersAtLowFee    = 20
+)
+
+// TransferFee é a tarifa do próximo envio, sabendo quantos já saíram no mês.
+func TransferFee(sentThisMonth int) int {
+	if sentThisMonth < TransfersAtLowFee {
+		return TransferFeeCents
+	}
+	return TransferFeeFullCents
+}
+
+// PayoutsSince conta os saques concluídos desde o dia (no máximo 100: bem
+// acima dos 20 da tarifa menor).
+func (c *Client) PayoutsSince(ctx context.Context, since time.Time) (int, error) {
+	var list []struct {
+		Status string `json:"status"`
+	}
+	q := url.Values{"limit": {"100"}, "startDate": {since.Format(time.DateOnly)}}
+	if err := c.do(ctx, http.MethodGet, "/payouts/list", q, nil, &list); err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, p := range list {
+		if p.Status == TransferComplete {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // TransferRequest é o Pix a enviar.
 type TransferRequest struct {
 	AmountCents int

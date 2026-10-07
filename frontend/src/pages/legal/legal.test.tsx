@@ -88,5 +88,7 @@ describe('links para os documentos', () => {
     expect(host.querySelector(`a[href="${TERMS_PATH}"]`)?.textContent).toBe('Termos de Uso');
     expect(host.querySelector(`a[href="${PRIVACY_PATH}"]`)?.textContent).toBe('Política de Privacidade');
     expect(host.querySelector('a[href="/#planos"]')).not.toBeNull();
+    // A empresa por trás da marca, com o CNPJ.
+    expect(host.textContent).toContain('Farbo Tecnologia de Sistemas e Cloud LTDA - 49.757.084/0001-00');
   });
 });

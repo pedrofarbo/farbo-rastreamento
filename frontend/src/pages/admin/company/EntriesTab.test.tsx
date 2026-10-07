@@ -127,6 +127,7 @@ describe('EntriesTab', () => {
     pixEnabled = true;
     const pix = (status: 'COMPLETE' | 'UNKNOWN' | 'FAILED', error = '') => ({
       id: `t-${status}`, entryId: 'x', providerId: 'tran_1', status, amountCents: 1000, feeCents: 80, key: 'a@b.c',
+      sentCents: 1080, deliveredCents: status === 'COMPLETE' ? 1000 : 0,
       keyType: 'EMAIL' as const, receiptUrl: 'https://app.abacatepay.com/receipt/tran_1', devMode: false, error,
       createdAt: '', completedAt: null,
     });

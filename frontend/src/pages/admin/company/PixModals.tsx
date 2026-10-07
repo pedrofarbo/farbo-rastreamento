@@ -39,8 +39,6 @@ export function detectKeyType(key: string): '' | PixKeyType {
   return '';
 }
 
-/** A tarifa da AbacatePay por Pix enviado (vem na resposta; aqui só para avisar). */
-export const PIX_FEE_CENTS = 80;
 
 /** A chave como se confere a olho: o copia-e-cola fica curto. */
 export function keyPreview(key: string, type: PixKeyType): string {
@@ -97,7 +95,9 @@ export function PixPayModal({
   // O saldo que a API da AbacatePay informa pode vir atrasado (em produção,
   // ficou em zero com saldo no painel deles): só avisa. Sem saldo de verdade,
   // a AbacatePay recusa o envio e a conta continua em aberto.
-  const short = p !== null && available !== null && available < p.amountCents + PIX_FEE_CENTS;
+  // A AbacatePay desconta a tarifa do valor enviado: o Pix leva a conta + a
+  // tarifa, para o fornecedor receber a conta inteira.
+  const short = p !== null && available !== null && available < p.sendCents;
 
   return (
     <Modal
@@ -133,11 +133,18 @@ export function PixPayModal({
           <Spinner label="Conferindo" />
         ) : step === 'done' && result ? (
           <div className={styles.pixDone} role="status">
-            <strong>Pix enviado: {formatMoney(result.amountCents)}</strong>
+            <strong>Pix enviado: {formatMoney(result.deliveredCents || result.amountCents)} para o fornecedor</strong>
             <span>
               A conta foi baixada como paga
               {result.feeCents > 0 ? ` e a tarifa de ${formatMoney(result.feeCents)} entrou nas contas pagas` : ''}.
             </span>
+            {result.deliveredCents > 0 && result.deliveredCents < result.amountCents && (
+              <span className={styles.warn}>
+                A AbacatePay cobrou uma tarifa maior que a prevista: chegaram{' '}
+                {formatMoney(result.deliveredCents)}, {formatMoney(result.amountCents - result.deliveredCents)} a menos
+                que a conta. Lance a diferença como outra conta e pague-a.
+              </span>
+            )}
             {result.receiptUrl && (
               <a href={result.receiptUrl} target="_blank" rel="noopener noreferrer">
                 Ver o comprovante
@@ -159,10 +166,22 @@ export function PixPayModal({
               </dd>
               <dt>{KEY_TYPE_LABELS[p.keyType]}</dt>
               <dd className={styles.pixKey}>{keyPreview(p.key, p.keyType)}</dd>
-              <dt>Valor</dt>
+              <dt>Recebe</dt>
               <dd>
                 <strong>{formatMoney(p.amountCents)}</strong>
-                <span className={styles.muted}> + tarifa da AbacatePay ({formatMoney(PIX_FEE_CENTS)})</span>
+                <span className={styles.muted}> (o valor da conta, inteiro)</span>
+              </dd>
+              <dt>Tarifa</dt>
+              <dd>
+                {formatMoney(p.feeCents)}
+                <span className={styles.muted}>
+                  {' '}
+                  da AbacatePay, paga por você ({p.feeCents > 80 ? 'a partir do 21º envio do mês' : 'até o 20º envio do mês'})
+                </span>
+              </dd>
+              <dt>Sai do saldo</dt>
+              <dd>
+                <strong>{formatMoney(p.sendCents)}</strong>
               </dd>
               <dt>Saldo</dt>
               <dd className={short ? styles.warn : undefined}>

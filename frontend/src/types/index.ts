@@ -1350,7 +1350,12 @@ export interface PixTransfer {
   entryId: string;
   providerId: string;
   status: 'SENDING' | 'COMPLETE' | 'FAILED' | 'UNKNOWN';
+  /** O que o fornecedor deve receber (o valor da conta). */
   amountCents: number;
+  /** O que foi enviado pela AbacatePay: a conta + a tarifa (ela desconta a tarifa do envio). */
+  sentCents: number;
+  /** O que chegou ao fornecedor (enviado menos a tarifa cobrada); 0 antes de concluir. */
+  deliveredCents: number;
   feeCents: number;
   key: string;
   keyType: PixKeyType;
@@ -1381,6 +1386,9 @@ export interface PixPlan {
   keyType: PixKeyType;
   /** O recebedor como está no copia-e-cola. */
   recipient: string;
+  /** A tarifa da AbacatePay (paga pela empresa) e o que sai do saldo (a conta + a tarifa). */
+  feeCents: number;
+  sendCents: number;
 }
 
 export interface FinanceAttachment {

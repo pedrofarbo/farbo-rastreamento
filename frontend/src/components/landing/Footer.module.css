@@ -136,6 +136,18 @@
   font-size: 0.8125rem;
 }
 
+.copyright {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+/* Razão social e CNPJ: discreto, abaixo do copyright. */
+.company {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
 .legalLinks {
   display: flex;
   gap: 1.5rem;

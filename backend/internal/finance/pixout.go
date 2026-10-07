@@ -29,6 +29,8 @@ type PixSender interface {
 	SendPix(ctx context.Context, req abacatepay.TransferRequest) (*abacatepay.Transfer, error)
 	GetTransfer(ctx context.Context, id string) (*abacatepay.Transfer, error)
 	Balance(ctx context.Context) (*abacatepay.Balance, error)
+	// PayoutsSince conta os saques do mês (entram na conta da tarifa).
+	PayoutsSince(ctx context.Context, since time.Time) (int, error)
 }
 
 // Status de um envio.
@@ -61,32 +63,58 @@ func (s *Service) PixEnabled() bool { return s.pix != nil }
 
 // PixTransfer é um envio (o último de cada conta vem junto com ela).
 type PixTransfer struct {
-	ID          uuid.UUID  `json:"id"`
-	EntryID     uuid.UUID  `json:"entryId"`
-	ProviderID  string     `json:"providerId"`
-	Status      string     `json:"status"`
-	AmountCents int64      `json:"amountCents"`
-	FeeCents    int64      `json:"feeCents"`
-	Key         string     `json:"key"`
-	KeyType     string     `json:"keyType"`
-	ReceiptURL  string     `json:"receiptUrl"`
-	DevMode     bool       `json:"devMode"`
-	Error       string     `json:"error"`
-	CreatedAt   time.Time  `json:"createdAt"`
-	CompletedAt *time.Time `json:"completedAt"`
+	ID         uuid.UUID `json:"id"`
+	EntryID    uuid.UUID `json:"entryId"`
+	ProviderID string    `json:"providerId"`
+	Status     string    `json:"status"`
+	// AmountCents é o que o fornecedor deve receber; SentCents, o que foi
+	// pedido à AbacatePay (com a tarifa, que ela desconta); DeliveredCents, o
+	// que chegou (SentCents menos a tarifa cobrada).
+	AmountCents    int64      `json:"amountCents"`
+	SentCents      int64      `json:"sentCents"`
+	DeliveredCents int64      `json:"deliveredCents"`
+	FeeCents       int64      `json:"feeCents"`
+	Key            string     `json:"key"`
+	KeyType        string     `json:"keyType"`
+	ReceiptURL     string     `json:"receiptUrl"`
+	DevMode        bool       `json:"devMode"`
+	Error          string     `json:"error"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	CompletedAt    *time.Time `json:"completedAt"`
 }
 
-const pixColumns = `id, entry_id, COALESCE(provider_id, ''), status, amount_cents, fee_cents, pix_key, key_type,
+const pixColumns = `id, entry_id, COALESCE(provider_id, ''), status, amount_cents, sent_cents, fee_cents, pix_key, key_type,
 	receipt_url, dev_mode, error, created_at, completed_at`
 
 func scanPix(row database.Scanner) (*PixTransfer, error) {
 	var p PixTransfer
-	err := row.Scan(&p.ID, &p.EntryID, &p.ProviderID, &p.Status, &p.AmountCents, &p.FeeCents, &p.Key, &p.KeyType,
+	err := row.Scan(&p.ID, &p.EntryID, &p.ProviderID, &p.Status, &p.AmountCents, &p.SentCents, &p.FeeCents, &p.Key, &p.KeyType,
 		&p.ReceiptURL, &p.DevMode, &p.Error, &p.CreatedAt, &p.CompletedAt)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
+	if p.Status == PixComplete {
+		p.DeliveredCents = p.SentCents - p.FeeCents
+	}
 	return &p, nil
+}
+
+// transferFee é a tarifa do próximo envio: conta os Pix enviados pelo sistema
+// no mês e os saques (o dono também saca pelo painel da AbacatePay; os dois
+// entram nos 20 da tarifa menor). Sem a lista de saques, conta só os Pix.
+func (s *Service) transferFee(ctx context.Context) int64 {
+	today := s.Today()
+	monthStart := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, s.loc)
+	var sent int
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM finance_pix_transfers WHERE status <> 'FAILED' AND created_at >= $1`,
+		monthStart).Scan(&sent); err != nil {
+		s.log.Warn("falha ao contar os Pix do mês (tarifa)", "err", err)
+	}
+	payouts, err := s.pix.PayoutsSince(ctx, monthStart)
+	if err != nil {
+		s.log.Warn("falha ao contar os saques do mês na AbacatePay (tarifa)", "err", providerMessage(err))
+	}
+	return int64(abacatepay.TransferFee(sent + payouts))
 }
 
 // PixInfo é o que a tela mostra antes de pagar: se está ligado, o modo e o
@@ -126,6 +154,10 @@ type PixPlan struct {
 	KeyType string `json:"keyType"`
 	// Recipient: o recebedor como está no copia-e-cola.
 	Recipient string `json:"recipient"`
+	// FeeCents é a tarifa da AbacatePay, paga pela empresa: o envio leva
+	// SendCents (a conta + a tarifa) para o fornecedor receber AmountCents.
+	FeeCents  int64 `json:"feeCents"`
+	SendCents int64 `json:"sendCents"`
 }
 
 // planFor decide o destino: o copia-e-cola da conta, se houver; senão a
@@ -207,7 +239,13 @@ func (s *Service) PlanPix(ctx context.Context, entryID uuid.UUID) (*PixPlan, err
 	if err != nil {
 		return nil, database.MapError(err)
 	}
-	return planFor(e, key, keyType)
+	plan, err := planFor(e, key, keyType)
+	if err != nil {
+		return nil, err
+	}
+	plan.FeeCents = s.transferFee(ctx)
+	plan.SendCents = plan.AmountCents + plan.FeeCents
+	return plan, nil
 }
 
 // ErrPixDisabled: sem a AbacatePay configurada.
@@ -220,6 +258,9 @@ func (s *Service) SendPix(ctx context.Context, entryID uuid.UUID, by *uuid.UUID)
 	if s.pix == nil {
 		return nil, ErrPixDisabled
 	}
+	// A tarifa sai do valor enviado: o envio leva a conta + a tarifa, para o
+	// fornecedor receber o valor da conta (a tarifa é da empresa).
+	fee := s.transferFee(ctx)
 	var transfer *PixTransfer
 	var plan *PixPlan
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
@@ -235,9 +276,9 @@ func (s *Service) SendPix(ctx context.Context, entryID uuid.UUID, by *uuid.UUID)
 			return err
 		}
 		transfer, err = scanPix(tx.QueryRow(ctx, `
-			INSERT INTO finance_pix_transfers (entry_id, external_id, amount_cents, pix_key, key_type, dev_mode, created_by)
-			VALUES ($1, 'farbo-pix-' || gen_random_uuid(), $2, $3, $4, $5, $6)
-			RETURNING `+pixColumns, entryID, plan.AmountCents, plan.Key, plan.KeyType, s.pixDev, by))
+			INSERT INTO finance_pix_transfers (entry_id, external_id, amount_cents, sent_cents, pix_key, key_type, dev_mode, created_by)
+			VALUES ($1, 'farbo-pix-' || gen_random_uuid(), $2, $3, $4, $5, $6, $7)
+			RETURNING `+pixColumns, entryID, plan.AmountCents, plan.AmountCents+fee, plan.Key, plan.KeyType, s.pixDev, by))
 		if errors.Is(err, database.ErrConflict) {
 			return invalid("Esta conta já tem um Pix enviado ou em andamento.")
 		}
@@ -256,7 +297,7 @@ func (s *Service) SendPix(ctx context.Context, entryID uuid.UUID, by *uuid.UUID)
 	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
 	defer cancel()
 	sent, sendErr := s.pix.SendPix(callCtx, abacatepay.TransferRequest{
-		AmountCents: int(plan.AmountCents), ExternalID: externalID, Description: plan.Description,
+		AmountCents: int(plan.AmountCents + fee), ExternalID: externalID, Description: plan.Description,
 		Key: plan.Key, KeyType: plan.KeyType,
 	})
 	switch {
@@ -287,7 +328,7 @@ func (s *Service) SendPix(ctx context.Context, entryID uuid.UUID, by *uuid.UUID)
 		return nil, invalid("A AbacatePay não completou o Pix: %s", out.Error)
 	}
 	s.log.Info("Pix ao fornecedor enviado", "entry", entryID, "transfer", out.ID, "provider", out.ProviderID,
-		"status", out.Status, "dev_mode", out.DevMode)
+		"status", out.Status, "enviado", out.SentCents, "tarifa", out.FeeCents, "dev_mode", out.DevMode)
 	return out, nil
 }
 
@@ -330,14 +371,22 @@ func (s *Service) completePix(ctx context.Context, id uuid.UUID, t *abacatepay.T
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		var entryID uuid.UUID
 		var status string
-		var amount int64
-		if err := tx.QueryRow(ctx, `SELECT entry_id, status, amount_cents FROM finance_pix_transfers WHERE id = $1 FOR UPDATE`, id).
-			Scan(&entryID, &status, &amount); err != nil {
+		var amount, sentCents int64
+		if err := tx.QueryRow(ctx, `SELECT entry_id, status, amount_cents, sent_cents FROM finance_pix_transfers WHERE id = $1 FOR UPDATE`, id).
+			Scan(&entryID, &status, &amount, &sentCents); err != nil {
 			return err
 		}
 		if status == PixComplete || status == PixFailed {
 			_, err := tx.Exec(ctx, `UPDATE finance_pix_transfers SET checked_at = NOW() WHERE id = $1`, id)
 			return err
+		}
+		// O que chegou ao fornecedor: o enviado menos a tarifa cobrada. A
+		// tarifa estimada errada (o 21º envio do mês, contado de outro jeito)
+		// deixa diferença: fica registrada e aparece na conta.
+		delivered := sentCents - int64(t.PlatformFee)
+		if delivered != amount {
+			s.log.Warn("Pix ao fornecedor com valor entregue diferente da conta", "transfer", id,
+				"conta", amount, "enviado", sentCents, "tarifa", t.PlatformFee, "entregue", delivered)
 		}
 		today := s.Today().Time
 		if _, err := tx.Exec(ctx, `
@@ -350,7 +399,7 @@ func (s *Service) completePix(ctx context.Context, id uuid.UUID, t *abacatepay.T
 		// um envio vivo).
 		if _, err := tx.Exec(ctx, `
 			UPDATE finance_entries SET status = 'PAID', paid_on = $2, paid_cents = $3, payment_method = 'PIX', updated_at = NOW()
-			WHERE id = $1 AND status = 'OPEN'`, entryID, today, amount); err != nil {
+			WHERE id = $1 AND status = 'OPEN'`, entryID, today, max(delivered, 1)); err != nil {
 			return err
 		}
 		var supplierName, description string
@@ -399,11 +448,11 @@ func (s *Service) failPix(ctx context.Context, id uuid.UUID, message string) err
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		var entryID uuid.UUID
 		var status string
-		var amount int64
+		var amount, sentCents, feeCents int64
 		var fee *uuid.UUID
 		if err := tx.QueryRow(ctx, `
-			SELECT entry_id, status, amount_cents, fee_entry_id FROM finance_pix_transfers WHERE id = $1 FOR UPDATE`, id).
-			Scan(&entryID, &status, &amount, &fee); err != nil {
+			SELECT entry_id, status, amount_cents, sent_cents, fee_cents, fee_entry_id FROM finance_pix_transfers WHERE id = $1 FOR UPDATE`, id).
+			Scan(&entryID, &status, &amount, &sentCents, &feeCents, &fee); err != nil {
 			return err
 		}
 		if status == PixFailed {
@@ -424,7 +473,8 @@ func (s *Service) failPix(ctx context.Context, id uuid.UUID, message string) err
 		}
 		_, err := tx.Exec(ctx, `
 			UPDATE finance_entries SET status = 'OPEN', paid_on = NULL, paid_cents = NULL, payment_method = '', updated_at = NOW()
-			WHERE id = $1 AND status = 'PAID' AND payment_method = 'PIX' AND paid_cents = $2`, entryID, amount)
+			WHERE id = $1 AND status = 'PAID' AND payment_method = 'PIX' AND paid_cents IN ($2, $3)`,
+			entryID, amount, max(sentCents-feeCents, 1))
 		return err
 	})
 	if err != nil {
@@ -450,14 +500,16 @@ func (s *Service) ResolvePix(ctx context.Context, id uuid.UUID, sent bool, provi
 		return s.pixTransfer(ctx, id)
 	}
 	providerID = strings.TrimSpace(providerID)
-	result := &abacatepay.Transfer{ID: providerID, Status: abacatepay.TransferComplete, DevMode: t.DevMode}
+	// Sem o id, vale a tarifa que foi somada ao envio.
+	result := &abacatepay.Transfer{ID: providerID, Status: abacatepay.TransferComplete, DevMode: t.DevMode,
+		PlatformFee: int(t.SentCents - t.AmountCents)}
 	if providerID != "" && s.pix != nil {
 		found, err := s.pix.GetTransfer(ctx, providerID)
 		if err != nil {
 			return nil, invalid("A AbacatePay não achou o envio %s: %s", providerID, providerMessage(err))
 		}
-		if found.Amount != int(t.AmountCents) {
-			return nil, invalid("O envio %s é de %s, e a conta é de %s.", providerID, money(int64(found.Amount)), money(t.AmountCents))
+		if found.Amount != int(t.SentCents) {
+			return nil, invalid("O envio %s é de %s, e o Pix desta conta foi de %s.", providerID, money(int64(found.Amount)), money(t.SentCents))
 		}
 		if found.Status != abacatepay.TransferComplete {
 			return nil, invalid("O envio %s está %s na AbacatePay.", providerID, found.Status)

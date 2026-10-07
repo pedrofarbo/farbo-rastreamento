@@ -214,7 +214,8 @@ func TestShippingWallet(t *testing.T) {
 	if status, body := env.do(admin, http.MethodPost, "/api/finance/entries/"+bill.ID.String()+"/pix", nil); status != http.StatusOK {
 		t.Fatalf("Pix pela AbacatePay = %d %s", status, body)
 	}
-	if sent := abacate.sent[len(abacate.sent)-1]; sent.KeyType != abacatepay.KeyBRCode || sent.Key != pixCode("50.00") || sent.AmountCents != 5000 {
+	// Com a tarifa somada: a AbacatePay a desconta e chegam os R$ 50,00 da recarga.
+	if sent := abacate.sent[len(abacate.sent)-1]; sent.KeyType != abacatepay.KeyBRCode || sent.Key != pixCode("50.00") || sent.AmountCents != 5080 {
 		t.Errorf("Pix enviado = %+v", sent)
 	}
 	if _, body := entryOf(pixTop, "", http.StatusBadRequest); !strings.Contains(body, "já está paga") {
