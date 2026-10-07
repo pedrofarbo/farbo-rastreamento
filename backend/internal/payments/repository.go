@@ -25,6 +25,9 @@ type Charge struct {
 	PaidAt           *time.Time `json:"paidAt"`
 	CheckedAt        *time.Time `json:"-"`
 	CreatedAt        time.Time  `json:"createdAt"`
+	// PlatformFeeCents é a tarifa que a AbacatePay informou ao gerar o Pix
+	// (o financeiro a lança como despesa quando o Pix é pago).
+	PlatformFeeCents int `json:"-"`
 
 	// Pedido de estorno feito pela central (ver RefundCharge).
 	RefundRequestedAt *time.Time `json:"refundRequestedAt"`
@@ -74,11 +77,11 @@ func (r *Repository) listCharges(ctx context.Context, query string, args ...any)
 func (r *Repository) Insert(ctx context.Context, c *Charge) error {
 	return database.MapError(r.db.QueryRow(ctx, `
 		INSERT INTO payment_charges (id, invoice_id, provider, provider_charge_id, amount_cents,
-			status, br_code, qr_code_image, dev_mode, expires_at, checked_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+			status, br_code, qr_code_image, dev_mode, expires_at, platform_fee_cents, checked_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
 		RETURNING created_at`,
 		c.ID, c.InvoiceID, c.Provider, c.ProviderChargeID, c.AmountCents, c.Status, c.BrCode,
-		c.QRCodeImage, c.DevMode, c.ExpiresAt,
+		c.QRCodeImage, c.DevMode, c.ExpiresAt, max(c.PlatformFeeCents, 0),
 	).Scan(&c.CreatedAt))
 }
 

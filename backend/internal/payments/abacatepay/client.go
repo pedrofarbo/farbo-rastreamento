@@ -31,6 +31,10 @@ const (
 	StatusUnderDispute = "UNDER_DISPUTE"
 )
 
+// PixReceiveFeeCents é a tarifa da AbacatePay por Pix recebido (R$ 0,80 por
+// transação), descontada do valor pago: vale quando a resposta não informa.
+const PixReceiveFeeCents = 80
+
 // APIError é a recusa da AbacatePay, com a mensagem que ela devolveu.
 type APIError struct {
 	HTTPStatus int

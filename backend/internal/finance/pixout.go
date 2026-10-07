@@ -412,16 +412,13 @@ func (s *Service) completePix(ctx context.Context, id uuid.UUID, t *abacatepay.T
 			return nil
 		}
 		// A tarifa da AbacatePay, como uma despesa já paga.
-		var category uuid.UUID
-		err := tx.QueryRow(ctx, `
-			SELECT id FROM finance_categories WHERE kind = 'EXPENSE' AND lower(name) IN (lower($1), lower('Tarifas bancárias e juros'))
-			ORDER BY lower(name) = lower($1) DESC, active DESC LIMIT 1`, feeCategory).Scan(&category)
-		if errors.Is(err, pgx.ErrNoRows) {
-			s.log.Warn("tarifa do Pix sem categoria; não lançada", "transfer", id)
-			return nil
-		}
+		category, ok, err := feeCategoryID(ctx, tx)
 		if err != nil {
 			return err
+		}
+		if !ok {
+			s.log.Warn("tarifa do Pix sem categoria; não lançada", "transfer", id)
+			return nil
 		}
 		who := supplierName
 		if who == "" {
@@ -440,6 +437,19 @@ func (s *Service) completePix(ctx context.Context, id uuid.UUID, t *abacatepay.T
 		return err
 	})
 	return mapErr(err)
+}
+
+// feeCategoryID é a categoria das tarifas (Taxas de pagamento; sem ela,
+// Tarifas bancárias e juros). ok falso: nenhuma das duas existe.
+func feeCategoryID(ctx context.Context, q database.Querier) (uuid.UUID, bool, error) {
+	var category uuid.UUID
+	err := q.QueryRow(ctx, `
+		SELECT id FROM finance_categories WHERE kind = 'EXPENSE' AND lower(name) IN (lower($1), lower('Tarifas bancárias e juros'))
+		ORDER BY lower(name) = lower($1) DESC, active DESC LIMIT 1`, feeCategory).Scan(&category)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, false, nil
+	}
+	return category, err == nil, err
 }
 
 // failPix marca o envio como falho. Se ele já tinha baixado a conta (falhou

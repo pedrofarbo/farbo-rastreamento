@@ -86,9 +86,17 @@ describe('links para os documentos', () => {
   it('o rodapé leva aos termos e à privacidade, e a navegação volta à landing', () => {
     const host = render(<Footer />);
     expect(host.querySelector(`a[href="${TERMS_PATH}"]`)?.textContent).toBe('Termos de Uso');
-    expect(host.querySelector(`a[href="${PRIVACY_PATH}"]`)?.textContent).toBe('Política de Privacidade');
+    expect(Array.from(host.querySelectorAll(`a[href="${PRIVACY_PATH}"]`)).some((a) => a.textContent === 'Política de Privacidade')).toBe(true);
     expect(host.querySelector('a[href="/#planos"]')).not.toBeNull();
     // A empresa por trás da marca, com o CNPJ.
     expect(host.textContent).toContain('Farbo Tecnologia de Sistemas e Cloud LTDA - 49.757.084/0001-00');
+    // Regulamentação: a homologação conferível na Anatel, o canal da LGPD e o arrependimento.
+    const anatel = Array.from(host.querySelectorAll('a')).find((a) => a.textContent?.startsWith('Anatel'));
+    expect(anatel?.getAttribute('href')).toContain('informacoes.anatel.gov.br');
+    expect(anatel?.getAttribute('target')).toBe('_blank');
+    expect(Array.from(host.querySelectorAll(`a[href="${PRIVACY_PATH}"]`)).some((a) => a.textContent === 'Privacidade e dados (LGPD)')).toBe(true);
+    expect(Array.from(host.querySelectorAll('a')).find((a) => a.textContent === 'Falar com o encarregado')?.getAttribute('href')).toMatch(/^mailto:/);
+    expect(host.textContent).toContain('Arrependimento em 7 dias');
+    expect(host.textContent).toContain('CDC, art. 49');
   });
 });

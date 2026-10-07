@@ -74,6 +74,8 @@ export function priceParts(cents: number): { reais: string; cents: string } {
 
 /** Homologação do rastreador J16 na Anatel (vai no selo do cartão do equipamento). */
 export const ANATEL_HOMOLOGATION = '04895-25-16219';
+/** A consulta pública de produtos homologados da Anatel (sem login): confere o número acima. */
+export const ANATEL_LOOKUP_URL = 'https://informacoes.anatel.gov.br/paineis/certificacao-de-produtos/consulta-de-produtos';
 
 /** Preço especial dos integrantes do Insanos MC (depois da promoção, é o deles). */
 export const INSANOS_MONTHLY = { label: 'R$ 39,90', cents: 3990 };

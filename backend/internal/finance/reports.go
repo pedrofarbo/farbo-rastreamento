@@ -20,8 +20,13 @@ const paidFlows = `(
 	SELECT (COALESCE(paid_at, updated_at) AT TIME ZONE $1)::date AS day, 'invoice' AS source, amount_cents::bigint AS cents
 	FROM invoices WHERE status = 'PAID'
 	UNION ALL
-	SELECT paid_on, lower(kind), paid_cents FROM finance_entries WHERE status = 'PAID'
+	SELECT e.paid_on, CASE WHEN e.kind = 'PAYABLE' AND c.dre_group = 'FINANCIAL' THEN 'fee' ELSE lower(e.kind) END,
+		e.paid_cents
+	FROM finance_entries e JOIN finance_categories c ON c.id = e.category_id WHERE e.status = 'PAID'
 ) flows`
+
+// outflow é o sinal do caixa: as contas pagas e as tarifas saem.
+const outflow = `CASE WHEN source IN ('payable', 'fee') THEN -cents ELSE cents END`
 
 // Sum é quantas e quanto.
 type Sum struct {
@@ -63,8 +68,11 @@ type CashMonth struct {
 	InvoicesCents int64  `json:"invoicesCents"`
 	OtherInCents  int64  `json:"otherInCents"`
 	InCents       int64  `json:"inCents"`
-	OutCents      int64  `json:"outCents"`
-	NetCents      int64  `json:"netCents"`
+	// OutCents é tudo o que saiu; FeesCents, a parte que são tarifas e taxas
+	// (do Pix recebido e enviado, bancárias): o resto são as contas pagas.
+	OutCents  int64 `json:"outCents"`
+	FeesCents int64 `json:"feesCents"`
+	NetCents  int64 `json:"netCents"`
 	// EndBalanceCents: nil nos meses antes do saldo inicial.
 	EndBalanceCents *int64 `json:"endBalanceCents"`
 }
@@ -135,6 +143,9 @@ func (s *Service) CashFlow(ctx context.Context, months int) (*CashFlow, error) {
 			cm.OtherInCents += cents
 		case "payable":
 			cm.OutCents += cents
+		case "fee":
+			cm.OutCents += cents
+			cm.FeesCents += cents
 		}
 	}
 	rows.Close()
@@ -146,7 +157,7 @@ func (s *Service) CashFlow(ctx context.Context, months int) (*CashFlow, error) {
 	afterOpening := map[string]int64{}
 	var before int64 // entre o saldo inicial e o primeiro mês da tabela
 	rows, err = s.db.Query(ctx, `
-		SELECT to_char(day, 'YYYY-MM'), sum(CASE WHEN source = 'payable' THEN -cents ELSE cents END)::bigint
+		SELECT to_char(day, 'YYYY-MM'), sum(`+outflow+`)::bigint
 		FROM `+paidFlows+`
 		WHERE day BETWEEN $2 AND $3 GROUP BY 1`, tz, settings.OpeningDate.Time, today.Time)
 	if err != nil {
@@ -202,7 +213,7 @@ func (s *Service) Balance(ctx context.Context) (int64, error) {
 	}
 	var net int64
 	err = s.db.QueryRow(ctx, `
-		SELECT COALESCE(sum(CASE WHEN source = 'payable' THEN -cents ELSE cents END), 0)::bigint
+		SELECT COALESCE(sum(`+outflow+`), 0)::bigint
 		FROM `+paidFlows+` WHERE day BETWEEN $2 AND $3`, tz, settings.OpeningDate.Time, s.Today().Time).Scan(&net)
 	if err != nil {
 		return 0, database.MapError(err)

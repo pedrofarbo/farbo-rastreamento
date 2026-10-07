@@ -138,7 +138,7 @@ func (s *Service) PixForInvoice(ctx context.Context, invoiceID uuid.UUID, payer 
 		ID: chargeID, InvoiceID: inv.ID, Provider: providerAbacatePay,
 		ProviderChargeID: pix.ID, AmountCents: pix.Amount, Status: pix.Status,
 		BrCode: pix.BrCode, QRCodeImage: pix.BrCodeBase64, DevMode: pix.DevMode,
-		ExpiresAt: pix.ExpiresAt, InvoiceStatus: inv.Status,
+		ExpiresAt: pix.ExpiresAt, InvoiceStatus: inv.Status, PlatformFeeCents: pix.PlatformFee,
 	}
 	if err := s.repo.Insert(ctx, charge); err != nil {
 		return nil, err

@@ -72,6 +72,7 @@ export function CashFlowTab() {
                 <th className={styles.right}>Faturas dos clientes</th>
                 <th className={styles.right}>Outras receitas</th>
                 <th className={styles.right}>Saídas</th>
+                <th className={styles.right}>Taxas</th>
                 <th className={styles.right}>Resultado</th>
                 <th className={styles.right}>Saldo no fim</th>
               </tr>
@@ -87,7 +88,10 @@ export function CashFlowTab() {
                     {formatMoney(m.otherInCents)}
                   </td>
                   <td data-label="Saídas" className={styles.right}>
-                    {formatMoney(m.outCents)}
+                    {formatMoney(m.outCents - m.feesCents)}
+                  </td>
+                  <td data-label="Taxas" className={styles.right} title="Tarifas da AbacatePay (Pix recebido e enviado) e bancárias">
+                    {formatMoney(m.feesCents)}
                   </td>
                   <td data-label="Resultado" className={`${styles.right} ${styles.amount} ${m.netCents < 0 ? styles.negative : styles.positive}`}>
                     {formatMoney(m.netCents)}

@@ -142,6 +142,19 @@
   gap: 0.25rem;
 }
 
+/* A explicação curta embaixo de um item (Regulamentação). */
+.note {
+  display: block;
+  /* No celular o item é flex: a nota ocupa a linha de baixo inteira. */
+  flex-basis: 100%;
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.note a {
+  font-size: inherit;
+}
+
 /* Razão social e CNPJ: discreto, abaixo do copyright. */
 .company {
   color: #64748b;

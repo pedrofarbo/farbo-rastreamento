@@ -534,6 +534,7 @@ func runWorkers(
 	contractSvc.NotifyChanges(ctx)
 	financeSvc.GenerateRecurring(ctx)
 	financeSvc.SendReminders(ctx)
+	financeSvc.RecordReceivedFees(ctx)
 	affiliatesSvc.Work(ctx)
 
 	for {
@@ -570,6 +571,8 @@ func runWorkers(
 			paymentsSvc.SyncPending(ctx)
 			// Os Pix aos fornecedores: sem resposta e os que podem falhar depois.
 			financeSvc.WatchPix(ctx)
+			// A tarifa da AbacatePay de cada Pix recebido, nas contas pagas.
+			financeSvc.RecordReceivedFees(ctx)
 
 		case <-historyTicker.C:
 			cleanHistory()

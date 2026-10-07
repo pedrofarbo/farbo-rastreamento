@@ -10,7 +10,7 @@ import {
   whatsappDisplay,
   whatsappUrl,
 } from '@/config/contact';
-import { ANATEL_HOMOLOGATION, SOCIAL_SECTION } from '@/config/landing';
+import { ANATEL_HOMOLOGATION, ANATEL_LOOKUP_URL, SOCIAL_SECTION } from '@/config/landing';
 import { COMPANY, CONTRACT_PATH, PRIVACY_PATH, TERMS_PATH } from '@/config/legal';
 
 import styles from './Footer.module.css';
@@ -78,7 +78,31 @@ export const Footer: React.FC = () => {
           <div className={styles.linksCol}>
             <h4>Regulamentação</h4>
             <ul>
-              <li title="Homologação do rastreador J16 na Anatel">Anatel - {ANATEL_HOMOLOGATION}</li>
+              <li>
+                <a
+                  href={ANATEL_LOOKUP_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Homologação do rastreador J16 na Anatel: confira o número na consulta pública"
+                  aria-label={`Anatel ${ANATEL_HOMOLOGATION}: consultar a homologação no site da Anatel (abre em nova aba)`}
+                >
+                  Anatel - {ANATEL_HOMOLOGATION}
+                </a>
+              </li>
+              {/* LGPD: o canal do titular dos dados (o encarregado). */}
+              <li>
+                <Link to={PRIVACY_PATH}>Privacidade e dados (LGPD)</Link>
+                <span className={styles.note}>
+                  <a href={`mailto:${CONTACT_EMAIL}`} title={CONTACT_EMAIL}>
+                    Falar com o encarregado
+                  </a>
+                </span>
+              </li>
+              {/* CDC, art. 49: a compra fora da loja tem 7 dias para desistir. */}
+              <li>
+                <Link to={CONTRACT_PATH}>Arrependimento em 7 dias</Link>
+                <span className={styles.note}>Após receber o rastreador (CDC, art. 49)</span>
+              </li>
             </ul>
           </div>
 

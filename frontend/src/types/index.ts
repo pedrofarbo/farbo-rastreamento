@@ -1457,7 +1457,10 @@ export interface CashMonth {
   invoicesCents: number;
   otherInCents: number;
   inCents: number;
+  /** Tudo o que saiu (contas pagas e tarifas). */
   outCents: number;
+  /** A parte das saídas que são tarifas e taxas (AbacatePay, bancárias). */
+  feesCents: number;
   netCents: number;
   /** null nos meses antes do saldo inicial. */
   endBalanceCents: number | null;
