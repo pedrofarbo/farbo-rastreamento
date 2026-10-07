@@ -3,20 +3,19 @@ FROM golang:1.27-alpine AS build
 
 WORKDIR /src
 
-# As dependências mudam menos que o código: cache separado deixa o rebuild rápido.
+# Os módulos e o cache de compilação do Go ficam em caches do BuildKit, fora
+# das camadas: cada deploy reaproveita o mesmo cache (compila só o que mudou)
+# em vez de gravar uma camada nova de ~600 MB no disco do servidor.
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
 
-# Binário estático: a imagem final não tem libc.
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w" \
-    -o /out/server ./cmd/server
-
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w" \
-    -o /out/tksim ./cmd/tksim
+# Binários estáticos: a imagem final não tem libc.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/server ./cmd/server \
+    && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/tksim ./cmd/tksim
 
 # ---- runtime ----
 FROM alpine:3.24

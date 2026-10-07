@@ -6,7 +6,8 @@ FROM node:22-alpine AS build
 WORKDIR /build
 
 COPY package.json package-lock.json ./
-RUN npm ci
+# O cache de downloads do npm fica num cache do BuildKit, fora da camada.
+RUN --mount=type=cache,target=/root/.npm npm ci --prefer-offline --no-audit --no-fund
 
 COPY . .
 ARG VITE_API_URL=
