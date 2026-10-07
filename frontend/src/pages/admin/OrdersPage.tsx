@@ -5,6 +5,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { fulfillmentsApi, shippingIntegrationApi } from '@/api/resources';
 import billing from '@/components/billing/Billing.module.css';
 import { FulfillmentAdminModal } from '@/components/fulfillment/FulfillmentAdminModal';
+import { LabelActions } from '@/components/fulfillment/LabelActions';
 import fstyles from '@/components/fulfillment/Fulfillment.module.css';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -160,6 +161,7 @@ function OrderRow({ f, onOpen }: { f: Fulfillment; onOpen: () => void }) {
           <>
             <div>{f.trackingCode}</div>
             <div className={billing.muted}>{f.shippingService}</div>
+            <LabelActions fulfillment={f} compact />
           </>
         ) : f.deliveryArranged ? (
           <span>Entrega combinada</span>

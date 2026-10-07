@@ -357,6 +357,16 @@ func (s *Service) UpdateProfile(ctx context.Context, id uuid.UUID, p Profile) (*
 	return s.repo.UpdateProfile(ctx, id, p)
 }
 
+// UpdateContact é o próprio cliente atualizando nome, telefone e CPF/CNPJ
+// (já validados por quem chama).
+func (s *Service) UpdateContact(ctx context.Context, id uuid.UUID, name, phone, document string) (*User, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, &InputError{"o nome é obrigatório"}
+	}
+	return s.repo.UpdateContact(ctx, id, name, strings.TrimSpace(phone), strings.TrimSpace(document))
+}
+
 // InputError é um dado inválido que quem pediu consegue corrigir.
 type InputError struct{ Reason string }
 

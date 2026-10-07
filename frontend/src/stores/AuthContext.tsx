@@ -14,6 +14,8 @@ interface AuthContextValue {
   /** Entra com a biometria deste aparelho (Face ID, digital). */
   loginWithBiometric: () => Promise<void>;
   logout: () => Promise<void>;
+  /** Troca os dados de quem está conectado (depois de salvar Meus dados). */
+  updateUser: (user: User) => void;
   canSendCommands: boolean;
   canManage: boolean;
   /** Equipe que opera os pedidos (admin e operador). */
@@ -125,6 +127,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
+  const updateUser = useCallback((next: User) => {
+    rememberUser(next);
+    setUser(next);
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -132,6 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       loginWithBiometric,
       logout,
+      updateUser,
       // O cliente também comanda (bloqueio, desbloqueio, posição), mas só os
       // próprios veículos — a API confere o dono.
       canSendCommands:
@@ -141,7 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isCustomer: user?.role === 'customer',
       isStaff: user !== null && user.role !== 'customer',
     }),
-    [user, loading, login, loginWithBiometric, logout],
+    [user, loading, login, loginWithBiometric, logout, updateUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

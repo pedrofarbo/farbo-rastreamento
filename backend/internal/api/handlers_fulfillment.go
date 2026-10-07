@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/melhorenvio"
 )
 
@@ -171,6 +173,41 @@ func (s *Server) handleSyncShipping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, f)
+}
+
+// codeLabelNotPDF: a etiqueta veio como página para imprimir (o painel abre).
+const codeLabelNotPDF = "LABEL_NOT_PDF"
+
+// handleLabelPDF baixa a etiqueta comprada em PDF, com o nome do veículo e o
+// código de rastreio no arquivo. Se o Melhor Envios entregar a página de
+// impressão em vez do PDF, responde LABEL_NOT_PDF com o link, e o painel abre
+// a impressão.
+func (s *Server) handleLabelPDF(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.fulfillmentFromURL(w, r)
+	if !ok {
+		return
+	}
+	f, pdf, link, err := s.Fulfillment.Label(r.Context(), id)
+	if errors.Is(err, fulfillment.ErrLabelNotPDF) {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "o Melhor Envios entregou a etiqueta como página para imprimir", "code": codeLabelNotPDF, "url": link,
+		})
+		return
+	}
+	if err != nil {
+		writeFulfillmentError(w, err)
+		return
+	}
+	name := "etiqueta"
+	for _, part := range []string{f.VehicleName, f.TrackingCode} {
+		if slug := leads.EventSlug(part); slug != "" {
+			name += "-" + slug
+		}
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name + ".pdf"}))
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(pdf)
 }
 
 // handleMyFulfillments: o cliente acompanha os próprios pedidos.

@@ -570,6 +570,49 @@ func (c *Client) Print(ctx context.Context, orderID string) (string, error) {
 	return out.URL, err
 }
 
+// maxLabelBytes limita o arquivo da etiqueta baixado do Melhor Envios.
+const maxLabelBytes = 15 << 20
+
+// FetchLabel baixa o link de impressão da etiqueta (o de Print) e diz o que
+// veio: o PDF ou a página para imprimir. Só segue links do Melhor Envios (ou
+// do endereço configurado, nos testes): o link vem da API, mas não vira uma
+// porta para o servidor buscar qualquer endereço.
+func (c *Client) FetchLabel(ctx context.Context, link string) ([]byte, string, error) {
+	u, err := url.Parse(link)
+	if err != nil || u.Host == "" {
+		return nil, "", &APIError{Status: http.StatusBadGateway, Message: "link de impressão inválido"}
+	}
+	host := strings.ToLower(u.Hostname())
+	base, _ := url.Parse(c.cfg.BaseURL)
+	official := u.Scheme == "https" && (host == "melhorenvio.com.br" || strings.HasSuffix(host, ".melhorenvio.com.br"))
+	configured := base != nil && strings.EqualFold(u.Host, base.Host)
+	if !official && !configured {
+		return nil, "", &APIError{Status: http.StatusBadGateway, Message: "link de impressão fora do Melhor Envios: " + host}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, link, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	req.Header.Set("Accept", "application/pdf, text/html;q=0.9, */*;q=0.8")
+	req.Header.Set("User-Agent", c.userAgent())
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, "", &APIError{Status: http.StatusBadGateway, Message: "não deu para baixar a etiqueta agora; tente de novo"}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return nil, "", &APIError{Status: resp.StatusCode, Message: "o Melhor Envios não entregou a etiqueta"}
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxLabelBytes+1))
+	if err != nil {
+		return nil, "", fmt.Errorf("baixando a etiqueta: %w", err)
+	}
+	if len(body) > maxLabelBytes {
+		return nil, "", fmt.Errorf("etiqueta grande demais")
+	}
+	return body, resp.Header.Get("Content-Type"), nil
+}
+
 // TrackingInfo é o ciclo de vida da etiqueta (rastreio e webhooks).
 type TrackingInfo struct {
 	ID                  string  `json:"id"`

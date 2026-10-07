@@ -251,3 +251,19 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+
+/* A etiqueta na lista de pedidos: os botões juntos, embaixo do rastreio. */
+.labelCompact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+/* A etiqueta que veio como página: o link para abrir e imprimir. */
+.labelLink {
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: underline;
+}

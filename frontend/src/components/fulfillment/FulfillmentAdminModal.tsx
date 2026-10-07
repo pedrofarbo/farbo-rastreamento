@@ -15,6 +15,7 @@ import { useAuth } from '@/stores/AuthContext';
 import type { Fulfillment, FulfillmentTrack, ShippingQuote } from '@/types';
 
 import { FulfillmentTimeline } from './FulfillmentTimeline';
+import { LabelActions } from './LabelActions';
 import { SmsSetupPanel } from './SmsSetupPanel';
 import styles from './Fulfillment.module.css';
 
@@ -401,16 +402,8 @@ export function FulfillmentAdminModal({
                     {f.shippingPriceCents !== null ? ` · frete ${formatMoney(f.shippingPriceCents)}` : ''}
                     {f.shippingProtocol ? ` · ${f.shippingProtocol}` : ''}
                   </span>
+                  <LabelActions fulfillment={f} />
                   <div className={styles.actionRow}>
-                    {f.labelUrl && (
-                      <Button
-                        size="small"
-                        variant="primary"
-                        onClick={() => window.open(f.labelUrl, '_blank', 'noopener,noreferrer')}
-                      >
-                        Imprimir etiqueta
-                      </Button>
-                    )}
                     <Button size="small" variant="secondary" loading={sync.isPending} disabled={busy} onClick={() => sync.mutate()}>
                       Atualizar rastreio
                     </Button>
@@ -430,10 +423,14 @@ export function FulfillmentAdminModal({
               )}
 
               {f.trackerStatus === 'DELIVERED' && (
-                <span className={styles.hint}>
-                  Entregue ao cliente. Ele já vê os instaladores no painel.
-                  {!f.shippingOrderId && ' Marcado por engano? Corrija a etapa para "Rastreador configurado".'}
-                </span>
+                <>
+                  <span className={styles.hint}>
+                    Entregue ao cliente. Ele já vê os instaladores no painel.
+                    {!f.shippingOrderId && ' Marcado por engano? Corrija a etapa para "Rastreador configurado".'}
+                  </span>
+                  {/* A etiqueta continua à mão depois da entrega (comprovante, devolução). */}
+                  <LabelActions fulfillment={f} />
+                </>
               )}
             </div>
 

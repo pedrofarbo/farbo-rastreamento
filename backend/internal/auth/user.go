@@ -120,6 +120,15 @@ func (r *Repository) ListTeam(ctx context.Context) ([]*User, error) {
 
 // UpdateProfile altera nome, contato e situação. Desativar também encerra
 // as sessões abertas, para o acesso cair na hora e não só no próximo login.
+// UpdateContact altera nome, telefone e CPF/CNPJ (o próprio cliente, em
+// Meus dados): não mexe na situação da conta.
+func (r *Repository) UpdateContact(ctx context.Context, id uuid.UUID, name, phone, document string) (*User, error) {
+	return scanUser(r.db.QueryRow(ctx, `
+		UPDATE users SET name = $2, phone = $3, document = $4, updated_at = NOW()
+		WHERE id = $1
+		RETURNING `+userColumns, id, name, phone, document))
+}
+
 func (r *Repository) UpdateProfile(ctx context.Context, id uuid.UUID, p Profile) (*User, error) {
 	user, err := scanUser(r.db.QueryRow(ctx, `
 		UPDATE users SET name = $2, phone = $3, document = $4, active = $5, updated_at = NOW()

@@ -367,6 +367,8 @@ func (s *Server) routes() chi.Router {
 				r.Get("/charges/{id}", s.handleMyCharge)
 				r.Post("/charges/{id}/simulate", s.handleMyChargeSimulate)
 				r.Put("/address", s.handleSaveMyAddress)
+				// Meus dados: nome, telefone e CPF/CNPJ.
+				r.Put("/profile", s.handleUpdateMyProfile)
 				// Novo veículo (veículo → rastreador → assinatura): bloqueado com o
 				// acesso suspenso.
 				r.With(s.requireActiveCustomer).Post("/trackers", s.handleMyOrderTracker)
@@ -574,6 +576,8 @@ func (s *Server) routes() chi.Router {
 					r.Get("/{id}", s.handleGetFulfillment)
 					r.Post("/{id}/status", s.handleChangeFulfillment)
 					r.Post("/{id}/shipping/sync", s.handleSyncShipping)
+					// A etiqueta comprada, em PDF.
+					r.Get("/{id}/shipping/label.pdf", s.handleLabelPDF)
 					r.With(auth.RequireRole(auth.RoleAdmin)).Post("/{id}/shipping/quote", s.handleQuoteShipping)
 					r.With(auth.RequireRole(auth.RoleAdmin)).Post("/{id}/shipping/label", s.handleBuyLabel)
 				})

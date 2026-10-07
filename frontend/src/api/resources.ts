@@ -547,6 +547,8 @@ export const fulfillmentsApi = {
   quote: (id: string) => api.post<ShippingQuote[]>(`/api/fulfillments/${id}/shipping/quote`),
   buyLabel: (id: string, serviceId: number) =>
     api.post<Fulfillment>(`/api/fulfillments/${id}/shipping/label`, { serviceId }),
+  /** A etiqueta comprada, em PDF (409 LABEL_NOT_PDF com o link, se vier a página de impressão). */
+  downloadLabel: (id: string) => download(`/api/fulfillments/${id}/shipping/label.pdf`),
 };
 
 /** Atendimento pelo WhatsApp: conversas da IA e da equipe (admin e operador). */
@@ -685,6 +687,8 @@ export const meApi = {
 
   /** Endereço de entrega: obrigatório antes de contratar um rastreador. */
   saveAddress: (input: DeliveryAddress) => api.put<DeliveryAddress>('/api/me/address', input),
+  /** Meus dados: nome, telefone e CPF/CNPJ (o e-mail é o login e não muda aqui). */
+  updateProfile: (input: { name: string; phone: string; document: string }) => api.put<User>('/api/me/profile', input),
   /** Novo veículo; equipamento e plano vêm do catálogo e da conta do cliente. */
   /** launchPromo: o cliente confirmou com os preços da promoção que o catálogo mostrou. */
   orderTracker: (input: {

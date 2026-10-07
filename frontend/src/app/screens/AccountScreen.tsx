@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 import { meApi } from '@/api/resources';
 import { Button } from '@/components/ui/Button';
@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/stores/AuthContext';
 
 import { BiometricCard } from '../BiometricCard';
+import { ChevronIcon } from '../icons';
 import { clearOfflineData, isIos, promptInstall, unsubscribePush, usePwa } from '../pwa';
 import styles from './Screen.module.css';
 
@@ -44,6 +45,23 @@ export function AccountScreen() {
         <p className={styles.lead}>{user?.name}</p>
         <p className={styles.muted}>{user?.email}</p>
       </div>
+
+      <section className={styles.section}>
+        <ul className={styles.list}>
+          <li>
+            <Link to="/conta/dados" className={styles.listLink}>
+              <span>
+                <strong>Meus dados</strong>
+                <br />
+                <span className={styles.muted}>Nome, celular, CPF e endereço de entrega</span>
+              </span>
+              <span className={styles.chevron}>
+                <ChevronIcon />
+              </span>
+            </Link>
+          </li>
+        </ul>
+      </section>
 
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>App no celular</h2>
