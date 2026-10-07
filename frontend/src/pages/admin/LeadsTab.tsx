@@ -15,8 +15,10 @@ import fieldStyles from '@/components/ui/Field.module.css';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
+import { whatsappUrl } from '@/config/contact';
 import { formatDateTime, formatMoney, formatRelative } from '@/services/format';
-import type { Lead, LeadStatus } from '@/types';
+import { useAuth } from '@/stores/AuthContext';
+import type { Lead, LeadStatus, PromoOffer, PromoUsage } from '@/types';
 
 import styles from '../Page.module.css';
 import { EventQrCard } from './EventQrCard';
@@ -96,10 +98,120 @@ export function matches(lead: Pick<Lead, 'name' | 'email' | 'city' | 'phone'>, s
   );
 }
 
-/** Conversa no WhatsApp com o número (com o 55 do Brasil). */
-function whatsappLink(phone: string): string {
+/** Conversa no WhatsApp com o número (com o 55 do Brasil) e, se houver, a mensagem já escrita. */
+export function whatsappLink(phone: string, text = ''): string {
   const d = phone.replace(/\D/g, '');
-  return `https://wa.me/${d.length <= 11 ? `55${d}` : d}`;
+  return whatsappUrl(text, d.length <= 11 ? `55${d}` : d);
+}
+
+/** Dá para chamar: o número tem DDD. */
+function hasWhatsapp(phone: string): boolean {
+  return phone.replace(/\D/g, '').length >= 10;
+}
+
+/** "ANA souza" → "Ana". */
+function firstName(name: string): string {
+  const first = name.trim().split(/\s+/)[0] ?? '';
+  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+}
+
+/** Os veículos na frase: "a sua moto", "3 carros", "a sua frota de 8 veículos". */
+function vehiclesPhrase(type: string, count: number): string {
+  const n = Math.max(count, 1);
+  if (type === 'frota') return `a sua frota de ${n} ${n === 1 ? 'veículo' : 'veículos'}`;
+  if (type === 'moto') return n === 1 ? 'a sua moto' : `${n} motos`;
+  if (type === 'carro') return n === 1 ? 'o seu carro' : `${n} carros`;
+  return n === 1 ? 'o seu veículo' : `${n} veículos`;
+}
+
+/** O plano do pré-cadastro, sem o preço (na promoção ele é outro). */
+function planPhrase(plan: string): string {
+  const name = plan.split(' - ')[0].trim();
+  const lower = name.toLowerCase();
+  if (lower.includes('insanos')) return 'no preço especial do Insanos MC';
+  if (lower.startsWith('apenas equipamento')) return 'em comprar só o equipamento';
+  return `no ${name}`;
+}
+
+/** O que a promoção dá a este pré-cliente (no plano do Insanos MC, a mensalidade deles). */
+function promoPhrase(plan: string, offer: PromoOffer): string {
+  const insanos = offer.insanosPlanName !== '' && plan.toLowerCase().includes(offer.insanosPlanName.toLowerCase());
+  const money = (cents: number) => formatMoney(cents).replace(/ /g, ' ');
+  return (
+    `o primeiro rastreador sai por ${money(offer.equipmentCents)}, com mensalidade de ` +
+    `${money(insanos ? offer.insanosMonthlyCents : offer.monthlyCents)} nos ${offer.months} primeiros meses, enquanto houver vagas`
+  );
+}
+
+/**
+ * A mensagem pronta para chamar o pré-cliente no WhatsApp: o primeiro
+ * contato (de onde veio, o que quer e a promoção, se está na lista), o
+ * retorno para quem já está em contato e um oi para quem já é cliente.
+ */
+export function whatsappMessage(
+  lead: Pick<Lead, 'name' | 'city' | 'plan' | 'vehicleType' | 'vehicleCount' | 'status' | 'customerId' | 'onLaunchList' | 'promoClaimed' | 'source' | 'referrer' | 'event'>,
+  sender: string,
+  promo?: PromoUsage,
+): string {
+  const name = firstName(lead.name);
+  const me = firstName(sender);
+  const hello = `Olá${name ? `, ${name}` : ''}! Tudo bem? Aqui é ${me ? `${me}, ` : ''}da Farbo Rastreadores.`;
+
+  if (lead.status === 'CONVERTED' || lead.promoClaimed || lead.customerId) {
+    return [hello, 'Obrigado por escolher a Farbo! Passando para saber se está tudo certo e se ficou alguma dúvida. É só chamar por aqui.'].join('\n\n');
+  }
+
+  const vehicles = vehiclesPhrase(lead.vehicleType, lead.vehicleCount);
+  const offer = lead.onLaunchList && promo?.enabled ? promoPhrase(lead.plan, promo.offer) : '';
+
+  if (lead.status === 'CONTACTED') {
+    return [
+      hello,
+      `Passando para saber se ficou alguma dúvida sobre o rastreador${lead.vehicleType ? ` para ${vehicles}` : ''}.`,
+      offer && `Lembrando que, pela lista de lançamento, você ainda tem a promoção de pré-lançamento: ${offer}.`,
+      'Se quiser, te ajudo a contratar por aqui mesmo.',
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
+  const origin = lead.referrer
+    ? `Você chegou até a gente pela indicação de ${lead.referrer}.`
+    : lead.event
+      ? `Você deixou seu contato com a gente no evento ${eventLabel(lead.event)}.`
+      : lead.source === 'landing'
+        ? 'Recebemos o seu pré-cadastro no nosso site.'
+        : 'Você deixou seu contato no nosso site.';
+  const want = lead.plan
+    ? `Vi que você tem interesse ${planPhrase(lead.plan)} para ${vehicles}`
+    : lead.vehicleType
+      ? `Vi que você quer rastrear ${vehicles}`
+      : '';
+  const interested = want && `${want}${lead.city ? `, com instalação em ${lead.city}` : ''}.`;
+  return [
+    hello,
+    [origin, interested].filter(Boolean).join(' '),
+    offer && `Como você está na nossa lista de lançamento, tem direito à promoção de pré-lançamento: ${offer}.`,
+    'Posso te explicar como funciona e tirar suas dúvidas por aqui?',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+/** O botão verde que abre a conversa com a mensagem pronta. */
+function WhatsAppButton({ lead, sender, promo }: { lead: Lead; sender: string; promo?: PromoUsage }) {
+  if (!hasWhatsapp(lead.phone)) return null;
+  return (
+    <a
+      className={local.whatsapp}
+      href={whatsappLink(lead.phone, whatsappMessage(lead, sender, promo))}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Abre a conversa no WhatsApp com uma mensagem pronta para este pré-cliente"
+    >
+      WhatsApp
+    </a>
+  );
 }
 
 function download(list: Lead[]) {
@@ -120,6 +232,7 @@ function download(list: Lead[]) {
  */
 export function LeadsTab({ onConvert }: { onConvert: (lead: Lead) => void }) {
   const { notify } = useToast();
+  const sender = useAuth().user?.name ?? '';
   const [status, setStatus] = useState<LeadStatus | ''>('');
   const [onList, setOnList] = useState<'' | 'on' | 'off'>('');
   const [origin, setOrigin] = useState('');
@@ -293,9 +406,12 @@ export function LeadsTab({ onConvert }: { onConvert: (lead: Lead) => void }) {
                       </span>
                     </td>
                     <td>
-                      <Button size="small" variant="secondary" onClick={() => setOpened(lead)}>
-                        Abrir
-                      </Button>
+                      <div className={styles.actions}>
+                        <WhatsAppButton lead={lead} sender={sender} promo={usage} />
+                        <Button size="small" variant="secondary" onClick={() => setOpened(lead)}>
+                          Abrir
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -309,6 +425,8 @@ export function LeadsTab({ onConvert }: { onConvert: (lead: Lead) => void }) {
 
       <LeadDetailsModal
         lead={opened}
+        sender={sender}
+        promo={usage}
         onClose={() => setOpened(null)}
         onConvert={(lead) => {
           setOpened(null);
@@ -321,10 +439,14 @@ export function LeadsTab({ onConvert }: { onConvert: (lead: Lead) => void }) {
 
 function LeadDetailsModal({
   lead,
+  sender,
+  promo,
   onClose,
   onConvert,
 }: {
   lead: Lead | null;
+  sender: string;
+  promo?: PromoUsage;
   onClose: () => void;
   onConvert: (lead: Lead) => void;
 }) {
@@ -423,9 +545,12 @@ function LeadDetailsModal({
             </Info>
             {lead.phone && (
               <Info label="WhatsApp">
-                <a href={whatsappLink(lead.phone)} target="_blank" rel="noreferrer">
-                  {lead.phone}
-                </a>
+                <span className={local.phone}>
+                  <a href={whatsappLink(lead.phone)} target="_blank" rel="noreferrer">
+                    {lead.phone}
+                  </a>
+                  <WhatsAppButton lead={lead} sender={sender} promo={promo} />
+                </span>
               </Info>
             )}
             {lead.city && <Info label="Cidade da instalação">{lead.city}</Info>}
