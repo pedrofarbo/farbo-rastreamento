@@ -8,6 +8,7 @@ import { AddressFields, EMPTY_ADDRESS, isAddressComplete } from '@/components/ad
 import { DeliveryBox } from '@/components/address/DeliveryBox';
 import { ARRANGE_DELIVERY, ShippingOptions, deliveryLabel, quoteName } from '@/components/billing/ShippingOptions';
 import { promoMonthlyFor } from '@/components/billing/MonthlyPrice';
+import { installmentChoices, splitInstallments } from '@/components/billing/installments';
 import {
   DEFAULT_SUBSCRIPTION,
   PLAN_PRESETS,
@@ -129,6 +130,10 @@ export function NewVehicleWizard({
   // ARRANGE_DELIVERY: combinar a entrega. Nulo: ainda não escolhido (o mais
   // barato vem marcado quando a cotação chega).
   const [shippingId, setShippingId] = useState<number | null>(null);
+  // O rastreador em quantas vezes (1: à vista) e, parcelado, o "entendi" do
+  // cliente sobre manter a assinatura até a última parcela.
+  const [installments, setInstallments] = useState(1);
+  const [committed, setCommitted] = useState(false);
 
   const catalog = useQuery({ queryKey: ['catalog'], queryFn: catalogApi.get, enabled: open });
   // Para a central: se o cliente pode contratar com a promoção de pré-lançamento.
@@ -149,6 +154,8 @@ export function NewVehicleWizard({
     setAdminDraft(null);
     setError('');
     setShippingId(null);
+    setInstallments(1);
+    setCommitted(false);
   }, [open]);
 
   // Os valores da central partem do catálogo, uma vez por abertura: uma nova
@@ -196,6 +203,7 @@ export function NewVehicleWizard({
           vehicle,
           launchPromo: Boolean(customerPromo),
           ...(arranged ? { arrangeDelivery: true } : freight ? { shippingServiceId: freight.serviceId } : {}),
+          ...(parcels ? { installments: parcels.length } : {}),
         });
       }
       const d = adminDraft as AdminDraft;
@@ -208,6 +216,7 @@ export function NewVehicleWizard({
         plan,
         launchPromo: d.promo,
         shippingServiceId: freight?.serviceId ?? 0,
+        ...(parcels ? { installments: parcels.length } : {}),
       });
     },
     onSuccess: onDone,
@@ -281,7 +290,10 @@ export function NewVehicleWizard({
   const arranged = ships && shippingId === ARRANGE_DELIVERY && shippingQuote.data?.arrange === true;
   // O cliente só confirma com a entrega escolhida (quando o frete é cotado).
   const needsShipping = !isAdmin && ships && shippingQuote.data?.enabled === true;
-  const totalNow = (equipmentCents ?? 0) + (freight?.cents ?? 0);
+  // Parcelado: agora vai só a 1ª parcela; as demais, nas mensalidades.
+  const choices = installmentChoices(equipmentCents ?? 0, c?.equipmentMaxInstallments ?? 1);
+  const parcels = installments > 1 && choices.length >= installments ? splitInstallments(equipmentCents ?? 0, installments) : null;
+  const totalNow = (parcels ? parcels[0] : (equipmentCents ?? 0)) + (freight?.cents ?? 0);
 
   const goTo = (next: number) => {
     setError('');
@@ -309,7 +321,8 @@ export function NewVehicleWizard({
       ? vehicle.name.trim() !== ''
       : step === 1
         ? !editingAddress || isAddressComplete(addressDraft ?? EMPTY_ADDRESS)
-        : !needsShipping || ((freight !== null || arranged) && !shippingQuote.isFetching);
+        : (!needsShipping || ((freight !== null || arranged) && !shippingQuote.isFetching)) &&
+          (isAdmin || !parcels || committed);
 
   const primaryLabel =
     step === 0
@@ -442,6 +455,9 @@ export function NewVehicleWizard({
                     onChange={(e) => setAdminDraft({ ...adminDraft, dueDate: e.target.value })}
                   />
                 </div>
+                {choices.length > 1 && (
+                  <InstallmentsField choices={choices} value={installments} onChange={setInstallments} staff />
+                )}
                 {!installedDevice &&
                   (address ? (
                     <DeliveryBox address={address} />
@@ -495,6 +511,7 @@ export function NewVehicleWizard({
                     </span>
                   </div>
                 </div>
+                {choices.length > 1 && <InstallmentsField choices={choices} value={installments} onChange={setInstallments} />}
                 <div className={styles.installNote}>
                   <span>
                     <strong>Instalação:</strong> é feita por um prestador parceiro e paga direto a ele —
@@ -547,19 +564,25 @@ export function NewVehicleWizard({
                           : 'entrega em mãos'}
                     </span>
                   </div>
+                  {(freight || parcels) && (
+                    <div className={styles.orderLine}>
+                      <span>
+                        {parcels
+                          ? `Equipamento: 1ª de ${parcels.length} parcelas (${formatMoney(equipmentCents)} sem juros)`
+                          : 'Equipamento'}
+                      </span>
+                      <span>
+                        {parcels ? formatMoney(parcels[0]) : equipmentCents ? formatMoney(equipmentCents) : 'sem cobrança'}
+                      </span>
+                    </div>
+                  )}
                   {freight && (
-                    <>
-                      <div className={styles.orderLine}>
-                        <span>Equipamento</span>
-                        <span>{equipmentCents ? formatMoney(equipmentCents) : 'sem cobrança'}</span>
-                      </div>
-                      <div className={styles.orderLine}>
-                        <span>
-                          Frete: {freight.name} ({deliveryLabel(freight.days)})
-                        </span>
-                        <span>{formatMoney(freight.cents)}</span>
-                      </div>
-                    </>
+                    <div className={styles.orderLine}>
+                      <span>
+                        Frete: {freight.name} ({deliveryLabel(freight.days)})
+                      </span>
+                      <span>{formatMoney(freight.cents)}</span>
+                    </div>
                   )}
                   {arranged && (
                     <div className={styles.orderLine}>
@@ -569,7 +592,7 @@ export function NewVehicleWizard({
                   )}
                   <div className={`${styles.orderLine} ${styles.orderTotal}`}>
                     <span>
-                      Agora: {freight ? 'equipamento e frete' : 'equipamento'}
+                      Agora: {parcels ? (freight ? '1ª parcela e frete' : '1ª parcela') : freight ? 'equipamento e frete' : 'equipamento'}
                       {isAdmin && adminDraft && totalNow ? ` · vence ${formatDateOnly(adminDraft.dueDate)}` : ''}
                     </span>
                     <span>{totalNow ? formatMoney(totalNow) : 'sem cobrança'}</span>
@@ -587,6 +610,15 @@ export function NewVehicleWizard({
                             </span>
                           </>
                         )}
+                        {parcels && (
+                          <>
+                            <br />
+                            <span className={styles.muted}>
+                              + {formatMoney(parcels[1])} do rastreador em cada uma das {parcels.length - 1} mensalidades
+                              seguintes.
+                            </span>
+                          </>
+                        )}
                       </span>
                       <span>
                         {promoMonthly !== undefined
@@ -598,6 +630,14 @@ export function NewVehicleWizard({
                     </div>
                   )}
                 </div>
+                {parcels && (
+                  <Commitment
+                    installments={parcels.length}
+                    staff={isAdmin}
+                    checked={committed}
+                    onChange={setCommitted}
+                  />
+                )}
               </>
             )}
           </div>
@@ -620,5 +660,68 @@ export function NewVehicleWizard({
         )}
       </Modal>
     </>
+  );
+}
+
+/** A escolha de como pagar o rastreador: à vista ou parcelado sem juros. */
+function InstallmentsField({
+  choices,
+  value,
+  onChange,
+  staff = false,
+}: {
+  choices: { value: number; label: string }[];
+  value: number;
+  onChange: (value: number) => void;
+  staff?: boolean;
+}) {
+  return (
+    <SelectField
+      label={staff ? 'Pagamento do equipamento' : 'Como pagar o rastreador'}
+      hint={
+        value > 1
+          ? `Por Pix: a 1ª parcela vence agora, ${staff ? 'com o frete' : 'junto com o frete'}; as outras ${value - 1} vêm somadas às mensalidades.`
+          : `Por Pix, ou parcelado em até ${choices.length}x sem juros.`
+      }
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+    >
+      {choices.map((choice) => (
+        <option key={choice.value} value={choice.value}>
+          {choice.label}
+        </option>
+      ))}
+    </SelectField>
+  );
+}
+
+/**
+ * Parcelado, a assinatura fica ativa até a última parcela: o cliente marca
+ * que entendeu antes de confirmar; a central vê o aviso para combinar com ele.
+ */
+function Commitment({
+  installments,
+  staff,
+  checked,
+  onChange,
+}: {
+  installments: number;
+  staff: boolean;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const rule = `a assinatura deste veículo fica ativa até a mensalidade com a última parcela (a ${installments}ª). Se for encerrada antes, as parcelas que faltam vencem de uma vez, numa fatura só (contrato, cláusula 7).`;
+  if (staff) {
+    return <p className={styles.muted}>Parcelado: {rule} Combine isso com o cliente.</p>;
+  }
+  return (
+    <label className={styles.promoOption}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <span>
+        <strong>Entendi: mantenho a assinatura até a última parcela.</strong>
+        <br />
+        Parcelando o rastreador, {rule}
+      </span>
+    </label>
   );
 }

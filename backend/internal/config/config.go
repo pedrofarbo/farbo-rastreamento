@@ -330,6 +330,10 @@ type Catalog struct {
 	EquipmentPriceCents int
 	// SetupDueDays: prazo da fatura do equipamento.
 	SetupDueDays int
+	// EquipmentMaxInstallments: em até quantas vezes sem juros o rastreador
+	// pode ser parcelado (1: só à vista). A 1ª parcela vai na fatura do
+	// pedido; as demais, somadas às mensalidades.
+	EquipmentMaxInstallments int
 	// LaunchPromo é a promoção de pré-lançamento.
 	LaunchPromo LaunchPromo
 }
@@ -392,6 +396,9 @@ func (c Catalog) validate() error {
 	}
 	if c.SetupDueDays < 0 || c.SetupDueDays > 30 {
 		return fmt.Errorf("CATALOG_SETUP_DUE_DAYS fora da faixa (0..30)")
+	}
+	if c.EquipmentMaxInstallments < 1 || c.EquipmentMaxInstallments > 12 {
+		return fmt.Errorf("CATALOG_EQUIPMENT_MAX_INSTALLMENTS fora da faixa (1..12)")
 	}
 	if strings.TrimSpace(c.PlanName) == "" || strings.TrimSpace(c.EquipmentName) == "" {
 		return fmt.Errorf("CATALOG_PLAN_NAME e CATALOG_EQUIPMENT_NAME não podem ficar vazios")
@@ -728,12 +735,13 @@ func Load() (*Config, error) {
 			SMTPTLS:      strings.ToLower(str("SMTP_TLS", SMTPStartTLS)),
 		},
 		Catalog: Catalog{
-			PlanName:            str("CATALOG_PLAN_NAME", "Plano Mensal"),
-			PlanPriceCents:      num("CATALOG_PLAN_PRICE_CENTS", 6990),
-			DefaultDueDay:       num("CATALOG_DEFAULT_DUE_DAY", 10),
-			EquipmentName:       str("CATALOG_EQUIPMENT_NAME", "Rastreador J16 GT06"),
-			EquipmentPriceCents: num("CATALOG_EQUIPMENT_PRICE_CENTS", 15000),
-			SetupDueDays:        num("CATALOG_SETUP_DUE_DAYS", 3),
+			PlanName:                 str("CATALOG_PLAN_NAME", "Plano Mensal"),
+			PlanPriceCents:           num("CATALOG_PLAN_PRICE_CENTS", 6990),
+			DefaultDueDay:            num("CATALOG_DEFAULT_DUE_DAY", 10),
+			EquipmentName:            str("CATALOG_EQUIPMENT_NAME", "Rastreador J16 GT06"),
+			EquipmentPriceCents:      num("CATALOG_EQUIPMENT_PRICE_CENTS", 15000),
+			SetupDueDays:             num("CATALOG_SETUP_DUE_DAYS", 3),
+			EquipmentMaxInstallments: num("CATALOG_EQUIPMENT_MAX_INSTALLMENTS", 10),
 			LaunchPromo: LaunchPromo{
 				Enabled:        bl("LAUNCH_PROMO_ENABLED", true),
 				EquipmentCents: num("LAUNCH_PROMO_EQUIPMENT_CENTS", 12000),

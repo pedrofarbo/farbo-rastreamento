@@ -32,6 +32,19 @@ export const LAUNCH_OFFER = {
   slots: 500,
 };
 
+/**
+ * O rastreador parcelado sem juros, por Pix (a 1ª parcela no pedido, as
+ * demais somadas às mensalidades). O servidor manda no limite
+ * (CATALOG_EQUIPMENT_MAX_INSTALLMENTS): mude os dois juntos.
+ */
+export const EQUIPMENT_INSTALLMENTS = 10;
+
+/** "10x de R$ 12,00": a parcela do rastreador no teto do parcelamento. */
+export function installmentsOf(cents: number, n: number = EQUIPMENT_INSTALLMENTS): string {
+  const parcel = Math.floor(cents / n);
+  return `${n}x de R$ ${Math.floor(parcel / 100)},${String(parcel % 100).padStart(2, '0')}`;
+}
+
 /** O endereço público do site: o QR Code dos eventos aponta para ele. */
 export const SITE_URL = 'https://farborastreadores.com.br';
 

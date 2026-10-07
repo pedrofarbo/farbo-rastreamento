@@ -78,7 +78,7 @@ func newLeadsEnv(t *testing.T, tweak ...func(*Deps)) (*credEnv, *recordingLeadNo
 		// Duas vagas só na promoção, para o teste chegar ao limite.
 		Catalog: config.Catalog{
 			PlanName: "Plano Mensal", PlanPriceCents: 6990, DefaultDueDay: 10,
-			EquipmentName: "Rastreador J16 GT06", EquipmentPriceCents: 15000, SetupDueDays: 3,
+			EquipmentName: "Rastreador J16 GT06", EquipmentPriceCents: 15000, SetupDueDays: 3, EquipmentMaxInstallments: 10,
 			LaunchPromo: config.LaunchPromo{
 				Enabled: true, EquipmentCents: 12000, MonthlyCents: 3490, Months: 12, Slots: 2,
 				InsanosMonthlyCents: 2790, InsanosPlanName: "Especial Insanos MC",

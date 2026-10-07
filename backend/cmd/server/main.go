@@ -340,6 +340,7 @@ func run() error {
 	// O contrato que o cliente aceita no primeiro acesso (com o CPF).
 	contractDoc, err := contract.Render(contract.Params{
 		Company: cfg.Company, SuspendAfterDays: cfg.Billing.SuspendAfterDays, HistoryOptions: retention.Options,
+		MaxInstallments: cfg.Catalog.EquipmentMaxInstallments,
 	})
 	if err != nil {
 		return err

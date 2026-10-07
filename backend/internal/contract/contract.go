@@ -31,11 +31,11 @@ import (
 // A versão em vigor. Ao mudar o texto (contrato.md), mude a versão e a data:
 // todo cliente aceita de novo no próximo acesso.
 const (
-	Version       = "2"
+	Version       = "3"
 	EffectiveDate = "7 de outubro de 2026"
 	// Changes resume o que mudou desde a versão anterior (o cliente que
 	// aceitou a anterior lê ao aceitar de novo, e recebe por e-mail).
-	Changes = "Entrou o reajuste anual da mensalidade (cláusula 5): todo mês de agosto, pelo IPCA acumulado nos 12 meses até maio, com aviso por e-mail pelo menos 30 dias antes. Só é reajustada a assinatura com 12 meses ou mais, e índice zero ou negativo mantém o preço."
+	Changes = "Entrou o parcelamento do rastreador sem juros, por Pix (cláusulas 5 e 7): a 1ª parcela vence com o pedido e as demais vêm somadas às mensalidades. Quem parcela mantém a assinatura ativa até a última parcela; se encerrar antes, as parcelas restantes vencem de uma vez. Para quem pagou o rastreador à vista, nada muda."
 	// MinMonths é a permanência mínima de cada assinatura.
 	MinMonths = 3
 )
@@ -76,6 +76,15 @@ type Params struct {
 	Company          config.Company
 	SuspendAfterDays int
 	HistoryOptions   []int
+	// MaxInstallments: em até quantas vezes o rastreador pode ser parcelado
+	// (1: só à vista, e o contrato não fala em parcelamento).
+	MaxInstallments int
+}
+
+// numberWords escreve por extenso as vezes do parcelamento.
+var numberWords = map[int]string{
+	2: "duas", 3: "três", 4: "quatro", 5: "cinco", 6: "seis", 7: "sete", 8: "oito", 9: "nove", 10: "dez",
+	11: "onze", 12: "doze",
 }
 
 // Render monta o contrato em vigor.
@@ -106,6 +115,7 @@ func Render(p Params) (*Document, error) {
 		"Name": name, "LegalName": legal, "CNPJ": strings.TrimSpace(p.Company.CNPJ),
 		"Address": strings.TrimSpace(p.Company.Address), "Email": strings.TrimSpace(p.Company.Email),
 		"SuspendAfterDays": p.SuspendAfterDays, "HistoryOptions": historyOptions,
+		"MaxInstallments": p.MaxInstallments, "MaxInstallmentsWords": numberWords[p.MaxInstallments],
 	}); err != nil {
 		return nil, fmt.Errorf("contrato: %w", err)
 	}

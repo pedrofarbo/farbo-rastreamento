@@ -498,6 +498,9 @@ export interface InvoiceInput {
   pixCode: string;
 }
 
+/** O saldo do rastreador parcelado no encerramento: cobrar numa fatura só ou dispensar. */
+export type EquipmentBalance = 'CHARGE' | 'WAIVE';
+
 /** Administração (perfil admin). */
 export const customersApi = {
   list: () => api.get<CustomerSummary[]>('/api/customers'),
@@ -521,7 +524,15 @@ export const customersApi = {
 
   updateSubscription: (id: string, input: { planName: string; priceCents: number }) =>
     api.patch<Subscription>(`/api/subscriptions/${id}`, input),
-  cancelSubscription: (id: string) => api.post<Subscription>(`/api/subscriptions/${id}/cancel`),
+  /**
+   * Encerra a assinatura. Com o rastreador parcelado e parcelas por pagar, diz
+   * o que fazer com o saldo: CHARGE (uma fatura só) ou WAIVE (dispensar).
+   */
+  cancelSubscription: (id: string, equipmentBalance?: EquipmentBalance) =>
+    api.post<Subscription & { balanceInvoice: Invoice | null }>(
+      `/api/subscriptions/${id}/cancel`,
+      equipmentBalance ? { equipmentBalance } : undefined,
+    ),
 
   createInvoice: (customerId: string, input: InvoiceInput) =>
     api.post<Invoice>(`/api/customers/${customerId}/invoices`, input),
@@ -563,6 +574,8 @@ export interface AdminTrackerOrder {
   launchPromo?: boolean;
   /** O frete cobrado do cliente; 0 ou ausente: sem frete (entrega em mãos). */
   shippingServiceId?: number;
+  /** O equipamento parcelado sem juros (ausente ou 1: à vista). */
+  installments?: number;
 }
 
 export interface InstallerInput {
@@ -757,6 +770,8 @@ export const meApi = {
     shippingServiceId?: number;
     /** Combinar a entrega com a central, em vez da transportadora. */
     arrangeDelivery?: boolean;
+    /** O rastreador parcelado sem juros (ausente ou 1: à vista). */
+    installments?: number;
   }) =>
     api.post<TrackerOrderResult>('/api/me/trackers', input),
   /** As formas de entrega até o endereço do cliente (preço e prazo). */

@@ -4,11 +4,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 
 import { customersApi, devicesApi, twoFactorApi, vehicleInputFrom, vehiclesApi } from '@/api/resources';
-import type { VehicleInput } from '@/api/resources';
+import type { EquipmentBalance, VehicleInput } from '@/api/resources';
 import { AddressModal } from '@/components/address/AddressModal';
 import billing from '@/components/billing/Billing.module.css';
 import { CustomerStatus, InvoiceStatus } from '@/components/billing/InvoiceStatus';
 import { MonthlyPrice } from '@/components/billing/MonthlyPrice';
+import { installmentProgress } from '@/components/billing/installments';
 import { NewVehicleWizard } from '@/components/billing/NewVehicleWizard';
 import { FulfillmentAdminModal } from '@/components/fulfillment/FulfillmentAdminModal';
 import { PixPaymentModal } from '@/components/billing/PixPaymentModal';
@@ -74,6 +75,8 @@ export function CustomerDetailsPage() {
   const [payment, setPayment] = useState<{ invoice: Invoice; paymentUrl: string; pixCode: string } | null>(null);
   const [newInvoice, setNewInvoice] = useState<{ description: string; amount: string; dueDate: string; paymentUrl: string; pixCode: string } | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  // Encerrar a assinatura com parcelas do rastreador por pagar: cobrar ou dispensar o saldo.
+  const [endFinanced, setEndFinanced] = useState<{ sub: Subscription; vehicle: string; balance: EquipmentBalance } | null>(null);
   const [formError, setFormError] = useState('');
   const [pix, setPix] = useState<Invoice | null>(null);
   const [refund, setRefund] = useState<{ payment: PixPayment; reason: string } | null>(null);
@@ -124,6 +127,7 @@ export function CustomerDetailsPage() {
       setPayment(null);
       setNewInvoice(null);
       setConfirmation(null);
+      setEndFinanced(null);
       setRefund(null);
       setFormError('');
     },
@@ -439,6 +443,7 @@ export function CustomerDetailsPage() {
                               <div className={billing.muted}>
                                 dia {sub.dueDay} · próxima fatura {formatDateOnly(sub.nextDueDate)}
                               </div>
+                              {installmentProgress(sub) && <div className={billing.muted}>{installmentProgress(sub)}</div>}
                             </>
                           ) : sub ? (
                             <Badge tone="neutral">Encerrada</Badge>
@@ -463,14 +468,16 @@ export function CustomerDetailsPage() {
                                   size="small"
                                   variant="ghost"
                                   onClick={() =>
-                                    setConfirmation({
-                                      title: 'Encerrar assinatura?',
-                                      body: `As faturas de ${vehicle.name} que ainda não venceram são canceladas; as vencidas continuam em aberto. O veículo continua na ficha, sem assinatura.`,
-                                      label: 'Encerrar assinatura',
-                                      success: 'Assinatura encerrada',
-                                      tone: 'danger',
-                                      run: () => customersApi.cancelSubscription(sub.id),
-                                    })
+                                    sub.installmentsDueCents > 0
+                                      ? openModal(() => setEndFinanced({ sub, vehicle: vehicle.name, balance: 'CHARGE' }))
+                                      : setConfirmation({
+                                          title: 'Encerrar assinatura?',
+                                          body: `As faturas de ${vehicle.name} que ainda não venceram são canceladas; as vencidas continuam em aberto. O veículo continua na ficha, sem assinatura.`,
+                                          label: 'Encerrar assinatura',
+                                          success: 'Assinatura encerrada',
+                                          tone: 'danger',
+                                          run: () => customersApi.cancelSubscription(sub.id),
+                                        })
                                   }
                                 >
                                   Encerrar
@@ -1125,6 +1132,71 @@ export function CustomerDetailsPage() {
         onClose={() => setPix(null)}
         onPaid={refresh}
       />
+
+      {/* Encerrar com o rastreador parcelado: o saldo é cobrado ou dispensado. */}
+      <Modal
+        open={endFinanced !== null}
+        title="Encerrar assinatura?"
+        onClose={() => setEndFinanced(null)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEndFinanced(null)}>Voltar</Button>
+            <Button
+              variant="danger"
+              loading={action.isPending}
+              onClick={() =>
+                endFinanced &&
+                run(
+                  endFinanced.balance === 'CHARGE'
+                    ? 'Assinatura encerrada; o saldo do rastreador foi para uma fatura'
+                    : 'Assinatura encerrada; saldo do rastreador dispensado',
+                  () => customersApi.cancelSubscription(endFinanced.sub.id, endFinanced.balance),
+                )
+              }
+            >
+              Encerrar assinatura
+            </Button>
+          </>
+        }
+      >
+        {endFinanced && (
+          <div className={styles.form}>
+            <p>
+              {endFinanced.vehicle}: {installmentProgress(endFinanced.sub)}. Pelo contrato (cláusula 7), quem parcela fica até a
+              última parcela; saindo antes, o que falta vence de uma vez. As faturas que ainda não venceram são canceladas e as
+              vencidas continuam em aberto.
+            </p>
+            <label className={billing.promoOption}>
+              <input
+                type="radio"
+                name="equipment-balance"
+                checked={endFinanced.balance === 'CHARGE'}
+                onChange={() => setEndFinanced({ ...endFinanced, balance: 'CHARGE' })}
+              />
+              <span>
+                <strong>Cobrar o saldo numa fatura só</strong>
+                <br />
+                As parcelas que ainda não estão em fatura vencida vão para uma fatura nova, com o prazo da fatura do pedido.
+              </span>
+            </label>
+            <label className={billing.promoOption}>
+              <input
+                type="radio"
+                name="equipment-balance"
+                checked={endFinanced.balance === 'WAIVE'}
+                onChange={() => setEndFinanced({ ...endFinanced, balance: 'WAIVE' })}
+              />
+              <span>
+                <strong>Não cobrar o saldo</strong>
+                <br />
+                Arrependimento em 7 dias (com o rastreador devolvido) ou pedido desfeito. Se a fatura do pedido ainda estiver em
+                aberto, cancele-a também.
+              </span>
+            </label>
+            {formError && <div className={styles.note}>{formError}</div>}
+          </div>
+        )}
+      </Modal>
 
       {/* Confirmação genérica */}
       <Modal

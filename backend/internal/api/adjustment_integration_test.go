@@ -289,7 +289,14 @@ func TestPriceAdjustmentEndToEnd(t *testing.T) {
 		t.Errorf("reajuste fora de época")
 	}
 
-	// O contrato novo: quem aceitou só o anterior recebe o aviso, uma vez.
+	// O contrato novo: quem aceitou só o anterior recebe o aviso, uma vez;
+	// quem já aceitou o em vigor, não.
+	for _, id := range []uuid.UUID{ana, bia, duda, edu} {
+		if _, err := env.db.Exec(ctx, `INSERT INTO contract_acceptances (user_id, version, content_sha256, name, document)
+			VALUES ($1, $2, 'x', 'x', '52998224725') ON CONFLICT DO NOTHING`, id, contract.Version); err != nil {
+			t.Fatal(err)
+		}
+	}
 	doc, err := contract.Render(contract.Params{Company: config.Company{Name: "Farbo"}, SuspendAfterDays: 10, HistoryOptions: []int{7, 14, 30}})
 	if err != nil {
 		t.Fatal(err)

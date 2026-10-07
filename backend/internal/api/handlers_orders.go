@@ -31,6 +31,9 @@ type catalogView struct {
 	EquipmentName       string `json:"equipmentName"`
 	EquipmentPriceCents int    `json:"equipmentPriceCents"`
 	SetupDueDays        int    `json:"setupDueDays"`
+	// EquipmentMaxInstallments: em até quantas vezes sem juros o rastreador
+	// pode ser parcelado (1: só à vista).
+	EquipmentMaxInstallments int `json:"equipmentMaxInstallments"`
 	// LaunchPromo: o cliente pode contratar com a promoção de
 	// pré-lançamento (nulo: não pode, ou não é cliente).
 	LaunchPromo *orders.PromoOffer `json:"launchPromo"`
@@ -43,6 +46,7 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	view := catalogView{
 		PlanName: c.PlanName, PlanPriceCents: c.PlanPriceCents, DefaultDueDay: c.DefaultDueDay,
 		EquipmentName: c.EquipmentName, EquipmentPriceCents: c.EquipmentPriceCents, SetupDueDays: c.SetupDueDays,
+		EquipmentMaxInstallments: c.EquipmentMaxInstallments,
 	}
 	if customerID, isCustomer := customerOf(r); isCustomer {
 		if subs, err := s.Billing.ListSubscriptions(r.Context(), customerID); err == nil {
@@ -106,6 +110,8 @@ type adminTrackerOrderRequest struct {
 	// ShippingServiceID: o frete cobrado do cliente (zero: sem frete —
 	// entregue em mãos, instalado na base).
 	ShippingServiceID int `json:"shippingServiceId"`
+	// Installments: o equipamento parcelado sem juros (0 ou 1: à vista).
+	Installments int `json:"installments"`
 }
 
 func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request) {
@@ -129,7 +135,7 @@ func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request)
 	}
 	result, err := s.Orders.Place(r.Context(), customerID, orders.Order{
 		Vehicle: req.Vehicle, EquipmentCents: req.EquipmentCents, SetupDueDate: req.SetupDueDate, Plan: req.Plan,
-		LaunchPromo: req.LaunchPromo, Shipping: shipping,
+		LaunchPromo: req.LaunchPromo, Shipping: shipping, Installments: req.Installments,
 	})
 	if err != nil {
 		writeOrderError(w, r, err, "cliente não encontrado")
@@ -152,6 +158,9 @@ type customerTrackerOrderRequest struct {
 	// ArrangeDelivery: em vez da transportadora, combinar a entrega com a
 	// central (só nas cidades de SHIPPING_ARRANGE_CITIES).
 	ArrangeDelivery bool `json:"arrangeDelivery"`
+	// Installments: o rastreador parcelado sem juros (0 ou 1: à vista); o
+	// cliente aceita ficar com a assinatura ativa até a última parcela.
+	Installments int `json:"installments"`
 }
 
 func (s *Server) handleMyOrderTracker(w http.ResponseWriter, r *http.Request) {
@@ -180,6 +189,7 @@ func (s *Server) handleMyOrderTracker(w http.ResponseWriter, r *http.Request) {
 		writeOrderError(w, r, err, "cliente não encontrado")
 		return
 	}
+	order.Installments = req.Installments
 	// O frete: com o Melhor Envios ligado e o endereço salvo, o cliente
 	// escolhe a entrega e paga junto com o equipamento — ou, perto da base,
 	// combina a entrega com a central, sem frete.
@@ -327,6 +337,9 @@ func (s *Server) orderPlaced(r *http.Request, customerID string, result *orders.
 	}
 	if result.Subscription.PromoPriceCents != nil {
 		meta["launchPromo"] = true
+	}
+	if n := result.Subscription.Installments; n > 0 {
+		meta["installments"], meta["commitmentUntil"] = n, result.Subscription.CommitmentUntil
 	}
 	if result.Shipping != nil {
 		meta["shippingService"] = result.Shipping.Name

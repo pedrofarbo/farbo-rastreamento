@@ -75,6 +75,10 @@ describe.runIf(PRE_LAUNCH)('landing em pré-lançamento', () => {
     expect(text).toContain('De R$ 39,90');
     expect(text).toContain('depois, R$ 39,90/mês por veículo');
     expect(text).not.toContain('Quero meu desconto');
+    // O rastreador: à vista ou em até 10x sem juros no Pix (no lugar de "Pagamento único").
+    expect(text).toContain('R$ 120 no rastreador, ou 10x de R$ 12,00 sem juros.');
+    expect(text).toContain('à vista, ou 10x de R$ 12,00sem juros no Pix');
+    expect(text).not.toContain('Pagamento único');
   });
 
   it('o equipamento mostra o selo Anatel no lugar de "Desbloqueado"; o Insanos, sem "Parceria oficial"', () => {

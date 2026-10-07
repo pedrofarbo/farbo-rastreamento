@@ -56,10 +56,21 @@ type Subscription struct {
 	PromoUntil      *Date `json:"promoUntil"`
 	// NextPriceCents vale para as faturas que vencem a partir de
 	// NextPriceFrom (o reajuste anual, já avisado); nulos sem mudança agendada.
-	NextPriceCents *int      `json:"nextPriceCents"`
-	NextPriceFrom  *Date     `json:"nextPriceFrom"`
-	CreatedAt      time.Time `json:"createdAt"`
-	UpdatedAt      time.Time `json:"updatedAt"`
+	NextPriceCents *int  `json:"nextPriceCents"`
+	NextPriceFrom  *Date `json:"nextPriceFrom"`
+	// Installments: em quantas vezes o rastreador foi parcelado (0: à vista).
+	// CommitmentUntil é o vencimento da mensalidade com a última parcela: a
+	// assinatura fica ativa até ela.
+	Installments    int   `json:"installments"`
+	CommitmentUntil *Date `json:"commitmentUntil"`
+	// O andamento das parcelas (só nas parceladas, preenchido na leitura): o
+	// valor parcelado, a parcela, quantas foram pagas e quanto falta pagar.
+	EquipmentCents       int       `json:"equipmentCents"`
+	InstallmentCents     int       `json:"installmentCents"`
+	InstallmentsPaid     int       `json:"installmentsPaid"`
+	InstallmentsDueCents int       `json:"installmentsDueCents"`
+	CreatedAt            time.Time `json:"createdAt"`
+	UpdatedAt            time.Time `json:"updatedAt"`
 }
 
 // PriceOn é o valor da fatura que vence em due.
@@ -135,15 +146,15 @@ func NewRepository(db *database.DB) *Repository { return &Repository{db: db} }
 
 const subscriptionColumns = `id, customer_id, plan_name, price_cents, due_day, next_due_date,
 	status, canceled_at, vehicle_id, delivery_address, promo_price_cents, promo_until,
-	next_price_cents, next_price_from, created_at, updated_at`
+	next_price_cents, next_price_from, installments, commitment_until, created_at, updated_at`
 
 func scanSubscription(row database.Scanner) (*Subscription, error) {
 	var s Subscription
 	var next time.Time
-	var promoUntil, nextFrom *time.Time
+	var promoUntil, nextFrom, commitment *time.Time
 	if err := row.Scan(&s.ID, &s.CustomerID, &s.PlanName, &s.PriceCents, &s.DueDay, &next,
 		&s.Status, &s.CanceledAt, &s.VehicleID, &s.DeliveryAddress, &s.PromoPriceCents, &promoUntil,
-		&s.NextPriceCents, &nextFrom, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		&s.NextPriceCents, &nextFrom, &s.Installments, &commitment, &s.CreatedAt, &s.UpdatedAt); err != nil {
 		return nil, database.MapError(err)
 	}
 	s.NextDueDate = Date{next}
@@ -153,6 +164,9 @@ func scanSubscription(row database.Scanner) (*Subscription, error) {
 	if nextFrom != nil {
 		s.NextPriceFrom = &Date{*nextFrom}
 	}
+	if commitment != nil {
+		s.CommitmentUntil = &Date{*commitment}
+	}
 	return &s, nil
 }
 
@@ -161,11 +175,11 @@ func scanSubscription(row database.Scanner) (*Subscription, error) {
 func InsertSubscription(ctx context.Context, q database.Querier, s *Subscription) (*Subscription, error) {
 	return scanSubscription(q.QueryRow(ctx, `
 		INSERT INTO subscriptions (customer_id, plan_name, price_cents, due_day, next_due_date,
-			vehicle_id, delivery_address, promo_price_cents, promo_until)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			vehicle_id, delivery_address, promo_price_cents, promo_until, installments, commitment_until)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING `+subscriptionColumns,
 		s.CustomerID, s.PlanName, s.PriceCents, s.DueDay, s.NextDueDate.Time, s.VehicleID, s.DeliveryAddress,
-		s.PromoPriceCents, dateOrNil(s.PromoUntil)))
+		s.PromoPriceCents, dateOrNil(s.PromoUntil), s.Installments, dateOrNil(s.CommitmentUntil)))
 }
 
 func dateOrNil(d *Date) *time.Time {
@@ -213,10 +227,24 @@ func (r *Repository) UpdateSubscription(ctx context.Context, id uuid.UUID, planN
 		RETURNING `+subscriptionColumns, id, planName, priceCents))
 }
 
+// CancelOptions diz o que fazer com o saldo do rastreador parcelado
+// (BalanceCharge ou BalanceWaive; obrigatório se faltar parcela a pagar) e em
+// quantos dias vence a fatura do saldo.
+type CancelOptions struct {
+	Balance string
+	DueDays int
+}
+
 // CancelSubscription encerra a assinatura e cancela as faturas dela que ainda
-// não venceram. As já vencidas continuam em aberto: são dívida.
-func (r *Repository) CancelSubscription(ctx context.Context, id uuid.UUID, today Date) (*Subscription, error) {
+// não venceram. As já vencidas continuam em aberto: são dívida. Com o
+// rastreador parcelado, as parcelas que ficaram sem fatura vão para a fatura
+// do saldo (devolvida junto) ou são dispensadas.
+func (r *Repository) CancelSubscription(ctx context.Context, id uuid.UUID, today Date, opts CancelOptions) (*Subscription, *Invoice, error) {
+	if opts.Balance != "" && opts.Balance != BalanceCharge && opts.Balance != BalanceWaive {
+		return nil, nil, ValidationError{"saldo do rastreador: use CHARGE (cobrar) ou WAIVE (dispensar)"}
+	}
 	var sub *Subscription
+	var balance *Invoice
 	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
 		var err error
 		sub, err = scanSubscription(tx.QueryRow(ctx, `
@@ -226,20 +254,40 @@ func (r *Repository) CancelSubscription(ctx context.Context, id uuid.UUID, today
 		if err != nil {
 			return err
 		}
+		if sub.Installments > 0 && opts.Balance == "" {
+			unpaid, err := hasUnpaidInstallments(ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			if unpaid {
+				return ErrBalanceChoice
+			}
+		}
 		_, err = tx.Exec(ctx, `
 			UPDATE invoices SET status = 'CANCELED', updated_at = NOW()
 			WHERE subscription_id = $1 AND status = 'OPEN' AND due_date >= $2`, id, today.Time)
+		if err != nil || sub.Installments == 0 {
+			return err
+		}
+		// As parcelas das mensalidades canceladas voltam a ficar sem fatura.
+		if _, err := tx.Exec(ctx, `
+			UPDATE equipment_installments ei SET invoice_id = NULL
+			FROM invoices i
+			WHERE i.id = ei.invoice_id AND ei.subscription_id = $1 AND i.status = 'CANCELED'`, id); err != nil {
+			return err
+		}
+		balance, err = settleBalance(ctx, tx, sub, opts.Balance, today, opts.DueDays)
 		return err
 	})
 	if errors.Is(err, database.ErrNotFound) {
 		if _, getErr := r.GetSubscription(ctx, id); getErr == nil {
-			return nil, ErrAlreadyCanceled
+			return nil, nil, ErrAlreadyCanceled
 		}
 	}
 	if err != nil {
-		return nil, database.MapError(err)
+		return nil, nil, database.MapError(err)
 	}
-	return sub, nil
+	return sub, balance, nil
 }
 
 func (r *Repository) ListSubscriptions(ctx context.Context, customerID uuid.UUID) ([]*Subscription, error) {
@@ -362,8 +410,18 @@ func (r *Repository) ReopenInvoice(ctx context.Context, id uuid.UUID) (*Invoice,
 	return inv, err
 }
 
+// CancelInvoice cancela a fatura em aberto. A parcela do rastreador que ela
+// cobrava volta para a próxima mensalidade (ou fica dispensada, se a
+// assinatura já foi encerrada).
 func (r *Repository) CancelInvoice(ctx context.Context, id uuid.UUID) (*Invoice, error) {
-	return r.transitionInvoice(ctx, id, `status = 'CANCELED'`)
+	inv, err := r.transitionInvoice(ctx, id, `status = 'CANCELED'`)
+	if err != nil {
+		return nil, err
+	}
+	if err := releaseInstallments(ctx, r.db, id); err != nil {
+		return nil, database.MapError(err)
+	}
+	return inv, nil
 }
 
 func (r *Repository) UpdateInvoicePayment(ctx context.Context, id uuid.UUID, paymentURL, pixCode string) (*Invoice, error) {
@@ -385,13 +443,14 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 		promoUntil     *Date
 		nextPrice      *int
 		nextFrom       *Date
+		installments   int
 	}
 
 	var created int64
 	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
 			SELECT id, customer_id, plan_name, price_cents, due_day, next_due_date, promo_price_cents, promo_until,
-				next_price_cents, next_price_from
+				next_price_cents, next_price_from, installments
 			FROM subscriptions
 			WHERE status = 'ACTIVE' AND next_due_date <= $1
 			ORDER BY next_due_date
@@ -405,7 +464,7 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 			var next time.Time
 			var promoUntil, nextFrom *time.Time
 			if err := rows.Scan(&d.id, &d.customerID, &d.planName, &d.priceCents, &d.dueDay, &next,
-				&d.promoCents, &promoUntil, &d.nextPrice, &nextFrom); err != nil {
+				&d.promoCents, &promoUntil, &d.nextPrice, &nextFrom, &d.installments); err != nil {
 				rows.Close()
 				return err
 			}
@@ -431,15 +490,38 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 				if promotional {
 					description += " · promoção de pré-lançamento"
 				}
-				tag, err := tx.Exec(ctx, `
+				// A parcela do rastreador do mês, se ainda houver.
+				var installment *pendingInstallment
+				if d.installments > 0 {
+					if installment, err = nextPending(ctx, tx, d.id); err != nil {
+						return err
+					}
+				}
+				if installment != nil {
+					amount += installment.cents
+					description += installmentLabel(installment.number, d.installments)
+				}
+				var invoiceID uuid.UUID
+				err := tx.QueryRow(ctx, `
 					INSERT INTO invoices (customer_id, subscription_id, description, amount_cents, due_date)
 					VALUES ($1, $2, $3, $4, $5)
-					ON CONFLICT (subscription_id, due_date) DO NOTHING`,
-					d.customerID, d.id, description, amount, next.Time)
-				if err != nil {
+					ON CONFLICT (subscription_id, due_date) DO NOTHING
+					RETURNING id`,
+					d.customerID, d.id, description, amount, next.Time).Scan(&invoiceID)
+				switch {
+				case errors.Is(err, pgx.ErrNoRows):
+					// Já existia: a parcela fica para a próxima.
+				case err != nil:
 					return err
+				default:
+					created++
+					if installment != nil {
+						if _, err := tx.Exec(ctx, `UPDATE equipment_installments SET invoice_id = $2 WHERE id = $1`,
+							installment.id, invoiceID); err != nil {
+							return err
+						}
+					}
 				}
-				created += tag.RowsAffected()
 				next = nextMonthly(next, d.dueDay)
 			}
 			if _, err := tx.Exec(ctx,

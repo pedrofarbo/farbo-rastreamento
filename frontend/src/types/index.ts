@@ -486,6 +486,18 @@ export interface Subscription {
    */
   nextPriceCents: number | null;
   nextPriceFrom: DateOnly | null;
+  /**
+   * Rastreador parcelado sem juros: em quantas vezes (0: à vista) e até
+   * quando a assinatura fica ativa (o vencimento da mensalidade com a última
+   * parcela). O andamento: o valor parcelado, a parcela, quantas foram pagas
+   * e quanto falta pagar (zeros quando à vista).
+   */
+  installments: number;
+  commitmentUntil: DateOnly | null;
+  equipmentCents: number;
+  installmentCents: number;
+  installmentsPaid: number;
+  installmentsDueCents: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -870,6 +882,8 @@ export interface Catalog {
   equipmentPriceCents: number;
   /** Prazo, em dias, da fatura do equipamento. */
   setupDueDays: number;
+  /** Em até quantas vezes sem juros o rastreador pode ser parcelado (1: só à vista). */
+  equipmentMaxInstallments: number;
   /** O cliente pode contratar com a promoção de pré-lançamento (nulo: não pode). */
   launchPromo?: PromoOffer | null;
 }

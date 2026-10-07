@@ -5,7 +5,7 @@ import { PRIVACY_PATH } from '@/config/legal';
 import { track } from '@/services/analytics';
 import { currentReferral } from '@/services/referral';
 import { CONTACT_EMAIL } from '@/config/contact';
-import { INSANOS_MONTHLY, LAUNCH_OFFER } from '@/config/landing';
+import { INSANOS_MONTHLY, LAUNCH_OFFER, installmentsOf } from '@/config/landing';
 import { formatPhoneInput, isPhoneComplete } from '@/services/format';
 
 import styles from './LaunchSection.module.css';
@@ -67,6 +67,9 @@ export const LaunchSection: React.FC = () => {
                   <span>
                     <s className={styles.offerOld}>{LAUNCH_OFFER.equipmentRegular}</s>{' '}
                     <strong className={styles.offerPrice}>{LAUNCH_OFFER.equipment}</strong>
+                  </span>
+                  <span className={styles.offerInstallments}>
+                    ou {installmentsOf(LAUNCH_OFFER.equipmentCents)} sem juros no Pix
                   </span>
                 </div>
                 <div className={styles.offerItem}>

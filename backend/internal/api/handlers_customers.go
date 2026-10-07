@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -382,20 +383,51 @@ func (s *Server) handleUpdateSubscription(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, sub)
 }
 
+// cancelSubscriptionRequest: com o rastreador parcelado e parcelas por pagar,
+// o que fazer com o saldo — CHARGE (uma fatura só) ou WAIVE (dispensar:
+// arrependimento, pedido desfeito). O corpo é opcional sem parcelas.
+type cancelSubscriptionRequest struct {
+	EquipmentBalance string `json:"equipmentBalance"`
+}
+
 func (s *Server) handleCancelSubscription(w http.ResponseWriter, r *http.Request) {
 	id, err := urlUUID(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "id inválido")
 		return
 	}
-	sub, err := s.Billing.CancelSubscription(r.Context(), id)
+	var req cancelSubscriptionRequest
+	if err := decodeJSON(w, r, &req); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	// A fatura do saldo vence no prazo da fatura do pedido.
+	opts := billing.CancelOptions{Balance: req.EquipmentBalance, DueDays: 3}
+	if s.Orders != nil {
+		opts.DueDays = s.Orders.Catalog().SetupDueDays
+	}
+	sub, balance, err := s.Billing.CancelSubscription(r.Context(), id, opts)
+	if errors.Is(err, billing.ErrBalanceChoice) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error(), "code": "EQUIPMENT_BALANCE"})
+		return
+	}
 	if err != nil {
 		writeBillingError(w, err, "assinatura não encontrada")
 		return
 	}
-	s.recordBillingAudit(r, audit.ActionSubscriptionCanceled,
-		map[string]any{"customerId": sub.CustomerID, "subscriptionId": sub.ID})
-	writeJSON(w, http.StatusOK, sub)
+	details := map[string]any{"customerId": sub.CustomerID, "subscriptionId": sub.ID}
+	if sub.Installments > 0 {
+		details["equipmentBalance"] = req.EquipmentBalance
+		if balance != nil {
+			details["balanceInvoice"], details["balanceCents"] = balance.ID, balance.AmountCents
+		}
+	}
+	s.recordBillingAudit(r, audit.ActionSubscriptionCanceled, details)
+	// A assinatura, como antes, e a fatura do saldo (se houve).
+	writeJSON(w, http.StatusOK, struct {
+		*billing.Subscription
+		BalanceInvoice *billing.Invoice `json:"balanceInvoice"`
+	}{sub, balance})
 }
 
 // ---------------------------------------------------------------------------

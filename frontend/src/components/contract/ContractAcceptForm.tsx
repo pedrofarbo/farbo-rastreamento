@@ -75,6 +75,10 @@ export function ContractAcceptForm({
             <strong>1 mensalidade</strong>.
           </li>
           <li>
+            <strong>Parcelou o rastreador?</strong> A assinatura fica ativa até a última parcela. Se sair antes, as
+            parcelas que faltam vencem de uma vez.
+          </li>
+          <li>
             <strong>Reajuste anual em agosto</strong>, pelo IPCA dos 12 meses até maio, com aviso por e-mail 30 dias
             antes. Só depois de 12 meses de assinatura; índice negativo mantém o preço.
           </li>

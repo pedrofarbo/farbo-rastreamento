@@ -1,6 +1,14 @@
 import React from 'react';
 
-import { ANATEL_HOMOLOGATION, INSANOS_MONTHLY, LAUNCH_ANCHOR, LAUNCH_OFFER, PRE_LAUNCH, priceParts } from '@/config/landing';
+import {
+  ANATEL_HOMOLOGATION,
+  INSANOS_MONTHLY,
+  LAUNCH_ANCHOR,
+  LAUNCH_OFFER,
+  PRE_LAUNCH,
+  installmentsOf,
+  priceParts,
+} from '@/config/landing';
 
 import styles from './PricingSection.module.css';
 
@@ -25,7 +33,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
               <span className={styles.launchBannerTag}>Preço de pré-lançamento</span>
               <strong>
                 Cadastre-se na lista e pague {LAUNCH_OFFER.monthly}/mês nos {LAUNCH_OFFER.months} primeiros meses e{' '}
-                {LAUNCH_OFFER.equipment} no rastreador.
+                {LAUNCH_OFFER.equipment} no rastreador, ou {installmentsOf(LAUNCH_OFFER.equipmentCents)} sem juros.
               </strong>
               <span>
                 Só para quem está na lista de pré-lançamento · integrantes do Insanos MC pagam{' '}
@@ -227,7 +235,11 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
                     <span className={styles.amount}>{equipmentPromo.reais}</span>
                     <span className={styles.cents}>{equipmentPromo.cents}</span>
                   </div>
-                  <div className={styles.priceSub}>Pagamento único</div>
+                  <div className={styles.priceSub}>
+                    à vista, ou {installmentsOf(LAUNCH_OFFER.equipmentCents)}
+                    <br />
+                    sem juros no Pix
+                  </div>
                 </>
               ) : (
                 <>
@@ -236,7 +248,11 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
                     <span className={styles.amount}>150</span>
                     <span className={styles.cents}>,00</span>
                   </div>
-                  <div className={styles.priceSub}>Pagamento único</div>
+                  <div className={styles.priceSub}>
+                    à vista, ou {installmentsOf(LAUNCH_OFFER.equipmentRegularCents)}
+                    <br />
+                    sem juros no Pix
+                  </div>
                 </>
               )}
             </div>

@@ -148,7 +148,11 @@ func (s *Service) HasActiveForVehicle(ctx context.Context, vehicleID uuid.UUID) 
 }
 
 func (s *Service) GetSubscription(ctx context.Context, id uuid.UUID) (*Subscription, error) {
-	return s.repo.GetSubscription(ctx, id)
+	sub, err := s.repo.GetSubscription(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return sub, s.repo.fillInstallments(ctx, sub)
 }
 
 func (s *Service) UpdateSubscription(ctx context.Context, id uuid.UUID, planName string, priceCents int) (*Subscription, error) {
@@ -158,12 +162,26 @@ func (s *Service) UpdateSubscription(ctx context.Context, id uuid.UUID, planName
 	return s.repo.UpdateSubscription(ctx, id, strings.TrimSpace(planName), priceCents)
 }
 
-func (s *Service) CancelSubscription(ctx context.Context, id uuid.UUID) (*Subscription, error) {
-	return s.repo.CancelSubscription(ctx, id, s.Today())
+// CancelSubscription encerra a assinatura; com o rastreador parcelado e
+// parcelas por pagar, opts diz se o saldo é cobrado (a fatura dele volta
+// junto) ou dispensado.
+func (s *Service) CancelSubscription(ctx context.Context, id uuid.UUID, opts CancelOptions) (*Subscription, *Invoice, error) {
+	sub, balance, err := s.repo.CancelSubscription(ctx, id, s.Today(), opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	if balance != nil {
+		s.decorate(balance)
+	}
+	return sub, balance, s.repo.fillInstallments(ctx, sub)
 }
 
 func (s *Service) ListSubscriptions(ctx context.Context, customerID uuid.UUID) ([]*Subscription, error) {
-	return s.repo.ListSubscriptions(ctx, customerID)
+	subs, err := s.repo.ListSubscriptions(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+	return subs, s.repo.fillInstallments(ctx, subs...)
 }
 
 // ---------------------------------------------------------------------------

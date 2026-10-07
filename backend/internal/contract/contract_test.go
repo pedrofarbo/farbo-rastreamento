@@ -9,10 +9,15 @@ import (
 
 func render(t *testing.T, address string) *Document {
 	t.Helper()
+	return renderWith(t, address, 10)
+}
+
+func renderWith(t *testing.T, address string, maxInstallments int) *Document {
+	t.Helper()
 	doc, err := Render(Params{
 		Company: config.Company{Name: "Farbo Rastreadores", LegalName: "FARBO TECNOLOGIA DE SISTEMAS E CLOUD LTDA",
 			CNPJ: "49.757.084/0001-00", Address: address, Email: "contato@farborastreadores.com.br"},
-		SuspendAfterDays: 10, HistoryOptions: []int{7, 14, 30},
+		SuspendAfterDays: 10, HistoryOptions: []int{7, 14, 30}, MaxInstallments: maxInstallments,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -39,6 +44,9 @@ func TestContractText(t *testing.T) {
 		"serviços de segurança ou de vigilância", "central de monitoramento", "seguro veicular",
 		"equipe tática ou de pronta-resposta de prontidão", "não garante a recuperação do veículo em caso de roubo ou furto",
 		"prazo de arrependimento (cláusula 9)", "nova versão deste contrato (cláusula 14)",
+		"parcelado em até 10 (dez) vezes sem juros, por Pix", "a 1ª parcela vence com o pedido, junto com o frete",
+		"ativa até a mensalidade que traz a última parcela", "as parcelas restantes vencem de uma vez, numa fatura só",
+		"não são multa: são o preço do rastreador",
 	} {
 		if want == "MP" {
 			want = "Medida Provisória nº 2.200-2/2001"
@@ -50,9 +58,18 @@ func TestContractText(t *testing.T) {
 	if strings.Contains(doc.Text, "{{") || strings.Contains(doc.Text, "com sede em") {
 		t.Error("sobrou marcação ou endereço vazio")
 	}
-	// As cláusulas viram blocos: a de permanência é uma lista.
-	if s := doc.Sections[6]; s.Title != "7. Permanência mínima e multa" || len(s.Blocks) != 1 || s.Blocks[0].Kind != "ul" || len(s.Blocks[0].Items) != 4 {
+	// As cláusulas viram blocos: a de permanência é uma lista (com o
+	// parcelamento, um item a mais; o de preço também).
+	if s := doc.Sections[6]; s.Title != "7. Permanência mínima e multa" || len(s.Blocks) != 1 || s.Blocks[0].Kind != "ul" || len(s.Blocks[0].Items) != 5 {
 		t.Errorf("cláusula 7 = %+v", s)
+	}
+	if s := doc.Sections[4]; len(s.Blocks) != 1 || len(s.Blocks[0].Items) != 6 {
+		t.Errorf("cláusula 5 = %+v", s)
+	}
+	// Só à vista: o contrato não fala em parcelamento.
+	cash := renderWith(t, "", 1)
+	if strings.Contains(cash.Text, "parcela") || len(cash.Sections[6].Blocks[0].Items) != 4 || len(cash.Sections[4].Blocks[0].Items) != 5 {
+		t.Errorf("contrato sem parcelamento:\n%s", cash.Text)
 	}
 	// Com o endereço, ele entra; o hash muda junto com o texto.
 	withAddress := render(t, "Rua Exemplo, 100, São Paulo/SP")

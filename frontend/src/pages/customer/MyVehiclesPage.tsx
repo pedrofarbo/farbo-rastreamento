@@ -8,6 +8,7 @@ import { AddressModal } from '@/components/address/AddressModal';
 import { DeliveryBox } from '@/components/address/DeliveryBox';
 import billing from '@/components/billing/Billing.module.css';
 import { MonthlyPrice } from '@/components/billing/MonthlyPrice';
+import { installmentProgress } from '@/components/billing/installments';
 import { NewVehicleWizard } from '@/components/billing/NewVehicleWizard';
 import { PixPaymentModal } from '@/components/billing/PixPaymentModal';
 import { SuspendedNotice, isSuspendedError } from '@/components/billing/SuspendedNotice';
@@ -473,10 +474,15 @@ function VehicleCard({
       <div>
         <div className={billing.deliveryLabel}>Assinatura</div>
         {subscription?.status === 'ACTIVE' ? (
-          <div className={billing.subscriptionLine}>
-            {subscription.planName} · <MonthlyPrice sub={subscription} /> · vence dia{' '}
-            {subscription.dueDay}
-          </div>
+          <>
+            <div className={billing.subscriptionLine}>
+              {subscription.planName} · <MonthlyPrice sub={subscription} /> · vence dia{' '}
+              {subscription.dueDay}
+            </div>
+            {installmentProgress(subscription) && (
+              <div className={billing.vehicleMeta}>{installmentProgress(subscription)}</div>
+            )}
+          </>
         ) : subscription ? (
           <Badge tone="neutral">Assinatura encerrada</Badge>
         ) : (

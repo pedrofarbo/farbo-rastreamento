@@ -57,7 +57,7 @@ describe('LaunchSection (pré-lançamento)', () => {
   it('mostra a promoção de pré-lançamento e as regras dela', () => {
     const text = render().textContent ?? '';
     for (const part of ['R$ 120', 'R$ 150', 'R$ 34,90', 'R$ 69,90', '12 meses', '500 primeiros', '1 veículo por cliente',
-      'Insanos MC pagam R$ 27,90', 'R$ 39,90']) {
+      'Insanos MC pagam R$ 27,90', 'R$ 39,90', 'ou 10x de R$ 12,00 sem juros no Pix']) {
       expect(text).toContain(part);
     }
   });

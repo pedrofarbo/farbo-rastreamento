@@ -69,6 +69,11 @@ type Order struct {
 	// fatura do equipamento e fica no acompanhamento. Nulo: sem frete; na
 	// entrega combinada, só fica no acompanhamento.
 	Shipping *fulfillment.Choice
+	// Installments parcela o equipamento sem juros (0 ou 1: à vista; até o
+	// EquipmentMaxInstallments do catálogo): a 1ª parcela vai na fatura do
+	// pedido, com o frete, e as demais, somadas às mensalidades. A assinatura
+	// fica ativa até a última.
+	Installments int
 }
 
 // Result é o que a contratação criou.
@@ -121,6 +126,16 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 	if o.EquipmentCents < 0 {
 		return nil, ValidationError{"o valor do equipamento não pode ser negativo"}
 	}
+	if o.Installments == 1 {
+		o.Installments = 0
+	}
+	if max := s.catalog.EquipmentMaxInstallments; o.Installments < 0 || o.Installments > max ||
+		o.Installments > billing.MaxInstallments {
+		if max <= 1 {
+			return nil, ValidationError{"o rastreador só pode ser pago à vista"}
+		}
+		return nil, ValidationError{fmt.Sprintf("o rastreador pode ser parcelado em até %d vezes", max)}
+	}
 	due := s.billing.Today().AddDays(s.catalog.SetupDueDays)
 	if o.SetupDueDate != nil {
 		due = *o.SetupDueDate
@@ -146,6 +161,18 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 			if setup, err = s.applyPromo(ctx, tx, customerID, sub, setup); err != nil {
 				return err
 			}
+		}
+		// Parcelado: a fatura do pedido leva só a 1ª parcela.
+		var installments []int
+		if o.Installments > 0 {
+			if setup == nil {
+				return ValidationError{"não há valor de equipamento para parcelar"}
+			}
+			total := setup.AmountCents
+			installments = billing.SplitInstallments(total, o.Installments)
+			setup.AmountCents = installments[0]
+			setup.Description += fmt.Sprintf(" · parcela 1/%d (%s em %dx sem juros)", o.Installments, money(total), o.Installments)
+			sub.PlanInstallments(o.Installments)
 		}
 		// O frete entra na fatura do equipamento (ou é a fatura, se o
 		// equipamento não for cobrado).
@@ -213,6 +240,9 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 				return err
 			}
 		}
+		if installments != nil {
+			return billing.InsertInstallments(ctx, tx, result.Subscription.ID, installments, result.SetupInvoice.ID)
+		}
 		return nil
 	})
 	if err != nil {
@@ -230,7 +260,7 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 	}
 	s.log.Info("rastreador contratado", "customer", customerID, "vehicle", result.Vehicle.ID,
 		"subscription", result.Subscription.ID, "equipment_cents", o.EquipmentCents, "promo", o.LaunchPromo,
-		"freight_cents", freightCents)
+		"freight_cents", freightCents, "installments", o.Installments)
 	return result, nil
 }
 

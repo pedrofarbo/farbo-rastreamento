@@ -17,7 +17,7 @@ vi.mock('@/api/resources', () => ({
   catalogApi: {
     get: async () => ({
       planName: 'Plano Mensal', planPriceCents: 6990, defaultDueDay: 10, equipmentName: 'Rastreador J16',
-      equipmentPriceCents: 15000, setupDueDays: 3, launchPromo: null,
+      equipmentPriceCents: 15000, setupDueDays: 3, equipmentMaxInstallments: 10, launchPromo: null,
     }),
   },
   meApi: {
@@ -67,7 +67,7 @@ function type(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-async function openWizard() {
+async function openWizard(installments = 1) {
   const host = document.createElement('div');
   document.body.appendChild(host);
   await act(async () =>
@@ -86,6 +86,14 @@ async function openWizard() {
   const name = Array.from(document.querySelectorAll('input')).find((i) => i.closest('div')?.textContent?.includes('Apelido')) as HTMLInputElement;
   await act(async () => type(name, 'Moto do trabalho'));
   await act(async () => button('Continuar').click());
+  await flush();
+  if (installments > 1) {
+    const select = document.querySelector('select') as HTMLSelectElement;
+    await act(async () => {
+      select.value = String(installments);
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
   await act(async () => button('Continuar').click());
   await flush();
   await flush();
@@ -170,6 +178,28 @@ describe('frete no pedido', () => {
     await act(async () => button(/Confirmar pedido/).click());
     await flush();
     expect(ordered).toEqual([{ vehicle: expect.objectContaining({ name: 'Moto do trabalho' }), launchPromo: false }]);
+  });
+
+  it('parcelado em 10x: agora só a 1ª parcela, e o cliente confirma que fica até a última', async () => {
+    quote = {
+      enabled: true, zipCode: '20040020', problem: '', arrange: false,
+      quotes: [{ serviceId: 1, service: 'PAC', company: 'Correios', priceCents: 2240, deliveryDays: 7, error: '' }],
+    };
+    await openWizard(10);
+    expect(text()).toContain('Equipamento: 1ª de 10 parcelas (R$ 150,00 sem juros)R$ 15,00');
+    expect(text()).toContain('Agora: 1ª parcela e freteR$ 37,40');
+    expect(text()).toContain('+ R$ 15,00 do rastreador em cada uma das 9 mensalidades seguintes.');
+    expect(text()).toContain('fica ativa até a mensalidade com a última parcela (a 10ª)');
+    // Sem o "entendi", não confirma.
+    expect(button(/Confirmar pedido · R\$\s37,40/).disabled).toBe(true);
+    const agree = document.querySelector('input[type=checkbox]') as HTMLInputElement;
+    await act(async () => agree.click());
+    expect(button(/Confirmar pedido/).disabled).toBe(false);
+    await act(async () => button(/Confirmar pedido/).click());
+    await flush();
+    expect(ordered).toEqual([
+      { vehicle: expect.objectContaining({ name: 'Moto do trabalho' }), launchPromo: false, shippingServiceId: 1, installments: 10 },
+    ]);
   });
 
   it('sem o aceite do contrato, o contrato abre e o pedido segue depois', async () => {

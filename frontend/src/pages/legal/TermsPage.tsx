@@ -144,6 +144,10 @@ const SECTIONS: LegalSection[] = [
           antecedência. Nenhuma delas altera as condições promocionais já contratadas durante o seu prazo.
         </p>
         <p>
+          O rastreador pode ser pago à vista ou <strong>parcelado sem juros, por Pix</strong>: a 1ª parcela vence com o
+          pedido, junto com o frete, e as demais vêm somadas às mensalidades seguintes.
+        </p>
+        <p>
           Cada assinatura tem <strong>permanência mínima de 3 meses</strong>. Para cada rastreador, mantemos um
           plano de telecomunicações M2M junto à operadora e pagamos a geração e a entrega do chip; esses custos
           não são cobrados à parte, e sim diluídos nas mensalidades. As regras estão no{' '}
@@ -323,6 +327,11 @@ const SECTIONS: LegalSection[] = [
             Antes de completar a permanência mínima de 3 meses, o cancelamento tem multa de 1 mensalidade daquele
             veículo, salvo nos casos previstos no <Link to={CONTRACT_PATH}>contrato</Link> (como a desistência em
             até 7 dias e a falha nossa na prestação do serviço). Depois dos 3 meses, não há multa.
+          </li>
+          <li>
+            Com o rastreador parcelado, a assinatura fica ativa até a mensalidade com a última parcela. Cancelando antes,
+            as parcelas restantes vencem de uma vez, numa fatura só: não é multa, é o preço do rastreador, que já é do
+            Cliente. Na desistência em até 7 dias, com o rastreador devolvido, elas não são cobradas.
           </li>
           <li>Faturas já vencidas continuam devidas.</li>
           <li>O rastreador comprado é do Cliente, mesmo depois do cancelamento. A linha do chip M2M é desativada.</li>

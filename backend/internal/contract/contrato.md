@@ -41,6 +41,9 @@ A instalação é feita por prestadores independentes indicados na plataforma, c
 
 - A mensalidade de cada veículo é a do plano escolhido no pedido, mostrada antes da confirmação. Condições promocionais valem pelo prazo informado na contratação.
 - As faturas ficam disponíveis na plataforma antes do vencimento e são enviadas por e-mail, com o link para pagar por Pix.
+{{- if gt .MaxInstallments 1}}
+- O rastreador pode ser pago à vista ou parcelado em até {{.MaxInstallments}} ({{.MaxInstallmentsWords}}) vezes sem juros, por Pix: a 1ª parcela vence com o pedido, junto com o frete, e as demais vêm somadas às mensalidades seguintes daquele veículo, uma por mês. O número e o valor das parcelas são mostrados antes da confirmação do pedido.
+{{- end}}
 - Reajuste anual pelo IPCA: a mensalidade é reajustada uma vez por ano, em agosto, pela variação do IPCA (IBGE) acumulada nos 12 meses encerrados em maio daquele ano, o último índice publicado antes do aviso. O valor novo vale para as faturas que vencem a partir de 1º de agosto e é avisado por e-mail com pelo menos 30 dias de antecedência; se o aviso sair depois de 1º de julho, o reajuste passa a valer 30 dias depois dele.
 - Só é reajustada a assinatura que completar 12 meses até a data do reajuste (Lei 10.192/2001); as mais novas são reajustadas no agosto seguinte. Se o índice acumulado for zero ou negativo, a mensalidade fica como está. Se o IPCA deixar de ser publicado, vale o índice oficial que o substituir.
 - Outras mudanças no preço da mensalidade também são avisadas por e-mail com pelo menos 30 dias de antecedência. Nenhuma mudança, nem o reajuste, altera condições promocionais já contratadas durante o seu prazo.
@@ -57,6 +60,9 @@ A instalação é feita por prestadores independentes indicados na plataforma, c
 - Se o Cliente encerrar a assinatura ou a conta antes de completar os {{.MinMonths}} meses, paga multa equivalente a 1 (uma) mensalidade do plano daquele veículo, além das faturas vencidas.
 - A multa não se aplica: à desistência no prazo de arrependimento (cláusula 9); ao encerramento causado por falha da {{.Name}} na prestação do serviço; ao encerramento pela {{.Name}} sem culpa do Cliente; e à recusa de uma nova versão deste contrato (cláusula 14).
 - Depois dos {{.MinMonths}} meses, o Cliente pode cancelar a qualquer momento, sem multa.
+{{- if gt .MaxInstallments 1}}
+- Quem parcela o rastreador mantém a assinatura daquele veículo ativa até a mensalidade que traz a última parcela, prazo informado no pedido. Se a assinatura for encerrada antes, a pedido do Cliente ou por atraso no pagamento, as parcelas restantes vencem de uma vez, numa fatura só. Elas não são multa: são o preço do rastreador, que já é do Cliente (cláusula 4). Na desistência dentro do prazo de arrependimento (cláusula 9), com a devolução do equipamento, as parcelas restantes não são cobradas.
+{{- end}}
 
 ## 8. Por que existem a permanência mínima, a multa e a negativação
 
