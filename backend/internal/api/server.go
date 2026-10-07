@@ -46,6 +46,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tcp"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/telemetry"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/theft"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/topups"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 	ws "github.com/pedrofarbo/farbo-rastreamento/backend/internal/websocket"
@@ -110,15 +111,17 @@ type Deps struct {
 	StepUp       *stepup.Service
 	Carrier      *melhorenvio.Client
 	CarrierStore *melhorenvio.DBStore
-	Owners       *vehicles.OwnerIndex
-	Positions    *tracking.Repository
-	States       *tracking.StateStore
-	Raw          *tracking.RawPacketRepository
-	Ingestor     *tracking.Ingestor
-	Conns        *tcp.Manager
-	Registry     *protocols.ProtocolRegistry
-	WS           *ws.Handler
-	Hub          *ws.Hub
+	// TopUps: as recargas da carteira do Melhor Envios (nil sem o envio).
+	TopUps    *topups.Service
+	Owners    *vehicles.OwnerIndex
+	Positions *tracking.Repository
+	States    *tracking.StateStore
+	Raw       *tracking.RawPacketRepository
+	Ingestor  *tracking.Ingestor
+	Conns     *tcp.Manager
+	Registry  *protocols.ProtocolRegistry
+	WS        *ws.Handler
+	Hub       *ws.Hub
 }
 
 type Server struct {
@@ -586,6 +589,11 @@ func (s *Server) routes() chi.Router {
 					r.Get("/", s.handleShippingIntegration)
 					r.Post("/connect", s.handleConnectShipping)
 					r.Post("/disconnect", s.handleDisconnectShipping)
+					// A carteira: o saldo que paga as etiquetas e a recarga.
+					r.Get("/balance", s.handleShippingBalance)
+					r.Post("/balance", s.handleAddShippingBalance)
+					// A recarga por Pix vira conta a pagar, paga pela AbacatePay.
+					r.Post("/balance/{id}/entry", s.handleTopUpEntry)
 				})
 
 				// Atendimento pelo WhatsApp: as conversas da IA e da equipe.

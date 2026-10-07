@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 
@@ -6,6 +6,7 @@ import { fulfillmentsApi, shippingIntegrationApi } from '@/api/resources';
 import billing from '@/components/billing/Billing.module.css';
 import { FulfillmentAdminModal } from '@/components/fulfillment/FulfillmentAdminModal';
 import { LabelActions } from '@/components/fulfillment/LabelActions';
+import { ShippingWallet, walletKey } from '@/components/fulfillment/ShippingWallet';
 import fstyles from '@/components/fulfillment/Fulfillment.module.css';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -36,6 +37,7 @@ const STAGES: { id: string; label: string; hint: string; statuses: TrackerStatus
 export function OrdersPage() {
   const { canManage } = useAuth();
   const { notify } = useToast();
+  const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
   const [showAll, setShowAll] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
@@ -43,14 +45,27 @@ export function OrdersPage() {
 
   const list = useQuery({ queryKey: ['fulfillments', showAll], queryFn: () => fulfillmentsApi.list(showAll) });
 
-  // Volta do "Conectar Melhor Envios".
+  // Volta do "Conectar Melhor Envios" e do pagamento do saldo (avisa uma
+  // vez só, mesmo com o efeito rodando de novo).
+  const handledReturn = useRef('');
   useEffect(() => {
     const result = params.get('melhorenvio');
-    if (!result) return;
+    const topUp = params.get('saldo');
+    if (!result && !topUp) return;
+    if (handledReturn.current === params.toString()) return;
+    handledReturn.current = params.toString();
     if (result === 'conectado') notify({ tone: 'success', title: 'Melhor Envios conectado' });
-    else notify({ tone: 'error', title: 'Melhor Envios não conectado', description: params.get('motivo') ?? undefined });
+    else if (result) notify({ tone: 'error', title: 'Melhor Envios não conectado', description: params.get('motivo') ?? undefined });
+    if (topUp) {
+      notify({
+        tone: 'success',
+        title: 'Pagamento enviado ao Melhor Envios',
+        description: 'O saldo aparece na carteira assim que ele confirmar.',
+      });
+      void queryClient.invalidateQueries({ queryKey: walletKey });
+    }
     setParams({}, { replace: true });
-  }, [params, setParams, notify]);
+  }, [params, setParams, notify, queryClient]);
 
   const all = list.data ?? [];
   const counts = useMemo(
@@ -250,6 +265,7 @@ function ShippingIntegrationCard() {
           </span>
         )}
         {data.accountError && <div className={fstyles.warning}>{data.accountError}</div>}
+        {data.connected && !data.accountError && <ShippingWallet panelUrl={data.panelUrl} payWithAbacate={data.payWithAbacate} />}
         {data.missingOrigin.length > 0 && (
           <div className={fstyles.warning}>
             Para comprar etiquetas, falta configurar o remetente no servidor: {data.missingOrigin.join(', ')}.

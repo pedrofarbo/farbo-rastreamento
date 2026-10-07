@@ -59,6 +59,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tcp"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/telemetry"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/theft"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/topups"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/twilio"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
@@ -302,6 +303,11 @@ func run() error {
 			"chave_propria", cfg.Payments.TransferAPIKey != "")
 	}
 	affiliatesSvc := affiliates.NewService(db, log)
+	// As recargas da carteira do Melhor Envios (pagas também pela AbacatePay).
+	var topUpSvc *topups.Service
+	if carrier != nil {
+		topUpSvc = topups.NewService(db, carrier, financeSvc, cfg.Company, cfg.Mail.AppURL, log)
+	}
 
 	// Infraestrutura: CPU, memória e disco da máquina a cada 10 s (o
 	// histórico de 24 h fica em memória), banco, Redis, backups e erros.
@@ -372,7 +378,7 @@ func run() error {
 		Orders:      orders.NewService(db, billingSvc, vehicleSvc, cfg.Catalog, log),
 		Installers:  installerRepo,
 		Addresses:   addresses.NewRepository(db),
-		Fulfillment: fulfillmentSvc, Carrier: carrier, CarrierStore: carrierStore,
+		Fulfillment: fulfillmentSvc, Carrier: carrier, CarrierStore: carrierStore, TopUps: topUpSvc,
 		Retention: retentionSvc,
 		Support:   supportSvc,
 		Leads: leads.NewService(leads.NewRepository(db),

@@ -79,6 +79,9 @@ const (
 	ActionDeliveryAddressSaved = "DELIVERY_ADDRESS_SAVED"
 	ActionFulfillmentChanged   = "FULFILLMENT_CHANGED"
 	ActionShippingLabelBought  = "SHIPPING_LABEL_BOUGHT"
+	// ActionShippingBalanceAdded: Pix ou boleto gerado para pôr saldo na
+	// carteira do Melhor Envios.
+	ActionShippingBalanceAdded = "SHIPPING_BALANCE_ADDED"
 	ActionRetentionChanged     = "HISTORY_RETENTION_CHANGED"
 	ActionAlertSettingsChanged = "ALERT_SETTINGS_CHANGED"
 	ActionPaymentPixCreated    = "PAYMENT_PIX_CREATED"

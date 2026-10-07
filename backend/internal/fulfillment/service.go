@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -275,6 +276,35 @@ func (s *Service) requireCarrier() error {
 	return nil
 }
 
+// BalanceError: o saldo da carteira do Melhor Envios não paga a etiqueta.
+type BalanceError struct {
+	BalanceCents int
+	PriceCents   int
+}
+
+func (e BalanceError) Error() string {
+	return "saldo insuficiente no Melhor Envios: a etiqueta custa " + brl(e.PriceCents) +
+		" e a carteira tem " + brl(e.BalanceCents) + "; adicione saldo e compre de novo"
+}
+
+// shortOfBalance confere a carteira antes de pagar. Sem conseguir ler o
+// saldo (permissão ainda não autorizada, API fora do ar), não barra: quem
+// decide é a compra.
+func (s *Service) shortOfBalance(ctx context.Context, priceCents int) *BalanceError {
+	if priceCents <= 0 {
+		return nil
+	}
+	wallet, err := s.carrier.Balance(ctx)
+	if err != nil {
+		s.log.Info("saldo do Melhor Envios não consultado", "err", err)
+		return nil
+	}
+	if have := wallet.Balance.Cents(); have < priceCents {
+		return &BalanceError{BalanceCents: have, PriceCents: priceCents}
+	}
+	return nil
+}
+
 // Quote cota o frete do rastreador configurado até o cliente.
 func (s *Service) Quote(ctx context.Context, id uuid.UUID) ([]melhorenvio.Quote, error) {
 	if err := s.requireCarrier(); err != nil {
@@ -318,6 +348,10 @@ func (s *Service) BuyLabel(ctx context.Context, id uuid.UUID, serviceID int, act
 		orderID = *f.ShippingOrderID
 	}
 	status, serviceName := f.ShippingStatus, f.ShippingService
+	price := 0
+	if f.ShippingPriceCents != nil {
+		price = *f.ShippingPriceCents
+	}
 
 	// 1. Carrinho.
 	if orderID == "" && serviceID <= 0 {
@@ -348,6 +382,10 @@ func (s *Service) BuyLabel(ctx context.Context, id uuid.UUID, serviceID int, act
 		if chosen == nil {
 			return nil, RuleError{"serviço de frete indisponível para este endereço; cote de novo"}
 		}
+		// Sem saldo, nem põe no carrinho.
+		if short := s.shortOfBalance(ctx, chosen.PriceCents); short != nil {
+			return nil, *short
+		}
 		order, err := s.carrier.AddToCart(ctx, melhorenvio.CartRequest{
 			ServiceID: serviceID, From: s.sender(), To: to, ProductName: s.product,
 			Package: s.pkg(), NonCommercial: s.shipping.NonCommercial, Tag: "Pedido " + f.ID.String()[:8],
@@ -356,7 +394,7 @@ func (s *Service) BuyLabel(ctx context.Context, id uuid.UUID, serviceID int, act
 			return nil, err
 		}
 		orderID, status = order.ID, "pending"
-		price := order.Price.Cents()
+		price = order.Price.Cents()
 		if price == 0 {
 			price = chosen.PriceCents
 		}
@@ -380,6 +418,10 @@ func (s *Service) BuyLabel(ctx context.Context, id uuid.UUID, serviceID int, act
 				ClearOrder: true, Protocol: &empty, Service: &empty, Status: &empty,
 			}); uErr != nil {
 				s.log.Error("falha ao limpar a etiqueta recusada", "fulfillment", id, "err", uErr)
+			}
+			// Recusa por falta de saldo vira o aviso com o quanto falta.
+			if short := s.shortOfBalance(ctx, price); short != nil {
+				return nil, *short
 			}
 			return nil, err
 		}
@@ -503,6 +545,18 @@ func recipient(d *destination) (melhorenvio.Party, error) {
 		return p, RuleError{"cadastre o CPF ou CNPJ do cliente na ficha dele: a transportadora exige"}
 	}
 	return p, nil
+}
+
+// brl formata centavos: 6990 → R$ 69,90.
+func brl(cents int) string {
+	reais := cents / 100
+	var groups []string
+	for reais >= 1000 {
+		groups = append([]string{fmt.Sprintf("%03d", reais%1000)}, groups...)
+		reais /= 1000
+	}
+	groups = append([]string{fmt.Sprintf("%d", reais)}, groups...)
+	return fmt.Sprintf("R$ %s,%02d", strings.Join(groups, "."), cents%100)
 }
 
 func onlyDigits(s string) string {

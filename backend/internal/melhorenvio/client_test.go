@@ -62,7 +62,8 @@ func TestAuthorizeURL(t *testing.T) {
 		q.Get("response_type") != "code" || q.Get("redirect_uri") != "http://painel/api/cb" {
 		t.Fatalf("URL de autorização errada: %s", raw)
 	}
-	if !strings.Contains(q.Get("scope"), "shipping-checkout") || !strings.Contains(q.Get("scope"), " ") {
+	if !strings.Contains(q.Get("scope"), "shipping-checkout") || !strings.Contains(q.Get("scope"), "transactions-read") ||
+		!strings.Contains(q.Get("scope"), " ") {
 		t.Errorf("escopos: %q", q.Get("scope"))
 	}
 }
@@ -278,5 +279,101 @@ func TestOrderAsTracking(t *testing.T) {
 	_ = json.Unmarshal([]byte(`{"id":"x","status":"released","canceled_at":"2026-09-30 04:00:00"}`), &c)
 	if c.AsTracking().Status != "canceled" {
 		t.Fatalf("cancelada pelos detalhes: %+v", c.AsTracking())
+	}
+}
+
+func TestBalanceAcceptsTextAndNumbers(t *testing.T) {
+	c := newClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v2/me/balance" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"balance": "1520.35", "reserved": 22.4, "debts": null}`))
+	}, &memStore{token: &Token{AccessToken: "a", ExpiresAt: time.Now().Add(72 * time.Hour)}})
+	wallet, err := c.Balance(context.Background())
+	if err != nil || wallet.Balance.Cents() != 152035 || wallet.Reserved.Cents() != 2240 || wallet.Debts.Cents() != 0 {
+		t.Fatalf("carteira = %+v (%v)", wallet, err)
+	}
+	if c.PanelURL() != c.cfg.BaseURL+"/painel" {
+		t.Errorf("painel = %s", c.PanelURL())
+	}
+}
+
+func TestAddBalanceFindsThePaymentLink(t *testing.T) {
+	var reply string
+	var got map[string]string
+	c := newClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		_, _ = w.Write([]byte(reply))
+	}, &memStore{token: &Token{AccessToken: "a", ExpiresAt: time.Now().Add(72 * time.Hour)}})
+	ctx := context.Background()
+	back := "https://painel.farbo.test/pedidos?saldo=pago"
+
+	// O link no pagamento; o Pix não leva os dados da empresa.
+	reply = `{"payment": {"id": "p1", "protocol": "PAY-1", "status": "pending", "link": "https://me.test/pix/1"}, "redirect": "` + back + `", "digitable": null}`
+	top, err := c.AddBalance(ctx, TopUpRequest{Method: TopUpPix, ValueCents: 7005, RedirectURL: back, CompanyName: "Farbo", CNPJ: "49.757.084/0001-00"})
+	if err != nil || top.Link != "https://me.test/pix/1" || top.Protocol != "PAY-1" || top.ValueCents != 7005 {
+		t.Fatalf("Pix = %+v (%v)", top, err)
+	}
+	if got["value"] != "70.05" || got["gateway"] != TopUpGateway || got["slug"] != "pix" || got["redirect_url"] != back || got["cnpj"] != "" {
+		t.Errorf("pedido = %v", got)
+	}
+
+	// Sem link no pagamento: vale o redirect da resposta, se não for o de volta.
+	reply = `{"payment": {"id": "p2", "protocol": "PAY-2", "status": "pending", "link": null}, "redirect": "https://me.test/checkout/notify/2", "digitable": "3419 0000"}`
+	top, err = c.AddBalance(ctx, TopUpRequest{Method: TopUpBoleto, ValueCents: 10000, RedirectURL: back, CompanyName: "Farbo", CNPJ: "49.757.084/0001-00"})
+	if err != nil || top.Link != "https://me.test/checkout/notify/2" || top.Digitable != "3419 0000" {
+		t.Fatalf("boleto = %+v (%v)", top, err)
+	}
+	if got["company_name"] != "Farbo" || got["cnpj"] != "49757084000100" {
+		t.Errorf("boleto sem a empresa: %v", got)
+	}
+
+	// Só o endereço de volta (ou nada que seja link): sem link.
+	reply = `{"payment": {"id": "p3", "protocol": "PAY-3", "status": "pending", "link": {"x": 1}}, "redirect": "` + back + `"}`
+	if top, err = c.AddBalance(ctx, TopUpRequest{Method: TopUpPix, ValueCents: 100, RedirectURL: back}); err != nil || top.Link != "" {
+		t.Errorf("sem link = %+v (%v)", top, err)
+	}
+
+	// Sem pagamento na resposta: recusa com a mensagem.
+	reply = `{"message": "Valor mínimo de R$ 5,00"}`
+	if _, err = c.AddBalance(ctx, TopUpRequest{Method: TopUpPix, ValueCents: 100}); err == nil || !strings.Contains(err.Error(), "Valor mínimo") {
+		t.Errorf("sem pagamento = %v", err)
+	}
+}
+
+func TestAddBalanceFindsThePixCode(t *testing.T) {
+	code := "00020126360014br.gov.bcb.pix0114+5511999999999520400005303986540510.005802BR5905YAPAY6009SAO PAULO6304ABCD"
+	var reply string
+	c := newClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(reply))
+	}, &memStore{token: &Token{AccessToken: "a", ExpiresAt: time.Now().Add(72 * time.Hour)}})
+	ctx := context.Background()
+
+	// Dentro da resposta do meio de pagamento, que vem como texto com JSON.
+	inner, _ := json.Marshal(map[string]any{"data": map[string]string{"qrcode_original_path": code, "qrcode_path": "https://x/qr.png"}})
+	quoted, _ := json.Marshal(string(inner))
+	reply = `{"payment": {"id": "p1", "protocol": "PAY-1", "status": "pending", "link": null, "response": ` + string(quoted) + `}, "redirect": null}`
+	top, err := c.AddBalance(ctx, TopUpRequest{Method: TopUpPix, ValueCents: 1000})
+	if err != nil || top.PixCode != code {
+		t.Fatalf("copia-e-cola = %q (%v)", top.PixCode, err)
+	}
+	if top.Shape != "{payment{id,link,protocol,response,status},redirect}" {
+		t.Errorf("campos = %s", top.Shape)
+	}
+
+	// Num campo qualquer, com espaço em volta; e o boleto não procura.
+	reply = `{"payment": {"id": "p2", "protocol": "PAY-2", "status": "pending"}, "pix": {"emv": " ` + code + ` "}}`
+	if top, err = c.AddBalance(ctx, TopUpRequest{Method: TopUpPix, ValueCents: 1000}); err != nil || top.PixCode != code {
+		t.Errorf("copia-e-cola solto = %q (%v)", top.PixCode, err)
+	}
+	if top, err = c.AddBalance(ctx, TopUpRequest{Method: TopUpBoleto, ValueCents: 1000}); err != nil || top.PixCode != "" {
+		t.Errorf("boleto com copia-e-cola = %q (%v)", top.PixCode, err)
+	}
+
+	// Sem nenhum: vazio, sem inventar.
+	reply = `{"payment": {"id": "p3", "protocol": "PAY-3", "status": "pending", "link": "https://me.test/pix/3"}, "qr": "00020101-pela-metade"}`
+	if top, err = c.AddBalance(ctx, TopUpRequest{Method: TopUpPix, ValueCents: 1000}); err != nil || top.PixCode != "" {
+		t.Errorf("sem copia-e-cola = %q (%v)", top.PixCode, err)
 	}
 }

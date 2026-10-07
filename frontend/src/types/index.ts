@@ -614,6 +614,41 @@ export interface ShippingIntegration {
   accountError: string;
   missingOrigin: string[];
   redirectUrl: string;
+  /** O painel do Melhor Envios (onde fica a carteira). */
+  panelUrl: string;
+  /** A recarga por Pix pode sair do saldo da AbacatePay. */
+  payWithAbacate: boolean;
+}
+
+/** A carteira do Melhor Envios: o saldo que paga as etiquetas. */
+export interface ShippingBalance {
+  balanceCents: number;
+  reservedCents: number;
+  debtsCents: number;
+  checkedAt: string;
+  panelUrl: string;
+}
+
+export type ShippingTopUpMethod = 'pix' | 'boleto';
+
+/** A cobrança gerada para pôr saldo na carteira (paga no Melhor Envios). */
+export interface ShippingTopUp {
+  id: string;
+  providerId: string;
+  protocol: string;
+  status: string;
+  method: ShippingTopUpMethod;
+  valueCents: number;
+  /** A página do Pix (QR Code) ou o PDF do boleto. */
+  link: string;
+  /** A linha digitável do boleto. */
+  digitable: string;
+  /** O Pix copia-e-cola, quando o Melhor Envios devolve. */
+  pixCode: string;
+  /** A conta a pagar, quando a recarga sai pela AbacatePay. */
+  entryId: string | null;
+  createdAt: string;
+  panelUrl: string;
 }
 
 export interface CustomerDetail extends CustomerSummary {

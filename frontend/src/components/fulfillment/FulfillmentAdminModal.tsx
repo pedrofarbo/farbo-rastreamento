@@ -16,6 +16,7 @@ import type { Fulfillment, FulfillmentTrack, ShippingQuote } from '@/types';
 
 import { FulfillmentTimeline } from './FulfillmentTimeline';
 import { LabelActions } from './LabelActions';
+import { ShippingWallet, walletKey } from './ShippingWallet';
 import { SmsSetupPanel } from './SmsSetupPanel';
 import styles from './Fulfillment.module.css';
 
@@ -87,9 +88,12 @@ export function FulfillmentAdminModal({
   };
   const fail = (err: Error) => {
     setError(err.message);
-    if (err instanceof ApiError && (err.body as { code?: string })?.code === 'MELHORENVIO_NOT_CONNECTED') {
+    const code = err instanceof ApiError ? (err.body as { code?: string })?.code : undefined;
+    if (code === 'MELHORENVIO_NOT_CONNECTED') {
       queryClient.invalidateQueries({ queryKey: ['integration', 'melhorenvio'] });
     }
+    // Sem saldo: a carteira (logo abaixo) mostra quanto falta.
+    if (code === 'INSUFFICIENT_BALANCE') queryClient.invalidateQueries({ queryKey: walletKey });
   };
 
   const change = useMutation({
@@ -115,13 +119,15 @@ export function FulfillmentAdminModal({
   // serviceId 0 conclui uma etiqueta já paga que estava em geração.
   const buy = useMutation({
     mutationFn: (service: number) => fulfillmentsApi.buyLabel(fulfillmentId as string, service),
-    onSuccess: (updated) =>
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: walletKey });
       done(
         updated,
         updated.trackerStatus === 'SHIPPED'
           ? 'Etiqueta comprada: rastreador enviado'
           : 'Etiqueta paga; o Melhor Envios está gerando — o envio é concluído sozinho',
-      ),
+      );
+    },
     onError: fail,
   });
   const sync = useMutation({
@@ -352,6 +358,13 @@ export function FulfillmentAdminModal({
                       Debita o saldo da carteira do Melhor Envios, gera a etiqueta e avisa o cliente por e-mail com o
                       código de rastreio.
                     </span>
+                    {integration.data?.connected && (
+                      <ShippingWallet
+                        panelUrl={integration.data.panelUrl}
+                        payWithAbacate={integration.data.payWithAbacate}
+                        needCents={chosen?.priceCents}
+                      />
+                    )}
                   </>
                 ))}
 

@@ -386,6 +386,24 @@ func (s *Service) CreateEntries(ctx context.Context, in EntryInput, by *uuid.UUI
 	return s.entriesByID(ctx, ids)
 }
 
+// CreateTx lança uma conta (sem parcelas) na transação de quem chama: outro
+// módulo que grava junto com ela, como a recarga do Melhor Envios.
+func (s *Service) CreateTx(ctx context.Context, tx pgx.Tx, in EntryInput, by *uuid.UUID) (uuid.UUID, error) {
+	in.Installments = 1
+	in, err := in.Normalize()
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if err := checkRefs(ctx, tx, in.Kind, in.CategoryID, in.SupplierID); err != nil {
+		return uuid.Nil, mapErr(err)
+	}
+	ids, err := insertEntries(ctx, tx, in, nil, by)
+	if err != nil {
+		return uuid.Nil, mapErr(err)
+	}
+	return ids[0], nil
+}
+
 // insertEntries grava as parcelas na transação (também usado pela compra do
 // estoque).
 func insertEntries(ctx context.Context, tx pgx.Tx, in EntryInput, movementID *uuid.UUID, by *uuid.UUID) ([]uuid.UUID, error) {

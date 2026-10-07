@@ -65,7 +65,10 @@ import type {
   ProtocolDescriptor,
   ProvisioningCommand,
   RawPacket,
+  ShippingBalance,
   ShippingIntegration,
+  ShippingTopUp,
+  ShippingTopUpMethod,
   ShippingQuote,
   Subscription,
   Installer,
@@ -568,6 +571,14 @@ export const shippingIntegrationApi = {
   get: () => api.get<ShippingIntegration>('/api/integrations/melhorenvio'),
   connect: () => api.post<{ url: string }>('/api/integrations/melhorenvio/connect'),
   disconnect: () => api.post<void>('/api/integrations/melhorenvio/disconnect'),
+  /** O saldo da carteira (409 BALANCE_FORBIDDEN: conectar de novo para autorizar). */
+  balance: () => api.get<ShippingBalance>('/api/integrations/melhorenvio/balance'),
+  /** Gera o Pix ou o boleto para pôr saldo na carteira. */
+  addBalance: (valueCents: number, method: ShippingTopUpMethod) =>
+    api.post<ShippingTopUp>('/api/integrations/melhorenvio/balance', { valueCents, method }),
+  /** A conta a pagar da recarga por Pix, para pagar pela AbacatePay (com o copia-e-cola colado, se preciso). */
+  topUpEntry: (id: string, pixCode = '') =>
+    api.post<FinanceEntry>(`/api/integrations/melhorenvio/balance/${id}/entry`, { pixCode }),
 };
 
 /** Rotas públicas, usadas também pela landing page (sem login). */

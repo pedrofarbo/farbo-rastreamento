@@ -57,7 +57,16 @@ export function keyPreview(key: string, type: PixKeyType): string {
  * saldo; confirma com a senha (ou a biometria) e envia. O dinheiro sai da
  * conta da AbacatePay na hora.
  */
-export function PixPayModal({ entry, onClose }: { entry: FinanceEntry; onClose: () => void }) {
+export function PixPayModal({
+  entry,
+  onClose,
+  onSent,
+}: {
+  entry: FinanceEntry;
+  onClose: () => void;
+  /** Avisado quando o Pix sai (quem abriu acompanha o que vem depois). */
+  onSent?: (transfer: PixTransfer) => void;
+}) {
   const { notify } = useToast();
   const refresh = useRefreshFinance();
   const [step, setStep] = useState<'review' | 'confirm' | 'done'>('review');
@@ -72,6 +81,7 @@ export function PixPayModal({ entry, onClose }: { entry: FinanceEntry; onClose: 
       refresh();
       setResult(sent);
       setStep('done');
+      onSent?.(sent);
       notify({ tone: 'success', title: 'Pix enviado', description: `${formatMoney(sent.amountCents)} · ${entry.description}` });
     },
     onError: (err: Error) => {

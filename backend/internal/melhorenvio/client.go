@@ -27,10 +27,12 @@ const (
 	ProductionURL = "https://melhorenvio.com.br"
 )
 
-// Scopes são só as permissões que a integração usa.
+// Scopes são só as permissões que a integração usa. transactions-read é a
+// da carteira (o saldo que paga as etiquetas): a documentação não diz qual
+// permissão a consulta do saldo exige, e esta é a que trata da carteira.
 var Scopes = []string{
 	"cart-read", "cart-write", "orders-read", "shipping-calculate", "shipping-checkout",
-	"shipping-generate", "shipping-print", "shipping-tracking", "users-read",
+	"shipping-generate", "shipping-print", "shipping-tracking", "transactions-read", "users-read",
 }
 
 // BaseURLFor escolhe o ambiente; override (testes) tem precedência.
@@ -344,6 +346,197 @@ func (c *Client) Account(ctx context.Context) (*Account, error) {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// PanelURL é o painel do Melhor Envios (a carteira fica lá).
+func (c *Client) PanelURL() string { return c.cfg.BaseURL + "/painel" }
+
+// Wallet é a carteira do Melhor Envios: as etiquetas são pagas com o saldo.
+type Wallet struct {
+	Balance  Money `json:"balance"`
+	Reserved Money `json:"reserved"`
+	Debts    Money `json:"debts"`
+}
+
+// Balance consulta o saldo da carteira.
+func (c *Client) Balance(ctx context.Context) (*Wallet, error) {
+	var out Wallet
+	if err := c.call(ctx, http.MethodGet, "/api/v2/me/balance", nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// TopUpGateway é o meio de pagamento da inserção de saldo (Pix e boleto).
+const TopUpGateway = "yapay-transparente"
+
+// Formas de pagar a inserção de saldo.
+const (
+	TopUpPix    = "pix"
+	TopUpBoleto = "boleto"
+)
+
+// TopUpRequest é um pedido de saldo. O boleto sai em nome da empresa quando
+// vem com a razão social e o CNPJ; sem eles, nos dados da pessoa da conta.
+type TopUpRequest struct {
+	Method      string
+	ValueCents  int
+	RedirectURL string
+	CompanyName string
+	CNPJ        string
+}
+
+// TopUp é a cobrança gerada: o link do Pix (QR Code) ou do boleto (PDF).
+type TopUp struct {
+	ID         string `json:"id"`
+	Protocol   string `json:"protocol"`
+	Status     string `json:"status"`
+	Method     string `json:"method"`
+	ValueCents int    `json:"valueCents"`
+	Link       string `json:"link"`
+	// Digitable é a linha digitável do boleto.
+	Digitable string `json:"digitable"`
+	// PixCode é o Pix copia-e-cola, quando a resposta traz (o formato dela
+	// não é documentado: é procurado em qualquer campo).
+	PixCode string `json:"pixCode"`
+	// Shape são os campos que vieram, sem os valores: sem o copia-e-cola,
+	// vai para o log para entender o formato.
+	Shape string `json:"-"`
+}
+
+// AddBalance gera a cobrança para inserir saldo na carteira. O saldo só cai
+// depois que ela é paga, no Melhor Envios.
+func (c *Client) AddBalance(ctx context.Context, r TopUpRequest) (*TopUp, error) {
+	body := map[string]string{
+		"gateway": TopUpGateway, "slug": r.Method,
+		"value": fmt.Sprintf("%d.%02d", r.ValueCents/100, r.ValueCents%100),
+	}
+	if r.RedirectURL != "" {
+		body["redirect_url"] = r.RedirectURL
+	}
+	if r.Method == TopUpBoleto && r.CompanyName != "" && r.CNPJ != "" {
+		body["company_name"], body["cnpj"] = r.CompanyName, digits(r.CNPJ)
+	}
+	var out struct {
+		Payment *struct {
+			ID       string          `json:"id"`
+			Protocol string          `json:"protocol"`
+			Status   string          `json:"status"`
+			Link     json.RawMessage `json:"link"`
+		} `json:"payment"`
+		Redirect  json.RawMessage `json:"redirect"`
+		Digitable json.RawMessage `json:"digitable"`
+		Message   string          `json:"message"`
+	}
+	var raw json.RawMessage
+	if err := c.call(ctx, http.MethodPost, "/api/v2/me/balance", body, &raw); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, &APIError{Status: http.StatusBadGateway, Message: "resposta inesperada ao gerar o saldo"}
+	}
+	if out.Payment == nil {
+		msg := out.Message
+		if msg == "" {
+			msg = "cobrança do saldo não gerada"
+		}
+		return nil, &APIError{Status: http.StatusBadGateway, Message: msg}
+	}
+	top := &TopUp{
+		ID: out.Payment.ID, Protocol: out.Payment.Protocol, Status: out.Payment.Status,
+		Method: r.Method, ValueCents: r.ValueCents, Digitable: jsonText(out.Digitable),
+	}
+	var tree any
+	if json.Unmarshal(raw, &tree) == nil {
+		if r.Method == TopUpPix {
+			top.PixCode = findPixCode(tree)
+		}
+		top.Shape = shapeOf(tree)
+	}
+	// O link do pagamento vem no pagamento ou no redirect da resposta (que
+	// não é o endereço de volta que mandamos).
+	for _, link := range []string{jsonText(out.Payment.Link), jsonText(out.Redirect)} {
+		if webLink(link) && link != r.RedirectURL {
+			top.Link = link
+			break
+		}
+	}
+	return top, nil
+}
+
+// findPixCode procura o Pix copia-e-cola (BR Code) em qualquer campo.
+func findPixCode(v any) string {
+	switch t := v.(type) {
+	case string:
+		code := strings.TrimSpace(t)
+		if strings.HasPrefix(code, "000201") && strings.Contains(strings.ToLower(code), "br.gov.bcb.pix") {
+			return code
+		}
+		// A resposta do meio de pagamento pode vir como JSON dentro de texto.
+		if strings.HasPrefix(code, "{") || strings.HasPrefix(code, "[") {
+			var inner any
+			if json.Unmarshal([]byte(code), &inner) == nil {
+				return findPixCode(inner)
+			}
+		}
+	case map[string]any:
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if code := findPixCode(t[k]); code != "" {
+				return code
+			}
+		}
+	case []any:
+		for _, item := range t {
+			if code := findPixCode(item); code != "" {
+				return code
+			}
+		}
+	}
+	return ""
+}
+
+// shapeOf descreve os campos de um JSON sem os valores:
+// "payment{id,link,response{qrcode}},redirect".
+func shapeOf(v any) string {
+	switch t := v.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		parts := make([]string, 0, len(keys))
+		for _, k := range keys {
+			parts = append(parts, k+shapeOf(t[k]))
+		}
+		return "{" + strings.Join(parts, ",") + "}"
+	case []any:
+		if len(t) == 0 {
+			return "[]"
+		}
+		return "[" + shapeOf(t[0]) + "]"
+	default:
+		return ""
+	}
+}
+
+// jsonText lê um campo que pode vir como texto ou nulo.
+func jsonText(raw json.RawMessage) string {
+	var s string
+	if json.Unmarshal(raw, &s) != nil {
+		return ""
+	}
+	return strings.TrimSpace(s)
+}
+
+func webLink(s string) bool {
+	u, err := url.Parse(s)
+	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != ""
 }
 
 // Package é um volume (cm e kg) com o valor declarado.
