@@ -331,7 +331,21 @@ function SuppliersCard() {
 function SupplierModal({ supplier, onClose }: { supplier: Supplier | null; onClose: () => void }) {
   const { notify } = useToast();
   const refresh = useRefreshFinance();
-  const [draft, setDraft] = useState<SupplierInput>(supplier ? { ...supplier, document: formatDocument(supplier.document) } : EMPTY_SUPPLIER);
+  // Só os campos do cadastro: o servidor recusa o corpo com id ou createdAt.
+  const [draft, setDraft] = useState<SupplierInput>(
+    supplier
+      ? {
+          name: supplier.name,
+          document: formatDocument(supplier.document),
+          email: supplier.email,
+          phone: supplier.phone,
+          pixKey: supplier.pixKey,
+          pixKeyType: supplier.pixKeyType,
+          notes: supplier.notes,
+          active: supplier.active,
+        }
+      : EMPTY_SUPPLIER,
+  );
   const [error, setError] = useState('');
   const set = <K extends keyof SupplierInput>(key: K, value: SupplierInput[K]) => setDraft((d) => ({ ...d, [key]: value }));
   const save = useMutation({
