@@ -172,7 +172,7 @@ export function SharesModal({ vehicle, onClose }: { vehicle: VehicleView | null;
             Quem você adicionar entra com a própria conta e acompanha a posição de{' '}
             <strong>{vehicle.name}</strong> ao vivo. Com o bloqueio liberado, a pessoa também pode bloquear
             o motor numa emergência — por exemplo, se o seu celular for roubado junto com o veículo. Ela
-            nunca desbloqueia: isso continua só com você e com a central.
+            nunca desbloqueia: isso continua só com você.
           </p>
 
           {error && (

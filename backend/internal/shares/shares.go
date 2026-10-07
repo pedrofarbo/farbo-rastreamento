@@ -250,7 +250,7 @@ func (s *Service) guestAccount(ctx context.Context, in Input) (*auth.User, bool,
 				return nil, false, &InputError{"esse e-mail não pode receber acesso a veículos"}
 			}
 			if !user.Active {
-				return nil, false, &InputError{"a conta com esse e-mail está desativada; fale com a central"}
+				return nil, false, &InputError{"a conta com esse e-mail está desativada; fale com a gente"}
 			}
 			return user, false, nil
 		case !errors.Is(err, database.ErrNotFound):

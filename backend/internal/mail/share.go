@@ -165,7 +165,7 @@ const shareBlockedHTML = `{{define "content"}}
 <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0d130e;">{{.GuestName}} bloqueou {{.VehicleName}}</h1>
 <p style="margin:0 0 12px;font-size:15px;line-height:1.6;color:#334155;">Olá{{with .Name}}, {{.}}{{end}}!</p>
 <p style="margin:0 0 12px;font-size:15px;line-height:1.6;color:#334155;"><strong>{{.GuestName}}</strong> pediu o bloqueio do motor de <strong>{{.Vehicle}}</strong>{{with .When}} em {{.}}{{end}}, pelo acesso de emergência que você deu.</p>
-<p style="margin:0;font-size:15px;line-height:1.6;color:#334155;">Para desbloquear, use o app (com a sua biometria ou senha) ou fale com a central.</p>
+<p style="margin:0;font-size:15px;line-height:1.6;color:#334155;">Para desbloquear, use o app, com a sua biometria ou senha.</p>
 {{template "button" (button .ActionURL "Ver o veículo")}}
 {{end}}`
 
@@ -173,7 +173,7 @@ const shareBlockedText = `Olá{{with .Name}}, {{.}}{{end}}!
 
 {{.GuestName}} pediu o bloqueio do motor de {{.Vehicle}}{{with .When}} em {{.}}{{end}}, pelo acesso de emergência que você deu.
 
-Para desbloquear, use o app (com a sua biometria ou senha) ou fale com a central:
+Para desbloquear, use o app, com a sua biometria ou senha:
 {{.ActionURL}}
 
 — Farbo Rastreadores

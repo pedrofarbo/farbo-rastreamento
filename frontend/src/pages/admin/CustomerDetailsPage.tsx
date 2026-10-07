@@ -40,10 +40,11 @@ import {
   parseMoney,
   todayISO,
 } from '@/services/format';
+import { formatTaxId } from '@/services/taxid';
 import { stepOf, trackerTone } from '@/services/fulfillment';
 import { subscriptionsByVehicle, subscriptionsWithoutVehicle } from '@/services/subscriptions';
 import { HISTORY_RETENTION_OPTIONS } from '@/types';
-import type { HistoryRetention, Invoice, PixPayment, Subscription, VehicleView } from '@/types';
+import type { HistoryRetention, Invoice, PixPayment, ReminderKind, Subscription, VehicleView } from '@/types';
 
 import styles from '../Page.module.css';
 import { CustomerReferralCard } from './affiliates/CustomerReferralCard';
@@ -81,6 +82,28 @@ export function CustomerDetailsPage() {
   const [attach, setAttach] = useState<{ subscription: Subscription; input: VehicleInput } | null>(null);
   const [following, setFollowing] = useState<string | null>(null);
   const [editingAddress, setEditingAddress] = useState(false);
+
+  // A régua de cobrança: o link de pagamento (sem login) e o lembrete na hora.
+  const copyPayLink = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      notify({ tone: 'success', title: 'Link de pagamento copiado', description: 'Abre o Pix da fatura sem login.' });
+    } catch {
+      notify({ tone: 'error', title: 'Não deu para copiar', description: url });
+    }
+  };
+  const remind = useMutation({
+    mutationFn: (invoiceId: string) => customersApi.remindInvoice(invoiceId),
+    onSuccess: (r) => {
+      notify({
+        tone: r.emailed || r.pushed > 0 ? 'success' : 'warning',
+        title: r.emailed || r.pushed > 0 ? 'Lembrete enviado' : 'Lembrete registrado, mas nada saiu',
+        description: [r.emailed ? 'e-mail' : '', r.pushed > 0 ? `push em ${r.pushed} aparelho(s)` : ''].filter(Boolean).join(' e ') || 'sem e-mail nem app',
+      });
+      queryClient.invalidateQueries({ queryKey: ['customer', id] });
+    },
+    onError: (err: Error) => notify({ tone: 'error', title: 'Lembrete não enviado', description: err.message }),
+  });
 
   const refresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['customer', id] });
@@ -149,7 +172,16 @@ export function CustomerDetailsPage() {
               {data.name} <CustomerStatus customer={data} />
             </h1>
             <p className={styles.description}>
-              {[data.email, data.phone, data.document].filter(Boolean).join(' · ')}
+              {[data.email, data.phone, data.document ? formatTaxId(data.document) : 'sem CPF']
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+            <p className={styles.description}>
+              {data.contract
+                ? `Contrato aceito em ${formatDateTime(data.contract.acceptedAt)} (versão ${data.contract.version}${
+                    data.contract.version !== data.contractVersion ? `; a ${data.contractVersion} ainda não` : ''
+                  }) · IP ${data.contract.ip || '—'}`
+                : 'Contrato ainda não aceito: o cliente aceita (e informa o CPF) no primeiro acesso.'}
             </p>
           </div>
           <div className={styles.actions}>
@@ -601,6 +633,13 @@ export function CustomerDetailsPage() {
                           <div className={billing.muted}>sem link nem Pix informado</div>
                         )}
                         {invoice.paidAt && <div className={billing.muted}>paga em {formatDateTime(invoice.paidAt)}</div>}
+                        {invoice.status === 'OPEN' && data.reminders?.[invoice.id] && (
+                          <div className={billing.muted}>
+                            lembrete: {reminderLabel(data.reminders[invoice.id].kind)} ·{' '}
+                            {formatDateTime(data.reminders[invoice.id].createdAt)}
+                            {!data.reminders[invoice.id].emailed && ' (e-mail não saiu)'}
+                          </div>
+                        )}
                       </td>
                       <td>{formatDateOnly(invoice.dueDate)}</td>
                       <td className={billing.amount}>{formatMoney(invoice.amountCents)}</td>
@@ -636,6 +675,24 @@ export function CustomerDetailsPage() {
                                 Gerar Pix
                               </Button>
                             )}
+                            {data.paymentLinks?.[invoice.id] && (
+                              <Button
+                                size="small"
+                                variant="ghost"
+                                title="O link abre o Pix desta fatura sem login: mande pelo WhatsApp"
+                                onClick={() => void copyPayLink(data.paymentLinks[invoice.id])}
+                              >
+                                Copiar link
+                              </Button>
+                            )}
+                            <Button
+                              size="small"
+                              variant="ghost"
+                              loading={remind.isPending && remind.variables === invoice.id}
+                              onClick={() => remind.mutate(invoice.id)}
+                            >
+                              Lembrar
+                            </Button>
                             <Button
                               size="small"
                               variant="ghost"
@@ -862,7 +919,12 @@ export function CustomerDetailsPage() {
             <TextField label="Nome" value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} />
             <div className={styles.formRow}>
               <TextField label="Telefone" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} />
-              <TextField label="CPF ou CNPJ" value={profile.document} onChange={(e) => setProfile({ ...profile, document: e.target.value })} />
+              <TextField
+                label="CPF ou CNPJ"
+                value={profile.document}
+                hint="Para as notas fiscais (NF-e e NFS-e)."
+                onChange={(e) => setProfile({ ...profile, document: formatTaxId(e.target.value) })}
+              />
             </div>
             <p className={billing.muted}>O e-mail é o login do cliente e não muda por aqui.</p>
           </div>
@@ -1095,4 +1157,16 @@ function PaymentStatus({ payment }: { payment: PixPayment }) {
       Recebido
     </Badge>
   );
+}
+
+/** A etapa do lembrete, na ficha do cliente. */
+export function reminderLabel(kind: ReminderKind): string {
+  return {
+    ISSUED: 'fatura disponível',
+    DUE_SOON: 'vence em breve',
+    DUE_TODAY: 'vence hoje',
+    OVERDUE: 'em atraso',
+    SUSPENSION_SOON: 'suspensão em breve',
+    MANUAL: 'enviado pela central',
+  }[kind];
 }

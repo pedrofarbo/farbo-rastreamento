@@ -78,3 +78,21 @@ func ValidCPF(d string) bool { return len(d) == 11 && onlyDigits(d) == d && vali
 
 // ValidCNPJ confere os dígitos verificadores de um CNPJ (só os 14 dígitos).
 func ValidCNPJ(d string) bool { return len(d) == 14 && onlyDigits(d) == d && validCNPJ(d) }
+
+// Digits deixa só os números do CPF/CNPJ (sem pontos, traços e barras).
+func Digits(doc string) string { return onlyDigits(doc) }
+
+// ValidTaxID diz se é um CPF ou CNPJ com os dígitos verificadores corretos.
+func ValidTaxID(doc string) bool { return validTaxID(doc) }
+
+// FormatTaxID escreve o CPF (123.456.789-09) ou o CNPJ (12.345.678/0001-90).
+func FormatTaxID(doc string) string {
+	d := onlyDigits(doc)
+	switch len(d) {
+	case 11:
+		return d[:3] + "." + d[3:6] + "." + d[6:9] + "-" + d[9:]
+	case 14:
+		return d[:2] + "." + d[2:5] + "." + d[5:8] + "/" + d[8:12] + "-" + d[12:]
+	}
+	return doc
+}

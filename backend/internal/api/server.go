@@ -21,8 +21,10 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/commands"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/contract"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/dunning"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/events"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/finance"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
@@ -94,6 +96,12 @@ type Deps struct {
 	Affiliates *affiliates.Service
 	// SMSSetup: a configuração do rastreador por SMS (Twilio) na ativação.
 	SMSSetup *smssetup.Service
+	// Contract: o contrato que o cliente aceita no primeiro acesso. Nil: sem
+	// exigência (testes).
+	Contract *contract.Service
+	// Dunning: a régua de cobrança (lembretes de fatura e o link de
+	// pagamento sem login). Nil: rotas respondem 404.
+	Dunning *dunning.Service
 	// Theft: o modo roubo (o cliente avisa; o rastreador acelera; o link
 	// público mostra a posição à polícia). Nil: rotas respondem 404.
 	Theft *theft.Service
@@ -183,6 +191,8 @@ func (s *Server) routes() chi.Router {
 	// O link do modo roubo: a página pergunta a cada 10 s; numa delegacia,
 	// várias pessoas podem abrir pela mesma rede.
 	theftLinkLimiter := newRateLimiter(2, 60)
+	// O link de pagamento: a página pergunta o status do Pix a cada 4 s.
+	payLinkLimiter := newRateLimiter(1, 40)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(limiter.middleware)
@@ -231,6 +241,20 @@ func (s *Server) routes() chi.Router {
 			r.With(affiliateLimiter.middleware).Get("/public/affiliates/{code}", s.handlePublicAffiliate)
 			r.With(affiliateLimiter.middleware).Get("/public/partner/{token}", s.handlePartnerReport)
 		}
+		// O contrato em vigor, para ler antes de contratar.
+		if s.Contract != nil {
+			r.Get("/public/contract", s.handlePublicContract)
+		}
+		// Link de pagamento da fatura (sem login): o lembrete abre o Pix.
+		if s.Dunning != nil {
+			r.Route("/public/invoices/{token}", func(r chi.Router) {
+				r.Use(payLinkLimiter.middleware)
+				r.Get("/", s.handlePublicInvoice)
+				r.Post("/pix", s.handlePublicInvoicePix)
+				r.Get("/charges/{chargeId}", s.handlePublicCharge)
+				r.Post("/charges/{chargeId}/simulate", s.handlePublicChargeSimulate)
+			})
+		}
 		// Modo roubo: a posição ao vivo pelo link secreto (a tela atualiza a
 		// cada poucos segundos, aberta por quem recebeu o link).
 		if s.Theft != nil {
@@ -272,6 +296,7 @@ func (s *Server) routes() chi.Router {
 			// fica nos handlers, em vehicleFromURL) e perde o acesso se
 			// tiver fatura atrasada além do limite.
 			r.Route("/vehicles", func(r chi.Router) {
+				r.Use(s.requireContract)
 				r.Use(s.requireActiveCustomer)
 
 				r.Get("/", s.handleListVehicles)
@@ -316,6 +341,7 @@ func (s *Server) routes() chi.Router {
 			// cria e vê as dele, para os veículos dele (o filtro de dono fica
 			// nos handlers, em fenceOwner).
 			r.Route("/geofences", func(r chi.Router) {
+				r.Use(s.requireContract)
 				r.Use(s.requireActiveCustomer)
 				r.Get("/", s.handleListGeofences)
 				r.Group(func(r chi.Router) {
@@ -330,6 +356,10 @@ func (s *Server) routes() chi.Router {
 			// o acesso suspenso — é por aqui que ele vê o que pagar.
 			r.Route("/me", func(r chi.Router) {
 				r.Use(auth.RequireRole(auth.RoleCustomer))
+				// Sem o aceite do contrato, só o próprio contrato (ler e aceitar).
+				r.Use(s.requireContract)
+				r.Get("/contract", s.handleMyContract)
+				r.Post("/contract/accept", s.handleAcceptContract)
 				r.Get("/account", s.handleMyAccount)
 				r.Get("/subscriptions", s.handleMySubscriptions)
 				r.Get("/invoices", s.handleMyInvoices)
@@ -526,6 +556,7 @@ func (s *Server) routes() chi.Router {
 					r.Post("/invoices/{id}/pay", s.handlePayInvoice)
 					r.Post("/invoices/{id}/cancel", s.handleCancelInvoice)
 					r.Post("/invoices/{id}/pix", s.handleAdminInvoicePix)
+					r.Post("/invoices/{id}/remind", s.handleRemindInvoice)
 					r.Get("/charges/{id}", s.handleAdminCharge)
 					r.Post("/charges/{id}/simulate", s.handleAdminChargeSimulate)
 					r.Post("/charges/{id}/refund", s.handleAdminChargeRefund)

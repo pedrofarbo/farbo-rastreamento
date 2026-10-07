@@ -127,11 +127,14 @@ const SECTIONS: LegalSection[] = [
       <ul>
         <li>
           <strong>Prestar o serviço contratado</strong>: mostrar o veículo no mapa, guardar o histórico,
-          mandar alertas, enviar comandos, entregar o rastreador e dar suporte (execução de contrato).
+          mandar alertas, enviar ao rastreador os comandos que você pedir, entregar o rastreador e dar suporte
+          (execução de contrato).
         </li>
         <li>
-          <strong>Cobrar e cumprir obrigações fiscais e legais</strong>: faturas, comprovantes e registros
-          exigidos por lei (execução de contrato e cumprimento de obrigação legal).
+          <strong>Cobrar e cumprir obrigações fiscais e legais</strong>: faturas, comprovantes, as notas
+          fiscais (a NF-e do rastreador e a NFS-e das mensalidades, emitidas com o CPF ou CNPJ), o registro do
+          aceite do contrato (data, hora, IP e navegador) e os registros exigidos por lei (execução de contrato
+          e cumprimento de obrigação legal).
         </li>
         <li>
           <strong>Proteger a sua conta e o serviço</strong>: prevenir fraudes e acessos indevidos e guardar os
@@ -171,6 +174,14 @@ const SECTIONS: LegalSection[] = [
           </li>
           <li>
             <strong>Provedor de e-mail</strong>, para mandar convites, alertas e avisos.
+          </li>
+          <li>
+            <strong>Emissão de notas fiscais</strong>: o sistema emissor e os órgãos fiscais (prefeitura e
+            Secretaria da Fazenda), para emitir a NF-e e a NFS-e (nome, CPF ou CNPJ, endereço e valores).
+          </li>
+          <li>
+            <strong>Órgãos de proteção ao crédito</strong> (como SPC e Serasa), só em caso de atraso de mais de
+            1 mês, com aviso prévio, conforme o contrato.
           </li>
           <li>
             <strong>WhatsApp (Meta)</strong>, no atendimento por WhatsApp, e o provedor de inteligência

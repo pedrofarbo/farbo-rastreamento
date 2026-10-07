@@ -14,6 +14,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { formatMoney } from '@/services/format';
+import { formatTaxId } from '@/services/taxid';
 import type { Lead } from '@/types';
 
 import styles from '../Page.module.css';
@@ -246,7 +247,7 @@ export function CustomersPage() {
                             <Link to={`/clientes/${customer.id}`}>
                               <strong>{customer.name}</strong>
                             </Link>
-                            {customer.document && <div className={billing.muted}>{customer.document}</div>}
+                            {customer.document && <div className={billing.muted}>{formatTaxId(customer.document)}</div>}
                           </td>
                           <td>
                             {customer.email}
@@ -333,7 +334,8 @@ export function CustomersPage() {
               <TextField
                 label="CPF ou CNPJ"
                 value={draft.document}
-                onChange={(event) => setDraft({ ...draft, document: event.target.value })}
+                hint="Para as notas fiscais. Se não souber, o cliente informa no primeiro acesso."
+                onChange={(event) => setDraft({ ...draft, document: formatTaxId(event.target.value) })}
               />
             </div>
 

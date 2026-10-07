@@ -168,7 +168,10 @@ func formatBrazilTime(t time.Time) string {
 
 // layoutHTML é a moldura comum: faixa escura com a logo, cartão branco e
 // botão verde, nas cores da landing. Tabelas e estilo inline porque é o que
-// os clientes de e-mail respeitam.
+// os clientes de e-mail respeitam. A faixa do topo é uma imagem só, com o
+// fundo escuro dentro (email-header.png): no modo escuro, o Gmail do iPhone
+// inverte as cores do HTML — o fundo escuro viraria claro e a logo branca
+// sumiria —, mas não mexe nas imagens.
 const layoutHTML = `{{define "layout"}}<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -181,8 +184,8 @@ const layoutHTML = `{{define "layout"}}<!DOCTYPE html>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f6f4;padding:32px 16px;">
 <tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;border-radius:16px;overflow:hidden;background:#ffffff;border:1px solid #dce4de;">
-<tr><td style="background:#060907;padding:24px 32px;">
-<img src="{{.AppURL}}/assets/logo-header.png" alt="Farbo Rastreadores" height="36" style="display:block;height:36px;width:auto;border:0;color:#ffffff;font-size:18px;font-weight:800;">
+<tr><td bgcolor="#060907" style="background:#060907;padding:0;font-size:0;line-height:0;">
+<img src="{{.AppURL}}/assets/email-header.png" width="560" alt="Farbo Rastreadores" style="display:block;width:100%;max-width:560px;height:auto;border:0;color:#ffffff;font-size:18px;font-weight:800;line-height:84px;">
 </td></tr>
 <tr><td style="padding:32px;">
 {{template "content" .}}

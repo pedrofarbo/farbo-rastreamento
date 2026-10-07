@@ -480,7 +480,7 @@ function VehicleCard({
         ) : subscription ? (
           <Badge tone="neutral">Assinatura encerrada</Badge>
         ) : (
-          <span className={billing.muted}>Sem assinatura — fale com a central.</span>
+          <span className={billing.muted}>Sem assinatura — fale com a gente.</span>
         )}
       </div>
 

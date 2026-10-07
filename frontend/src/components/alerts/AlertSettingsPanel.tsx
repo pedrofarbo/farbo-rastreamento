@@ -112,7 +112,7 @@ export function AlertSettingsPanel({ settings, audience, saving, onSave, onTest,
         <div className={`${billing.banner} ${billing.bannerWarning}`} role="status">
           <span>
             {own
-              ? 'O envio de e-mails ainda não foi configurado pela central: os alertas começam a chegar assim que ele estiver ativo.'
+              ? 'O envio de e-mails ainda não está ativo: os alertas começam a chegar assim que ele for ligado.'
               : 'SMTP não configurado (SMTP_HOST): nenhum alerta sai até ele ser configurado.'}
           </span>
         </div>
@@ -120,8 +120,9 @@ export function AlertSettingsPanel({ settings, audience, saving, onSave, onTest,
       {settings.suspended && (
         <div className={`${billing.banner} ${billing.bannerDanger}`} role="alert">
           <span>
-            {own ? 'Com o acesso suspenso, seus alertas ficam pausados' : 'Cliente suspenso: os alertas dele estão pausados'}{' '}
-            até o pagamento ser confirmado. Os alertas de segurança continuam indo para a central.
+            {own
+              ? 'Com o acesso suspenso, seus alertas ficam pausados até o pagamento ser confirmado.'
+              : 'Cliente suspenso: os alertas dele estão pausados até o pagamento ser confirmado. Os alertas de segurança continuam indo para a central.'}
           </span>
         </div>
       )}

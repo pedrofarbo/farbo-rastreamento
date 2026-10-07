@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { ApiError } from '@/api/client';
-import { catalogApi, customersApi, meApi } from '@/api/resources';
+import { catalogApi, contractApi, customersApi, meApi } from '@/api/resources';
 import type { VehicleInput } from '@/api/resources';
 import { AddressFields, EMPTY_ADDRESS, isAddressComplete } from '@/components/address/AddressFields';
 import { DeliveryBox } from '@/components/address/DeliveryBox';
@@ -15,6 +15,7 @@ import {
   subscriptionFromDraft,
 } from '@/components/billing/SubscriptionFields';
 import type { SubscriptionDraft } from '@/components/billing/SubscriptionFields';
+import { ContractAcceptForm, contractKey } from '@/components/contract/ContractAcceptForm';
 import { InstallersModal } from '@/components/landing/InstallersModal';
 import { Button } from '@/components/ui/Button';
 import { SelectField, TextField } from '@/components/ui/Field';
@@ -22,6 +23,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { EMPTY_VEHICLE, VehicleFields } from '@/components/vehicle/VehicleFields';
 import { centsToInput, formatDateOnly, formatMoney, parseMoney, todayISO } from '@/services/format';
+import { errorCode } from '@/services/stepUp';
 import type { Catalog, CustomerAccount, DeliveryAddress, Device, Subscription, TrackerOrderResult } from '@/types';
 
 import pageStyles from '@/pages/Page.module.css';
@@ -121,6 +123,8 @@ export function NewVehicleWizard({
   const [adminDraft, setAdminDraft] = useState<AdminDraft | null>(null);
   const [error, setError] = useState('');
   const [showInstallers, setShowInstallers] = useState(false);
+  const [contractOpen, setContractOpen] = useState(false);
+  const contract = useQuery({ queryKey: contractKey, queryFn: contractApi.mine, enabled: contractOpen });
   // O frete escolhido (serviço do Melhor Envios); 0: sem frete;
   // ARRANGE_DELIVERY: combinar a entrega. Nulo: ainda não escolhido (o mais
   // barato vem marcado quando a cotação chega).
@@ -208,6 +212,13 @@ export function NewVehicleWizard({
     },
     onSuccess: onDone,
     onError: (err: Error) => {
+      // Quem só acompanhava o veículo de outra pessoa aceita o contrato ao
+      // pedir o primeiro rastreador: o contrato abre e o pedido segue depois.
+      if (errorCode(err) === 'CONTRACT_REQUIRED') {
+        setError('');
+        setContractOpen(true);
+        return;
+      }
       setError(err.message);
       if (isPromoUnavailable(err)) {
         // Os preços voltam aos normais; quem decide continuar confirma de novo.
@@ -594,6 +605,20 @@ export function NewVehicleWizard({
       </Modal>
 
       <InstallersModal isOpen={showInstallers} onClose={() => setShowInstallers(false)} />
+
+      <Modal open={contractOpen} title="Contrato de prestação de serviços" onClose={() => setContractOpen(false)}>
+        {contract.data ? (
+          <ContractAcceptForm
+            status={contract.data}
+            onAccepted={() => {
+              setContractOpen(false);
+              order.mutate();
+            }}
+          />
+        ) : (
+          <Spinner label="Carregando o contrato" />
+        )}
+      </Modal>
     </>
   );
 }

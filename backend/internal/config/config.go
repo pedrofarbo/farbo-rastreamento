@@ -42,6 +42,16 @@ type Config struct {
 	Infra     Infra
 	SMS       SMS
 	Theft     Theft
+	Company   Company
+}
+
+// Company é a empresa no contrato com o cliente (a CONTRATADA).
+type Company struct {
+	Name      string
+	LegalName string
+	CNPJ      string
+	Address   string
+	Email     string
 }
 
 // SMS configura o envio pelo Twilio e a configuração do rastreador por SMS
@@ -835,6 +845,13 @@ func Load() (*Config, error) {
 		// Testado em campo com o J16: 10 s com a ignição ligada.
 		ReportSeconds: num("TRACKER_REPORT_INTERVAL_SECONDS", 10),
 		ParkedSeconds: num("TRACKER_PARKED_INTERVAL_SECONDS", 3600),
+	}
+	cfg.Company = Company{
+		Name:      str("COMPANY_NAME", "Farbo Rastreadores"),
+		LegalName: str("COMPANY_LEGAL_NAME", "FARBO TECNOLOGIA DE SISTEMAS E CLOUD LTDA"),
+		CNPJ:      str("COMPANY_CNPJ", "49.757.084/0001-00"),
+		Address:   str("COMPANY_ADDRESS", ""),
+		Email:     str("COMPANY_EMAIL", "contato@farborastreadores.com.br"),
 	}
 	cfg.Theft = Theft{
 		ParkedSeconds: num("THEFT_PARKED_INTERVAL_SECONDS", 30),

@@ -360,7 +360,7 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
           </div>
           {blocked ? (
             <div className={styles.notice}>
-              O motor está bloqueado. Desbloquear é com {shared.ownerName} ou com a central.
+              O motor está bloqueado. Desbloquear é só com {shared.ownerName}.
             </div>
           ) : (
             !shared.canBlock && (
@@ -467,7 +467,7 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
             {shared && (
               <p className={styles.notice}>
                 {shared.ownerName} recebe um aviso do bloqueio. Desbloquear é só com quem compartilhou o
-                veículo ou com a central.
+                veículo.
               </p>
             )}
             {preflight && NEEDS_POSITION.includes(preflight.code) && (

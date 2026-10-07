@@ -330,7 +330,7 @@ func (s *Server) handleDeleteVehicle(w http.ResponseWriter, r *http.Request) {
 func writeVehicleConflict(w http.ResponseWriter, r *http.Request) {
 	if _, isCustomer := customerOf(r); isCustomer {
 		writeError(w, http.StatusConflict,
-			"essa placa já está cadastrada; se o veículo é seu, fale com a central")
+			"essa placa já está cadastrada; se o veículo é seu, fale com a gente")
 		return
 	}
 	writeError(w, http.StatusConflict,

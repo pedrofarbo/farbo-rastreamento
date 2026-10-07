@@ -28,8 +28,10 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/commands"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/contract"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/dunning"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/events"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/finance"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
@@ -319,6 +321,30 @@ func run() error {
 		sharesSvc.SetPusher(pushSvc)
 	}
 
+	// O contrato que o cliente aceita no primeiro acesso (com o CPF).
+	contractDoc, err := contract.Render(contract.Params{
+		Company: cfg.Company, SuspendAfterDays: cfg.Billing.SuspendAfterDays, HistoryOptions: retention.Options,
+	})
+	if err != nil {
+		return err
+	}
+	contractSvc := contract.NewService(db, contractDoc, mail.NewContractMailer(mailer, cfg.Mail.AppURL), log)
+	log.Info("contrato em vigor", "version", contractDoc.Version, "sha256", contractDoc.SHA256[:12])
+
+	// Régua de cobrança: os lembretes de fatura (e-mail e push) com o link
+	// que abre o Pix sem login.
+	billingLoc, err := time.LoadLocation(cfg.Billing.Timezone)
+	if err != nil {
+		billingLoc = time.FixedZone("BRT", -3*60*60)
+	}
+	dunningSvc := dunning.NewService(db, billingSvc, mail.NewInvoiceMailer(mailer, cfg.Mail.AppURL), dunning.Config{
+		SuspendAfterDays: cfg.Billing.SuspendAfterDays, Location: billingLoc, FromHour: 9, ToHour: 20,
+		AppURL: cfg.Mail.AppURL, LinkSecret: []byte(cfg.Auth.JWTSecret),
+	}, log)
+	if pushSvc.Enabled() {
+		dunningSvc.SetPusher(pushSvc)
+	}
+
 	// Modo roubo: o cliente avisa; o rastreador manda a posição com mais
 	// frequência (fora do ar, quando voltar; ou por SMS); quem tem acesso é
 	// avisado; e o link público mostra a posição à polícia.
@@ -353,6 +379,7 @@ func run() error {
 			leads.MailNotifier{Mailer: mail.NewLeadMailer(mailer, cfg.Mail.AppURL), To: cfg.Leads.NotifyEmails}, log),
 		Alerts: alertEngine, AlertStore: alertStore, Push: pushSvc, Shares: sharesSvc, Analytics: analyticsSvc,
 		Infra: infraSvc, Finance: financeSvc, Affiliates: affiliatesSvc, SMSSetup: smsSvc, Theft: theftSvc,
+		Dunning: dunningSvc, Contract: contractSvc,
 		StepUp:    stepup.NewService(db, cfg.StepUp, authSvc),
 		Positions: positionRepo, States: stateStore,
 		Raw: rawRepo, Ingestor: ingestor, Conns: connManager, Registry: registry,
@@ -390,7 +417,7 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, theftSvc, log)
+		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, theftSvc, dunningSvc, log)
 	}()
 
 	log.Info("plataforma no ar",
@@ -428,6 +455,7 @@ func runWorkers(
 	affiliatesSvc *affiliates.Service,
 	smsSvc *smssetup.Service,
 	theftSvc *theft.Service,
+	dunningSvc *dunning.Service,
 	log *slog.Logger,
 ) {
 	statusTicker := time.NewTicker(cfg.Tracking.StatusSweepInterval)
@@ -476,6 +504,7 @@ func runWorkers(
 	// Primeira varredura imediata para o painel já abrir com o status correto.
 	ingestor.SweepStatuses(ctx)
 	billingSvc.GenerateInvoices(ctx)
+	dunningSvc.Work(ctx)
 	financeSvc.GenerateRecurring(ctx)
 	financeSvc.SendReminders(ctx)
 	affiliatesSvc.Work(ctx)
@@ -499,6 +528,8 @@ func runWorkers(
 
 		case <-billingTicker.C:
 			billingSvc.GenerateInvoices(ctx)
+			// Os lembretes de fatura do dia (só entre 9h e 20h).
+			dunningSvc.Work(ctx)
 			// As contas do mês e o resumo dos vencimentos (uma vez por dia).
 			financeSvc.GenerateRecurring(ctx)
 			financeSvc.SendReminders(ctx)

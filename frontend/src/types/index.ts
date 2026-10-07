@@ -630,6 +630,91 @@ export interface CustomerDetail extends CustomerSummary {
   defaultHistoryDays: number;
   /** Quem indicou o cliente (programa de afiliados); nulo se ninguém. */
   affiliate: CustomerReferral | null;
+  /** O último aceite do contrato (nulo: ainda não aceitou). */
+  contract: ContractAcceptance | null;
+  /** A versão do contrato em vigor. */
+  contractVersion: string;
+  /** O último lembrete de cada fatura (pelo id). */
+  reminders: Record<string, InvoiceReminder>;
+  /** O link de pagamento sem login das faturas em aberto (pelo id). */
+  paymentLinks: Record<string, string>;
+}
+
+/** Um parágrafo (text) ou uma lista (items) do contrato. */
+export interface ContractBlock {
+  kind: 'p' | 'ul';
+  text?: string;
+  items?: string[];
+}
+
+/** Uma cláusula do contrato ("6. Permanência mínima e multa"). */
+export interface ContractSection {
+  title: string;
+  blocks: ContractBlock[];
+}
+
+/** O contrato de prestação de serviços em vigor. */
+export interface ContractDocument {
+  version: string;
+  effectiveDate: string;
+  title: string;
+  intro: ContractBlock[];
+  sections: ContractSection[];
+  /** O hash do texto: o aceite guarda qual texto foi aceito. */
+  sha256: string;
+}
+
+/** O registro do aceite eletrônico. */
+export interface ContractAcceptance {
+  version: string;
+  sha256: string;
+  name: string;
+  /** CPF/CNPJ (só os números). */
+  document: string;
+  ip: string;
+  userAgent: string;
+  acceptedAt: string;
+}
+
+/** O contrato do ponto de vista do cliente. */
+export interface ContractStatus {
+  contract: ContractDocument;
+  /** Precisa aceitar esta versão para usar a plataforma. */
+  required: boolean;
+  /** O aceite desta versão (nulo: ainda não aceitou). */
+  accepted: ContractAcceptance | null;
+  name: string;
+  /** CPF/CNPJ do cadastro (vazio se ainda não informado). */
+  taxId: string;
+}
+
+/** As etapas da régua de cobrança (e o lembrete pedido pela central). */
+export type ReminderKind = 'ISSUED' | 'DUE_SOON' | 'DUE_TODAY' | 'OVERDUE' | 'SUSPENSION_SOON' | 'MANUAL';
+
+/** Um lembrete de fatura que saiu (e-mail e push). */
+export interface InvoiceReminder {
+  invoiceId: string;
+  kind: ReminderKind;
+  emailed: boolean;
+  /** Em quantos aparelhos o push chegou. */
+  pushed: number;
+  createdAt: string;
+}
+
+/** A fatura no link de pagamento (sem login): só o necessário para pagar. */
+export interface PublicInvoice {
+  firstName: string;
+  description: string;
+  amountCents: number;
+  dueDate: string;
+  status: 'OPEN' | 'PAID' | 'CANCELED';
+  overdue: boolean;
+  daysOverdue: number;
+  paidAt: string | null;
+  /** O Pix sai pela AbacatePay; sem isso, o link ou o Pix informados pela central. */
+  onlinePayment: boolean;
+  paymentUrl: string;
+  pixCode: string;
 }
 
 /**

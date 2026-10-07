@@ -13,8 +13,10 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/contract"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/dunning"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
 )
@@ -31,6 +33,14 @@ type customerDetail struct {
 	Payments []*payments.Payment `json:"payments"`
 	// DeliveryAddress é para onde vão os rastreadores; nulo se não cadastrado.
 	DeliveryAddress *addresses.Address `json:"deliveryAddress"`
+	// Contract: o último aceite do contrato (nulo se nunca aceitou);
+	// ContractVersion, a versão em vigor.
+	Contract        *contract.Acceptance `json:"contract"`
+	ContractVersion string               `json:"contractVersion"`
+	// Reminders: o último lembrete de cada fatura (pelo id); PaymentLinks:
+	// o link de pagamento sem login das faturas em aberto.
+	Reminders    map[string]dunning.Reminder `json:"reminders"`
+	PaymentLinks map[string]string           `json:"paymentLinks"`
 	// Fulfillments é o acompanhamento de cada veículo (chip e rastreador).
 	Fulfillments []*fulfillment.Fulfillment `json:"fulfillments"`
 	// HistoryRetentionDays é o prazo do cliente (nulo = padrão da central,
@@ -85,10 +95,36 @@ func (s *Server) customerDetail(ctx context.Context, id uuid.UUID) (*customerDet
 			return nil, err
 		}
 	}
+	var accepted *contract.Acceptance
+	version := ""
+	if s.Contract != nil {
+		if accepted, err = s.Contract.Latest(ctx, id); err != nil {
+			return nil, err
+		}
+		version = s.Contract.Current().Version
+	}
+	reminders, links := map[string]dunning.Reminder{}, map[string]string{}
+	if s.Dunning != nil {
+		ids := make([]uuid.UUID, 0, len(invoices))
+		for _, inv := range invoices {
+			ids = append(ids, inv.ID)
+			if inv.Status == billing.InvoiceOpen {
+				links[inv.ID.String()] = s.Dunning.PayURL(inv.ID)
+			}
+		}
+		last, err := s.Dunning.LastByInvoice(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		for id, r := range last {
+			reminders[id.String()] = r
+		}
+	}
 	return &customerDetail{
 		CustomerSummary: summary, Subscriptions: subscriptions, Invoices: invoices, Vehicles: views,
 		OnlinePayment: s.Payments.Enabled(), Payments: paid, DeliveryAddress: address, Fulfillments: tracking,
 		HistoryRetentionDays: retentionDays, DefaultHistoryDays: s.Retention.Default(), Affiliate: referral,
+		Reminders: reminders, PaymentLinks: links, Contract: accepted, ContractVersion: version,
 	}, nil
 }
 
@@ -187,9 +223,13 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		password = random
 	}
 
+	document, ok := taxIDOf(w, req.Document)
+	if !ok {
+		return
+	}
 	user, err := s.Auth.Register(r.Context(), auth.NewUser{
 		Email: req.Email, Name: req.Name, Role: auth.RoleCustomer, Password: password,
-		Phone: req.Phone, Document: req.Document,
+		Phone: req.Phone, Document: document,
 	})
 	if err != nil {
 		if errors.Is(err, database.ErrConflict) {
@@ -249,8 +289,12 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	document, ok := taxIDOf(w, req.Document)
+	if !ok {
+		return
+	}
 	if _, err := s.Auth.UpdateProfile(r.Context(), id, auth.Profile{
-		Name: req.Name, Phone: req.Phone, Document: req.Document, Active: req.Active,
+		Name: req.Name, Phone: req.Phone, Document: document, Active: req.Active,
 	}); err != nil {
 		if errors.Is(err, database.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "cliente não encontrado")

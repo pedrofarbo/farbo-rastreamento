@@ -221,3 +221,24 @@
     columns: 1;
   }
 }
+
+/* Celular estreito: os três documentos (Termos, Privacidade, Contrato) cabem
+   no topo, numa linha. */
+@media (max-width: 420px) {
+  .topbarInner {
+    gap: 0.5rem;
+  }
+
+  .logo {
+    height: 22px;
+  }
+
+  .switch {
+    gap: 0;
+  }
+
+  .switch a {
+    padding: 0.35rem 0.45rem;
+    font-size: 0.75rem;
+  }
+}

@@ -15,6 +15,10 @@ import type {
   ShippingQuoteView,
   TheftView,
   PublicTheftView,
+  InvoiceReminder,
+  PublicInvoice,
+  ContractDocument,
+  ContractStatus,
   SmsSession,
   SmsSetupView,
   PublicAffiliate,
@@ -472,6 +476,8 @@ export const customersApi = {
   updateInvoice: (id: string, input: { paymentUrl: string; pixCode: string }) =>
     api.patch<Invoice>(`/api/invoices/${id}`, input),
   payInvoice: (id: string) => api.post<Invoice>(`/api/invoices/${id}/pay`),
+  /** Manda agora um lembrete da fatura (e-mail e push, com o link de pagamento). */
+  remindInvoice: (id: string) => api.post<InvoiceReminder>(`/api/invoices/${id}/remind`),
   cancelInvoice: (id: string) => api.post<Invoice>(`/api/invoices/${id}/cancel`),
 
   invoicePix: (invoiceId: string) => api.post<PixCharge>(`/api/invoices/${invoiceId}/pix`),
@@ -563,6 +569,29 @@ export const shippingIntegrationApi = {
 };
 
 /** Rotas públicas, usadas também pela landing page (sem login). */
+/** O contrato de prestação de serviços (aceite no primeiro acesso, com o CPF). */
+export const contractApi = {
+  mine: () => api.get<ContractStatus>('/api/me/contract'),
+  accept: (version: string, document: string) =>
+    api.post<ContractStatus>('/api/me/contract/accept', { version, document }),
+  /** O texto em vigor, sem login. */
+  current: () => request<ContractDocument>('/api/public/contract', { anonymous: true }),
+};
+
+/** O link de pagamento da fatura (sem login). */
+export const payLinkApi = {
+  invoice: (token: string) => request<PublicInvoice>(`/api/public/invoices/${encodeURIComponent(token)}`, { anonymous: true }),
+  /** O contrato da janela de Pix, preso ao link. */
+  pix: (token: string): PixApi => {
+    const base = `/api/public/invoices/${encodeURIComponent(token)}`;
+    return {
+      invoicePix: () => request<PixCharge>(`${base}/pix`, { method: 'POST', anonymous: true }),
+      charge: (id: string) => request<PixCharge>(`${base}/charges/${id}`, { anonymous: true }),
+      simulateCharge: (id: string) => request<PixCharge>(`${base}/charges/${id}/simulate`, { method: 'POST', anonymous: true }),
+    };
+  },
+};
+
 export const publicApi = {
   installers: () => request<PublicInstaller[]>('/api/public/installers', { anonymous: true }),
   /** Cadastro de interesse da landing (vira pré-cliente). */

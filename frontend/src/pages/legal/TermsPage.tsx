@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 
-import { COMPANY, LEGAL_FACTS, PRIVACY_PATH } from '@/config/legal';
+import { COMPANY, CONTRACT_PATH, LEGAL_FACTS, PRIVACY_PATH } from '@/config/legal';
 import { INSANOS_MONTHLY, LAUNCH_OFFER, PRE_LAUNCH } from '@/config/landing';
 
 import styles from './Legal.module.css';
@@ -16,7 +16,9 @@ const SECTIONS: LegalSection[] = [
         <p>
           Estes Termos de Uso regem o uso do site, do painel, do app e do serviço de rastreamento veicular de{' '}
           <CompanyIdentity />. Ao criar a conta, contratar ou usar o serviço, você declara que leu e concorda
-          com estes termos e com a <Link to={PRIVACY_PATH}>Política de Privacidade</Link>.
+          com estes termos e com a <Link to={PRIVACY_PATH}>Política de Privacidade</Link>. A assinatura também
+          segue o <Link to={CONTRACT_PATH}>Contrato de Prestação de Serviços</Link>, aceito na plataforma no
+          primeiro acesso; se houver conflito, vale o contrato.
         </p>
         <p>
           Dúvidas? Fale com a gente <ContactChannels />.
@@ -70,8 +72,11 @@ const SECTIONS: LegalSection[] = [
         </p>
         <div className={styles.callout}>
           <p>
-            O rastreamento ajuda a localizar e proteger o veículo, mas <strong>não é seguro</strong> e não
-            garante a recuperação em caso de roubo ou furto.
+            O serviço é <strong>somente o sistema de rastreamento remoto</strong>, com o bloqueio e o
+            desbloqueio do motor feitos pelo próprio Cliente. <strong>Não</strong> prestamos serviços de
+            segurança, <strong>não</strong> temos central de monitoramento nem equipe tática de prontidão,
+            <strong> não</strong> é seguro veicular e <strong>não</strong> garantimos a recuperação do veículo em
+            caso de roubo ou furto.
           </p>
         </div>
       </>
@@ -84,6 +89,11 @@ const SECTIONS: LegalSection[] = [
       <ul>
         <li>A conta é pessoal e só pode ser criada por maiores de 18 anos.</li>
         <li>O Cliente deve informar dados verdadeiros e mantê-los atualizados, inclusive o endereço de entrega.</li>
+        <li>
+          O CPF (ou o CNPJ, para empresa) é obrigatório: é com ele que emitimos as notas fiscais, a NF-e do
+          rastreador e a NFS-e das mensalidades. Ele é pedido no primeiro acesso, junto com o aceite do
+          contrato.
+        </li>
         <li>
           A senha e o acesso por biometria são pessoais. O Cliente é responsável pelo que for feito na conta e
           deve nos avisar logo se suspeitar de uso indevido.
@@ -127,6 +137,12 @@ const SECTIONS: LegalSection[] = [
           Mudanças de preço da mensalidade são avisadas por e-mail com pelo menos 30 dias de antecedência e não
           alteram as condições promocionais já contratadas durante o seu prazo.
         </p>
+        <p>
+          Cada assinatura tem <strong>permanência mínima de 3 meses</strong>. Para cada rastreador, mantemos um
+          plano de telecomunicações M2M junto à operadora e pagamos a geração e a entrega do chip; esses custos
+          não são cobrados à parte, e sim diluídos nas mensalidades. As regras estão no{' '}
+          <Link to={CONTRACT_PATH}>contrato</Link>.
+        </p>
       </>
     ),
   },
@@ -140,6 +156,11 @@ const SECTIONS: LegalSection[] = [
           Com fatura vencida há mais de {LEGAL_FACTS.suspendAfterDays} dias, o acesso do Cliente à plataforma
           fica suspenso até o pagamento. O rastreador continua registrando as posições, que voltam a aparecer
           quando o acesso é liberado.
+        </li>
+        <li>
+          Com atraso de mais de 1 mês, o nome do Cliente pode ser incluído nos órgãos de proteção ao crédito
+          (como SPC e Serasa), sempre com comunicação prévia por escrito, como determina o Código de Defesa do
+          Consumidor.
         </li>
         <li>Em atraso prolongado, a assinatura pode ser encerrada, com aviso prévio por e-mail.</li>
       </ul>
@@ -203,7 +224,7 @@ const SECTIONS: LegalSection[] = [
             posição recente. Fora dessa condição, o pedido é recusado.
           </li>
           <li>Bloquear e desbloquear exigem a confirmação de que é o Cliente (biometria ou senha).</li>
-          <li>O desbloqueio é feito pelo Cliente ou pela nossa central.</li>
+          <li>O desbloqueio é feito pelo próprio Cliente, pela plataforma.</li>
           <li>
             A execução depende do sinal do rastreador e do relé instalado. A plataforma mostra quando o
             rastreador confirma o comando.
@@ -290,12 +311,15 @@ const SECTIONS: LegalSection[] = [
     title: 'Cancelamento',
     body: (
       <>
-        <p>
-          O Cliente pode cancelar a assinatura a qualquer momento, sem multa, pelos canais de contato.
-        </p>
+        <p>O Cliente pode cancelar a assinatura a qualquer momento, pelos canais de contato.</p>
         <ul>
+          <li>
+            Antes de completar a permanência mínima de 3 meses, o cancelamento tem multa de 1 mensalidade daquele
+            veículo, salvo nos casos previstos no <Link to={CONTRACT_PATH}>contrato</Link> (como a desistência em
+            até 7 dias e a falha nossa na prestação do serviço). Depois dos 3 meses, não há multa.
+          </li>
           <li>Faturas já vencidas continuam devidas.</li>
-          <li>O rastreador comprado é do Cliente.</li>
+          <li>O rastreador comprado é do Cliente, mesmo depois do cancelamento. A linha do chip M2M é desativada.</li>
           <li>
             Depois do cancelamento, os dados seguem o que diz a{' '}
             <Link to={PRIVACY_PATH}>Política de Privacidade</Link>.

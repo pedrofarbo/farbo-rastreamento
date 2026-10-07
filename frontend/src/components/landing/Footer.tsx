@@ -11,7 +11,7 @@ import {
   whatsappUrl,
 } from '@/config/contact';
 import { ANATEL_HOMOLOGATION, SOCIAL_SECTION } from '@/config/landing';
-import { PRIVACY_PATH, TERMS_PATH } from '@/config/legal';
+import { CONTRACT_PATH, PRIVACY_PATH, TERMS_PATH } from '@/config/legal';
 
 import styles from './Footer.module.css';
 
@@ -106,6 +106,7 @@ export const Footer: React.FC = () => {
           <div className={styles.legalLinks}>
             <Link to={TERMS_PATH}>Termos de Uso</Link>
             <Link to={PRIVACY_PATH}>Política de Privacidade</Link>
+            <Link to={CONTRACT_PATH}>Contrato</Link>
           </div>
         </div>
       </div>

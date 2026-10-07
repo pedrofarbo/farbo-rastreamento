@@ -161,6 +161,19 @@ func (s *Server) handleMyOrderTracker(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "corpo inválido")
 		return
 	}
+	// Quem só acompanhava o veículo de outra pessoa aceita o contrato ao
+	// pedir o primeiro rastreador.
+	if s.Contract != nil {
+		accepted, err := s.Contract.HasAccepted(r.Context(), customerID)
+		if err != nil {
+			handleStoreError(w, err, "")
+			return
+		}
+		if !accepted {
+			writeContractRequired(w)
+			return
+		}
+	}
 
 	order, err := s.Orders.CustomerOrder(r.Context(), customerID, req.Vehicle, req.LaunchPromo)
 	if err != nil {

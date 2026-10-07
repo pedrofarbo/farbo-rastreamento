@@ -3,6 +3,7 @@ import type { ComponentType } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
 
+import { ContractGate } from '@/components/contract/ContractGate';
 import { Spinner } from '@/components/ui/Spinner';
 import { ToastProvider } from '@/components/ui/Toast';
 import { RealtimeProvider } from '@/hooks/useRealtime';
@@ -33,6 +34,8 @@ const ReferralSignupPage = page(() => import('@/pages/ReferralSignupPage'), 'Ref
 const PartnerPage = page(() => import('@/pages/PartnerPage'), 'PartnerPage');
 const PublicTheftPage = page(() => import('@/pages/PublicTheftPage'), 'PublicTheftPage');
 const TheftReportPage = page(() => import('@/pages/TheftReportPage'), 'TheftReportPage');
+const PublicPayPage = page(() => import('@/pages/PublicPayPage'), 'PublicPayPage');
+const ContractPage = page(() => import('@/pages/legal/ContractPage'), 'ContractPage');
 const AlertsPage = page(() => import('@/pages/customer/AlertsPage'), 'AlertsPage');
 const InvoicesPage = page(() => import('@/pages/customer/InvoicesPage'), 'InvoicesPage');
 const MyVehiclesPage = page(() => import('@/pages/customer/MyVehiclesPage'), 'MyVehiclesPage');
@@ -73,6 +76,7 @@ export function App() {
                 <Route path="/redefinir-senha" element={<ResetPasswordPage />} />
                 <Route path="/termos-de-uso" element={<TermsPage />} />
                 <Route path="/politica-de-privacidade" element={<PrivacyPage />} />
+                <Route path="/contrato" element={<ContractPage />} />
                 {/* Cadastro no pré-lançamento em eventos (o QR Code do estande). */}
                 <Route path="/evento" element={<EventSignupPage />} />
                 <Route path="/evento/:evento" element={<EventSignupPage />} />
@@ -81,6 +85,8 @@ export function App() {
                 <Route path="/parceiro/:token" element={<PartnerPage />} />
                 {/* Modo roubo: a posição ao vivo pelo link (sem login), para a polícia. */}
                 <Route path="/localizar/:token" element={<PublicTheftPage />} />
+                {/* O link de pagamento dos lembretes de fatura (sem login). */}
+                <Route path="/pagar/:token" element={<PublicPayPage />} />
 
                 <Route element={<RequireAuth />}>
                   {/* O relatório para o boletim de ocorrência: sem o menu (vai para a impressora). */}
@@ -134,7 +140,12 @@ function RequireAuth() {
 
   if (loading) return <Spinner label="Carregando" />;
   if (!user) return <Navigate to="/login" replace />;
-  return <Outlet />;
+  // Cliente sem o aceite do contrato vê o contrato antes de tudo.
+  return (
+    <ContractGate>
+      <Outlet />
+    </ContractGate>
+  );
 }
 
 /**

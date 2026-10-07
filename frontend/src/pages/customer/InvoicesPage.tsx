@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { meApi } from '@/api/resources';
@@ -30,6 +31,16 @@ export function InvoicesPage() {
   const next = data?.nextInvoice ?? null;
   const onlinePayment = data?.onlinePayment ?? false;
 
+  // Pelo lembrete no celular (?pagar=<fatura>): já abre o Pix dela.
+  const [params, setParams] = useSearchParams();
+  const toPay = params.get('pagar');
+  useEffect(() => {
+    if (!toPay || !onlinePayment || !invoices.data) return;
+    const invoice = invoices.data.find((i) => i.id === toPay && i.status === 'OPEN');
+    if (invoice) setPaying(invoice);
+    setParams({}, { replace: true });
+  }, [toPay, onlinePayment, invoices.data, setParams]);
+
   // Pago: atualiza faturas, conta (suspensão) e veículos, que voltam a abrir.
   const onPaid = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['me'] });
@@ -46,7 +57,9 @@ export function InvoicesPage() {
             <p className={styles.description}>
               {onlinePayment
                 ? 'As faturas saem alguns dias antes do vencimento. Pague com Pix aqui mesmo: a confirmação é automática e leva só alguns segundos.'
-                : 'As faturas saem alguns dias antes do vencimento. Pague pelo link ou pelo Pix copia-e-cola; a baixa é feita pela nossa equipe assim que o pagamento é confirmado.'}
+                : 'As faturas saem alguns dias antes do vencimento. Pague pelo link ou pelo Pix copia-e-cola; a baixa é feita pela nossa equipe assim que o pagamento é confirmado.'}{' '}
+              {/* Link comum: no app (em /app), a página do contrato fica fora das rotas dele. */}
+              <a href="/contrato">Ver o contrato de prestação de serviços</a>.
             </p>
           </div>
         </header>
@@ -150,7 +163,7 @@ export function InvoicesPage() {
             <EmptyState
               icon="📄"
               title="Nenhuma assinatura"
-              description="Fale com a central para contratar o rastreamento do seu veículo."
+              description="Contrate o rastreamento do seu veículo em Meus veículos, no botão Novo veículo."
             />
           ) : (
             <div className={styles.tableWrap}>

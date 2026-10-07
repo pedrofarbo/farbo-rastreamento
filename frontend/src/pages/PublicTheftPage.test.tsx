@@ -29,7 +29,7 @@ import { PublicTheftPage } from './PublicTheftPage';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const flush = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
-const text = () => (document.body.textContent ?? '').replace(/ /g, ' ');
+const text = () => (document.body.textContent ?? '').replace(/\u00a0/g, ' ');
 
 async function render() {
   const host = document.createElement('div');

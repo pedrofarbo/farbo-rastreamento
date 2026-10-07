@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 
 import { Footer } from '@/components/landing/Footer';
 import { WHATSAPP_NUMBER, whatsappUrl } from '@/config/contact';
-import { COMPANY, LEGAL_UPDATED_AT, PRIVACY_PATH, TERMS_PATH } from '@/config/legal';
+import { COMPANY, CONTRACT_PATH, LEGAL_UPDATED_AT, PRIVACY_PATH, TERMS_PATH } from '@/config/legal';
 
 import styles from './Legal.module.css';
 
@@ -14,18 +14,21 @@ export interface LegalSection {
 }
 
 /**
- * A moldura dos documentos (Termos de Uso, Política de Privacidade): o topo
- * com a volta para o site, o título, a data da versão, o sumário com links
- * para cada seção e o rodapé da landing.
+ * A moldura dos documentos (Termos de Uso, Política de Privacidade e o
+ * Contrato): o topo com a volta para o site, o título, a data da versão, o
+ * sumário com links para cada seção e o rodapé da landing.
  */
 export function LegalLayout({
   title,
   intro,
   sections,
+  updated = `Última atualização: ${LEGAL_UPDATED_AT}`,
 }: {
   title: string;
   intro: React.ReactNode;
   sections: LegalSection[];
+  /** A linha da versão (o contrato tem a dele). */
+  updated?: string;
 }) {
   useEffect(() => {
     const previous = document.title;
@@ -50,6 +53,9 @@ export function LegalLayout({
             <Link to={PRIVACY_PATH} className={title === 'Política de Privacidade' ? styles.switchActive : undefined}>
               Privacidade
             </Link>
+            <Link to={CONTRACT_PATH} className={title.startsWith('Contrato') ? styles.switchActive : undefined}>
+              Contrato
+            </Link>
           </nav>
         </div>
       </header>
@@ -58,7 +64,7 @@ export function LegalLayout({
         <article className={styles.doc}>
           <p className={styles.kicker}>{COMPANY.name}</p>
           <h1 className={styles.title}>{title}</h1>
-          <p className={styles.updated}>Última atualização: {LEGAL_UPDATED_AT}</p>
+          <p className={styles.updated}>{updated}</p>
           <div className={styles.intro}>{intro}</div>
 
           <nav className={styles.toc} aria-label="Sumário">

@@ -85,6 +85,9 @@ export function onUnauthorized(listener: Listener): () => void {
   return () => unauthorizedListeners.delete(listener);
 }
 
+/** A API pediu o aceite do contrato (o portão do contrato escuta). */
+export const CONTRACT_REQUIRED_EVENT = 'farbo:contract-required';
+
 function notifyUnauthorized(): void {
   unauthorizedListeners.forEach((listener) => listener());
 }
@@ -167,6 +170,10 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       typeof payload === 'object' && payload !== null && 'error' in payload
         ? String((payload as { error: unknown }).error)
         : `falha na requisição (${response.status})`;
+    // O cliente ainda não aceitou o contrato: a tela do contrato aparece.
+    if ((payload as { code?: string } | undefined)?.code === 'CONTRACT_REQUIRED' && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(CONTRACT_REQUIRED_EVENT));
+    }
     throw new ApiError(response.status, message, payload);
   }
 

@@ -10,6 +10,9 @@ import type { ShippingQuoteView } from '@/types';
 
 const ordered: unknown[] = [];
 let quote: ShippingQuoteView;
+// O pedido recusa uma vez por falta do aceite do contrato (quem só acompanhava).
+let needsContract = false;
+const accepted: unknown[] = [];
 vi.mock('@/api/resources', () => ({
   catalogApi: {
     get: async () => ({
@@ -23,12 +26,27 @@ vi.mock('@/api/resources', () => ({
     }),
     shippingQuote: async () => quote,
     orderTracker: async (input: unknown) => {
+      if (needsContract) {
+        const { ApiError } = await import('@/api/client');
+        throw new ApiError(403, 'aceite o contrato de prestação de serviços para continuar', { code: 'CONTRACT_REQUIRED' });
+      }
       ordered.push(input);
       return { vehicle: {}, subscription: {}, setupInvoice: null, shipping: null };
     },
     saveAddress: async () => ({}),
   },
   customersApi: {},
+  contractApi: {
+    mine: async () => ({
+      contract: { version: '1', effectiveDate: '7 de outubro de 2026', title: 'Contrato de Prestação de Serviços de Rastreamento Veicular', intro: [], sections: [], sha256: 'x' },
+      required: true, accepted: null, name: 'Bia', taxId: '',
+    }),
+    accept: async (version: string, document: string) => {
+      accepted.push([version, document]);
+      needsContract = false;
+      return { contract: {}, required: false, accepted: {}, name: 'Bia', taxId: document };
+    },
+  },
   installersApi: { publicList: async () => [] },
   publicApi: { installers: async () => [] },
 }));
@@ -76,6 +94,8 @@ async function openWizard() {
 afterEach(() => {
   document.body.innerHTML = '';
   ordered.length = 0;
+  accepted.length = 0;
+  needsContract = false;
 });
 
 describe('frete no pedido', () => {
@@ -149,6 +169,27 @@ describe('frete no pedido', () => {
     expect(button(/Confirmar pedido · R\$\s150,00/).disabled).toBe(false);
     await act(async () => button(/Confirmar pedido/).click());
     await flush();
+    expect(ordered).toEqual([{ vehicle: expect.objectContaining({ name: 'Moto do trabalho' }), launchPromo: false }]);
+  });
+
+  it('sem o aceite do contrato, o contrato abre e o pedido segue depois', async () => {
+    quote = { enabled: false, zipCode: '', problem: '', quotes: [], arrange: false };
+    needsContract = true;
+    await openWizard();
+    await act(async () => button(/Confirmar pedido/).click());
+    await flush();
+    await flush();
+    expect(text()).toContain('Os pontos principais');
+    expect(ordered).toEqual([]);
+    const cpf = document.querySelector('input[inputmode="numeric"]') as HTMLInputElement;
+    await act(async () => type(cpf, '52998224725'));
+    expect(cpf.value).toBe('529.982.247-25');
+    const agree = document.querySelector('input[type=checkbox]') as HTMLInputElement;
+    await act(async () => agree.click());
+    await act(async () => button('Aceitar e continuar').click());
+    await flush();
+    await flush();
+    expect(accepted).toEqual([['1', '529.982.247-25']]);
     expect(ordered).toEqual([{ vehicle: expect.objectContaining({ name: 'Moto do trabalho' }), launchPromo: false }]);
   });
 });

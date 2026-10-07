@@ -37,6 +37,9 @@ func NewService(repo *Repository, cfg config.Billing, log *slog.Logger) (*Servic
 	return &Service{repo: repo, cfg: cfg, loc: loc, log: log.With("component", "billing"), now: time.Now}, nil
 }
 
+// SetClock troca o relógio (testes).
+func (s *Service) SetClock(now func() time.Time) { s.now = now }
+
 // Today é a data de hoje no fuso de cobrança.
 func (s *Service) Today() Date { return DateIn(s.now(), s.loc) }
 

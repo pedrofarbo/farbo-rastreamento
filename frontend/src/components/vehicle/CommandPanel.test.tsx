@@ -68,7 +68,8 @@ describe('CommandPanel com veículo compartilhado', () => {
   it('bloqueado: o desbloqueio é com o dono', () => {
     const host = render(vehicle({ relayOn: true, shared: { shareId: 's1', ownerName: 'Ana', canBlock: true } }));
     expect(buttons(host)).toEqual(['Solicitar posição']);
-    expect(host.textContent).toContain('Desbloquear é com Ana ou com a central');
+    expect(host.textContent).toContain('Desbloquear é só com Ana.');
+    expect(host.textContent).not.toContain('central');
   });
 
   it('sem o bloqueio liberado: só acompanha', () => {

@@ -8,6 +8,7 @@ import { RealtimeProvider } from '@/hooks/useRealtime';
 import { InvoicesPage } from '@/pages/customer/InvoicesPage';
 import { MyVehiclesPage } from '@/pages/customer/MyVehiclesPage';
 import { TheftReportPage } from '@/pages/TheftReportPage';
+import { ContractGate } from '@/components/contract/ContractGate';
 import { AuthProvider, useAuth } from '@/stores/AuthContext';
 
 import { AppLayout } from './AppLayout';
@@ -50,7 +51,12 @@ function RequireCustomer() {
       </div>
     );
   }
-  return <AppLayout />;
+  // Sem o aceite do contrato, o contrato vem antes de tudo.
+  return (
+    <ContractGate>
+      <AppLayout />
+    </ContractGate>
+  );
 }
 
 export function AppRoot() {

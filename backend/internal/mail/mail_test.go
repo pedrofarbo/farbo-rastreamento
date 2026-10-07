@@ -257,7 +257,7 @@ func TestAccountMailerPasswordReset(t *testing.T) {
 	if strings.Contains(msg.HTML, "<b>Silva</b>") || !strings.Contains(msg.HTML, "Olá, Maria") {
 		t.Errorf("nome não escapado ou saudação ausente no HTML")
 	}
-	if !strings.Contains(msg.HTML, "https://painel.farbo.test/assets/logo-header.png") {
+	if !strings.Contains(msg.HTML, "https://painel.farbo.test/assets/email-header.png") {
 		t.Error("HTML sem a logo")
 	}
 }

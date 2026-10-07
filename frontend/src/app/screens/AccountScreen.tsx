@@ -83,6 +83,16 @@ export function AccountScreen() {
               Trocar a senha
             </a>
           </li>
+          <li className={styles.listItem}>
+            <a className={styles.link} href="/contrato">
+              Contrato de prestação de serviços
+            </a>
+          </li>
+          <li className={styles.listItem}>
+            <a className={styles.link} href="/termos-de-uso">
+              Termos de Uso e Privacidade
+            </a>
+          </li>
         </ul>
       </section>
 

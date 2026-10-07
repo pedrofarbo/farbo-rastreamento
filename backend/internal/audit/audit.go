@@ -65,6 +65,8 @@ const (
 	ActionInvoiceUpdated       = "INVOICE_UPDATED"
 	ActionInvoicePaid          = "INVOICE_PAID"
 	ActionInvoiceCanceled      = "INVOICE_CANCELED"
+	ActionInvoiceReminded      = "INVOICE_REMINDED"
+	ActionContractAccepted     = "CONTRACT_ACCEPTED"
 	ActionTrackerOrdered       = "TRACKER_ORDERED"
 	ActionInstallerChanged     = "INSTALLER_CHANGED"
 	ActionFinanceChanged       = "FINANCE_CHANGED"

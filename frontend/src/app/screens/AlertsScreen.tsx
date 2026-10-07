@@ -76,7 +76,7 @@ function PushCard() {
   if (!status.data || !checked) {
     body = <Spinner label="Verificando notificações" />;
   } else if (!status.data.enabled) {
-    body = <p className={styles.muted}>As notificações no celular estão desligadas pela central.</p>;
+    body = <p className={styles.muted}>As notificações no celular estão indisponíveis no momento.</p>;
   } else if (support === 'ios-needs-install') {
     body = (
       <p className={styles.muted}>
