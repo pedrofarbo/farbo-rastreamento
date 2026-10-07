@@ -13,6 +13,7 @@ import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
+import { adjustmentNoticeVisible } from '@/services/adjustment';
 import { formatDateOnly, formatMoney } from '@/services/format';
 import type { Invoice } from '@/types';
 
@@ -86,6 +87,24 @@ export function InvoicesPage() {
             </span>
           </div>
         ) : null}
+
+        {(() => {
+          // O reajuste anual, só nos 30 dias antes de valer (junto com o e-mail).
+          const adjusted = activeSubscriptions.filter((s) => adjustmentNoticeVisible(s));
+          if (adjusted.length === 0) return null;
+          return (
+            <div className={`${billing.banner} ${billing.bannerAccent}`} role="status">
+              <span>
+                <strong>Reajuste anual pelo IPCA.</strong> A partir das faturas que vencem em{' '}
+                {formatDateOnly(adjusted[0].nextPriceFrom)},{' '}
+                {adjusted.length === 1
+                  ? `a mensalidade passa de ${formatMoney(adjusted[0].priceCents)} para ${formatMoney(adjusted[0].nextPriceCents)}.`
+                  : 'as mensalidades mudam: os valores novos estão em Minhas assinaturas.'}{' '}
+                Como prevê o <a href="/contrato">contrato</a> (cláusula 5).
+              </span>
+            </div>
+          );
+        })()}
 
         <div className={billing.tiles}>
           <div className={`${billing.tile} ${data && data.overdueInvoices > 0 ? billing.tileDanger : ''}`}>

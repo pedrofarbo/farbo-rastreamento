@@ -230,14 +230,13 @@ func (s *Server) handleBiometricLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	userID, err := s.StepUp.VerifyLogin(r.Context(), req)
 	if err == nil {
-		var tokens *auth.Tokens
-		tokens, err = s.Auth.LoginVerified(r.Context(), userID, r.UserAgent())
+		var user *auth.User
+		if user, err = s.Auth.GetUser(r.Context(), userID); err == nil && !user.Active {
+			err = auth.ErrInactiveUser
+		}
 		if err == nil {
-			s.Audit.Record(r.Context(), &audit.Entry{
-				UserID: &tokens.User.ID, Action: audit.ActionLogin, Result: "OK", IPAddress: clientIP(r),
-				Metadata: map[string]any{"method": stepup.MethodBiometric},
-			})
-			writeJSON(w, http.StatusOK, tokens)
+			// A biometria já são dois fatores; a equipe sem o app ativa aqui.
+			s.openSession(w, r, user, "", true)
 			return
 		}
 	}

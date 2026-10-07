@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 
+import { TwoFactorLogin } from '@/components/auth/TwoFactorLogin';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/Field';
 import { PRIVACY_PATH, TERMS_PATH } from '@/config/legal';
@@ -16,7 +17,7 @@ import {
   enrollBiometric,
 } from '@/services/stepUp';
 import { useAuth } from '@/stores/AuthContext';
-import type { User } from '@/types';
+import type { TwoFactorChallenge, User } from '@/types';
 
 import { FaceIdIcon, FingerprintIcon } from '../icons';
 import styles from './Screen.module.css';
@@ -27,7 +28,7 @@ import styles from './Screen.module.css';
  * "Entrar com o Face ID"; e-mail e senha continuam como alternativa.
  */
 export function LoginScreen() {
-  const { user, login, loginWithBiometric } = useAuth();
+  const { user, login, completeLogin, loginWithBiometric } = useAuth();
   const navigate = useNavigate();
   const biometric = biometricLabels();
   const Icon = biometric.name === 'Face ID' ? FaceIdIcon : FingerprintIcon;
@@ -43,6 +44,8 @@ export function LoginScreen() {
   // a biometria.
   const [holding, setHolding] = useState(false);
   const [offer, setOffer] = useState<User | null>(null);
+  // Depois da senha: o segundo fator (ou, para a equipe, a ativação).
+  const [challenge, setChallenge] = useState<TwoFactorChallenge | null>(null);
   const typedPassword = useRef('');
 
   useEffect(() => {
@@ -59,16 +62,14 @@ export function LoginScreen() {
     setBusy(true);
     setHolding(true);
     try {
-      const who = await login(email.trim(), password);
+      const outcome = await login(email.trim(), password);
       typedPassword.current = password;
       setPassword('');
-      // Pergunta na hora (não pelo estado): quem entra rápido, com o
-      // preenchimento automático, chega aqui antes da checagem inicial.
-      if (!deviceCredential(who.id) && !biometricOfferDismissed(who.id) && (await biometricAvailable())) {
-        setOffer(who);
-      } else {
-        goToMap();
+      if (outcome.challenge) {
+        setChallenge(outcome.challenge);
+        return;
       }
+      await afterLogin(outcome.user);
     } catch (err) {
       setHolding(false);
       setError(err instanceof Error ? err.message : 'Não foi possível entrar.');
@@ -77,11 +78,28 @@ export function LoginScreen() {
     }
   };
 
+  // Entrou: oferece a biometria (uma vez) ou vai para o mapa. Pergunta na
+  // hora (não pelo estado): quem entra rápido, com o preenchimento
+  // automático, chega aqui antes da checagem inicial.
+  const afterLogin = async (who: User) => {
+    if (!deviceCredential(who.id) && !biometricOfferDismissed(who.id) && (await biometricAvailable())) {
+      setOffer(who);
+    } else {
+      goToMap();
+    }
+  };
+
   const enterWithBiometric = async () => {
     setError('');
     setBusy(true);
     try {
-      await loginWithBiometric();
+      const pending = await loginWithBiometric();
+      if (pending) {
+        setEmail(account?.email ?? '');
+        setHolding(true);
+        setChallenge(pending);
+        return;
+      }
       goToMap();
     } catch (err) {
       if (err instanceof BiometricError && err.reason === 'not-enrolled') {
@@ -119,6 +137,31 @@ export function LoginScreen() {
     typedPassword.current = '';
     goToMap();
   };
+
+  // O segundo fator, depois da senha.
+  if (challenge) {
+    return (
+      <div className={styles.login}>
+        <img src="/assets/logo-header.png" alt="Farbo Rastreadores" className={styles.loginLogo} />
+        <TwoFactorLogin
+          challenge={challenge}
+          trustByDefault
+          onDone={(result) => {
+            setChallenge(null);
+            const who = completeLogin(result, email.trim());
+            void afterLogin(who);
+          }}
+          onCancel={(message) => {
+            setChallenge(null);
+            setHolding(false);
+            typedPassword.current = '';
+            setUseForm(true);
+            setError(message ?? '');
+          }}
+        />
+      </div>
+    );
+  }
 
   // Logo depois de entrar com a senha: oferecer a biometria.
   if (offer) {

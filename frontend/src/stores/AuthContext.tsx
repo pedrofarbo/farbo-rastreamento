@@ -4,15 +4,22 @@ import type { ReactNode } from 'react';
 import { authApi } from '@/api/resources';
 import { ApiError, onUnauthorized, tokens } from '@/api/client';
 import { biometricLogin } from '@/services/stepUp';
-import type { User } from '@/types';
+import { rememberTrustedDevice, trustedDeviceFor } from '@/services/trustedDevice';
+import type { AuthTokens, LoginResponse, TwoFactorChallenge, User } from '@/types';
+
+/** O fim do login com a senha: quem entrou, ou o segundo fator que falta. */
+export type LoginOutcome = { user: User; challenge?: undefined } | { user?: undefined; challenge: TwoFactorChallenge };
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
-  /** Entra com e-mail e senha; devolve quem entrou. */
-  login: (email: string, password: string) => Promise<User>;
-  /** Entra com a biometria deste aparelho (Face ID, digital). */
-  loginWithBiometric: () => Promise<void>;
+  /** Entra com e-mail e senha: quem entrou, ou o segundo fator que falta. */
+  login: (email: string, password: string) => Promise<LoginOutcome>;
+  /** Conclui o login depois do segundo fator (guarda o aparelho confiável). */
+  completeLogin: (result: LoginResponse, email: string) => User;
+  /** Entra com a biometria deste aparelho (Face ID, digital); a equipe sem a
+   * verificação em duas etapas recebe a ativação. */
+  loginWithBiometric: () => Promise<TwoFactorChallenge | null>;
   logout: () => Promise<void>;
   /** Troca os dados de quem está conectado (depois de salvar Meus dados). */
   updateUser: (user: User) => void;
@@ -98,20 +105,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const login = useCallback(async (email: string, password: string) => {
-    const result = await authApi.login(email, password);
-    tokens.save(result);
+  const completeLogin = useCallback((result: LoginResponse, email: string) => {
+    if (!result.accessToken || !result.refreshToken || !result.user) throw new Error('Não foi possível entrar.');
+    if (result.deviceToken) rememberTrustedDevice(email, result.deviceToken);
+    tokens.save(result as AuthTokens);
     rememberUser(result.user);
     setUser(result.user);
     return result.user;
   }, []);
 
+  const login = useCallback(
+    async (email: string, password: string): Promise<LoginOutcome> => {
+      const result = await authApi.login(email, password, trustedDeviceFor(email));
+      if (result.twoFactor) return { challenge: result.twoFactor };
+      return { user: completeLogin(result, email) };
+    },
+    [completeLogin],
+  );
+
   const loginWithBiometric = useCallback(async () => {
     const result = await biometricLogin();
-    tokens.save(result);
-    rememberUser(result.user);
-    setUser(result.user);
-  }, []);
+    if (result.twoFactor) return result.twoFactor;
+    completeLogin(result, result.user?.email ?? '');
+    return null;
+  }, [completeLogin]);
 
   const logout = useCallback(async () => {
     const refreshToken = tokens.refreshToken;
@@ -137,6 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       login,
+      completeLogin,
       loginWithBiometric,
       logout,
       updateUser,
@@ -149,7 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isCustomer: user?.role === 'customer',
       isStaff: user !== null && user.role !== 'customer',
     }),
-    [user, loading, login, loginWithBiometric, logout, updateUser],
+    [user, loading, login, completeLogin, loginWithBiometric, logout, updateUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

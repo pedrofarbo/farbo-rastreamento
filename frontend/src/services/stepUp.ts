@@ -1,5 +1,5 @@
 import { api, ApiError, request } from '@/api/client';
-import type { AuthTokens } from '@/types';
+import type { LoginResponse } from '@/types';
 
 /**
  * Confirmação extra antes de ações sensíveis (desligar o motor): a biometria
@@ -236,7 +236,7 @@ export async function removeBiometric(userId: string, device: BiometricDevice): 
 // --- Entrar com a biometria -----------------------------------------------------
 
 /** Entra com a biometria deste aparelho (devolve a sessão, como o login). */
-export async function biometricLogin(): Promise<AuthTokens> {
+export async function biometricLogin(): Promise<LoginResponse> {
   const account = biometricLoginAccount();
   if (!account) throw new BiometricError('not-enrolled');
 
@@ -275,7 +275,7 @@ export async function biometricLogin(): Promise<AuthTokens> {
   if (!assertion) throw new BiometricError('failed');
   const response = assertion.response as AuthenticatorAssertionResponse;
   try {
-    return await request<AuthTokens>('/api/auth/biometric', {
+    return await request<LoginResponse>('/api/auth/biometric', {
       method: 'POST',
       anonymous: true,
       body: {

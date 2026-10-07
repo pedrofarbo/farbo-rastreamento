@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 
-import { customersApi, devicesApi, vehicleInputFrom, vehiclesApi } from '@/api/resources';
+import { customersApi, devicesApi, twoFactorApi, vehicleInputFrom, vehiclesApi } from '@/api/resources';
 import type { VehicleInput } from '@/api/resources';
 import { AddressModal } from '@/components/address/AddressModal';
 import billing from '@/components/billing/Billing.module.css';
@@ -183,6 +183,11 @@ export function CustomerDetailsPage() {
                   }) · IP ${data.contract.ip || '—'}`
                 : 'Contrato ainda não aceito: o cliente aceita (e informa o CPF) no primeiro acesso.'}
             </p>
+            <p className={styles.description}>
+              {data.twoFactor?.enabled
+                ? `Verificação em duas etapas ativa (${data.twoFactor.method === 'email' ? 'código por e-mail' : 'app autenticador'}).`
+                : 'Verificação em duas etapas desativada (o cliente ativa em Minha conta → Segurança).'}
+            </p>
           </div>
           <div className={styles.actions}>
             <Button
@@ -198,6 +203,23 @@ export function CustomerDetailsPage() {
             >
               Reenviar convite
             </Button>
+            {data.twoFactor?.enabled && (
+              <Button
+                variant="secondary"
+                title="Para quem perdeu o celular e os códigos de recuperação."
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Redefinir a verificação em duas etapas de ${data.name}? O app ou o e-mail, os códigos de recuperação e os aparelhos confiáveis deixam de valer; o cliente entra só com a senha e pode ativar de novo.`,
+                    )
+                  ) {
+                    run('Verificação em duas etapas redefinida', () => twoFactorApi.resetCustomer(id));
+                  }
+                }}
+              >
+                Redefinir duas etapas
+              </Button>
+            )}
             <Button
               variant={data.active ? 'danger' : 'primary'}
               onClick={() =>
@@ -412,7 +434,7 @@ export function CustomerDetailsPage() {
                           {active && sub ? (
                             <>
                               <div className={billing.subscriptionLine}>
-                                {sub.planName} · <MonthlyPrice sub={sub} />
+                                {sub.planName} · <MonthlyPrice sub={sub} staff />
                               </div>
                               <div className={billing.muted}>
                                 dia {sub.dueDay} · próxima fatura {formatDateOnly(sub.nextDueDate)}
@@ -504,7 +526,7 @@ export function CustomerDetailsPage() {
                       <td>—</td>
                       <td>
                         <div className={billing.subscriptionLine}>
-                          {sub.planName} · <MonthlyPrice sub={sub} />
+                          {sub.planName} · <MonthlyPrice sub={sub} staff />
                         </div>
                         <div className={billing.muted}>
                           dia {sub.dueDay} · próxima fatura {formatDateOnly(sub.nextDueDate)}

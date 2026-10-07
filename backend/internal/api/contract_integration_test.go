@@ -20,8 +20,16 @@ import (
 )
 
 type recordingContractMailer struct {
-	mu   sync.Mutex
-	sent []mail.ContractCopy
+	mu      sync.Mutex
+	sent    []mail.ContractCopy
+	updates []string
+}
+
+func (m *recordingContractMailer) ContractUpdated(_ context.Context, to, _ string, u mail.ContractUpdate) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.updates = append(m.updates, to+":"+u.Version)
+	return nil
 }
 
 func (m *recordingContractMailer) ContractAccepted(_ context.Context, _, _ string, c mail.ContractCopy) error {

@@ -2,12 +2,14 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 
+import { TwoFactorLogin } from '@/components/auth/TwoFactorLogin';
 import { AuthLayout, authStyles as styles } from '@/components/layout/AuthLayout';
 import { PRIVACY_PATH, TERMS_PATH } from '@/config/legal';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/Field';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAuth } from '@/stores/AuthContext';
+import type { TwoFactorChallenge } from '@/types';
 
 /** Estado de navegação que a tela de redefinição deixa ao mandar para cá. */
 export interface LoginLocationState {
@@ -15,7 +17,7 @@ export interface LoginLocationState {
 }
 
 export function LoginPage() {
-  const { user, loading, login } = useAuth();
+  const { user, loading, login, completeLogin } = useAuth();
   const location = useLocation();
   const passwordReset = (location.state as LoginLocationState | null)?.passwordReset === true;
 
@@ -23,6 +25,8 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Depois da senha: o segundo fator (ou a ativação, a equipe).
+  const [challenge, setChallenge] = useState<TwoFactorChallenge | null>(null);
 
   if (loading) {
     return <Spinner label="Verificando sessão" />;
@@ -36,13 +40,38 @@ export function LoginPage() {
     setError('');
     setSubmitting(true);
     try {
-      await login(email, password);
+      const outcome = await login(email, password);
+      if (outcome.challenge) {
+        setChallenge(outcome.challenge);
+        setPassword('');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'não foi possível entrar');
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (challenge) {
+    const setup = challenge.kind === 'setup';
+    return (
+      <AuthLayout
+        tag="Segurança da conta"
+        title={setup ? 'Proteja o seu acesso' : 'Confirme que é você'}
+        subtitle={setup ? undefined : 'Falta só o segundo passo.'}
+      >
+        <TwoFactorLogin
+          challenge={challenge}
+          showTitle={false}
+          onDone={(result) => completeLogin(result, email)}
+          onCancel={(message) => {
+            setChallenge(null);
+            setError(message ?? '');
+          }}
+        />
+      </AuthLayout>
+    );
+  }
 
   return (
     <AuthLayout

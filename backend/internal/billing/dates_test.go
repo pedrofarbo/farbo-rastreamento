@@ -141,11 +141,22 @@ func TestPriceOnLaunchPromo(t *testing.T) {
 		"2028-01-10": 6990,
 	}
 	for due, want := range cases {
-		if got := priceOn(6990, &promo, &until, day(due)); got != want {
+		if got, _ := priceOn(6990, nil, nil, &promo, &until, day(due)); got != want {
 			t.Errorf("vencimento %s: %d, quer %d", due, got, want)
 		}
 	}
-	if got := priceOn(6990, nil, nil, day("2026-10-10")); got != 6990 {
-		t.Errorf("sem promoção: %d", got)
+	if got, promotional := priceOn(6990, nil, nil, nil, nil, day("2026-10-10")); got != 6990 || promotional {
+		t.Errorf("sem promoção: %d %v", got, promotional)
+	}
+	// O reajuste agendado vale a partir da data dele; a promoção, enquanto
+	// vale, continua na frente.
+	next, from := 7286, day("2027-08-01")
+	for due, want := range map[string]int{"2027-07-31": 6990, "2027-08-01": 7286, "2027-09-10": 7286} {
+		if got, _ := priceOn(6990, &next, &from, nil, nil, day(due)); got != want {
+			t.Errorf("reajuste, vencimento %s: %d, quer %d", due, got, want)
+		}
+	}
+	if got, promotional := priceOn(6990, &next, &from, &promo, &until, day("2027-09-10")); got != 2990 || !promotional {
+		t.Errorf("promoção com reajuste agendado: %d %v", got, promotional)
 	}
 }

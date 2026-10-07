@@ -2,6 +2,12 @@ import type { TeamRole } from '@/services/roles';
 
 import { api, download, fetchBlob, request } from './client';
 import type {
+  PriceAdjustmentOverview,
+  LoginResponse,
+  TeamMember,
+  TwoFactorEnrollment,
+  TwoFactorMethod,
+  TwoFactorStatus,
   Affiliate,
   AffiliateClosingLine,
   AffiliateInput,
@@ -41,7 +47,6 @@ import type {
   AlertSettingsInput,
   PushStatus,
   AuditEntry,
-  AuthTokens,
   ConnectionInfo,
   Catalog,
   CustomerAccount,
@@ -104,10 +109,10 @@ export const authApi = {
   // Login e logout são rotas públicas: um 401 no login é senha errada, não
   // sessão vencida. Sem anonymous, o cliente tentaria renovar a sessão e
   // trocaria "e-mail ou senha inválidos" por "sessão expirada".
-  login: (email: string, password: string) =>
-    request<AuthTokens>('/api/auth/login', {
+  login: (email: string, password: string, deviceToken = '') =>
+    request<LoginResponse>('/api/auth/login', {
       method: 'POST',
-      body: { email, password },
+      body: { email, password, deviceToken },
       anonymous: true,
     }),
   logout: (refreshToken: string) =>
@@ -154,9 +159,53 @@ export interface TeamUserUpdate {
   active: boolean;
 }
 
+/** O reajuste anual pelo IPCA (admin): o próximo, os anteriores e o veto. */
+export const priceAdjustmentsApi = {
+  overview: () => api.get<PriceAdjustmentOverview>('/api/price-adjustments'),
+  cancel: (year: number) => api.post<void>(`/api/price-adjustments/${year}/cancel`),
+};
+
+/**
+ * Verificação em duas etapas. O login (sem sessão ainda): o código, o
+ * reenvio e a ativação obrigatória da equipe. A conta (Segurança): ativar,
+ * trocar de método, códigos de recuperação, aparelhos e desativar.
+ */
+export const twoFactorApi = {
+  verify: (challenge: string, code: string, trustDevice: boolean) =>
+    request<LoginResponse>('/api/auth/2fa/verify', {
+      method: 'POST', body: { challenge, code, trustDevice }, anonymous: true,
+    }),
+  resend: (challenge: string) =>
+    request<void>('/api/auth/2fa/resend', { method: 'POST', body: { challenge }, anonymous: true }),
+  setupEmail: (challenge: string, code: string) =>
+    request<TwoFactorEnrollment>('/api/auth/2fa/setup/email', {
+      method: 'POST', body: { challenge, code }, anonymous: true,
+    }),
+  setupConfirm: (challenge: string, code: string, trustDevice: boolean) =>
+    request<LoginResponse>('/api/auth/2fa/setup/confirm', {
+      method: 'POST', body: { challenge, code, trustDevice }, anonymous: true,
+    }),
+
+  status: () => api.get<TwoFactorStatus>('/api/security/two-factor'),
+  start: (method: TwoFactorMethod, password: string) =>
+    api.post<TwoFactorEnrollment>('/api/security/two-factor/start', { method, password }),
+  confirm: (code: string) =>
+    api.post<{ recoveryCodes: string[]; method: TwoFactorMethod }>('/api/security/two-factor/confirm', { code }),
+  /** O código por e-mail para confirmar uma mudança (de quem usa o e-mail). */
+  sendCode: () => api.post<void>('/api/security/two-factor/code'),
+  disable: (password: string, code: string) => api.post<void>('/api/security/two-factor/disable', { password, code }),
+  recoveryCodes: (password: string, code: string) =>
+    api.post<{ recoveryCodes: string[] }>('/api/security/two-factor/recovery-codes', { password, code }),
+  /** Sem id: todos os aparelhos. */
+  revokeDevice: (id?: string) => api.delete<void>(`/api/security/two-factor/devices${id ? `/${id}` : ''}`),
+  /** Admin: redefine a verificação de alguém da equipe ou de um cliente. */
+  resetUser: (id: string) => api.post<void>(`/api/users/${id}/two-factor/reset`),
+  resetCustomer: (id: string) => api.post<void>(`/api/customers/${id}/two-factor/reset`),
+};
+
 export const usersApi = {
   /** Só a equipe: os clientes ficam em Clientes. */
-  list: () => api.get<User[]>('/api/users'),
+  list: () => api.get<TeamMember[]>('/api/users'),
   create: (input: TeamUserInput) => api.post<User>('/api/users', input),
   update: (id: string, input: TeamUserUpdate) => api.patch<User>(`/api/users/${id}`, input),
   /** Reenvia o link para criar a senha (o anterior deixa de valer). */

@@ -43,6 +43,8 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	// DeviceToken: o aparelho confiável (dispensa o código por 30 dias).
+	DeviceToken string `json:"deviceToken"`
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +54,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokens, err := s.Auth.Login(r.Context(), req.Email, req.Password, r.UserAgent())
+	user, err := s.Auth.Authenticate(r.Context(), req.Email, req.Password)
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) || errors.Is(err, auth.ErrInactiveUser) {
 			s.Audit.Record(r.Context(), &audit.Entry{
@@ -66,12 +68,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		handleStoreError(w, err, "usuário não encontrado")
 		return
 	}
-
-	s.Audit.Record(r.Context(), &audit.Entry{
-		UserID: &tokens.User.ID, Action: audit.ActionLogin,
-		Result: "OK", IPAddress: clientIP(r),
-	})
-	writeJSON(w, http.StatusOK, tokens)
+	// A senha confere: abre a sessão ou pede o segundo fator.
+	s.openSession(w, r, user, req.DeviceToken, false)
 }
 
 type refreshRequest struct {
@@ -184,6 +182,12 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 	s.Audit.Record(r.Context(), &audit.Entry{
 		UserID: &user.ID, Action: audit.ActionPasswordReset, Result: "OK", IPAddress: clientIP(r),
 	})
+	// Senha nova: os aparelhos confiáveis voltam a pedir o código.
+	if s.TwoFactor != nil {
+		if err := s.TwoFactor.ForgetDevices(r.Context(), user.ID); err != nil {
+			s.Log.Warn("aparelhos confiáveis não esquecidos", "user", user.ID, "err", err)
+		}
+	}
 	writeJSON(w, http.StatusNoContent, nil)
 }
 

@@ -48,6 +48,65 @@ export interface AuthTokens {
   user: User;
 }
 
+export type TwoFactorMethod = 'totp' | 'email';
+
+/** O login que passou pela senha e espera o segundo fator (ou a ativação, a equipe). */
+export interface TwoFactorChallenge {
+  challenge: string;
+  kind: 'verify' | 'setup';
+  method: TwoFactorMethod | '';
+  emailHint: string;
+  expiresAt: string;
+}
+
+/** A resposta do login: a sessão aberta, ou o segundo fator que falta. */
+export interface LoginResponse extends Partial<AuthTokens> {
+  twoFactor?: TwoFactorChallenge;
+  /** O aparelho confiável (quando pedido): dispensa o código por 30 dias. */
+  deviceToken?: string;
+  /** Os códigos de recuperação (na ativação). */
+  recoveryCodes?: string[];
+}
+
+/** O que o app autenticador recebe para cadastrar a conta. */
+export interface TwoFactorEnrollment {
+  secret: string;
+  otpauthUrl: string;
+  /** O QR Code em SVG. */
+  qrCode: string;
+}
+
+export interface TrustedDevice {
+  id: string;
+  userAgent: string;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+}
+
+/** A verificação em duas etapas de quem está conectado. */
+export interface TwoFactorStatus {
+  enabled: boolean;
+  method: TwoFactorMethod | '';
+  required: boolean;
+  enabledAt: string | null;
+  methods: TwoFactorMethod[];
+  recoveryCodesLeft: number;
+  devices: TrustedDevice[];
+  emailHint: string;
+}
+
+/** O resumo da verificação (listas da equipe e ficha do cliente). */
+export interface TwoFactorBrief {
+  enabled: boolean;
+  method: TwoFactorMethod | '';
+}
+
+/** Alguém da equipe, com a verificação em duas etapas. */
+export interface TeamMember extends User {
+  twoFactor: TwoFactorBrief;
+}
+
 /**
  * Rastreador como a API devolve. As senhas (APN e de comando) são só de
  * escrita e nunca chegam aqui, nem para o admin: no lugar vêm os indicadores
@@ -421,8 +480,49 @@ export interface Subscription {
    */
   promoPriceCents: number | null;
   promoUntil: DateOnly | null;
+  /**
+   * Reajuste anual já avisado: as faturas que vencem a partir de
+   * nextPriceFrom saem por nextPriceCents. Nulos: sem mudança agendada.
+   */
+  nextPriceCents: number | null;
+  nextPriceFrom: DateOnly | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Uma mensalidade reajustada no ano. */
+export interface PriceAdjustmentItem {
+  subscriptionId: string;
+  customerId: string;
+  customerName: string;
+  vehicle: string;
+  plan: string;
+  oldPriceCents: number;
+  newPriceCents: number;
+  notified: boolean;
+}
+
+/** O reajuste anual pelo IPCA de um ano. */
+export interface PriceAdjustment {
+  year: number;
+  period: string;
+  rate: string;
+  rateMillionths: number;
+  effectiveFrom: DateOnly;
+  status: 'NOTIFIED' | 'APPLIED' | 'CANCELED' | 'NO_CHANGE';
+  subscriptions: number;
+  notifiedAt: string;
+  canceledAt: string | null;
+  cancelUntil: DateOnly;
+  canCancel: boolean;
+  monthlyDiffCents: number;
+  items: PriceAdjustmentItem[];
+}
+
+export interface PriceAdjustmentOverview {
+  enabled: boolean;
+  upcoming: { year: number; noticeDate: DateOnly; startDate: DateOnly; period: string } | null;
+  adjustments: PriceAdjustment[];
 }
 
 export interface Invoice {
@@ -652,6 +752,8 @@ export interface ShippingTopUp {
 }
 
 export interface CustomerDetail extends CustomerSummary {
+  /** A verificação em duas etapas do cliente. */
+  twoFactor: TwoFactorBrief;
   subscriptions: Subscription[];
   invoices: Invoice[];
   vehicles: VehicleView[];
@@ -697,6 +799,8 @@ export interface ContractDocument {
   sections: ContractSection[];
   /** O hash do texto: o aceite guarda qual texto foi aceito. */
   sha256: string;
+  /** O que mudou desde a versão anterior. */
+  changes: string;
 }
 
 /** O registro do aceite eletrônico. */
@@ -718,6 +822,8 @@ export interface ContractStatus {
   required: boolean;
   /** O aceite desta versão (nulo: ainda não aceitou). */
   accepted: ContractAcceptance | null;
+  /** O aceite de uma versão anterior (quem precisa aceitar de novo). */
+  previous: ContractAcceptance | null;
   name: string;
   /** CPF/CNPJ do cadastro (vazio se ainda não informado). */
   taxId: string;

@@ -52,22 +52,33 @@ type Subscription struct {
 	// PromoPriceCents vale para as faturas que vencem antes de PromoUntil
 	// (promoção de pré-lançamento); depois, PriceCents. Os dois nulos: sem
 	// promoção.
-	PromoPriceCents *int      `json:"promoPriceCents"`
-	PromoUntil      *Date     `json:"promoUntil"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
+	PromoPriceCents *int  `json:"promoPriceCents"`
+	PromoUntil      *Date `json:"promoUntil"`
+	// NextPriceCents vale para as faturas que vencem a partir de
+	// NextPriceFrom (o reajuste anual, já avisado); nulos sem mudança agendada.
+	NextPriceCents *int      `json:"nextPriceCents"`
+	NextPriceFrom  *Date     `json:"nextPriceFrom"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 // PriceOn é o valor da fatura que vence em due.
 func (s *Subscription) PriceOn(due Date) int {
-	return priceOn(s.PriceCents, s.PromoPriceCents, s.PromoUntil, due)
+	amount, _ := priceOn(s.PriceCents, s.NextPriceCents, s.NextPriceFrom, s.PromoPriceCents, s.PromoUntil, due)
+	return amount
 }
 
-func priceOn(regular int, promo *int, until *Date, due Date) int {
+// priceOn é o valor da fatura que vence em due: a promoção, enquanto vale;
+// senão o preço agendado (reajuste), a partir da data dele; senão o preço da
+// assinatura. promo diz se foi o promocional.
+func priceOn(regular int, next *int, from *Date, promo *int, until *Date, due Date) (amount int, promotional bool) {
 	if promo != nil && until != nil && due.Before(*until) {
-		return *promo
+		return *promo, true
 	}
-	return regular
+	if next != nil && from != nil && !due.Before(*from) {
+		return *next, false
+	}
+	return regular, false
 }
 
 type Invoice struct {
@@ -123,20 +134,24 @@ func NewRepository(db *database.DB) *Repository { return &Repository{db: db} }
 // ---------------------------------------------------------------------------
 
 const subscriptionColumns = `id, customer_id, plan_name, price_cents, due_day, next_due_date,
-	status, canceled_at, vehicle_id, delivery_address, promo_price_cents, promo_until, created_at, updated_at`
+	status, canceled_at, vehicle_id, delivery_address, promo_price_cents, promo_until,
+	next_price_cents, next_price_from, created_at, updated_at`
 
 func scanSubscription(row database.Scanner) (*Subscription, error) {
 	var s Subscription
 	var next time.Time
-	var promoUntil *time.Time
+	var promoUntil, nextFrom *time.Time
 	if err := row.Scan(&s.ID, &s.CustomerID, &s.PlanName, &s.PriceCents, &s.DueDay, &next,
 		&s.Status, &s.CanceledAt, &s.VehicleID, &s.DeliveryAddress, &s.PromoPriceCents, &promoUntil,
-		&s.CreatedAt, &s.UpdatedAt); err != nil {
+		&s.NextPriceCents, &nextFrom, &s.CreatedAt, &s.UpdatedAt); err != nil {
 		return nil, database.MapError(err)
 	}
 	s.NextDueDate = Date{next}
 	if promoUntil != nil {
 		s.PromoUntil = &Date{*promoUntil}
+	}
+	if nextFrom != nil {
+		s.NextPriceFrom = &Date{*nextFrom}
 	}
 	return &s, nil
 }
@@ -186,9 +201,14 @@ func (r *Repository) GetSubscription(ctx context.Context, id uuid.UUID) (*Subscr
 
 // UpdateSubscription troca plano e valor; vale para as faturas geradas
 // daqui em diante.
+// UpdateSubscription troca o plano e o preço. Preço novo à mão substitui o
+// reajuste agendado (vale o que o admin informou).
 func (r *Repository) UpdateSubscription(ctx context.Context, id uuid.UUID, planName string, priceCents int) (*Subscription, error) {
 	return scanSubscription(r.db.QueryRow(ctx, `
-		UPDATE subscriptions SET plan_name = $2, price_cents = $3, updated_at = NOW()
+		UPDATE subscriptions SET plan_name = $2, price_cents = $3,
+			next_price_cents = CASE WHEN price_cents = $3 THEN next_price_cents END,
+			next_price_from = CASE WHEN price_cents = $3 THEN next_price_from END,
+			updated_at = NOW()
 		WHERE id = $1
 		RETURNING `+subscriptionColumns, id, planName, priceCents))
 }
@@ -363,12 +383,15 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 		next           Date
 		promoCents     *int
 		promoUntil     *Date
+		nextPrice      *int
+		nextFrom       *Date
 	}
 
 	var created int64
 	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-			SELECT id, customer_id, plan_name, price_cents, due_day, next_due_date, promo_price_cents, promo_until
+			SELECT id, customer_id, plan_name, price_cents, due_day, next_due_date, promo_price_cents, promo_until,
+				next_price_cents, next_price_from
 			FROM subscriptions
 			WHERE status = 'ACTIVE' AND next_due_date <= $1
 			ORDER BY next_due_date
@@ -380,15 +403,18 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 		for rows.Next() {
 			var d due
 			var next time.Time
-			var promoUntil *time.Time
+			var promoUntil, nextFrom *time.Time
 			if err := rows.Scan(&d.id, &d.customerID, &d.planName, &d.priceCents, &d.dueDay, &next,
-				&d.promoCents, &promoUntil); err != nil {
+				&d.promoCents, &promoUntil, &d.nextPrice, &nextFrom); err != nil {
 				rows.Close()
 				return err
 			}
 			d.next = Date{next}
 			if promoUntil != nil {
 				d.promoUntil = &Date{*promoUntil}
+			}
+			if nextFrom != nil {
+				d.nextFrom = &Date{*nextFrom}
 			}
 			pending = append(pending, d)
 		}
@@ -400,9 +426,9 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 		for _, d := range pending {
 			next := d.next
 			for i := 0; i < maxCatchUp && !horizon.Before(next); i++ {
-				amount := priceOn(d.priceCents, d.promoCents, d.promoUntil, next)
+				amount, promotional := priceOn(d.priceCents, d.nextPrice, d.nextFrom, d.promoCents, d.promoUntil, next)
 				description := invoiceDescription(d.planName, next)
-				if amount != d.priceCents {
+				if promotional {
 					description += " · promoção de pré-lançamento"
 				}
 				tag, err := tx.Exec(ctx, `

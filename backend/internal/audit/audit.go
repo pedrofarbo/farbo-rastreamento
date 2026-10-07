@@ -79,6 +79,15 @@ const (
 	ActionDeliveryAddressSaved = "DELIVERY_ADDRESS_SAVED"
 	ActionFulfillmentChanged   = "FULFILLMENT_CHANGED"
 	ActionShippingLabelBought  = "SHIPPING_LABEL_BOUGHT"
+	// Verificação em duas etapas: ativada, desativada, redefinida pelo
+	// admin, códigos novos e código errado no login.
+	ActionTwoFactorEnabled  = "TWO_FACTOR_ENABLED"
+	ActionTwoFactorDisabled = "TWO_FACTOR_DISABLED"
+	ActionTwoFactorReset    = "TWO_FACTOR_RESET"
+	ActionTwoFactorCodes    = "TWO_FACTOR_CODES_REGENERATED"
+	ActionTwoFactorFailed   = "TWO_FACTOR_FAILED"
+	// ActionPriceAdjustmentCanceled: o admin vetou o reajuste anual do ano.
+	ActionPriceAdjustmentCanceled = "PRICE_ADJUSTMENT_CANCELED"
 	// ActionShippingBalanceAdded: Pix ou boleto gerado para pôr saldo na
 	// carteira do Melhor Envios.
 	ActionShippingBalanceAdded = "SHIPPING_BALANCE_ADDED"

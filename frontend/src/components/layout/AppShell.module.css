@@ -126,6 +126,13 @@
   flex-direction: column;
   align-items: flex-end;
   line-height: 1.3;
+  text-decoration: none;
+  border-radius: var(--radius-sm, 6px);
+}
+
+/* O nome leva à Segurança da conta. */
+.user:hover .userName {
+  color: var(--accent);
 }
 
 .userName {
@@ -155,6 +162,9 @@
 }
 
 .themeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 32px;
   padding: 0;
 }

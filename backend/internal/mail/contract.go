@@ -69,6 +69,53 @@ func (m *ContractMailer) ContractAccepted(ctx context.Context, to, name string, 
 	return m.sender.Send(ctx, Message{To: to, Subject: "Sua cópia do contrato — " + c.Title, Text: text.String(), HTML: html.String()})
 }
 
+// ContractUpdate é o aviso de uma versão nova do contrato.
+type ContractUpdate struct {
+	Title         string
+	Version       string
+	EffectiveDate string
+	Changes       string
+}
+
+// ContractUpdated avisa quem aceitou a versão anterior que o contrato mudou:
+// o que mudou e que o novo aceite é pedido no próximo acesso.
+func (m *ContractMailer) ContractUpdated(ctx context.Context, to, name string, u ContractUpdate) error {
+	data := struct {
+		ContractUpdate
+		FirstName, AppURL, ActionURL string
+	}{u, firstName(name), m.appURL, m.appURL + "/contrato"}
+	var text, html bytes.Buffer
+	if err := contractUpdatedTemplates.text.Execute(&text, data); err != nil {
+		return fmt.Errorf("montando e-mail (texto): %w", err)
+	}
+	if err := contractUpdatedTemplates.html.ExecuteTemplate(&html, "layout", data); err != nil {
+		return fmt.Errorf("montando e-mail (HTML): %w", err)
+	}
+	return m.sender.Send(ctx, Message{To: to, ToName: name, Subject: "Atualizamos o contrato — " + u.Title,
+		Text: text.String(), HTML: html.String()})
+}
+
+var contractUpdatedTemplates = mustTemplates(`Olá{{with .FirstName}}, {{.}}{{end}}!
+
+Atualizamos o contrato de prestação de serviços (versão {{.Version}}, de {{.EffectiveDate}}).
+
+O que mudou: {{.Changes}}
+
+No seu próximo acesso, o app pede o aceite da versão nova. Se você não concordar, pode encerrar a assinatura sem multa, mesmo dentro da permanência mínima (cláusula 14).
+
+Leia o contrato completo: {{.ActionURL}}
+
+— Farbo Rastreadores
+`, `{{define "content"}}
+<p style="margin:0 0 8px;font-size:12px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:#15803d;">Contrato</p>
+<h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0d130e;">Atualizamos o contrato</h1>
+<p style="margin:0 0 12px;font-size:15px;line-height:1.6;color:#334155;">Olá{{with .FirstName}}, {{.}}{{end}}!</p>
+<p style="margin:0 0 12px;font-size:15px;line-height:1.6;color:#334155;">O contrato de prestação de serviços tem uma versão nova (versão {{.Version}}, de {{.EffectiveDate}}).</p>
+<p style="margin:0 0 12px;padding:14px 16px;border-radius:12px;background:#f0fdf4;border:1px solid #bbf7d0;font-size:15px;line-height:1.6;color:#0d130e;"><strong>O que mudou:</strong> {{.Changes}}</p>
+<p style="margin:0;font-size:14px;line-height:1.6;color:#475569;">No seu próximo acesso, o app pede o aceite da versão nova. Se você não concordar, pode encerrar a assinatura sem multa, mesmo dentro da permanência mínima (cláusula 14).</p>
+{{template "button" (button .ActionURL "Ler o contrato")}}
+{{end}}`)
+
 const contractHTML = `{{define "content"}}
 <p style="margin:0 0 8px;font-size:12px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:#15803d;">Contrato</p>
 <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0d130e;">Sua cópia do contrato</h1>

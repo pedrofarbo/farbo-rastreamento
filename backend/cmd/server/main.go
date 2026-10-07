@@ -19,6 +19,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/addresses"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/adjustment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/affiliates"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/alerts"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/analytics"
@@ -62,6 +63,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/topups"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/twilio"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/twofactor"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 	ws "github.com/pedrofarbo/farbo-rastreamento/backend/internal/websocket"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/whatsapp"
@@ -187,6 +189,14 @@ func run() error {
 		return err
 	}
 	authSvc := auth.NewService(userRepo, cfg.Auth, mail.NewAccountMailer(mailer, cfg.Mail.AppURL), log)
+	// Verificação em duas etapas: obrigatória para a equipe (a sessão sem
+	// ela não renova), opcional para o cliente.
+	twoFactorSvc, err := twofactor.NewService(db, authSvc, mail.NewTwoFactorMailer(mailer, cfg.Mail.AppURL),
+		cfg.Auth.JWTSecret, log)
+	if err != nil {
+		return err
+	}
+	authSvc.SetSessionGuard(twoFactorSvc.Guard)
 	// JWT_SECRET trocado: as sessões abertas com o anterior acabam aqui.
 	if err := authSvc.RevokeSessionsFromOldKeys(ctx); err != nil {
 		return err
@@ -350,6 +360,12 @@ func run() error {
 	if pushSvc.Enabled() {
 		dunningSvc.SetPusher(pushSvc)
 	}
+	// Reajuste anual pelo IPCA: aviso em 1º de julho, vale em agosto.
+	adjustmentSvc := adjustment.NewService(db, adjustment.NewBCB(cfg.Billing.IPCAURL),
+		mail.NewPriceAdjustmentMailer(mailer, cfg.Mail.AppURL), adjustment.Config{
+			Enabled: cfg.Billing.PriceAdjustment, Location: billingLoc, InvoiceLeadDays: cfg.Billing.InvoiceLeadDays,
+			FromHour: 9, ToHour: 20,
+		}, log)
 
 	// Modo roubo: o cliente avisa; o rastreador manda a posição com mais
 	// frequência (fora do ar, quando voltar; ou por SMS); quem tem acesso é
@@ -385,8 +401,9 @@ func run() error {
 			leads.MailNotifier{Mailer: mail.NewLeadMailer(mailer, cfg.Mail.AppURL), To: cfg.Leads.NotifyEmails}, log),
 		Alerts: alertEngine, AlertStore: alertStore, Push: pushSvc, Shares: sharesSvc, Analytics: analyticsSvc,
 		Infra: infraSvc, Finance: financeSvc, Affiliates: affiliatesSvc, SMSSetup: smsSvc, Theft: theftSvc,
-		Dunning: dunningSvc, Contract: contractSvc,
+		Dunning: dunningSvc, Contract: contractSvc, Adjustment: adjustmentSvc,
 		StepUp:    stepup.NewService(db, cfg.StepUp, authSvc),
+		TwoFactor: twoFactorSvc,
 		Positions: positionRepo, States: stateStore,
 		Raw: rawRepo, Ingestor: ingestor, Conns: connManager, Registry: registry,
 		WS: ws.NewHandler(hub, cfg.HTTP.CORSOrigins), Hub: hub,
@@ -423,7 +440,7 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, theftSvc, dunningSvc, log)
+		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, theftSvc, dunningSvc, adjustmentSvc, contractSvc, log)
 	}()
 
 	log.Info("plataforma no ar",
@@ -462,6 +479,8 @@ func runWorkers(
 	smsSvc *smssetup.Service,
 	theftSvc *theft.Service,
 	dunningSvc *dunning.Service,
+	adjustmentSvc *adjustment.Service,
+	contractSvc *contract.Service,
 	log *slog.Logger,
 ) {
 	statusTicker := time.NewTicker(cfg.Tracking.StatusSweepInterval)
@@ -509,8 +528,10 @@ func runWorkers(
 
 	// Primeira varredura imediata para o painel já abrir com o status correto.
 	ingestor.SweepStatuses(ctx)
+	adjustmentSvc.Work(ctx)
 	billingSvc.GenerateInvoices(ctx)
 	dunningSvc.Work(ctx)
+	contractSvc.NotifyChanges(ctx)
 	financeSvc.GenerateRecurring(ctx)
 	financeSvc.SendReminders(ctx)
 	affiliatesSvc.Work(ctx)
@@ -533,9 +554,13 @@ func runWorkers(
 			commandSvc.SweepTimeouts(ctx)
 
 		case <-billingTicker.C:
+			// O reajuste anual antes das faturas (o preço novo já agendado).
+			adjustmentSvc.Work(ctx)
 			billingSvc.GenerateInvoices(ctx)
 			// Os lembretes de fatura do dia (só entre 9h e 20h).
 			dunningSvc.Work(ctx)
+			// O aviso do contrato novo a quem aceitou o anterior.
+			contractSvc.NotifyChanges(ctx)
 			// As contas do mês e o resumo dos vencimentos (uma vez por dia).
 			financeSvc.GenerateRecurring(ctx)
 			financeSvc.SendReminders(ctx)

@@ -5,9 +5,12 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/twofactor"
 )
 
 // Equipe da central: administradores, operadores e quem só visualiza. Os
@@ -19,7 +22,27 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		handleStoreError(w, err, "usuários não encontrados")
 		return
 	}
-	writeJSON(w, http.StatusOK, users)
+	// Com a verificação em duas etapas de cada um.
+	type member struct {
+		*auth.User
+		TwoFactor twofactor.Brief `json:"twoFactor"`
+	}
+	briefs := map[uuid.UUID]twofactor.Brief{}
+	if s.TwoFactor != nil {
+		ids := make([]uuid.UUID, 0, len(users))
+		for _, u := range users {
+			ids = append(ids, u.ID)
+		}
+		if briefs, err = s.TwoFactor.Briefs(r.Context(), ids); err != nil {
+			handleStoreError(w, err, "")
+			return
+		}
+	}
+	out := make([]member, 0, len(users))
+	for _, u := range users {
+		out = append(out, member{User: u, TwoFactor: briefs[u.ID]})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 type createUserRequest struct {

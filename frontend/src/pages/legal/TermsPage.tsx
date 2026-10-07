@@ -134,8 +134,14 @@ const SECTIONS: LegalSection[] = [
           </>
         )}
         <p>
-          Mudanças de preço da mensalidade são avisadas por e-mail com pelo menos 30 dias de antecedência e não
-          alteram as condições promocionais já contratadas durante o seu prazo.
+          A mensalidade tem <strong>reajuste anual em agosto pelo IPCA</strong> (IBGE) acumulado nos 12 meses até
+          maio, avisado por e-mail com pelo menos 30 dias de antecedência. Só é reajustada a assinatura com pelo
+          menos 12 meses, e índice zero ou negativo mantém o preço. As regras estão no{' '}
+          <Link to={CONTRACT_PATH}>contrato</Link>.
+        </p>
+        <p>
+          Outras mudanças de preço da mensalidade também são avisadas por e-mail com pelo menos 30 dias de
+          antecedência. Nenhuma delas altera as condições promocionais já contratadas durante o seu prazo.
         </p>
         <p>
           Cada assinatura tem <strong>permanência mínima de 3 meses</strong>. Para cada rastreador, mantemos um

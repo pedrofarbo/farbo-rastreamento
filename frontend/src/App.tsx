@@ -26,6 +26,7 @@ const InstallersPage = page(() => import('@/pages/admin/InstallersPage'), 'Insta
 const OrdersPage = page(() => import('@/pages/admin/OrdersPage'), 'OrdersPage');
 const SupportPage = page(() => import('@/pages/admin/SupportPage'), 'SupportPage');
 const UsersPage = page(() => import('@/pages/admin/UsersPage'), 'UsersPage');
+const SecurityPage = page(() => import('@/pages/SecurityPage'), 'SecurityPage');
 const CompanyPage = page(() => import('@/pages/admin/company/CompanyPage'), 'CompanyPage');
 const TermsPage = page(() => import('@/pages/legal/TermsPage'), 'TermsPage');
 const PrivacyPage = page(() => import('@/pages/legal/PrivacyPage'), 'PrivacyPage');
@@ -95,6 +96,8 @@ export function App() {
                     {/* Comuns: a API filtra o que o cliente vê. */}
                     <Route path="dashboard" element={<DashboardPage />} />
                     <Route path="veiculos/:id" element={<VehicleDetailsPage />} />
+                    {/* Segurança da conta: a verificação em duas etapas (todos). */}
+                    <Route path="seguranca" element={<SecurityPage />} />
 
                     <Route element={<RequireCustomer />}>
                       <Route path="meus-veiculos" element={<MyVehiclesPage />} />

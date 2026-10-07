@@ -19,6 +19,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/dunning"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/twofactor"
 )
 
 // customerDetail é a ficha do cliente na administração.
@@ -49,6 +50,8 @@ type customerDetail struct {
 	DefaultHistoryDays   int  `json:"defaultHistoryDays"`
 	// Affiliate: quem indicou o cliente (nulo se ninguém).
 	Affiliate *affiliates.Referral `json:"affiliate"`
+	// TwoFactor: a verificação em duas etapas do cliente.
+	TwoFactor twofactor.Brief `json:"twoFactor"`
 }
 
 func (s *Server) customerDetail(ctx context.Context, id uuid.UUID) (*customerDetail, error) {
@@ -120,11 +123,19 @@ func (s *Server) customerDetail(ctx context.Context, id uuid.UUID) (*customerDet
 			reminders[id.String()] = r
 		}
 	}
+	var security twofactor.Brief
+	if s.TwoFactor != nil {
+		briefs, err := s.TwoFactor.Briefs(ctx, []uuid.UUID{id})
+		if err != nil {
+			return nil, err
+		}
+		security = briefs[id]
+	}
 	return &customerDetail{
 		CustomerSummary: summary, Subscriptions: subscriptions, Invoices: invoices, Vehicles: views,
 		OnlinePayment: s.Payments.Enabled(), Payments: paid, DeliveryAddress: address, Fulfillments: tracking,
 		HistoryRetentionDays: retentionDays, DefaultHistoryDays: s.Retention.Default(), Affiliate: referral,
-		Reminders: reminders, PaymentLinks: links, Contract: accepted, ContractVersion: version,
+		Reminders: reminders, PaymentLinks: links, Contract: accepted, ContractVersion: version, TwoFactor: security,
 	}, nil
 }
 

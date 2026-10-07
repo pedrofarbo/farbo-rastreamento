@@ -8,6 +8,7 @@ import type { ContractStatus } from '@/types';
 
 let required = true;
 let isCustomer = true;
+let previous: ContractStatus['previous'] = null;
 const accepted: unknown[] = [];
 const status = (): ContractStatus => ({
   contract: {
@@ -15,8 +16,9 @@ const status = (): ContractStatus => ({
     intro: [{ kind: 'p', text: 'Termo de adesão, versão 1.' }],
     sections: [{ title: '6. Permanência mínima e multa', blocks: [{ kind: 'ul', items: ['3 meses', '1 mensalidade'] }] }],
     sha256: 'x',
+    changes: 'Entrou o reajuste anual da mensalidade (cláusula 5).',
   },
-  required, accepted: required ? null : ({ version: '1' } as ContractStatus['accepted']), name: 'Lia Martins', taxId: '',
+  required, accepted: required ? null : ({ version: '1' } as ContractStatus['accepted']), previous, name: 'Lia Martins', taxId: '',
 });
 
 vi.mock('@/api/resources', () => ({
@@ -69,6 +71,7 @@ afterEach(() => {
   accepted.length = 0;
   required = true;
   isCustomer = true;
+  previous = null;
 });
 
 describe('o contrato no primeiro acesso', () => {
@@ -85,6 +88,9 @@ describe('o contrato no primeiro acesso', () => {
     expect(text()).toContain('plano de telecomunicações M2M');
     expect(text()).toContain('6. Permanência mínima e multa');
     expect(text()).toContain('NF-e do rastreador e a NFS-e das mensalidades');
+    expect(text()).toContain('Reajuste anual em agosto');
+    // Primeiro aceite: nada de "o contrato mudou".
+    expect(text()).not.toContain('O contrato mudou');
     // Sem marcar o "li e aceito", não vai.
     expect(button('Aceitar e continuar').disabled).toBe(true);
     const cpf = document.querySelector('input[inputmode="numeric"]') as HTMLInputElement;
@@ -100,6 +106,17 @@ describe('o contrato no primeiro acesso', () => {
     await flush();
     expect(accepted).toEqual([['1', '529.982.247-25']]);
     expect(text()).toContain('o painel');
+  });
+
+  it('quem aceitou a versão anterior lê o que mudou', async () => {
+    previous = { version: '0', acceptedAt: '2026-09-01T15:00:00Z' } as ContractStatus['previous'];
+    await render();
+    expect(text()).toContain('Contrato atualizado');
+    expect(text()).not.toContain('Primeiro acesso');
+    expect(text()).toContain('O contrato mudou (versão 1)');
+    expect(text()).toContain('Você aceitou a versão 0');
+    expect(text()).toContain('Entrou o reajuste anual da mensalidade (cláusula 5).');
+    expect(text()).toContain('encerrar a assinatura sem multa');
   });
 
   it('com o aceite (ou para a equipe), segue direto; a API pedindo o aceite traz o contrato de volta', async () => {

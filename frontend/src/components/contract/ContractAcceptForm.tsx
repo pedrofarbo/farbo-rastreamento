@@ -49,6 +49,14 @@ export function ContractAcceptForm({
         if (validDoc && agreed) accept.mutate();
       }}
     >
+      {status.previous && (
+        <p className={styles.changed} role="status">
+          <strong>O contrato mudou (versão {status.contract.version}).</strong> Você aceitou a versão{' '}
+          {status.previous.version} em {new Date(status.previous.acceptedAt).toLocaleDateString('pt-BR')}. O que mudou:{' '}
+          {status.contract.changes} Se não concordar, você pode encerrar a assinatura sem multa (cláusula 14).
+        </p>
+      )}
+
       <section className={styles.summary} aria-labelledby="contrato-resumo">
         <h2 id="contrato-resumo" className={styles.summaryTitle}>
           Os pontos principais
@@ -65,6 +73,10 @@ export function ContractAcceptForm({
           <li>
             <strong>Permanência mínima de 3 meses</strong> por veículo. Se cancelar antes, a multa é de{' '}
             <strong>1 mensalidade</strong>.
+          </li>
+          <li>
+            <strong>Reajuste anual em agosto</strong>, pelo IPCA dos 12 meses até maio, com aviso por e-mail 30 dias
+            antes. Só depois de 12 meses de assinatura; índice negativo mantém o preço.
           </li>
           <li>
             <strong>Atraso de mais de 1 mês</strong> pode levar o seu nome aos órgãos de proteção ao crédito (SPC e

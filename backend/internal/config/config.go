@@ -260,6 +260,10 @@ type Billing struct {
 	SuspendAfterDays int
 	// Timezone define o "hoje" dos vencimentos.
 	Timezone string
+	// PriceAdjustment liga o reajuste anual pelo IPCA (aviso em 1º de julho,
+	// vale em agosto); IPCAURL troca a API do Banco Central (testes).
+	PriceAdjustment bool
+	IPCAURL         string
 }
 
 // Alerts regula os alertas por e-mail (internal/alerts).
@@ -787,6 +791,8 @@ func Load() (*Config, error) {
 			InvoiceLeadDays:  num("BILLING_INVOICE_LEAD_DAYS", 10),
 			SuspendAfterDays: num("BILLING_SUSPEND_AFTER_DAYS", 10),
 			Timezone:         str("BILLING_TIMEZONE", "America/Sao_Paulo"),
+			PriceAdjustment:  bl("PRICE_ADJUSTMENT_ENABLED", true),
+			IPCAURL:          str("IPCA_API_URL", ""),
 		},
 		Alerts: Alerts{
 			Enabled:              bl("ALERTS_ENABLED", true),

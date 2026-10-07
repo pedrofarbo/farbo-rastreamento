@@ -41,7 +41,9 @@ A instalação é feita por prestadores independentes indicados na plataforma, c
 
 - A mensalidade de cada veículo é a do plano escolhido no pedido, mostrada antes da confirmação. Condições promocionais valem pelo prazo informado na contratação.
 - As faturas ficam disponíveis na plataforma antes do vencimento e são enviadas por e-mail, com o link para pagar por Pix.
-- Mudanças no preço da mensalidade são avisadas por e-mail com pelo menos 30 dias de antecedência e não alteram condições promocionais já contratadas durante o seu prazo.
+- Reajuste anual pelo IPCA: a mensalidade é reajustada uma vez por ano, em agosto, pela variação do IPCA (IBGE) acumulada nos 12 meses encerrados em maio daquele ano, o último índice publicado antes do aviso. O valor novo vale para as faturas que vencem a partir de 1º de agosto e é avisado por e-mail com pelo menos 30 dias de antecedência; se o aviso sair depois de 1º de julho, o reajuste passa a valer 30 dias depois dele.
+- Só é reajustada a assinatura que completar 12 meses até a data do reajuste (Lei 10.192/2001); as mais novas são reajustadas no agosto seguinte. Se o índice acumulado for zero ou negativo, a mensalidade fica como está. Se o IPCA deixar de ser publicado, vale o índice oficial que o substituir.
+- Outras mudanças no preço da mensalidade também são avisadas por e-mail com pelo menos 30 dias de antecedência. Nenhuma mudança, nem o reajuste, altera condições promocionais já contratadas durante o seu prazo.
 
 ## 6. Atraso no pagamento
 

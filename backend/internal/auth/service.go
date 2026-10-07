@@ -63,7 +63,14 @@ type Service struct {
 	// runAsync dispara os e-mails fora da requisição; os testes trocam por
 	// uma chamada síncrona.
 	runAsync func(func())
+
+	// guard decide se uma sessão pode renovar (a equipe sem a verificação
+	// em duas etapas, não); nil libera todas.
+	guard func(ctx context.Context, user *User) error
 }
+
+// SetSessionGuard liga a regra que decide se uma sessão pode renovar.
+func (s *Service) SetSessionGuard(guard func(ctx context.Context, user *User) error) { s.guard = guard }
 
 func NewService(repo *Repository, cfg config.Auth, notifier Notifier, log *slog.Logger) *Service {
 	if cfg.BcryptCost < bcrypt.MinCost || cfg.BcryptCost > bcrypt.MaxCost {
@@ -157,6 +164,16 @@ func (s *Service) HashPassword(plain string) (string, error) {
 
 // Login autentica e emite o par de tokens.
 func (s *Service) Login(ctx context.Context, email, password, userAgent string) (*Tokens, error) {
+	user, err := s.Authenticate(ctx, email, password)
+	if err != nil {
+		return nil, err
+	}
+	return s.issue(ctx, user, userAgent)
+}
+
+// Authenticate confere o e-mail e a senha, sem abrir a sessão (a
+// verificação em duas etapas decide o que falta).
+func (s *Service) Authenticate(ctx context.Context, email, password string) (*User, error) {
 	user, err := s.repo.GetByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, database.ErrNotFound) {
@@ -174,7 +191,7 @@ func (s *Service) Login(ctx context.Context, email, password, userAgent string) 
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
 		return nil, ErrInvalidCredentials
 	}
-	return s.issue(ctx, user, userAgent)
+	return user, nil
 }
 
 // Refresh troca um refresh token válido por um novo par (rotação de token).
@@ -193,6 +210,12 @@ func (s *Service) Refresh(ctx context.Context, refreshToken, userAgent string) (
 	}
 	if !user.Active {
 		return nil, ErrInactiveUser
+	}
+	if s.guard != nil {
+		if err := s.guard(ctx, user); err != nil {
+			s.log.Info("sessão não renovada", "user", user.ID, "motivo", err.Error())
+			return nil, ErrInvalidToken
+		}
 	}
 	return s.issue(ctx, user, userAgent)
 }

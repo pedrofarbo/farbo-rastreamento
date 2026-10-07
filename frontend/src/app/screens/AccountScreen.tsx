@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 
-import { meApi } from '@/api/resources';
+import { meApi, twoFactorApi } from '@/api/resources';
+import { twoFactorKey } from '@/components/auth/TwoFactorSettings';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/stores/AuthContext';
@@ -18,6 +20,8 @@ export function AccountScreen() {
   const { notify } = useToast();
   const navigate = useNavigate();
   const [leaving, setLeaving] = useState(false);
+  // A verificação em duas etapas, para o convite a ativar.
+  const security = useQuery({ queryKey: twoFactorKey, queryFn: twoFactorApi.status });
 
   const leave = async () => {
     setLeaving(true);
@@ -54,6 +58,22 @@ export function AccountScreen() {
                 <strong>Meus dados</strong>
                 <br />
                 <span className={styles.muted}>Nome, celular, CPF e endereço de entrega</span>
+              </span>
+              <span className={styles.chevron}>
+                <ChevronIcon />
+              </span>
+            </Link>
+          </li>
+          <li>
+            <Link to="/conta/seguranca" className={styles.listLink}>
+              <span>
+                <strong>Segurança</strong>
+                <br />
+                <span className={styles.muted}>
+                  {security.data?.enabled
+                    ? 'Verificação em duas etapas ativa'
+                    : 'Ative a verificação em duas etapas: um código além da senha'}
+                </span>
               </span>
               <span className={styles.chevron}>
                 <ChevronIcon />

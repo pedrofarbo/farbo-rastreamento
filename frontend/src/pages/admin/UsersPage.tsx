@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { usersApi } from '@/api/resources';
+import { twoFactorApi, usersApi } from '@/api/resources';
 import type { TeamUserInput, TeamUserUpdate } from '@/api/resources';
 import billing from '@/components/billing/Billing.module.css';
 import { Badge } from '@/components/ui/Badge';
@@ -123,6 +123,16 @@ export function UsersPage() {
     onError: (err: Error) => setFormError(err.message),
   });
 
+  // Perdeu o celular e os códigos: a pessoa ativa de novo no próximo login.
+  const resetTwoFactor = useMutation({
+    mutationFn: (u: User) => twoFactorApi.resetUser(u.id),
+    onSuccess: (_, u) => {
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      notify({ tone: 'success', title: 'Verificação redefinida', description: `${u.name || u.email} ativa de novo no próximo login.` });
+    },
+    onError: (err: Error) => notify({ tone: 'error', title: 'Não foi possível redefinir', description: err.message }),
+  });
+
   const invite = useMutation({
     mutationFn: (u: User) => usersApi.invite(u.id),
     onSuccess: (_, u) => notify({ tone: 'success', title: 'Convite reenviado', description: `Para ${u.email}.` }),
@@ -179,6 +189,7 @@ export function UsersPage() {
                     <th>Usuário</th>
                     <th>Perfil</th>
                     <th>Situação</th>
+                    <th>Duas etapas</th>
                     <th>Desde</th>
                     <th />
                   </tr>
@@ -207,6 +218,15 @@ export function UsersPage() {
                             <Badge tone="neutral">Desativado</Badge>
                           )}
                         </td>
+                        <td>
+                          {u.twoFactor?.enabled ? (
+                            <Badge tone="success">Ativa</Badge>
+                          ) : (
+                            <Badge tone="warning" title="A pessoa ativa no próximo login (é obrigatória para a equipe).">
+                              Pendente
+                            </Badge>
+                          )}
+                        </td>
                         <td className={billing.muted}>{new Date(u.createdAt).toLocaleDateString('pt-BR')}</td>
                         <td>
                           <div className={styles.actions}>
@@ -222,6 +242,25 @@ export function UsersPage() {
                                 onClick={() => invite.mutate(u)}
                               >
                                 Reenviar convite
+                              </Button>
+                            )}
+                            {u.twoFactor?.enabled && (
+                              <Button
+                                size="small"
+                                variant="ghost"
+                                title="Para quem perdeu o celular e os códigos de recuperação: ativa de novo no próximo login."
+                                loading={resetTwoFactor.isPending && resetTwoFactor.variables?.id === u.id}
+                                onClick={() => {
+                                  if (
+                                    window.confirm(
+                                      `Redefinir a verificação em duas etapas de ${u.name || u.email}? O app autenticador, os códigos de recuperação e os aparelhos confiáveis deixam de valer, e a pessoa ativa de novo no próximo login.`,
+                                    )
+                                  ) {
+                                    resetTwoFactor.mutate(u);
+                                  }
+                                }}
+                              >
+                                Redefinir duas etapas
                               </Button>
                             )}
                           </div>

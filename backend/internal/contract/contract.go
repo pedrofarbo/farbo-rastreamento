@@ -31,8 +31,11 @@ import (
 // A versão em vigor. Ao mudar o texto (contrato.md), mude a versão e a data:
 // todo cliente aceita de novo no próximo acesso.
 const (
-	Version       = "1"
+	Version       = "2"
 	EffectiveDate = "7 de outubro de 2026"
+	// Changes resume o que mudou desde a versão anterior (o cliente que
+	// aceitou a anterior lê ao aceitar de novo, e recebe por e-mail).
+	Changes = "Entrou o reajuste anual da mensalidade (cláusula 5): todo mês de agosto, pelo IPCA acumulado nos 12 meses até maio, com aviso por e-mail pelo menos 30 dias antes. Só é reajustada a assinatura com 12 meses ou mais, e índice zero ou negativo mantém o preço."
 	// MinMonths é a permanência mínima de cada assinatura.
 	MinMonths = 3
 )
@@ -62,6 +65,8 @@ type Document struct {
 	Sections      []Section `json:"sections"`
 	// SHA256 é o hash do texto: o aceite guarda qual texto foi aceito.
 	SHA256 string `json:"sha256"`
+	// Changes resume o que mudou desde a versão anterior.
+	Changes string `json:"changes"`
 	// Text é o texto completo (markdown simples).
 	Text string `json:"-"`
 }
@@ -108,6 +113,7 @@ func Render(p Params) (*Document, error) {
 	sum := sha256.Sum256([]byte(text))
 	doc := parse(text)
 	doc.Version, doc.EffectiveDate, doc.SHA256, doc.Text = Version, EffectiveDate, hex.EncodeToString(sum[:]), text
+	doc.Changes = Changes
 	return doc, nil
 }
 
@@ -173,6 +179,9 @@ type Status struct {
 	Required bool `json:"required"`
 	// Accepted: o aceite desta versão (nulo se ainda não aceitou).
 	Accepted *Acceptance `json:"accepted"`
+	// Previous: o aceite de uma versão anterior, quando ainda não aceitou
+	// esta (a tela explica o que mudou).
+	Previous *Acceptance `json:"previous"`
 	Name     string      `json:"name"`
 	// TaxID é o CPF/CNPJ do cadastro (vazio se ainda não informado).
 	TaxID string `json:"taxId"`
@@ -181,6 +190,7 @@ type Status struct {
 // Mailer manda a cópia do contrato aceito (mail.ContractMailer).
 type Mailer interface {
 	ContractAccepted(ctx context.Context, to, name string, c mail.ContractCopy) error
+	ContractUpdated(ctx context.Context, to, name string, u mail.ContractUpdate) error
 }
 
 type Service struct {
@@ -274,8 +284,58 @@ func (s *Service) Status(ctx context.Context, userID uuid.UUID) (*Status, error)
 		if st.Required, err = s.Required(ctx, userID); err != nil {
 			return nil, err
 		}
+		if st.Previous, err = s.Latest(ctx, userID); err != nil {
+			return nil, err
+		}
 	}
 	return st, nil
+}
+
+// NotifyChanges avisa por e-mail, uma vez, quem aceitou uma versão anterior
+// do contrato e ainda não aceitou a atual (cláusula 14: as mudanças são
+// avisadas por e-mail e a plataforma pede o novo aceite).
+func (s *Service) NotifyChanges(ctx context.Context) {
+	if s.mailer == nil {
+		return
+	}
+	rows, err := s.db.Query(ctx, `
+		SELECT u.id, u.email, u.name FROM users u
+		WHERE u.role = 'customer' AND u.active
+			AND EXISTS (SELECT 1 FROM contract_acceptances a WHERE a.user_id = u.id AND a.version <> $1)
+			AND NOT EXISTS (SELECT 1 FROM contract_acceptances a WHERE a.user_id = u.id AND a.version = $1)
+			AND NOT EXISTS (SELECT 1 FROM contract_change_notices n WHERE n.user_id = u.id AND n.version = $1)
+		ORDER BY u.created_at LIMIT 200`, s.doc.Version)
+	if err != nil {
+		s.log.Error("falha ao listar quem precisa do aviso do contrato novo", "err", err)
+		return
+	}
+	type who struct {
+		id          uuid.UUID
+		email, name string
+	}
+	var list []who
+	for rows.Next() {
+		var w who
+		if rows.Scan(&w.id, &w.email, &w.name) == nil {
+			list = append(list, w)
+		}
+	}
+	rows.Close()
+	for _, w := range list {
+		if err := s.mailer.ContractUpdated(ctx, w.email, w.name, mail.ContractUpdate{
+			Title: s.doc.Title, Version: s.doc.Version, EffectiveDate: s.doc.EffectiveDate, Changes: s.doc.Changes,
+		}); err != nil {
+			s.log.Warn("aviso do contrato novo não enviado (tenta de novo)", "email", w.email, "err", err)
+			continue
+		}
+		if _, err := s.db.Exec(ctx, `INSERT INTO contract_change_notices (user_id, version) VALUES ($1, $2)
+			ON CONFLICT DO NOTHING`, w.id, s.doc.Version); err != nil {
+			s.log.Error("aviso do contrato novo enviado e não marcado", "email", w.email, "err", err)
+		}
+	}
+	if len(list) > 0 {
+		s.log.Info("avisos do contrato novo enviados", "versao", s.doc.Version, "clientes", len(list))
+	}
 }
 
 // Accept registra o aceite da versão em vigor e grava o CPF/CNPJ no cadastro.

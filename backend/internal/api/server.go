@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/cors"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/addresses"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/adjustment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/affiliates"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/alerts"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/analytics"
@@ -48,6 +49,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/theft"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/topups"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/twofactor"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 	ws "github.com/pedrofarbo/farbo-rastreamento/backend/internal/websocket"
 )
@@ -112,16 +114,20 @@ type Deps struct {
 	Carrier      *melhorenvio.Client
 	CarrierStore *melhorenvio.DBStore
 	// TopUps: as recargas da carteira do Melhor Envios (nil sem o envio).
-	TopUps    *topups.Service
-	Owners    *vehicles.OwnerIndex
-	Positions *tracking.Repository
-	States    *tracking.StateStore
-	Raw       *tracking.RawPacketRepository
-	Ingestor  *tracking.Ingestor
-	Conns     *tcp.Manager
-	Registry  *protocols.ProtocolRegistry
-	WS        *ws.Handler
-	Hub       *ws.Hub
+	TopUps *topups.Service
+	// TwoFactor: a verificação em duas etapas (nil a desliga, nos testes).
+	TwoFactor *twofactor.Service
+	// Adjustment: o reajuste anual pelo IPCA (nil: sem a tela).
+	Adjustment *adjustment.Service
+	Owners     *vehicles.OwnerIndex
+	Positions  *tracking.Repository
+	States     *tracking.StateStore
+	Raw        *tracking.RawPacketRepository
+	Ingestor   *tracking.Ingestor
+	Conns      *tcp.Manager
+	Registry   *protocols.ProtocolRegistry
+	WS         *ws.Handler
+	Hub        *ws.Hub
 }
 
 type Server struct {
@@ -191,6 +197,9 @@ func (s *Server) routes() chi.Router {
 	analyticsLimiter := newRateLimiter(1, 40)
 	// Senha da confirmação extra: além do teto por usuário (stepup).
 	stepUpLimiter := newRateLimiter(0.2, 5)
+	// O código da verificação em duas etapas: errar uma ou duas vezes não
+	// trava; a força bruta esbarra nas 5 tentativas por desafio.
+	twoFactorLimiter := newRateLimiter(0.5, 10)
 	// O link do modo roubo: a página pergunta a cada 10 s; numa delegacia,
 	// várias pessoas podem abrir pela mesma rede.
 	theftLinkLimiter := newRateLimiter(2, 60)
@@ -209,6 +218,16 @@ func (s *Server) routes() chi.Router {
 			}
 			r.Post("/refresh", s.handleRefresh)
 			r.Post("/logout", s.handleLogout)
+			// O segundo fator depois da senha, e a ativação obrigatória da equipe.
+			if s.TwoFactor != nil {
+				r.Route("/2fa", func(r chi.Router) {
+					r.Use(twoFactorLimiter.middleware)
+					r.Post("/verify", s.handleTwoFactorVerify)
+					r.Post("/resend", s.handleTwoFactorResend)
+					r.Post("/setup/email", s.handleTwoFactorSetupEmail)
+					r.Post("/setup/confirm", s.handleTwoFactorSetupConfirm)
+				})
+			}
 
 			r.With(forgotLimiter.middleware).Post("/forgot-password", s.handleForgotPassword)
 			r.With(resetLimiter.middleware).Post("/reset-password", s.handleResetPassword)
@@ -279,6 +298,21 @@ func (s *Server) routes() chi.Router {
 
 			r.Get("/geocoding/reverse", s.handleReverseGeocode)
 			r.Get("/catalog", s.handleCatalog)
+
+			// A verificação em duas etapas de quem está conectado (Minha
+			// conta → Segurança): fora do contrato e da inadimplência.
+			if s.TwoFactor != nil {
+				r.Route("/security/two-factor", func(r chi.Router) {
+					r.Get("/", s.handleTwoFactorStatus)
+					r.With(stepUpLimiter.middleware).Post("/start", s.handleTwoFactorStart)
+					r.With(stepUpLimiter.middleware).Post("/confirm", s.handleTwoFactorConfirm)
+					r.With(stepUpLimiter.middleware).Post("/code", s.handleTwoFactorActionCode)
+					r.With(stepUpLimiter.middleware).Post("/disable", s.handleTwoFactorDisable)
+					r.With(stepUpLimiter.middleware).Post("/recovery-codes", s.handleTwoFactorRecoveryCodes)
+					r.Delete("/devices", s.handleTwoFactorRevokeDevice)
+					r.Delete("/devices/{id}", s.handleTwoFactorRevokeDevice)
+				})
+			}
 
 			// Confirmação extra de ações sensíveis (desligar o motor): a
 			// biometria do aparelho (WebAuthn) ou a senha.
@@ -513,11 +547,20 @@ func (s *Server) routes() chi.Router {
 					r.Post("/", s.handleCreateUser)
 					r.Patch("/{id}", s.handleUpdateUser)
 					r.Post("/{id}/invite", s.handleInviteUser)
+					if s.TwoFactor != nil {
+						r.Post("/{id}/two-factor/reset", s.handleResetTwoFactor)
+					}
 				})
 
 				// Clientes, assinaturas e faturas (administração).
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireRole(auth.RoleAdmin))
+
+					// O reajuste anual pelo IPCA: o próximo, os anteriores e o veto.
+					if s.Adjustment != nil {
+						r.Get("/price-adjustments", s.handlePriceAdjustments)
+						r.Post("/price-adjustments/{year}/cancel", s.handleCancelPriceAdjustment)
+					}
 
 					r.Route("/customers", func(r chi.Router) {
 						r.Get("/", s.handleListCustomers)
@@ -525,6 +568,9 @@ func (s *Server) routes() chi.Router {
 						r.Route("/{id}", func(r chi.Router) {
 							r.Get("/", s.handleGetCustomer)
 							r.Patch("/", s.handleUpdateCustomer)
+							if s.TwoFactor != nil {
+								r.Post("/two-factor/reset", s.handleResetTwoFactor)
+							}
 							r.Put("/address", s.handleSaveCustomerAddress)
 							r.Put("/history-retention", s.handleSetCustomerRetention)
 							r.Get("/alerts", s.handleGetCustomerAlerts)

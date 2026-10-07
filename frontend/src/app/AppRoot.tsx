@@ -14,6 +14,7 @@ import { AuthProvider, useAuth } from '@/stores/AuthContext';
 import { AppLayout } from './AppLayout';
 import { AccountScreen } from './screens/AccountScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
+import { SecurityScreen } from './screens/SecurityScreen';
 import { AlertsScreen } from './screens/AlertsScreen';
 import { FenceScreen } from './screens/FenceScreen';
 import { FencesScreen } from './screens/FencesScreen';
@@ -87,6 +88,7 @@ export function AppRoot() {
                   <Route path="faturas" element={<InvoicesPage />} />
                   <Route path="conta" element={<AccountScreen />} />
                   <Route path="conta/dados" element={<ProfileScreen />} />
+                  <Route path="conta/seguranca" element={<SecurityScreen />} />
                   <Route path="dashboard" element={<Navigate to="/mapa" replace />} />
                   <Route path="*" element={<Navigate to="/mapa" replace />} />
                 </Route>

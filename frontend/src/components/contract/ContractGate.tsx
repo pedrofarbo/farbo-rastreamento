@@ -46,12 +46,25 @@ export function ContractGate({ children }: { children: ReactNode }) {
     <div className={styles.page}>
       <div className={styles.card}>
         <header className={styles.head}>
-          <p className={styles.kicker}>Primeiro acesso</p>
-          <h1 className={styles.title}>Contrato de prestação de serviços</h1>
-          <p className={styles.lead}>
-            {status.data.name ? `${status.data.name.split(' ')[0]}, antes` : 'Antes'} de continuar, leia e aceite o contrato e
-            informe o seu CPF. É só desta vez.
-          </p>
+          {status.data.previous ? (
+            <>
+              <p className={styles.kicker}>Contrato atualizado</p>
+              <h1 className={styles.title}>Contrato de prestação de serviços</h1>
+              <p className={styles.lead}>
+                {status.data.name ? `${status.data.name.split(' ')[0]}, o` : 'O'} contrato mudou. Para continuar, leia e
+                aceite a versão nova.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className={styles.kicker}>Primeiro acesso</p>
+              <h1 className={styles.title}>Contrato de prestação de serviços</h1>
+              <p className={styles.lead}>
+                {status.data.name ? `${status.data.name.split(' ')[0]}, antes` : 'Antes'} de continuar, leia e aceite o
+                contrato e informe o seu CPF. É só desta vez.
+              </p>
+            </>
+          )}
         </header>
         <ContractAcceptForm status={status.data} />
         <Button variant="ghost" block onClick={() => void logout()}>

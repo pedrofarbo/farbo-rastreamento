@@ -5,6 +5,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { customersApi, leadsApi } from '@/api/resources';
 import billing from '@/components/billing/Billing.module.css';
 import { CustomerStatus } from '@/components/billing/InvoiceStatus';
+import { PriceAdjustmentCard } from '@/components/billing/PriceAdjustmentCard';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -274,6 +275,8 @@ export function CustomersPage() {
                 </div>
               )}
             </Card>
+
+            <PriceAdjustmentCard />
           </>
         )}
       </div>
