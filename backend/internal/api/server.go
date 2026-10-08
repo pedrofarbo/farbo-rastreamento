@@ -610,6 +610,7 @@ func (s *Server) routes() chi.Router {
 				// e conectar o Melhor Envios é do admin.
 				if s.SMSSetup != nil {
 					r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator)).Post("/sms-setup/{id}/cancel", s.handleCancelSMSSetup)
+					r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator)).Get("/sms/usage", s.handleSMSUsage)
 				}
 				r.Route("/fulfillments", func(r chi.Router) {
 					r.Use(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator))

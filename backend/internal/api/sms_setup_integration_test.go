@@ -40,6 +40,7 @@ type fakeSMSDev struct {
 	inbox    []smsdev.Reply
 	fail     error
 	inboxes  int
+	balance  int
 }
 
 type fakeSMS struct{ to, body string }
@@ -65,6 +66,12 @@ func (f *fakeSMSDev) Inbox(context.Context, time.Time) ([]smsdev.Reply, error) {
 	defer f.mu.Unlock()
 	f.inboxes++
 	return append([]smsdev.Reply(nil), f.inbox...), nil
+}
+
+func (f *fakeSMSDev) Balance(context.Context) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.balance, nil
 }
 
 func (f *fakeSMSDev) reply(r smsdev.Reply) {
@@ -331,9 +338,40 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	}
 	env.must(operator, http.MethodPost, "/api/sms-setup/"+session.ID.String()+"/cancel", nil, http.StatusBadRequest)
 
-	// Sem o SMSDev configurado, nada sai.
+	// O contador da página de rastreadores: o saldo vira ativações (4 SMS
+	// cada) e o mês conta os SMS que saíram (sem os recusados). O saldo fica
+	// guardado por um minuto; quem só vê o painel não vê o contador.
+	fake.mu.Lock()
+	fake.balance = 1003
+	fake.mu.Unlock()
+	var usage smssetup.Usage
+	call(http.MethodGet, "/api/sms/usage", nil, http.StatusOK, &usage)
+	var sent int
+	_ = db.QueryRow(ctx, `SELECT count(*) FROM sms_messages WHERE direction = 'OUT' AND status <> 'failed'`).Scan(&sent)
+	if !usage.Enabled || usage.Balance == nil || *usage.Balance != 1003 || usage.ActivationSMS != 4 || usage.Activations != 250 ||
+		usage.SentLast30Days != sent || sent == 0 {
+		t.Fatalf("contador = %+v (enviados %d)", usage, sent)
+	}
+	fake.mu.Lock()
+	fake.balance = 8
+	fake.mu.Unlock()
+	call(http.MethodGet, "/api/sms/usage", nil, http.StatusOK, &usage)
+	if *usage.Balance != 1003 {
+		t.Errorf("leu de novo antes de um minuto: %d", *usage.Balance)
+	}
+	now = now.Add(61 * time.Second)
+	call(http.MethodGet, "/api/sms/usage", nil, http.StatusOK, &usage)
+	if *usage.Balance != 8 || usage.Activations != 2 {
+		t.Errorf("depois de um minuto = %+v", usage)
+	}
+	env.must(env.login(auth.RoleViewer+"@sms.test"), http.MethodGet, "/api/sms/usage", nil, http.StatusForbidden)
+
+	// Sem o SMSDev configurado, nada sai (e o contador diz que está desligado).
 	off := smssetup.NewService(db, devicesSvc, nil, fulfillmentSvc, defaults, "", log)
 	if _, err := off.Start(ctx, mudo.ID, nil, smssetup.Options{}, nil); !errors.Is(err, smssetup.ErrDisabled) {
 		t.Errorf("desligado: %v", err)
+	}
+	if u, err := off.Usage(ctx); err != nil || u.Enabled || u.Balance != nil || u.SentLast30Days != sent {
+		t.Errorf("contador desligado = %+v %v", u, err)
 	}
 }

@@ -10,9 +10,11 @@ import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { fieldStyles, SelectField, TextField } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
+import { SmsCounter } from '@/components/fulfillment/SmsCounter';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { formatDeviceStatus, formatRelative } from '@/services/format';
+import { useAuth } from '@/stores/AuthContext';
 import type { Device } from '@/types';
 
 import styles from './Page.module.css';
@@ -78,6 +80,7 @@ function SecretField({
 }
 
 export function DevicesPage() {
+  const { canOperate } = useAuth();
   const { notify } = useToast();
   const queryClient = useQueryClient();
 
@@ -153,6 +156,8 @@ export function DevicesPage() {
           </div>
         </header>
 
+        {canOperate && <SmsCounter />}
+
         <Card flush>
           {devices.isLoading ? (
             <Spinner label="Carregando rastreadores" />
@@ -178,7 +183,7 @@ export function DevicesPage() {
                 <tbody>
                   {(devices.data ?? []).map((device) => (
                     <tr key={device.id}>
-                      <td className={styles.mono}>
+                      <td className={styles.mono} style={{ whiteSpace: 'nowrap' }}>
                         {device.imei}
                         {device.iccid && (
                           <div className={billing.muted} title="ICCID do chip">

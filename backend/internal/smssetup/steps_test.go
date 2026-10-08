@@ -27,6 +27,10 @@ func TestBuildSteps(t *testing.T) {
 	if shown[0] != "APN,smart.m2m.vivo.com.br,vivo,***#" {
 		t.Errorf("na tela = %v", shown)
 	}
+	// O contador da página de rastreadores conta com isso.
+	if len(steps) != ActivationSMS {
+		t.Errorf("a ativação padrão manda %d SMS, ActivationSMS diz %d", len(steps), ActivationSMS)
+	}
 
 	// O cadastro do rastreador manda: outro APN (com o usuário e a senha
 	// dele), servidor por IP, intervalo próprio; com os opcionais.

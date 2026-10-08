@@ -105,6 +105,24 @@ func TestFetchMapsTheSituation(t *testing.T) {
 	}
 }
 
+func TestBalance(t *testing.T) {
+	c, forms, paths := fakeAPI(t, func(string, url.Values) (int, string) {
+		return 200, `{"situacao":"OK","saldo_sms":"1234","descricao":"SALDO ATUAL"}`
+	})
+	if n, err := c.Balance(context.Background()); err != nil || n != 1234 {
+		t.Errorf("saldo = %d %v", n, err)
+	}
+	if (*paths)[0] != "/v1/balance" || (*forms)[0].Get("key") != "chave-secreta" {
+		t.Errorf("pedido = %s %v", (*paths)[0], (*forms)[0])
+	}
+	c, _, _ = fakeAPI(t, func(string, url.Values) (int, string) {
+		return 200, `{"situacao":"ERRO","codigo":"500","descricao":"CHAVE INVALIDA"}`
+	})
+	if _, err := c.Balance(context.Background()); err == nil || !strings.Contains(err.Error(), "CHAVE INVALIDA") {
+		t.Errorf("chave errada = %v", err)
+	}
+}
+
 func TestInbox(t *testing.T) {
 	c, forms, paths := fakeAPI(t, func(string, url.Values) (int, string) {
 		return 200, `[

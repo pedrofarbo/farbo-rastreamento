@@ -22,6 +22,17 @@ func smsError(w http.ResponseWriter, err error, notFound string) {
 	handleStoreError(w, err, notFound)
 }
 
+// handleSMSUsage: o contador da página de rastreadores — o saldo no SMSDev,
+// quantas ativações ele paga e os SMS dos últimos 30 dias.
+func (s *Server) handleSMSUsage(w http.ResponseWriter, r *http.Request) {
+	usage, err := s.SMSSetup.Usage(r.Context())
+	if err != nil {
+		smsError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusOK, usage)
+}
+
 // handleDeviceSMSSetup: os comandos que vão sair (redigidos), o que falta no
 // cadastro e a última configuração do rastreador.
 func (s *Server) handleDeviceSMSSetup(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,80 @@
+/* O contador de SMS da página de rastreadores. */
+.counter {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: start;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised, var(--surface));
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.value {
+  font-size: var(--text-xl, 1.25rem);
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.highlight {
+  color: var(--accent);
+}
+
+.hint {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.low {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--warning, #f59e0b);
+}
+
+.off {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.link {
+  align-self: center;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .counter {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* No celular, um embaixo do outro. */
+@media (max-width: 520px) {
+  .counter {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  .link {
+    justify-self: start;
+  }
+}

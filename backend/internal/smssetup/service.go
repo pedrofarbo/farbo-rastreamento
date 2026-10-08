@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,6 +24,7 @@ type Sender interface {
 	Send(ctx context.Context, to, body string) (*smsdev.Message, error)
 	Fetch(ctx context.Context, id string) (*smsdev.Message, error)
 	Inbox(ctx context.Context, since time.Time) ([]smsdev.Reply, error)
+	Balance(ctx context.Context) (int, error)
 }
 
 // Activator marca o pedido como "Configurado" (com o aparelho vinculado ao
@@ -56,6 +58,11 @@ const (
 	// inboxWindow: quanto tempo depois do último SMS enviado ainda lê as
 	// respostas (a do modo roubo também).
 	inboxWindow = 6 * time.Hour
+	// ActivationSMS: quantos SMS uma ativação padrão manda (APN, servidor,
+	// fuso e intervalo; os opcionais somam 1 cada).
+	ActivationSMS = 4
+	// balanceTTL: por quanto tempo o saldo lido no SMSDev vale.
+	balanceTTL = time.Minute
 )
 
 // ValidationError é um pedido recusado; a mensagem vai para a tela.
@@ -71,6 +78,11 @@ func invalid(format string, args ...any) error {
 var ErrDisabled = ValidationError{Message: "O envio de SMS não está configurado (SMSDEV_API_KEY)."}
 
 type Service struct {
+	// O último saldo lido no SMSDev (vale balanceTTL).
+	balanceMu sync.Mutex
+	balance   *int
+	balanceAt time.Time
+
 	db        *database.DB
 	devices   *devices.Service
 	sender    Sender
@@ -97,6 +109,47 @@ func (s *Service) Enabled() bool { return s != nil && s.sender != nil }
 
 // From é quem envia (para a tela).
 func (s *Service) From() string { return s.from }
+
+// Usage é o contador da página de rastreadores: o saldo no SMSDev, quantas
+// ativações ele paga e o que saiu nos últimos 30 dias.
+type Usage struct {
+	Enabled bool `json:"enabled"`
+	// Balance é o saldo em SMS (nulo se não deu para ler; BalanceError diz por quê).
+	Balance      *int   `json:"balance"`
+	BalanceError string `json:"balanceError"`
+	// ActivationSMS: SMS por ativação padrão; Activations: quantas o saldo paga.
+	ActivationSMS int `json:"activationSms"`
+	Activations   int `json:"activations"`
+	// SentLast30Days: SMS que saíram (sem os recusados) nos últimos 30 dias.
+	SentLast30Days int `json:"sentLast30Days"`
+}
+
+// Usage lê o saldo (guardado por um minuto) e conta os SMS do mês.
+func (s *Service) Usage(ctx context.Context) (*Usage, error) {
+	out := &Usage{Enabled: s.Enabled(), ActivationSMS: ActivationSMS}
+	if err := s.db.QueryRow(ctx, `
+		SELECT count(*) FROM sms_messages WHERE direction = 'OUT' AND status <> 'failed' AND created_at > $1`,
+		s.now().AddDate(0, 0, -30)).Scan(&out.SentLast30Days); err != nil {
+		return nil, database.MapError(err)
+	}
+	if !out.Enabled {
+		return out, nil
+	}
+	s.balanceMu.Lock()
+	defer s.balanceMu.Unlock()
+	if s.balance == nil || s.now().Sub(s.balanceAt) >= balanceTTL {
+		n, err := s.sender.Balance(ctx)
+		if err != nil {
+			s.log.Warn("falha ao ler o saldo no SMSDev", "err", err)
+			out.BalanceError = providerMessage(err)
+			return out, nil
+		}
+		s.balance, s.balanceAt = &n, s.now()
+	}
+	balance := *s.balance
+	out.Balance, out.Activations = &balance, balance/ActivationSMS
+	return out, nil
+}
 
 // Plan é o que vai sair, antes de confirmar.
 type Plan struct {

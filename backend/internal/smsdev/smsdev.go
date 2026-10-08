@@ -172,6 +172,7 @@ type result struct {
 	Operadora text `json:"operadora"`
 	Telefone  text `json:"telefone"`
 	IDSMSRead text `json:"id_sms_read"`
+	SaldoSMS  text `json:"saldo_sms"`
 }
 
 func (r result) failed() bool { return strings.EqualFold(string(r.Situacao), "ERRO") }
@@ -234,6 +235,23 @@ func (c *Client) Inbox(ctx context.Context, since time.Time) ([]Reply, error) {
 		out = append(out, Reply{ID: string(r.IDSMSRead), SentID: string(r.ID), From: string(r.Telefone), Body: string(r.Descricao)})
 	}
 	return out, nil
+}
+
+// Balance é o saldo da conta, em SMS.
+func (c *Client) Balance(ctx context.Context) (int, error) {
+	rows, err := c.call(ctx, "balance", url.Values{})
+	if err != nil {
+		return 0, err
+	}
+	r := rows[0]
+	if r.failed() {
+		return 0, &APIError{HTTPStatus: http.StatusOK, Code: string(r.Codigo), Message: string(r.Descricao)}
+	}
+	var n int
+	if _, err := fmt.Sscan(strings.TrimSpace(string(r.SaldoSMS)), &n); err != nil {
+		return 0, fmt.Errorf("saldo ilegível no SMSDev: %q", r.SaldoSMS)
+	}
+	return n, nil
 }
 
 // call faz o POST (a chave vai no corpo, não na URL) e devolve as linhas da

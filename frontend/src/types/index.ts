@@ -1751,6 +1751,21 @@ export interface SmsSession {
   createdAt: string;
 }
 
+/** O contador da página de rastreadores: o saldo no SMSDev e quantas ativações ele paga. */
+export interface SmsUsage {
+  /** O SMSDev está configurado no servidor. */
+  enabled: boolean;
+  /** Saldo em SMS; nulo se não deu para ler (balanceError diz por quê). */
+  balance: number | null;
+  balanceError: string;
+  /** SMS por ativação padrão (os opcionais somam 1 cada). */
+  activationSms: number;
+  /** Quantas ativações o saldo paga. */
+  activations: number;
+  /** SMS que saíram nos últimos 30 dias (sem os recusados). */
+  sentLast30Days: number;
+}
+
 export interface SmsSetupView {
   /** O SMSDev está configurado. */
   enabled: boolean;

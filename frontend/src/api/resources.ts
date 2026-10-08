@@ -100,6 +100,7 @@ import type {
   LandingAnalytics,
   InfraStatus,
   SystemLogPage,
+  SmsUsage,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -696,6 +697,8 @@ export const smsSetupApi = {
   start: (deviceId: string, input: { fulfillmentId: string | null; unlock: boolean; query: boolean }) =>
     api.post<SmsSession>(`/api/devices/${deviceId}/sms-setup`, input),
   cancel: (sessionId: string) => api.post<SmsSession>(`/api/sms-setup/${sessionId}/cancel`),
+  /** O saldo no SMSDev e quantas ativações ele paga (o contador da página de rastreadores). */
+  usage: () => api.get<SmsUsage>('/api/sms/usage'),
 };
 
 /** Programa de afiliados (admin). */
