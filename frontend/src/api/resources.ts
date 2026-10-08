@@ -365,6 +365,8 @@ export interface DeviceInput {
   protocol?: string;
   firmware?: string;
   phoneNumber?: string;
+  /** O ICCID do chip; o servidor guarda só os dígitos (a marcação "SP" da etiqueta sai). */
+  iccid?: string;
   apn?: string;
   apnUser?: string;
   apnPassword?: string;
@@ -392,6 +394,7 @@ export function deviceInputFrom(device: Device): DeviceInput {
     protocol: device.protocol,
     firmware: device.firmware,
     phoneNumber: device.phoneNumber,
+    iccid: device.iccid,
     apn: device.apn,
     apnUser: device.apnUser,
     apnPassword: '',

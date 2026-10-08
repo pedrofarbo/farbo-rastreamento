@@ -122,6 +122,8 @@ export interface Device {
   protocol: string;
   firmware: string;
   phoneNumber: string;
+  /** O ICCID do chip (só dígitos; vazio se não informado). A equipe vê; o cliente, não. */
+  iccid: string;
   status: DeviceStatus;
   lastSeenAt: string | null;
   apn: string;

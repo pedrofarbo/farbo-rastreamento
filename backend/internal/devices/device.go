@@ -23,6 +23,8 @@ type Device struct {
 	Protocol     string    `json:"protocol"`
 	Firmware     string    `json:"firmware"`
 	PhoneNumber  string    `json:"phoneNumber"`
+	// ICCID é o número de série do chip (só dígitos; vazio se não informado).
+	ICCID string `json:"iccid"`
 
 	Status     string     `json:"status"`
 	LastSeenAt *time.Time `json:"lastSeenAt"`
@@ -81,6 +83,7 @@ type View struct {
 	Protocol     string    `json:"protocol"`
 	Firmware     string    `json:"firmware"`
 	PhoneNumber  string    `json:"phoneNumber"`
+	ICCID        string    `json:"iccid"`
 
 	Status     string     `json:"status"`
 	LastSeenAt *time.Time `json:"lastSeenAt"`
@@ -125,6 +128,7 @@ func (d *Device) View(audience Audience) *View {
 	}
 
 	v.PhoneNumber = d.PhoneNumber
+	v.ICCID = d.ICCID
 	v.Notes = d.Notes
 	if audience != AudienceAdmin {
 		return v
@@ -167,6 +171,7 @@ type Input struct {
 	Protocol                 string            `json:"protocol"`
 	Firmware                 string            `json:"firmware"`
 	PhoneNumber              string            `json:"phoneNumber"`
+	ICCID                    string            `json:"iccid"`
 	APN                      string            `json:"apn"`
 	APNUser                  string            `json:"apnUser"`
 	APNPassword              string            `json:"apnPassword"`

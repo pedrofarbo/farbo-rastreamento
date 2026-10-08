@@ -257,6 +257,7 @@ export function VehicleDetailsPage() {
               <Info label="Protocolo" value={device.protocol || 'ainda não detectado'} mono />
               <Info label="Firmware" value={device.firmware || '—'} />
               {!isCustomer && <Info label="Linha" value={device.phoneNumber || '—'} />}
+              {!isCustomer && <Info label="ICCID do chip" value={device.iccid || '—'} mono />}
               <Info label="Última comunicação" value={formatDateTime(device.lastSeenAt)} />
               <Info label="Conexão" value={vehicle.connected ? 'aberta' : 'fechada'} />
             </div>

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { deviceInputFrom, devicesApi, diagnosticsApi, vehiclesApi } from '@/api/resources';
 import type { DeviceInput, VehicleInput } from '@/api/resources';
+import billing from '@/components/billing/Billing.module.css';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -22,6 +23,7 @@ const EMPTY_DEVICE: DeviceInput = {
   manufacturer: 'TKSTAR',
   protocol: '',
   phoneNumber: '',
+  iccid: '',
   apn: '',
   apnUser: '',
   apnPassword: '',
@@ -176,7 +178,14 @@ export function DevicesPage() {
                 <tbody>
                   {(devices.data ?? []).map((device) => (
                     <tr key={device.id}>
-                      <td className={styles.mono}>{device.imei}</td>
+                      <td className={styles.mono}>
+                        {device.imei}
+                        {device.iccid && (
+                          <div className={billing.muted} title="ICCID do chip">
+                            chip {device.iccid}
+                          </div>
+                        )}
+                      </td>
                       <td>{vehicleByDevice.get(device.id)?.name ?? '— sem vínculo —'}</td>
                       <td className={styles.mono}>{device.protocol || 'aguardando'}</td>
                       <td>
@@ -262,29 +271,39 @@ export function DevicesPage() {
               />
             </div>
 
-            <div className={styles.formRow}>
-              <SelectField
-                label="Protocolo"
-                hint="Deixe em branco para o servidor detectar no primeiro pacote."
-                value={deviceForm.protocol ?? ''}
-                onChange={(event) =>
-                  setDeviceForm({ ...deviceForm, protocol: event.target.value })
-                }
-              >
-                <option value="">detectar automaticamente</option>
-                {(protocols.data ?? []).map((protocol) => (
-                  <option key={protocol.name} value={protocol.name}>
-                    {protocol.label} — {protocol.confidence}
-                  </option>
-                ))}
-              </SelectField>
+            <SelectField
+              label="Protocolo"
+              hint="Deixe em branco para o servidor detectar no primeiro pacote."
+              value={deviceForm.protocol ?? ''}
+              onChange={(event) =>
+                setDeviceForm({ ...deviceForm, protocol: event.target.value })
+              }
+            >
+              <option value="">detectar automaticamente</option>
+              {(protocols.data ?? []).map((protocol) => (
+                <option key={protocol.name} value={protocol.name}>
+                  {protocol.label} — {protocol.confidence}
+                </option>
+              ))}
+            </SelectField>
 
+            <div className={styles.formRow}>
               <TextField
-                label="Linha (SIM)"
+                label="Linha do chip"
+                placeholder="(34) 99999-0000"
+                hint="O número de telefone do chip, com DDD: é para ele que vai a configuração por SMS."
                 value={deviceForm.phoneNumber ?? ''}
                 onChange={(event) =>
                   setDeviceForm({ ...deviceForm, phoneNumber: event.target.value })
                 }
+              />
+              <TextField
+                label="ICCID do chip"
+                placeholder="89553202100093795330"
+                inputMode="numeric"
+                hint="Os 19 ou 20 números impressos no chip (começam com 89). Se colar com o SP da etiqueta, ele sai."
+                value={deviceForm.iccid ?? ''}
+                onChange={(event) => setDeviceForm({ ...deviceForm, iccid: event.target.value })}
               />
             </div>
 

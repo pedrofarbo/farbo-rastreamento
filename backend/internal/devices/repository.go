@@ -11,7 +11,7 @@ import (
 )
 
 const columns = `id, imei, COALESCE(model, ''), COALESCE(manufacturer, ''), COALESCE(protocol, ''),
-	COALESCE(firmware, ''), COALESCE(phone_number, ''), status, last_seen_at,
+	COALESCE(firmware, ''), COALESCE(phone_number, ''), COALESCE(iccid, ''), status, last_seen_at,
 	COALESCE(apn, ''), COALESCE(apn_user, ''), COALESCE(apn_password, ''),
 	COALESCE(server_host, ''), server_port, report_interval_seconds, heartbeat_interval_seconds,
 	COALESCE(command_password, ''), command_overrides, COALESCE(notes, ''), created_at, updated_at`
@@ -30,7 +30,7 @@ func (r *Repository) UseTelemetry(db *database.DB) { r.touchDB = db }
 func scan(row database.Scanner) (*Device, error) {
 	var d Device
 	err := row.Scan(
-		&d.ID, &d.IMEI, &d.Model, &d.Manufacturer, &d.Protocol, &d.Firmware, &d.PhoneNumber,
+		&d.ID, &d.IMEI, &d.Model, &d.Manufacturer, &d.Protocol, &d.Firmware, &d.PhoneNumber, &d.ICCID,
 		&d.Status, &d.LastSeenAt, &d.APN, &d.APNUser, &d.APNPassword, &d.ServerHost,
 		&d.ServerPort, &d.ReportIntervalSeconds, &d.HeartbeatIntervalSeconds,
 		&d.CommandPassword, &d.CommandOverrides, &d.Notes, &d.CreatedAt, &d.UpdatedAt,
@@ -52,13 +52,13 @@ func (r *Repository) Create(ctx context.Context, in Input) (*Device, error) {
 		INSERT INTO devices (imei, model, manufacturer, protocol, firmware, phone_number,
 			apn, apn_user, apn_password, server_host, server_port,
 			report_interval_seconds, heartbeat_interval_seconds,
-			command_password, command_overrides, notes)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+			command_password, command_overrides, notes, iccid)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NULLIF($17, ''))
 		RETURNING `+columns,
 		strings.TrimSpace(in.IMEI), in.Model, in.Manufacturer, in.Protocol, in.Firmware,
 		in.PhoneNumber, in.APN, in.APNUser, in.APNPassword, in.ServerHost, in.ServerPort,
 		in.ReportIntervalSeconds, in.HeartbeatIntervalSeconds,
-		in.CommandPassword, in.CommandOverrides, in.Notes,
+		in.CommandPassword, in.CommandOverrides, in.Notes, in.ICCID,
 	)
 	return scan(row)
 }
@@ -72,13 +72,13 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, in Input) (*Devic
 			firmware = $6, phone_number = $7, apn = $8, apn_user = $9, apn_password = $10,
 			server_host = $11, server_port = $12, report_interval_seconds = $13,
 			heartbeat_interval_seconds = $14, command_password = $15,
-			command_overrides = $16, notes = $17, updated_at = NOW()
+			command_overrides = $16, notes = $17, iccid = NULLIF($18, ''), updated_at = NOW()
 		WHERE id = $1
 		RETURNING `+columns,
 		id, strings.TrimSpace(in.IMEI), in.Model, in.Manufacturer, in.Protocol, in.Firmware,
 		in.PhoneNumber, in.APN, in.APNUser, in.APNPassword, in.ServerHost, in.ServerPort,
 		in.ReportIntervalSeconds, in.HeartbeatIntervalSeconds,
-		in.CommandPassword, in.CommandOverrides, in.Notes,
+		in.CommandPassword, in.CommandOverrides, in.Notes, in.ICCID,
 	)
 	return scan(row)
 }
@@ -96,6 +96,11 @@ func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*Device, error) {
 	return scan(r.db.QueryRow(ctx, `SELECT `+columns+` FROM devices WHERE id = $1`, id))
+}
+
+// GetByICCID é o rastreador com o chip (ErrNotFound se nenhum).
+func (r *Repository) GetByICCID(ctx context.Context, iccid string) (*Device, error) {
+	return scan(r.db.QueryRow(ctx, `SELECT `+columns+` FROM devices WHERE iccid = $1`, iccid))
 }
 
 func (r *Repository) GetByIMEI(ctx context.Context, imei string) (*Device, error) {

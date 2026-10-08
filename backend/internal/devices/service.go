@@ -3,12 +3,14 @@ package devices
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
 )
 
@@ -44,6 +46,9 @@ func (s *Service) Create(ctx context.Context, in Input) (*Device, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := s.checkICCID(ctx, uuid.Nil, normalized.ICCID); err != nil {
+		return nil, err
+	}
 	return s.repo.Create(ctx, normalized)
 }
 
@@ -60,7 +65,29 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Device, 
 	if err != nil {
 		return nil, err
 	}
+	if err := s.checkICCID(ctx, id, normalized.ICCID); err != nil {
+		return nil, err
+	}
 	return s.repo.Update(ctx, id, normalized)
+}
+
+// checkICCID recusa o chip que já está em outro rastreador, dizendo qual (o
+// índice único barra de qualquer forma; aqui a mensagem é melhor).
+func (s *Service) checkICCID(ctx context.Context, id uuid.UUID, iccid string) error {
+	if iccid == "" {
+		return nil
+	}
+	other, err := s.repo.GetByICCID(ctx, iccid)
+	if errors.Is(err, database.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if other.ID != id {
+		return invalid("este ICCID já está no rastreador de IMEI %s", other.IMEI)
+	}
+	return nil
 }
 
 // mergeInput aplica a regra de "só escrita" das credenciais (ver Input):
@@ -147,6 +174,12 @@ func (s *Service) validate(in Input) (Input, error) {
 	if err := protocols.ValidateIMEI(in.IMEI); err != nil {
 		return in, invalid("IMEI inválido: %v", err)
 	}
+
+	iccid, err := NormalizeICCID(in.ICCID)
+	if err != nil {
+		return in, err
+	}
+	in.ICCID = iccid
 
 	in.Protocol = strings.ToLower(strings.TrimSpace(in.Protocol))
 	if in.Protocol != "" {

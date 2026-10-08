@@ -12,6 +12,7 @@ const device: Device = {
   protocol: 'gt06',
   firmware: '1.0',
   phoneNumber: '+5511999990000',
+  iccid: '89553202100093795330',
   status: 'ONLINE',
   lastSeenAt: '2026-09-30T12:00:00Z',
   apn: 'zap.vivo.com.br',
@@ -46,6 +47,8 @@ describe('deviceInputFrom', () => {
     const input = deviceInputFrom(device);
     expect(input).toMatchObject({
       imei: device.imei,
+      phoneNumber: device.phoneNumber,
+      iccid: device.iccid,
       apn: device.apn,
       apnUser: device.apnUser,
       serverHost: device.serverHost,
