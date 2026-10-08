@@ -69,6 +69,22 @@ func TestSendAndFetch(t *testing.T) {
 	if gotForm.Get("MessagingServiceSid") != "MG9" || gotForm.Has("From") || gotForm.Has("StatusCallback") {
 		t.Errorf("com Messaging Service: %v", gotForm)
 	}
+	// Com a API Key, ela autentica; a conta continua no caminho.
+	c = NewClient(Config{BaseURL: srv.URL, AccountSID: "AC1", AuthToken: "tok", APIKeySID: "SK7", APIKeySecret: "segredo", From: "+15005550006"})
+	_, _ = c.Send(context.Background(), "+5511999998888", "x", "")
+	if gotPath != "/Accounts/AC1/Messages.json" || gotUser != "SK7" || gotPass != "segredo" {
+		t.Errorf("com API Key = %s %s:%s", gotPath, gotUser, gotPass)
+	}
+	for cfg, want := range map[Config]bool{
+		{AccountSID: "AC1", APIKeySID: "SK7", APIKeySecret: "s", From: "+1"}: true,
+		{AccountSID: "AC1", APIKeySID: "SK7", From: "+1"}:                    false,
+		{AccountSID: "AC1", AuthToken: "tok", MessagingServiceSID: "MG9"}:    true,
+		{APIKeySID: "SK7", APIKeySecret: "s", From: "+1"}:                    false,
+	} {
+		if cfg.Enabled() != want {
+			t.Errorf("Enabled(%+v) = %v", cfg, !want)
+		}
+	}
 	status = http.StatusOK
 	if m, err := c.Fetch(context.Background(), "SM123"); err != nil || m.SID != "SM123" || gotPath != "/Accounts/AC1/Messages/SM123.json" {
 		t.Errorf("consulta = %+v %v (%s)", m, err, gotPath)

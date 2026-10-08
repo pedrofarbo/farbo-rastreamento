@@ -622,11 +622,15 @@ func newSMSSetup(cfg *config.Config, db *database.DB, devs *devices.Service, act
 	}
 	tw := twilio.Config{
 		BaseURL: c.TwilioBaseURL, AccountSID: c.TwilioAccountSID, AuthToken: c.TwilioAuthToken,
+		APIKeySID: c.TwilioAPIKeySID, APIKeySecret: c.TwilioAPIKeySecret,
 		From: c.TwilioFrom, MessagingServiceSID: c.TwilioMessagingServiceSID,
 	}
 	if !tw.Enabled() {
-		log.Warn("TWILIO_ACCOUNT_SID/AUTH_TOKEN/FROM não definidos: configuração do rastreador por SMS desligada")
+		log.Warn("TWILIO_ACCOUNT_SID/AUTH_TOKEN (ou API_KEY_*)/FROM não definidos: configuração do rastreador por SMS desligada")
 		return smssetup.NewService(db, devs, nil, activator, defaults, "", "", log)
+	}
+	if c.TwilioAuthToken == "" {
+		log.Warn("TWILIO_AUTH_TOKEN não definido: os avisos de status e as respostas do rastreador serão recusados (a assinatura é conferida com ele)")
 	}
 	client := twilio.NewClient(tw)
 	// O aviso de status só funciona com endereço público (https).
@@ -635,6 +639,7 @@ func newSMSSetup(cfg *config.Config, db *database.DB, devs *devices.Service, act
 		callback = c.WebhookBaseURL + "/api/twilio/status"
 	}
 	log.Info("configuração do rastreador por SMS via Twilio", "remetente", client.Sender(), "aviso_de_status", callback != "",
+		"api_key", c.TwilioAPIKeySID != "" && c.TwilioAPIKeySecret != "",
 		"servidor", fmt.Sprintf("%s:%d", c.TrackerHost, c.TrackerPort), "apn_padrao", c.APN != "")
 	return smssetup.NewService(db, devs, client, activator, defaults, callback, client.Sender(), log)
 }

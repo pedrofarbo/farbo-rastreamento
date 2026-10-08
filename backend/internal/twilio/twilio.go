@@ -48,18 +48,26 @@ func Failed(status string) bool {
 }
 
 // Config é a conta e o remetente: um número (From, E.164) ou um Messaging
-// Service.
+// Service. Com a API Key (SK... e o segredo), as chamadas à API usam ela — dá
+// para revogá-la sem trocar o token da conta; o Auth Token fica para conferir
+// a assinatura dos webhooks (o Twilio assina com ele).
 type Config struct {
 	BaseURL             string
 	AccountSID          string
 	AuthToken           string
+	APIKeySID           string
+	APIKeySecret        string
 	From                string
 	MessagingServiceSID string
 }
 
-// Enabled diz se dá para mandar SMS.
+// usesAPIKey diz se as chamadas vão com a API Key.
+func (c Config) usesAPIKey() bool { return c.APIKeySID != "" && c.APIKeySecret != "" }
+
+// Enabled diz se dá para mandar SMS: a conta, uma credencial (API Key ou Auth
+// Token) e o remetente.
 func (c Config) Enabled() bool {
-	return c.AccountSID != "" && c.AuthToken != "" && (c.From != "" || c.MessagingServiceSID != "")
+	return c.AccountSID != "" && (c.AuthToken != "" || c.usesAPIKey()) && (c.From != "" || c.MessagingServiceSID != "")
 }
 
 type Client struct {
@@ -152,7 +160,11 @@ func (c *Client) do(ctx context.Context, method, path string, form url.Values, o
 	if err != nil {
 		return err
 	}
-	req.SetBasicAuth(c.cfg.AccountSID, c.cfg.AuthToken)
+	if c.cfg.usesAPIKey() {
+		req.SetBasicAuth(c.cfg.APIKeySID, c.cfg.APIKeySecret)
+	} else {
+		req.SetBasicAuth(c.cfg.AccountSID, c.cfg.AuthToken)
+	}
 	req.Header.Set("Accept", "application/json")
 	if form != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

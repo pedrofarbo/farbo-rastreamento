@@ -57,8 +57,12 @@ type Company struct {
 // SMS configura o envio pelo Twilio e a configuração do rastreador por SMS
 // na ativação (APN, servidor, fuso e intervalo, para o número do chip).
 type SMS struct {
-	TwilioAccountSID          string
-	TwilioAuthToken           string
+	TwilioAccountSID string
+	TwilioAuthToken  string
+	// A API Key (SK... e o segredo): com ela, as chamadas à API não usam o
+	// Auth Token, que fica só para conferir os webhooks.
+	TwilioAPIKeySID           string
+	TwilioAPIKeySecret        string
 	TwilioFrom                string
 	TwilioMessagingServiceSID string
 	TwilioBaseURL             string
@@ -847,6 +851,8 @@ func Load() (*Config, error) {
 	cfg.SMS = SMS{
 		TwilioAccountSID:          strings.TrimSpace(str("TWILIO_ACCOUNT_SID", "")),
 		TwilioAuthToken:           strings.TrimSpace(str("TWILIO_AUTH_TOKEN", "")),
+		TwilioAPIKeySID:           strings.TrimSpace(str("TWILIO_API_KEY_SID", "")),
+		TwilioAPIKeySecret:        strings.TrimSpace(str("TWILIO_API_KEY_SECRET", "")),
 		TwilioFrom:                strings.TrimSpace(str("TWILIO_FROM", "")),
 		TwilioMessagingServiceSID: strings.TrimSpace(str("TWILIO_MESSAGING_SERVICE_SID", "")),
 		TwilioBaseURL:             strings.TrimRight(str("TWILIO_BASE_URL", ""), "/"),
