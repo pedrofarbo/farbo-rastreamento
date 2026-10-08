@@ -10,6 +10,7 @@ import type { Geofence, Position, VehicleView } from '@/types';
 import { endpointIcon, vehicleIcon } from './markers';
 import { OsmTiles } from './OsmTiles';
 import styles from './TrackerMap.module.css';
+import { useVehicleMotion } from './useVehicleMotion';
 
 /** Centro padrão (São Paulo) quando ainda não há nenhuma posição. */
 const DEFAULT_CENTER: LatLngTuple = [-23.5505, -46.6333];
@@ -141,6 +142,7 @@ export function TrackerMap({
               ignition: highlight.acc,
               heading: highlight.heading,
               moving: highlight.speedKmh >= MOVING_SPEED_KMH,
+              kind: selected?.kind ?? located[0]?.kind,
               selected: true,
               blocked: highlight.relayOn === true,
               online: true, // reprodução do histórico: sempre trata como "atual"
@@ -154,7 +156,13 @@ export function TrackerMap({
 
         {!highlight &&
           located.map((vehicle) => (
-            <VehicleMarker key={vehicle.id} vehicle={vehicle} selected={vehicle.id === selectedId} onSelect={onSelect} />
+            <VehicleMarker
+              key={vehicle.id}
+              vehicle={vehicle}
+              selected={vehicle.id === selectedId}
+              follow={following && !track && vehicle.id === selected?.id}
+              onSelect={onSelect}
+            />
           ))}
 
         <MapFocus
@@ -162,6 +170,7 @@ export function TrackerMap({
           enabled={following && !track}
           fitTo={track && track.length > 1 ? trackLine : undefined}
           recenterKey={recenterKey}
+          focusId={!highlight && selected ? selected.id : null}
         />
         {onFollowingChange && <MapDragWatch onDrag={() => onFollowingChange(false)} />}
         <MapResize />
@@ -205,10 +214,13 @@ export function TrackerMap({
 const VehicleMarker = memo(function VehicleMarker({
   vehicle,
   selected,
+  follow,
   onSelect,
 }: {
   vehicle: VehicleView;
   selected: boolean;
+  /** O mapa segue este veículo: vai junto no deslize. */
+  follow: boolean;
   onSelect?: (vehicleId: string) => void;
 }) {
   const position = vehicle.lastPosition as Position;
@@ -217,18 +229,21 @@ const VehicleMarker = memo(function VehicleMarker({
   const moving = position.speedKmh >= MOVING_SPEED_KMH;
   const blocked = vehicle.state?.relayOn === true;
   const online = vehicle.device?.status === 'ONLINE';
+  const speedKmh = selected && moving ? position.speedKmh : null;
+  const kind = vehicle.kind;
   const icon = useMemo(
-    () => vehicleIcon({ ignition, heading, moving, selected, blocked, online }),
-    [ignition, heading, moving, selected, blocked, online],
+    () => vehicleIcon({ ignition, heading, moving, selected, blocked, online, speedKmh, kind }),
+    [ignition, heading, moving, selected, blocked, online, speedKmh, kind],
   );
-  const latLng = useMemo<LatLngTuple>(
-    () => [position.latitude, position.longitude],
-    [position.latitude, position.longitude],
-  );
+  // Só a posição inicial: daqui em diante quem move o marcador é o
+  // useVehicleMotion (deslizando quando o carro anda).
+  const [initial] = useState<LatLngTuple>(() => [position.latitude, position.longitude]);
+  const markerRef = useRef<L.Marker | null>(null);
+  useVehicleMotion(markerRef, position, moving && online, follow);
   const handlers = useMemo(() => ({ click: () => onSelect?.(vehicle.id) }), [onSelect, vehicle.id]);
 
   return (
-    <Marker position={latLng} icon={icon} eventHandlers={handlers}>
+    <Marker ref={markerRef} position={initial} icon={icon} eventHandlers={handlers}>
       <Popup>
         <PositionPopup title={vehicle.name} position={position} />
       </Popup>
@@ -306,19 +321,27 @@ function MapResize() {
   return null;
 }
 
-/** Centraliza o mapa sem recriar o container a cada atualização. */
+/**
+ * Centraliza o mapa sem recriar o container a cada atualização. Seguindo um
+ * veículo (focusId), centraliza ao escolher, ao ligar o seguir e no
+ * recentralizar; as posições novas dele quem acompanha é o próprio marcador,
+ * junto com o deslize (useVehicleMotion).
+ */
 function MapFocus({
   center,
   enabled,
   fitTo,
   recenterKey,
+  focusId,
 }: {
   center: LatLngTuple;
   enabled: boolean;
   fitTo?: LatLngExpression[];
   recenterKey?: number;
+  focusId: string | null;
 }) {
   const map = useMap();
+  const focused = useRef('');
 
   useEffect(() => {
     if (!fitTo || fitTo.length < 2) return;
@@ -326,9 +349,15 @@ function MapFocus({
   }, [map, fitTo, recenterKey]);
 
   useEffect(() => {
-    if (!enabled || fitTo) return;
+    if (!enabled || fitTo) {
+      focused.current = '';
+      return;
+    }
+    const key = `${focusId}|${recenterKey}`;
+    if (focusId && focused.current === key) return;
+    focused.current = key;
     map.setView(center, map.getZoom(), { animate: true });
-  }, [map, center[0], center[1], enabled, fitTo, recenterKey]);
+  }, [map, center[0], center[1], enabled, fitTo, recenterKey, focusId]);
 
   return null;
 }

@@ -179,9 +179,13 @@ export interface DeviceState {
   updatedAt: string;
 }
 
+/** Carro ou moto: o mapa desenha um ou outro. */
+export type VehicleKind = 'CAR' | 'MOTORCYCLE';
+
 export interface Vehicle {
   id: string;
   name: string;
+  kind: VehicleKind;
   plate: string;
   brand: string;
   model: string;

@@ -1,10 +1,17 @@
 import type { VehicleInput } from '@/api/resources';
 import { SelectField, TextField } from '@/components/ui/Field';
-import type { Device } from '@/types';
+import fieldStyles from '@/components/ui/Field.module.css';
+import type { Device, VehicleKind } from '@/types';
 
 import styles from '@/pages/Page.module.css';
+import local from './VehicleFields.module.css';
 
-export const EMPTY_VEHICLE: VehicleInput = { name: '', plate: '', brand: '', model: '', year: null, color: '' };
+export const EMPTY_VEHICLE: VehicleInput = { name: '', kind: 'CAR', plate: '', brand: '', model: '', year: null, color: '' };
+
+const KINDS: { id: VehicleKind; label: string }[] = [
+  { id: 'CAR', label: '🚗 Carro' },
+  { id: 'MOTORCYCLE', label: '🏍️ Moto' },
+];
 
 /**
  * Campos do cadastro de veículo, os mesmos para o cliente e para a central.
@@ -21,8 +28,28 @@ export function VehicleFields({
   devices?: Device[];
   autoFocus?: boolean;
 }) {
+  const kind = value.kind ?? 'CAR';
   return (
     <>
+      <div className={fieldStyles.field}>
+        <span className={fieldStyles.label} id="vehicle-kind">
+          Tipo
+        </span>
+        <div className={local.kind} role="radiogroup" aria-labelledby="vehicle-kind">
+          {KINDS.map((k) => (
+            <button
+              key={k.id}
+              type="button"
+              role="radio"
+              aria-checked={kind === k.id}
+              className={`${local.kindOption} ${kind === k.id ? local.kindActive : ''}`}
+              onClick={() => onChange({ ...value, kind: k.id })}
+            >
+              {k.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <TextField
         label="Apelido do veículo"
         placeholder="Ex.: Moto do trabalho"

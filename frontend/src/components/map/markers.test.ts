@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 
-import { endpointIcon, historyIcon, safeHeading, vehicleIcon } from './markers';
+import { endpointIcon, historyIcon, safeHeading, safeSpeed, vehicleIcon } from './markers';
 
 /** O que o Leaflet põe no mapa: a div criada pelo próprio ícone. */
 function render(icon: ReturnType<typeof vehicleIcon>): HTMLElement {
@@ -16,9 +16,24 @@ const PAYLOADS = [
 ];
 
 describe('vehicleIcon', () => {
-  it('gira a seta pelo rumo numérico', () => {
+  it('gira o veículo pelo rumo numérico', () => {
     const el = render(vehicleIcon({ ignition: true, heading: 271.5, moving: true, selected: false, blocked: false }));
-    expect(el.querySelector('path')?.getAttribute('transform')).toBe('rotate(271.5 16 16)');
+    expect(el.querySelector('.vehicle-body')?.getAttribute('transform')).toBe('rotate(271.5 16 16)');
+  });
+
+  it('desenha o carro ou a moto pelo tipo (sem tipo, carro)', () => {
+    const kindOf = (kind: unknown) =>
+      render(vehicleIcon({ ignition: true, heading: 0, moving: false, selected: false, blocked: false, kind: kind as string }))
+        .querySelector('.vehicle-body')
+        ?.getAttribute('data-kind');
+    expect(kindOf('MOTORCYCLE')).toBe('motorcycle');
+    expect(kindOf('CAR')).toBe('car');
+    expect(kindOf(undefined)).toBe('car');
+    expect(kindOf('"><script>window.__pwned=1</script>')).toBe('car');
+    // A moto tem o capacete do piloto; o carro, os vidros.
+    const moto = render(vehicleIcon({ ignition: true, heading: 0, moving: false, selected: false, blocked: false, kind: 'MOTORCYCLE' }));
+    const car = render(vehicleIcon({ ignition: true, heading: 0, moving: false, selected: false, blocked: false, kind: 'CAR' }));
+    expect(moto.querySelector('.vehicle-body')?.innerHTML).not.toBe(car.querySelector('.vehicle-body')?.innerHTML);
   });
 
   it('texto com aspas ou marcação no rumo não cria nós nem atributos', () => {
@@ -55,9 +70,11 @@ describe('vehicleIcon', () => {
   });
 
   it('mantém o desenho de cada estado', () => {
+    // Parado e desligado: o veículo em vermelho, virado para o último rumo, sem ondas.
     const stopped = render(vehicleIcon({ ignition: false, heading: 10, moving: false, selected: false, blocked: false }));
-    expect(stopped.querySelector('circle')?.getAttribute('fill')).toBe('#ef5b52');
-    expect(stopped.querySelector('path')).toBeNull();
+    expect(stopped.querySelector('.vehicle-body path')?.getAttribute('fill')).toBe('#ef5b52');
+    expect(stopped.querySelector('.vehicle-body')?.getAttribute('transform')).toBe('rotate(10 16 16)');
+    expect(stopped.querySelectorAll('.vehicle-pulse')).toHaveLength(0);
 
     const offline = render(
       vehicleIcon({ ignition: null, heading: null, moving: true, selected: false, blocked: true, online: false }),
@@ -72,6 +89,37 @@ describe('vehicleIcon', () => {
   it('cada chamada devolve um desenho novo (o Leaflet move o nó para o marcador)', () => {
     const options = { ignition: true, heading: 5, moving: true, selected: false, blocked: false };
     expect(render(vehicleIcon(options)).firstChild).not.toBe(render(vehicleIcon(options)).firstChild);
+  });
+});
+
+describe('o veículo andando', () => {
+  it('ganha as ondas e o halo; parado ou sem sinal, não', () => {
+    const live = render(vehicleIcon({ ignition: true, heading: 90, moving: true, selected: false, blocked: false }));
+    expect(live.className).toContain('vehicle-marker-moving');
+    expect(live.querySelectorAll('circle.vehicle-pulse')).toHaveLength(2);
+    expect(live.querySelector('circle.vehicle-pulse')?.getAttribute('fill')).toBe('#3be558');
+    expect(live.querySelector('.vehicle-body')?.getAttribute('transform')).toBe('rotate(90 16 16)');
+
+    const stopped = render(vehicleIcon({ ignition: true, heading: 90, moving: false, selected: false, blocked: false }));
+    const offline = render(vehicleIcon({ ignition: true, heading: 90, moving: true, selected: false, blocked: false, online: false }));
+    for (const el of [stopped, offline]) {
+      expect(el.className).not.toContain('vehicle-marker-moving');
+      expect(el.querySelectorAll('.vehicle-pulse')).toHaveLength(0);
+    }
+  });
+
+  it('o selecionado mostra a velocidade; valor estranho não vira texto', () => {
+    const tag = (speedKmh: unknown, selected = true) =>
+      render(
+        vehicleIcon({ ignition: true, heading: 0, moving: true, selected, blocked: false, speedKmh: speedKmh as number }),
+      ).querySelector('text')?.textContent;
+    expect(tag(61.6)).toBe('62 km/h');
+    expect(tag(61.6, false)).toBeUndefined();
+    for (const bad of [Number.NaN, -5, 999, '<img src=x onerror=alert(1)>', null]) {
+      expect(tag(bad)).toBeUndefined();
+    }
+    expect(safeSpeed(0)).toBe(0);
+    expect(safeSpeed('60')).toBeNull();
   });
 });
 

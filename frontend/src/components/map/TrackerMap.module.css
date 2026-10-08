@@ -92,3 +92,38 @@
   font-weight: 600;
   color: var(--danger);
 }
+
+/* O veículo em movimento: as ondas saem do marcador e passam da borda do
+   ícone (por isso o SVG mostra o que transborda). Quem pede menos movimento
+   no sistema vê o marcador parado. */
+:global(.vehicle-marker) svg {
+  overflow: visible;
+}
+
+:global(.vehicle-pulse) {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: vehiclePulse 2.4s ease-out infinite;
+}
+
+:global(.vehicle-pulse-late) {
+  animation-delay: 1.2s;
+}
+
+@keyframes vehiclePulse {
+  from {
+    transform: scale(0.9);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.vehicle-pulse) {
+    animation: none;
+    opacity: 0;
+  }
+}

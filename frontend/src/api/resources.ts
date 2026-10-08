@@ -2,6 +2,7 @@ import type { TeamRole } from '@/services/roles';
 
 import { api, download, fetchBlob, request } from './client';
 import type {
+  VehicleKind,
   PriceAdjustmentOverview,
   LoginResponse,
   TeamMember,
@@ -218,6 +219,8 @@ export const usersApi = {
 
 export interface VehicleInput {
   name: string;
+  /** Carro ou moto; ausente na edição mantém o tipo atual (na criação, carro). */
+  kind?: VehicleKind;
   plate?: string;
   brand?: string;
   model?: string;
@@ -231,6 +234,7 @@ export interface VehicleInput {
 export function vehicleInputFrom(vehicle: Vehicle, changes: Partial<VehicleInput> = {}): VehicleInput {
   return {
     name: vehicle.name,
+    kind: vehicle.kind,
     plate: vehicle.plate,
     brand: vehicle.brand,
     model: vehicle.model,
