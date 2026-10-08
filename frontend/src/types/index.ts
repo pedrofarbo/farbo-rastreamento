@@ -1702,7 +1702,7 @@ export interface PartnerReport {
 }
 
 // ---------------------------------------------------------------------------
-// Configuração do rastreador por SMS (Twilio) na ativação
+// Configuração do rastreador por SMS (SMSDev) na ativação
 // ---------------------------------------------------------------------------
 
 /** Um comando de configuração (texto redigido: as senhas viram ***). */
@@ -1752,12 +1752,10 @@ export interface SmsSession {
 }
 
 export interface SmsSetupView {
-  /** O Twilio está configurado. */
+  /** O SMSDev está configurado. */
   enabled: boolean;
-  /** Quem envia (o número do Twilio). */
+  /** Quem envia (o SMSDev). */
   from: string;
-  /** O endereço a cadastrar no número do Twilio para receber as respostas. */
-  inboundUrl: string;
   plan: SmsPlan;
   /** A última configuração deste rastreador. */
   session: SmsSession | null;

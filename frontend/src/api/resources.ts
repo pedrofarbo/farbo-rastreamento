@@ -690,7 +690,7 @@ export const publicApi = {
     request<PartnerReport>(`/api/public/partner/${encodeURIComponent(token)}`, { anonymous: true }),
 };
 
-/** Configuração do rastreador por SMS (Twilio) na ativação. */
+/** Configuração do rastreador por SMS (SMSDev) na ativação. */
 export const smsSetupApi = {
   get: (deviceId: string) => api.get<SmsSetupView>(`/api/devices/${deviceId}/sms-setup`),
   start: (deviceId: string, input: { fulfillmentId: string | null; unlock: boolean; query: boolean }) =>

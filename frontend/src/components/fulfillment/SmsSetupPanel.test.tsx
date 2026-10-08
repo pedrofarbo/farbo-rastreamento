@@ -72,7 +72,7 @@ afterEach(() => {
 
 describe('SmsSetupPanel', () => {
   it('mostra os comandos e manda com os opcionais escolhidos', async () => {
-    view = { enabled: true, from: '+15005550006', inboundUrl: 'https://x/api/twilio/inbound', plan: PLAN, session: null };
+    view = { enabled: true, from: 'SMSDev', plan: PLAN, session: null };
     startResult = async () => {
       // Como a API: a leitura seguinte já traz a configuração.
       view = { ...view, session: session({}) };
@@ -96,9 +96,9 @@ describe('SmsSetupPanel', () => {
     expect(button('Configurar por SMS')).toBeUndefined();
   });
 
-  it('o que falta no cadastro e o Twilio desligado travam o envio', async () => {
+  it('o que falta no cadastro e o SMSDev desligado travam o envio', async () => {
     view = {
-      enabled: false, from: '', inboundUrl: '', session: null,
+      enabled: false, from: '', session: null,
       plan: { ...PLAN, phone: '', steps: [], problems: ['Cadastre o número do chip (com DDD) no rastreador.'] },
     };
     const host = await render();
@@ -108,7 +108,7 @@ describe('SmsSetupPanel', () => {
   });
 
   it('o fim: conectou, ou o motivo de não dar certo (e mandar de novo)', async () => {
-    view = { enabled: true, from: '+1', inboundUrl: '', plan: PLAN, session: session({
+    view = { enabled: true, from: 'SMSDev', plan: PLAN, session: session({
       status: 'DONE', note: 'O rastreador conectou e o pedido passou para "Configurado".',
       replies: [{ body: 'SERVER OK', at: '2026-10-06T12:01:00Z' }],
     }) };

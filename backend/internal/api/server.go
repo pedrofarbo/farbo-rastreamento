@@ -97,7 +97,7 @@ type Deps struct {
 	Finance *finance.Service
 	// Affiliates: o programa de afiliados (links de indicação e comissões).
 	Affiliates *affiliates.Service
-	// SMSSetup: a configuração do rastreador por SMS (Twilio) na ativação.
+	// SMSSetup: a configuração do rastreador por SMS (SMSDev) na ativação.
 	SMSSetup *smssetup.Service
 	// Contract: o contrato que o cliente aceita no primeiro acesso. Nil: sem
 	// exigência (testes).
@@ -191,8 +191,6 @@ func (s *Server) routes() chi.Router {
 	launchLimiter := newRateLimiter(0.5, 20)
 	// A tela do link de indicação e a página do afiliado.
 	affiliateLimiter := newRateLimiter(0.5, 30)
-	// Os avisos do Twilio (vêm em rajada: um por mudança de status).
-	twilioLimiter := newRateLimiter(10, 100)
 	// Visitas da landing: uma página manda a visita, as seções e os cliques.
 	analyticsLimiter := newRateLimiter(1, 40)
 	// Senha da confirmação extra: além do teto por usuário (stepup).
@@ -250,12 +248,6 @@ func (s *Server) routes() chi.Router {
 		if s.Leads != nil {
 			r.With(leadLimiter.middleware).Post("/public/leads", s.handlePublicCreateLead)
 			r.With(launchLimiter.middleware).Post("/public/launch", s.handlePublicJoinWaitlist)
-		}
-		// Twilio: o status dos SMS enviados e as respostas dos rastreadores
-		// (assinatura conferida em cada um).
-		if s.SMSSetup != nil {
-			r.With(twilioLimiter.middleware).Post("/twilio/status", s.handleTwilioStatus)
-			r.With(twilioLimiter.middleware).Post("/twilio/inbound", s.handleTwilioInbound)
 		}
 		// Afiliados: o "Indicado por" da tela de cadastro e a página do
 		// afiliado (link secreto).

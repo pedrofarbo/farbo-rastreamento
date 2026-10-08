@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -54,6 +53,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/realtime"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/shares"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smsdev"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smssetup"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/support"
@@ -62,7 +62,6 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/theft"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/topups"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
-	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/twilio"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/twofactor"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 	ws "github.com/pedrofarbo/farbo-rastreamento/backend/internal/websocket"
@@ -328,7 +327,7 @@ func run() error {
 		infraSvc.SetRedis(func(ctx context.Context) error { return redisClient.Ping(ctx).Err() })
 	}
 
-	// Configuração do rastreador por SMS (Twilio) na ativação.
+	// Configuração do rastreador por SMS (SMSDev) na ativação.
 	smsSvc := newSMSSetup(cfg, db, deviceSvc, fulfillmentSvc, log)
 
 	// Acessos de terceiros aos veículos (acompanhar e bloqueio de emergência).
@@ -612,36 +611,23 @@ func runWorkers(
 	}
 }
 
-// newSMSSetup monta a configuração por SMS. Sem as credenciais do Twilio, a
-// tela mostra os comandos e avisa o que falta; nada é enviado.
+// newSMSSetup monta a configuração por SMS. Sem a chave do SMSDev, a tela
+// mostra os comandos e avisa o que falta; nada é enviado.
 func newSMSSetup(cfg *config.Config, db *database.DB, devs *devices.Service, activator smssetup.Activator, log *slog.Logger) *smssetup.Service {
 	c := cfg.SMS
 	defaults := smssetup.Defaults{
 		ServerHost: c.TrackerHost, ServerPort: c.TrackerPort, APN: c.APN, APNUser: c.APNUser, APNPassword: c.APNPassword,
 		ReportSeconds: c.ReportSeconds, ParkedSeconds: c.ParkedSeconds,
 	}
-	tw := twilio.Config{
-		BaseURL: c.TwilioBaseURL, AccountSID: c.TwilioAccountSID, AuthToken: c.TwilioAuthToken,
-		APIKeySID: c.TwilioAPIKeySID, APIKeySecret: c.TwilioAPIKeySecret,
-		From: c.TwilioFrom, MessagingServiceSID: c.TwilioMessagingServiceSID,
+	sd := smsdev.Config{BaseURL: c.SMSDevBaseURL, APIKey: c.SMSDevAPIKey}
+	if !sd.Enabled() {
+		log.Warn("SMSDEV_API_KEY não definida: configuração do rastreador por SMS desligada")
+		return smssetup.NewService(db, devs, nil, activator, defaults, "", log)
 	}
-	if !tw.Enabled() {
-		log.Warn("TWILIO_ACCOUNT_SID/AUTH_TOKEN (ou API_KEY_*)/FROM não definidos: configuração do rastreador por SMS desligada")
-		return smssetup.NewService(db, devs, nil, activator, defaults, "", "", log)
-	}
-	if c.TwilioAuthToken == "" {
-		log.Warn("TWILIO_AUTH_TOKEN não definido: os avisos de status e as respostas do rastreador serão recusados (a assinatura é conferida com ele)")
-	}
-	client := twilio.NewClient(tw)
-	// O aviso de status só funciona com endereço público (https).
-	callback := ""
-	if strings.HasPrefix(c.WebhookBaseURL, "https://") {
-		callback = c.WebhookBaseURL + "/api/twilio/status"
-	}
-	log.Info("configuração do rastreador por SMS via Twilio", "remetente", client.Sender(), "aviso_de_status", callback != "",
-		"api_key", c.TwilioAPIKeySID != "" && c.TwilioAPIKeySecret != "",
+	client := smsdev.NewClient(sd)
+	log.Info("configuração do rastreador por SMS via SMSDev",
 		"servidor", fmt.Sprintf("%s:%d", c.TrackerHost, c.TrackerPort), "apn_padrao", c.APN != "")
-	return smssetup.NewService(db, devs, client, activator, defaults, callback, client.Sender(), log)
+	return smssetup.NewService(db, devs, client, activator, defaults, client.Sender(), log)
 }
 
 // newPaymentGateway liga o Pix pela AbacatePay quando há chave. A chave nunca

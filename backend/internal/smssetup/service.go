@@ -14,13 +14,15 @@ import (
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
-	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/twilio"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smsdev"
 )
 
-// Sender é o Twilio (ou o falso dos testes).
+// Sender é o SMSDev (ou o falso dos testes): manda o SMS, consulta a entrega
+// e lê as respostas recebidas.
 type Sender interface {
-	Send(ctx context.Context, to, body, statusCallback string) (*twilio.Message, error)
-	Fetch(ctx context.Context, sid string) (*twilio.Message, error)
+	Send(ctx context.Context, to, body string) (*smsdev.Message, error)
+	Fetch(ctx context.Context, id string) (*smsdev.Message, error)
+	Inbox(ctx context.Context, since time.Time) ([]smsdev.Reply, error)
 }
 
 // Activator marca o pedido como "Configurado" (com o aparelho vinculado ao
@@ -47,10 +49,13 @@ const (
 	silentGap    = 90 * time.Second
 	// connectTimeout: quanto esperar o rastreador conectar depois do último SMS.
 	connectTimeout = 20 * time.Minute
-	// maxAttempts: falhas seguidas do Twilio (rede) antes de desistir.
+	// maxAttempts: falhas seguidas do SMSDev (rede) antes de desistir.
 	maxAttempts = 3
-	// fetchAfter: consulta o status no Twilio quando o aviso não chega.
+	// fetchAfter: depois de quanto tempo consulta a entrega no SMSDev.
 	fetchAfter = 20 * time.Second
+	// inboxWindow: quanto tempo depois do último SMS enviado ainda lê as
+	// respostas (a do modo roubo também).
+	inboxWindow = 6 * time.Hour
 )
 
 // ValidationError é um pedido recusado; a mensagem vai para a tela.
@@ -62,8 +67,8 @@ func invalid(format string, args ...any) error {
 	return ValidationError{Message: fmt.Sprintf(format, args...)}
 }
 
-// ErrDisabled: o Twilio não está configurado.
-var ErrDisabled = ValidationError{Message: "O envio de SMS não está configurado (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN e TWILIO_FROM)."}
+// ErrDisabled: o SMSDev não está configurado.
+var ErrDisabled = ValidationError{Message: "O envio de SMS não está configurado (SMSDEV_API_KEY)."}
 
 type Service struct {
 	db        *database.DB
@@ -71,17 +76,15 @@ type Service struct {
 	sender    Sender
 	activator Activator
 	defaults  Defaults
-	// callbackURL recebe os avisos de status do Twilio (vazio: só consulta).
-	callbackURL string
-	from        string
-	log         *slog.Logger
-	now         func() time.Time
+	from      string
+	log       *slog.Logger
+	now       func() time.Time
 }
 
 func NewService(db *database.DB, devs *devices.Service, sender Sender, activator Activator, defaults Defaults,
-	callbackURL, from string, log *slog.Logger) *Service {
+	from string, log *slog.Logger) *Service {
 	return &Service{
-		db: db, devices: devs, sender: sender, activator: activator, defaults: defaults, callbackURL: callbackURL,
+		db: db, devices: devs, sender: sender, activator: activator, defaults: defaults,
 		from: from, log: log.With("component", "smssetup"), now: time.Now,
 	}
 }
@@ -131,7 +134,7 @@ func (s *Service) Plan(ctx context.Context, deviceID uuid.UUID) (*Plan, error) {
 }
 
 // Start começa a configuração: grava os passos e manda o primeiro SMS na hora
-// (uma recusa do Twilio — número inválido, conta sem saldo — aparece já).
+// (uma recusa do SMSDev — número inválido, conta sem saldo — aparece já).
 func (s *Service) Start(ctx context.Context, deviceID uuid.UUID, fulfillmentID *uuid.UUID, opts Options, by *uuid.UUID) (*Session, error) {
 	if !s.Enabled() {
 		return nil, ErrDisabled
@@ -204,12 +207,14 @@ func (s *Service) Cancel(ctx context.Context, id uuid.UUID) (*Session, error) {
 }
 
 // Work avança as configurações em andamento: o próximo SMS, o rastreador que
-// conectou, o tempo esgotado. E consulta no Twilio os SMS sem aviso de status.
+// conectou, o tempo esgotado. Antes, consulta no SMSDev a entrega dos SMS e
+// as respostas recebidas.
 func (s *Service) Work(ctx context.Context) {
 	if !s.Enabled() {
 		return
 	}
 	s.refreshStatuses(ctx)
+	s.pollInbox(ctx)
 	rows, err := s.db.Query(ctx, `SELECT id FROM sms_setup_sessions WHERE status IN ('SENDING', 'WAITING') ORDER BY created_at LIMIT 50`)
 	if err != nil {
 		s.log.Error("falha ao listar as configurações por SMS", "err", err)
@@ -314,7 +319,7 @@ func (s *Service) sendNext(ctx context.Context, tx pgx.Tx, r *sessionRow) error 
 		if err != nil {
 			return err
 		}
-		if twilio.Failed(status) {
+		if smsdev.Failed(status) {
 			return s.finish(ctx, tx, r.id, StatusFailed, failureText(r.steps[r.next-1].Label, code, message))
 		}
 		var replied bool
@@ -323,7 +328,7 @@ func (s *Service) sendNext(ctx context.Context, tx pgx.Tx, r *sessionRow) error 
 			r.id, sentAt).Scan(&replied); err != nil {
 			return err
 		}
-		ready := replied || (status == twilio.StatusDelivered && now.Sub(updatedAt) >= deliveredGap) || now.Sub(sentAt) >= silentGap
+		ready := replied || (status == smsdev.StatusDelivered && now.Sub(updatedAt) >= deliveredGap) || now.Sub(sentAt) >= silentGap
 		if !ready {
 			return nil
 		}
@@ -343,9 +348,9 @@ func (s *Service) sendNext(ctx context.Context, tx pgx.Tx, r *sessionRow) error 
 		return s.finish(ctx, tx, r.id, StatusFailed, "O cadastro do rastreador mudou durante a configuração: comece de novo.")
 	}
 	step := steps[r.next]
-	msg, sendErr := s.sender.Send(ctx, r.phone, step.real, s.callbackURL)
+	msg, sendErr := s.sender.Send(ctx, r.phone, step.real)
 	if sendErr != nil {
-		if twilio.IsDefinitive(sendErr) || r.attempts+1 >= maxAttempts {
+		if smsdev.IsDefinitive(sendErr) || r.attempts+1 >= maxAttempts {
 			s.log.Warn("SMS de configuração recusado", "session", r.id, "step", step.Kind, "err", sendErr)
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO sms_messages (session_id, device_id, direction, step, phone, body, status, error_message)
@@ -353,20 +358,16 @@ func (s *Service) sendNext(ctx context.Context, tx pgx.Tx, r *sessionRow) error 
 				r.id, r.deviceID, r.next, r.phone, step.Text, sendErr.Error()); err != nil {
 				return err
 			}
-			return s.finish(ctx, tx, r.id, StatusFailed, "O Twilio não enviou o SMS ("+step.Label+"): "+providerMessage(sendErr))
+			return s.finish(ctx, tx, r.id, StatusFailed, "O SMSDev não enviou o SMS ("+step.Label+"): "+providerMessage(sendErr))
 		}
-		s.log.Warn("Twilio sem resposta; tenta de novo", "session", r.id, "step", step.Kind, "err", sendErr)
+		s.log.Warn("SMSDev sem resposta; tenta de novo", "session", r.id, "step", step.Kind, "err", sendErr)
 		_, err := tx.Exec(ctx, `UPDATE sms_setup_sessions SET attempts = attempts + 1, updated_at = NOW() WHERE id = $1`, r.id)
 		return err
-	}
-	code := ""
-	if msg.ErrorCode != nil {
-		code = fmt.Sprint(*msg.ErrorCode)
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO sms_messages (session_id, device_id, direction, step, phone, body, provider_sid, status, error_code, error_message)
 		VALUES ($1, $2, 'OUT', $3, $4, $5, NULLIF($6, ''), $7, $8, $9)`,
-		r.id, r.deviceID, r.next, r.phone, step.Text, msg.SID, orDefault(msg.Status, "queued"), code, msg.ErrorMessage); err != nil {
+		r.id, r.deviceID, r.next, r.phone, step.Text, msg.ID, orDefault(msg.Status, smsdev.StatusQueued), msg.ErrorCode, msg.ErrorMessage); err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `
@@ -430,7 +431,7 @@ func failureText(label, code, message string) string {
 	if message != "" {
 		text += ": " + message
 	} else if code != "" {
-		text += " (erro " + code + " do Twilio)"
+		text += " (código " + code + " do SMSDev)"
 	}
 	return text + ". Confira se o chip está ativo e aceita SMS."
 }
@@ -453,7 +454,7 @@ func orDefault(v, def string) string {
 }
 
 func providerMessage(err error) string {
-	var apiErr *twilio.APIError
+	var apiErr *smsdev.APIError
 	if errors.As(err, &apiErr) {
 		return apiErr.Message
 	}
@@ -469,7 +470,7 @@ func mapErr(err error) error {
 }
 
 // ---------------------------------------------------------------------------
-// Status dos SMS e respostas do rastreador (webhooks do Twilio)
+// Status dos SMS e respostas do rastreador (consultados no SMSDev)
 // ---------------------------------------------------------------------------
 
 // rank: a ordem dos status de um SMS enviado (um aviso atrasado não volta atrás).
@@ -487,7 +488,7 @@ func rank(status string) int {
 	return 0
 }
 
-// ErrNoSMS: sem o Twilio configurado, ou o chip sem número.
+// ErrNoSMS: sem o SMSDev configurado, ou o chip sem número.
 var ErrNoSMS = errors.New("SMS indisponível para este rastreador")
 
 // SendText manda um comando avulso por SMS ao chip do rastreador (o modo
@@ -497,15 +498,12 @@ func (s *Service) SendText(ctx context.Context, dev *devices.Device, text string
 	if !s.Enabled() || phone == "" {
 		return ErrNoSMS
 	}
-	msg, sendErr := s.sender.Send(ctx, phone, text, s.callbackURL)
-	status, sid, code, message := "failed", "", "", ""
+	msg, sendErr := s.sender.Send(ctx, phone, text)
+	status, sid, code, message := smsdev.StatusFailed, "", "", ""
 	if sendErr != nil {
 		message = providerMessage(sendErr)
 	} else {
-		status, sid, message = orDefault(msg.Status, "queued"), msg.SID, msg.ErrorMessage
-		if msg.ErrorCode != nil {
-			code = fmt.Sprint(*msg.ErrorCode)
-		}
+		status, sid, code, message = orDefault(msg.Status, smsdev.StatusQueued), msg.ID, msg.ErrorCode, msg.ErrorMessage
 	}
 	if _, err := s.db.Exec(ctx, `
 		INSERT INTO sms_messages (device_id, direction, phone, body, provider_sid, status, error_code, error_message)
@@ -516,7 +514,7 @@ func (s *Service) SendText(ctx context.Context, dev *devices.Device, text string
 	return sendErr
 }
 
-// UpdateStatus grava o status de um SMS enviado (aviso do Twilio ou consulta).
+// UpdateStatus grava o status de um SMS enviado (da consulta ao SMSDev).
 func (s *Service) UpdateStatus(ctx context.Context, sid, status, errorCode, errorMessage string) error {
 	status = strings.ToLower(strings.TrimSpace(status))
 	if sid == "" || rank(status) == 0 {
@@ -540,8 +538,8 @@ func (s *Service) UpdateStatus(ctx context.Context, sid, status, errorCode, erro
 	return database.MapError(err)
 }
 
-// refreshStatuses consulta no Twilio os SMS recentes sem status final (o
-// aviso pode não chegar: sem URL pública, ou perdido).
+// refreshStatuses consulta no SMSDev a entrega dos SMS recentes sem status
+// final.
 func (s *Service) refreshStatuses(ctx context.Context) {
 	now := s.now()
 	rows, err := s.db.Query(ctx, `
@@ -568,11 +566,7 @@ func (s *Service) refreshStatuses(ctx context.Context) {
 			_, _ = s.db.Exec(ctx, `UPDATE sms_messages SET checked_at = NOW() WHERE provider_sid = $1`, sid)
 			continue
 		}
-		code := ""
-		if msg.ErrorCode != nil {
-			code = fmt.Sprint(*msg.ErrorCode)
-		}
-		if err := s.UpdateStatus(ctx, sid, msg.Status, code, msg.ErrorMessage); err != nil {
+		if err := s.UpdateStatus(ctx, sid, msg.Status, msg.ErrorCode, msg.ErrorMessage); err != nil {
 			s.log.Warn("falha ao gravar o status do SMS", "sid", sid, "err", err)
 		}
 		_, _ = s.db.Exec(ctx, `UPDATE sms_messages SET checked_at = NOW() WHERE provider_sid = $1`, sid)
@@ -618,15 +612,64 @@ func (s *Service) Inbound(ctx context.Context, from, body, sid string) (bool, er
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return false, database.MapError(err)
 	}
-	_, err = s.db.Exec(ctx, `
+	tag, err := s.db.Exec(ctx, `
 		INSERT INTO sms_messages (session_id, device_id, direction, phone, body, provider_sid, status)
 		VALUES ($1, $2, 'IN', $3, $4, NULLIF($5, ''), 'received')
 		ON CONFLICT (provider_sid) DO NOTHING`, session, deviceID, digits, text, sid)
 	if err != nil {
 		return false, database.MapError(err)
 	}
-	s.log.Info("resposta do rastreador por SMS", "device", deviceID, "session", session)
+	if tag.RowsAffected() > 0 {
+		s.log.Info("resposta do rastreador por SMS", "device", deviceID, "session", session)
+	}
 	return true, nil
+}
+
+// pollInbox lê no SMSDev as respostas recebidas desde ontem e grava as que
+// ainda não estão aqui (o id delas leva "mo-", para não cruzar com o dos
+// enviados). Só lê com configuração em andamento ou SMS enviado nas últimas
+// inboxWindow: sem nada no ar, ninguém vai responder.
+func (s *Service) pollInbox(ctx context.Context) {
+	var active bool
+	if err := s.db.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM sms_setup_sessions WHERE status IN ('SENDING', 'WAITING'))
+			OR EXISTS (SELECT 1 FROM sms_messages WHERE direction = 'OUT' AND created_at > $1)`,
+		s.now().Add(-inboxWindow)).Scan(&active); err != nil || !active {
+		return
+	}
+	replies, err := s.sender.Inbox(ctx, s.now().Add(-24*time.Hour))
+	if err != nil {
+		s.log.Warn("falha ao ler as respostas no SMSDev", "err", err)
+		return
+	}
+	if len(replies) == 0 {
+		return
+	}
+	ids := make([]string, len(replies))
+	for i, r := range replies {
+		ids[i] = "mo-" + r.ID
+	}
+	known := map[string]bool{}
+	rows, err := s.db.Query(ctx, `SELECT provider_sid FROM sms_messages WHERE provider_sid = ANY($1)`, ids)
+	if err != nil {
+		s.log.Warn("falha ao conferir as respostas já gravadas", "err", err)
+		return
+	}
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			known[id] = true
+		}
+	}
+	rows.Close()
+	for i, r := range replies {
+		if known[ids[i]] {
+			continue
+		}
+		if _, err := s.Inbound(ctx, r.From, strings.TrimSpace(r.Body), ids[i]); err != nil {
+			s.log.Error("falha ao gravar o SMS recebido", "err", err)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -708,7 +751,7 @@ func (s *Service) Session(ctx context.Context, id uuid.UUID) (*Session, error) {
 			sent := at
 			out.Steps[step].Status, out.Steps[step].SentAt = status, &sent
 			if message == "" && code != "" {
-				message = "erro " + code + " do Twilio"
+				message = "código " + code + " do SMSDev"
 			}
 			out.Steps[step].Error = message
 		}

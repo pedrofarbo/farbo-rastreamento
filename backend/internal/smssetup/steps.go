@@ -1,6 +1,6 @@
 // Package smssetup configura o rastreador por SMS na ativação: manda os
 // comandos de configuração (APN, servidor, fuso, intervalo) para o número do
-// chip pelo Twilio, um por vez, e espera o rastreador conectar no servidor —
+// chip pelo SMSDev, um por vez, e espera o rastreador conectar no servidor —
 // a prova de que a configuração pegou. A sintaxe é a do J16 (GT06), em
 // docs/J16.md.
 package smssetup
@@ -155,7 +155,7 @@ func buildSteps(dev *devices.Device, d Defaults, opts Options) (steps []built, p
 	return steps, nil
 }
 
-// E164 deixa o número do chip no formato do Twilio: +55 e o DDD. Vazio se
+// E164 deixa o número do chip no formato internacional: +55 e o DDD. Vazio se
 // não der.
 func E164(phone string) string {
 	d := strings.Map(func(r rune) rune {

@@ -54,21 +54,13 @@ type Company struct {
 	Email     string
 }
 
-// SMS configura o envio pelo Twilio e a configuração do rastreador por SMS
+// SMS configura o envio pelo SMSDev e a configuração do rastreador por SMS
 // na ativação (APN, servidor, fuso e intervalo, para o número do chip).
 type SMS struct {
-	TwilioAccountSID string
-	TwilioAuthToken  string
-	// A API Key (SK... e o segredo): com ela, as chamadas à API não usam o
-	// Auth Token, que fica só para conferir os webhooks.
-	TwilioAPIKeySID           string
-	TwilioAPIKeySecret        string
-	TwilioFrom                string
-	TwilioMessagingServiceSID string
-	TwilioBaseURL             string
-	// WebhookBaseURL é o endereço público em que o Twilio avisa o status dos
-	// SMS e entrega as respostas; o padrão é o APP_URL.
-	WebhookBaseURL string
+	// SMSDevAPIKey é a chave da conta no SMSDev (vazia: configuração por SMS
+	// desligada). SMSDevBaseURL troca a API (testes).
+	SMSDevAPIKey  string
+	SMSDevBaseURL string
 	// TrackerHost e TrackerPort são para onde o rastreador manda as posições
 	// (o padrão é o host do APP_URL e a TCP_PORT).
 	TrackerHost string
@@ -849,19 +841,13 @@ func Load() (*Config, error) {
 	cfg.Leads = Leads{NotifyEmails: csv("LEADS_NOTIFY_EMAILS", centralEmails())}
 	cfg.Infra = Infra{BackupDir: strings.TrimSpace(str("BACKUP_DIR", ""))}
 	cfg.SMS = SMS{
-		TwilioAccountSID:          strings.TrimSpace(str("TWILIO_ACCOUNT_SID", "")),
-		TwilioAuthToken:           strings.TrimSpace(str("TWILIO_AUTH_TOKEN", "")),
-		TwilioAPIKeySID:           strings.TrimSpace(str("TWILIO_API_KEY_SID", "")),
-		TwilioAPIKeySecret:        strings.TrimSpace(str("TWILIO_API_KEY_SECRET", "")),
-		TwilioFrom:                strings.TrimSpace(str("TWILIO_FROM", "")),
-		TwilioMessagingServiceSID: strings.TrimSpace(str("TWILIO_MESSAGING_SERVICE_SID", "")),
-		TwilioBaseURL:             strings.TrimRight(str("TWILIO_BASE_URL", ""), "/"),
-		WebhookBaseURL:            strings.TrimRight(str("TWILIO_WEBHOOK_BASE_URL", ""), "/"),
-		TrackerHost:               strings.TrimSpace(str("TRACKER_PUBLIC_HOST", "")),
-		TrackerPort:               num("TRACKER_PUBLIC_PORT", cfg.TCP.Port),
-		APN:                       strings.TrimSpace(str("TRACKER_APN", "")),
-		APNUser:                   strings.TrimSpace(str("TRACKER_APN_USER", "")),
-		APNPassword:               strings.TrimSpace(str("TRACKER_APN_PASSWORD", "")),
+		SMSDevAPIKey:  strings.TrimSpace(str("SMSDEV_API_KEY", "")),
+		SMSDevBaseURL: strings.TrimRight(str("SMSDEV_BASE_URL", ""), "/"),
+		TrackerHost:   strings.TrimSpace(str("TRACKER_PUBLIC_HOST", "")),
+		TrackerPort:   num("TRACKER_PUBLIC_PORT", cfg.TCP.Port),
+		APN:           strings.TrimSpace(str("TRACKER_APN", "")),
+		APNUser:       strings.TrimSpace(str("TRACKER_APN_USER", "")),
+		APNPassword:   strings.TrimSpace(str("TRACKER_APN_PASSWORD", "")),
 		// Testado em campo com o J16: 10 s com a ignição ligada.
 		ReportSeconds: num("TRACKER_REPORT_INTERVAL_SECONDS", 10),
 		ParkedSeconds: num("TRACKER_PARKED_INTERVAL_SECONDS", 3600),
@@ -884,10 +870,7 @@ func Load() (*Config, error) {
 	if cfg.Mail.AppURL == "" && len(cfg.HTTP.CORSOrigins) > 0 {
 		cfg.Mail.AppURL = strings.TrimRight(cfg.HTTP.CORSOrigins[0], "/")
 	}
-	// SMS: os avisos do Twilio e o servidor dos rastreadores no endereço do painel.
-	if cfg.SMS.WebhookBaseURL == "" {
-		cfg.SMS.WebhookBaseURL = cfg.Mail.AppURL
-	}
+	// SMS: o servidor dos rastreadores no endereço do painel.
 	if cfg.SMS.TrackerHost == "" {
 		if u, err := url.Parse(cfg.Mail.AppURL); err == nil && u.Hostname() != "localhost" {
 			cfg.SMS.TrackerHost = strings.ToLower(u.Hostname())
