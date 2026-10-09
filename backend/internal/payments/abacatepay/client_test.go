@@ -153,11 +153,43 @@ func TestSanitizeDescription(t *testing.T) {
 		"en \u2013 dash e \u201caspas\u201d curvas":                            "en - dash e \"aspas\" curvas",
 		"Moto \U0001F697 da Carla \u2764\uFE0F":                                "Moto da Carla",
 		"quebra\nde   linha\tsobrando  ":                                       "quebra de linha sobrando",
+		// A fatura que travou o Pix em produção ("·" e "$" não passam).
+		"Farbo Rastreadores \u2014 Rastreador J16 GT06 \u00b7 promo\u00e7\u00e3o + frete Jadlog (R$ 20,00)": "Farbo Rastreadores - Rastreador J16 GT06 - promo\u00e7\u00e3o + frete Jadlog (20,00 reais)",
+		"rastreador de R$ 1.020,00 em 10x \u2022 1\u00aa parcela":                                           "rastreador de 1.020,00 reais em 10x - 1\u00aa parcela",
+		"<b>[x]</b> {y} | a\\b ^~` \u00a7 2\u00d73 30\u00b0 \u20ac5 R$ US$ ok!?*=_@;":                       "bx/b y ab 2x3 30\u00ba 5 R US ok!?*=_@;",
 	}
 	for input, want := range cases {
 		if got := sanitizeDescription(input); got != want {
 			t.Errorf("sanitizeDescription(%q) = %q, esperado %q", input, got, want)
 		}
+	}
+	plain := plainDescription("Farbo Rastreadores \u2014 Especial Insanos MC \u2014 outubro/2026 \u00b7 promo\u00e7\u00e3o de pr\u00e9-lan\u00e7amento + parcela 1/10")
+	if plain != "Farbo Rastreadores - Especial Insanos MC - outubro/2026 - promocao de pre-lancamento parcela 1/10" {
+		t.Errorf("plainDescription = %q", plain)
+	}
+}
+
+// Um caractere que a lista não conhece: o Pix sai de novo, com a descrição
+// mínima, em vez de falhar para o cliente.
+func TestCreatePixRetriesWithPlainDescription(t *testing.T) {
+	var descriptions []any
+	api := &fakeAPI{}
+	api.respond = func(w http.ResponseWriter) {
+		data, _ := api.lastBody["data"].(map[string]any)
+		descriptions = append(descriptions, data["description"])
+		if len(descriptions) == 1 {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"data":null,"success":false,"error":"Disallowed character in description: \"\u00e7\" (U+00E7). Remove this character."}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"data":{"id":"pix_char_3","amount":100,"status":"PENDING"},"success":true,"error":null}`)
+	}
+	pix, err := NewClient(api.server(t).URL, "k").CreatePix(context.Background(), PixRequest{AmountCents: 100, Description: "Instala\u00e7\u00e3o + chip"})
+	if err != nil || pix.ID != "pix_char_3" {
+		t.Fatalf("CreatePix = %+v, %v", pix, err)
+	}
+	if len(descriptions) != 2 || descriptions[0] != "Instala\u00e7\u00e3o + chip" || descriptions[1] != "Instalacao chip" {
+		t.Errorf("descrições enviadas = %q", descriptions)
 	}
 }
 

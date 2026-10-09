@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -129,6 +130,17 @@ func (c *Client) CreatePix(ctx context.Context, req PixRequest) (*Pix, error) {
 	var pix Pix
 	err := c.do(ctx, http.MethodPost, "/transparents/create", nil,
 		map[string]any{"method": "PIX", "data": data}, &pix)
+	if isDisallowedCharacter(err) {
+		// Um caractere que a lista ainda não conhecia: vai a descrição mínima,
+		// e o cliente paga do mesmo jeito.
+		if description := plainDescription(req.Description); description != "" {
+			data["description"] = truncate(description, 500)
+		} else {
+			delete(data, "description")
+		}
+		err = c.do(ctx, http.MethodPost, "/transparents/create", nil,
+			map[string]any{"method": "PIX", "data": data}, &pix)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -269,32 +281,74 @@ func errorMessage(raw json.RawMessage) string {
 	return "erro sem descrição"
 }
 
-// sanitizeDescription adapta o texto ao que a AbacatePay aceita: ela recusa o
-// Pix inteiro por um travessão ("—", "–") ou um emoji, mas aceita acentos e a
-// pontuação comum. Travessões e aspas curvas viram os equivalentes simples;
-// emojis e outros símbolos gráficos saem.
+// sanitizeDescription adapta o texto ao que a AbacatePay aceita. Ela recusa o
+// Pix inteiro por um caractere fora da lista dela (testada em out/2026):
+// passam letras (com acento), números, espaço e + ( ) % & # / : , . ' " ! ? *
+// = _ @ ; -; não passam $ · • ° § × € < > [ ] { } | \ ^ ~ `, travessões,
+// aspas curvas nem emojis. Os conhecidos viram o equivalente aceito ("R$ 20,00"
+// vira "20,00 reais"; "·", "•" e travessões, "-"); o resto sai.
 func sanitizeDescription(s string) string {
-	replacer := strings.NewReplacer(
-		"\u2014", "-", "\u2013", "-", "\u2012", "-", "\u2212", "-", "\u2010", "-", "\u2011", "-",
-		"\u201C", `"`, "\u201D", `"`, "\u2018", "'", "\u2019", "'", "\u2026", "...",
-	)
-	s = replacer.Replace(s)
+	s = moneyPattern.ReplaceAllString(s, "$1 reais")
+	s = descriptionReplacer.Replace(s)
 
 	var b strings.Builder
 	for _, r := range s {
 		switch {
-		// Quebra de linha e tabula\u00E7\u00E3o tamb\u00E9m s\u00E3o caracteres de controle: o
-		// espa\u00E7o precisa ser tratado antes, sen\u00E3o as palavras grudam.
+		// Quebra de linha e tabulação viram espaço, senão as palavras grudam.
 		case unicode.IsSpace(r):
 			b.WriteRune(' ')
-		case r > 0xFFFF, unicode.Is(unicode.So, r), unicode.Is(unicode.Sk, r),
-			r == '\u200D', r == '\uFE0F', unicode.IsControl(r):
-			continue
-		default:
+		case unicode.IsLetter(r), unicode.IsNumber(r), strings.ContainsRune(descriptionPunctuation, r):
 			b.WriteRune(r)
 		}
 	}
 	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+// descriptionPunctuation é a pontuação que a AbacatePay aceita na descrição.
+const descriptionPunctuation = `+()%&#/:,.'"!?*=_@;-`
+
+var (
+	// moneyPattern: "R$ 1.020,00" (o $ não passa).
+	moneyPattern        = regexp.MustCompile(`R\$\s?(\d[\d.]*,\d{2})`)
+	descriptionReplacer = strings.NewReplacer(
+		"\u2014", "-", "\u2013", "-", "\u2012", "-", "\u2212", "-", "\u2010", "-", "\u2011", "-",
+		"\u00B7", "-", "\u2022", "-", "\u2219", "-", "\u2027", "-",
+		"\u201C", `"`, "\u201D", `"`, "\u2018", "'", "\u2019", "'", "\u2026", "...",
+		"\u00B0", "\u00BA", "\u00D7", "x", "R$", "R", "$", "",
+	)
+)
+
+// plainDescription é a descrição mínima, para quando a AbacatePay ainda assim
+// recusar algum caractere: só letras sem acento, números, espaço e - / , .
+func plainDescription(s string) string {
+	var b strings.Builder
+	for _, r := range sanitizeDescription(s) {
+		if r < 0x80 && (unicode.IsLetter(r) || unicode.IsNumber(r) || strings.ContainsRune(" -/,.", r)) {
+			b.WriteRune(r)
+		} else if base, ok := unaccented[r]; ok {
+			b.WriteRune(base)
+		}
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+var unaccented = func() map[rune]rune {
+	m := map[rune]rune{}
+	for base, accented := range map[rune]string{
+		'a': "áàâãä", 'e': "éèêë", 'i': "íìîï", 'o': "óòôõö", 'u': "úùûü", 'c': "ç",
+		'A': "ÁÀÂÃÄ", 'E': "ÉÈÊË", 'I': "ÍÌÎÏ", 'O': "ÓÒÔÕÖ", 'U': "ÚÙÛÜ", 'C': "Ç",
+	} {
+		for _, r := range accented {
+			m[r] = base
+		}
+	}
+	return m
+}()
+
+// isDisallowedCharacter: a AbacatePay recusou um caractere da descrição.
+func isDisallowedCharacter(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && strings.Contains(strings.ToLower(apiErr.Message), "disallowed character")
 }
 
 func truncate(s string, max int) string {
