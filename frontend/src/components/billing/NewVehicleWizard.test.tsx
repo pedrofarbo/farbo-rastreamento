@@ -159,6 +159,51 @@ describe('a central e a promoção de pré-lançamento', () => {
   });
 });
 
+describe('o plano do cliente no Novo veículo da central', () => {
+  it('vem com o plano definido para o cliente', async () => {
+    promoStatus = {
+      eligible: false, reason: 'o e-mail da conta não está na lista de lançamento', code: 'NOT_ON_LIST',
+      offer: { equipmentCents: 12000, monthlyCents: 3490, insanosMonthlyCents: 2790, insanosPlanName: 'Especial Insanos MC', months: 12 },
+      onList: false, grantedAt: null, claimed: false,
+    };
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    await act(async () =>
+      createRoot(host).render(
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <MemoryRouter>
+            <ToastProvider>
+              <NewVehicleWizard
+                open
+                admin={{
+                  customerId: 'c1', devices: [], deliveryAddress: null, currentPlan: null,
+                  accountPlan: { planName: 'Especial Insanos MC', priceCents: 3990, dueDay: 15, updatedAt: '2026-10-09T12:00:00Z' },
+                }}
+                onClose={() => undefined}
+                onDone={() => undefined}
+              />
+            </ToastProvider>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      ),
+    );
+    await flush();
+    const name = Array.from(document.querySelectorAll('input')).find((i) => i.closest('div')?.textContent?.includes('Apelido')) as HTMLInputElement;
+    await act(async () => type(name, 'Moto do Edu'));
+    await act(async () => button('Continuar').click());
+    await flush();
+    await act(async () => button('Continuar').click());
+    await flush();
+    const select = (label: string) => {
+      const l = Array.from(document.querySelectorAll('label')).find((x) => x.textContent === label);
+      return document.getElementById(l?.htmlFor ?? '') as HTMLSelectElement | HTMLInputElement;
+    };
+    expect(select('Plano').value).toBe('insanos');
+    expect(select('Valor mensal (R$)').value).toBe('39,90');
+    expect(select('Vencimento').value).toBe('15');
+  });
+});
+
 describe('frete no pedido', () => {
   it('formatos', () => {
     expect(quoteName({ company: 'Correios', service: 'PAC' })).toBe('Correios PAC');

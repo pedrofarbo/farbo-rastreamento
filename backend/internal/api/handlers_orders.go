@@ -40,7 +40,8 @@ type catalogView struct {
 }
 
 // handleCatalog devolve os preços de um rastreador novo. Para o cliente, o
-// plano mostrado é o que ele pagaria (o que já tem, ou o padrão).
+// plano mostrado é o que ele pagaria (o definido pela central, o que já tem,
+// ou o padrão).
 func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	c := s.Orders.Catalog()
 	view := catalogView{
@@ -49,13 +50,8 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 		EquipmentMaxInstallments: c.EquipmentMaxInstallments,
 	}
 	if customerID, isCustomer := customerOf(r); isCustomer {
-		if subs, err := s.Billing.ListSubscriptions(r.Context(), customerID); err == nil {
-			for _, sub := range subs {
-				if sub.Status == billing.SubscriptionActive {
-					view.PlanName, view.PlanPriceCents, view.DefaultDueDay = sub.PlanName, sub.PriceCents, sub.DueDay
-					break
-				}
-			}
+		if plan, err := s.Orders.CustomerPlan(r.Context(), customerID); err == nil {
+			view.PlanName, view.PlanPriceCents, view.DefaultDueDay = plan.PlanName, plan.PriceCents, plan.DueDay
 		}
 		if promo, err := s.Orders.PromoFor(r.Context(), customerID); err == nil && promo.Eligible {
 			// A mensalidade da promoção no plano dele (o do Insanos MC tem a sua).
@@ -443,6 +439,43 @@ func (s *Server) handleCustomerLaunchPromo(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, status)
+}
+
+// handleSetCustomerPlan define o plano do cliente: todo veículo novo dele
+// sai nesse plano (as assinaturas que já existem não mudam).
+func (s *Server) handleSetCustomerPlan(w http.ResponseWriter, r *http.Request) {
+	customerID, ok := s.customerFromURL(w, r)
+	if !ok {
+		return
+	}
+	var in billing.SubscriptionInput
+	if err := decodeJSON(w, r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	plan, err := s.Orders.SetAccountPlan(r.Context(), customerID, in, actor(r))
+	if err != nil {
+		writeOrderError(w, r, err, "cliente não encontrado")
+		return
+	}
+	s.recordBillingAudit(r, audit.ActionCustomerUpdated, map[string]any{
+		"customerId": customerID, "plan": plan.PlanName, "priceCents": plan.PriceCents, "dueDay": plan.DueDay,
+	})
+	writeJSON(w, http.StatusOK, plan)
+}
+
+// handleClearCustomerPlan volta o cliente ao plano padrão.
+func (s *Server) handleClearCustomerPlan(w http.ResponseWriter, r *http.Request) {
+	customerID, ok := s.customerFromURL(w, r)
+	if !ok {
+		return
+	}
+	if err := s.Orders.ClearAccountPlan(r.Context(), customerID); err != nil {
+		handleStoreError(w, err, "cliente não encontrado")
+		return
+	}
+	s.recordBillingAudit(r, audit.ActionCustomerUpdated, map[string]any{"customerId": customerID, "plan": "padrão"})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleGrantLaunchPromo libera a promoção de pré-lançamento para um cliente

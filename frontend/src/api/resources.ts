@@ -101,6 +101,7 @@ import type {
   InfraStatus,
   SystemLogPage,
   SmsUsage,
+  AccountPlan,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -527,6 +528,10 @@ export const customersApi = {
   setHistoryRetention: (id: string, days: HistoryRetention | null) =>
     api.put<{ effectiveDays: number }>(`/api/customers/${id}/history-retention`, { days }),
   /** Quem indicou o cliente (null tira a indicação). */
+  /** Define o plano do cliente: vale para todo veículo novo (as assinaturas atuais não mudam). */
+  setPlan: (id: string, input: SubscriptionInput) => api.put<AccountPlan>(`/api/customers/${id}/plan`, input),
+  /** Volta o cliente ao plano padrão (o da assinatura ativa, ou o do catálogo). */
+  clearPlan: (id: string) => api.delete<void>(`/api/customers/${id}/plan`),
   setAffiliate: (id: string, affiliateId: string | null) =>
     api.put<{ affiliate: CustomerReferral | null }>(`/api/customers/${id}/affiliate`, { affiliateId }),
 

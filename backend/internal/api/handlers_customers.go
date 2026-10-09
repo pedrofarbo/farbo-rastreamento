@@ -19,6 +19,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/dunning"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/twofactor"
 )
@@ -53,6 +54,9 @@ type customerDetail struct {
 	Affiliate *affiliates.Referral `json:"affiliate"`
 	// TwoFactor: a verificação em duas etapas do cliente.
 	TwoFactor twofactor.Brief `json:"twoFactor"`
+	// Plan: o plano definido pela central para os veículos novos (nulo: o
+	// padrão — o da assinatura ativa ou o do catálogo).
+	Plan *orders.AccountPlan `json:"plan"`
 }
 
 func (s *Server) customerDetail(ctx context.Context, id uuid.UUID) (*customerDetail, error) {
@@ -124,6 +128,12 @@ func (s *Server) customerDetail(ctx context.Context, id uuid.UUID) (*customerDet
 			reminders[id.String()] = r
 		}
 	}
+	var plan *orders.AccountPlan
+	if s.Orders != nil {
+		if plan, err = s.Orders.AccountPlan(ctx, id); err != nil {
+			return nil, err
+		}
+	}
 	var security twofactor.Brief
 	if s.TwoFactor != nil {
 		briefs, err := s.TwoFactor.Briefs(ctx, []uuid.UUID{id})
@@ -137,6 +147,7 @@ func (s *Server) customerDetail(ctx context.Context, id uuid.UUID) (*customerDet
 		OnlinePayment: s.Payments.Enabled(), Payments: paid, DeliveryAddress: address, Fulfillments: tracking,
 		HistoryRetentionDays: retentionDays, DefaultHistoryDays: s.Retention.Default(), Affiliate: referral,
 		Reminders: reminders, PaymentLinks: links, Contract: accepted, ContractVersion: version, TwoFactor: security,
+		Plan: plan,
 	}, nil
 }
 

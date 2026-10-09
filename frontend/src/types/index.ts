@@ -785,6 +785,8 @@ export interface CustomerDetail extends CustomerSummary {
   defaultHistoryDays: number;
   /** Quem indicou o cliente (programa de afiliados); nulo se ninguém. */
   affiliate: CustomerReferral | null;
+  /** O plano definido pela central para os veículos novos (nulo: o padrão). */
+  plan: AccountPlan | null;
   /** O último aceite do contrato (nulo: ainda não aceitou). */
   contract: ContractAcceptance | null;
   /** A versão do contrato em vigor. */
@@ -800,6 +802,17 @@ export interface ContractBlock {
   kind: 'p' | 'ul';
   text?: string;
   items?: string[];
+}
+
+/**
+ * O plano que a central definiu para o cliente (ex.: o Especial Insanos MC):
+ * todo veículo novo dele sai nesse plano, pelo app ou pela central.
+ */
+export interface AccountPlan {
+  planName: string;
+  priceCents: number;
+  dueDay: number;
+  updatedAt: string;
 }
 
 /** Uma cláusula do contrato ("6. Permanência mínima e multa"). */

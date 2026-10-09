@@ -49,6 +49,7 @@ import type { HistoryRetention, Invoice, PixPayment, ReminderKind, Subscription,
 
 import styles from '../Page.module.css';
 import { CustomerReferralCard } from './affiliates/CustomerReferralCard';
+import { CustomerPlanCard } from './CustomerPlanCard';
 import { LaunchPromoCard } from './LaunchPromoCard';
 
 interface Confirmation {
@@ -322,6 +323,8 @@ export function CustomerDetailsPage() {
         </Card>
 
         <CustomerReferralCard customerId={id} referral={data.affiliate} />
+
+        <CustomerPlanCard customerId={id} plan={data.plan} />
 
         <LaunchPromoCard customerId={id} />
 
@@ -773,6 +776,7 @@ export function CustomerDetailsPage() {
           devices: (devices.data ?? []).filter((d) => !linkedTo.has(d.id)),
           deliveryAddress: data.deliveryAddress,
           currentPlan: data.subscriptions.find((s) => s.status === 'ACTIVE') ?? null,
+          accountPlan: data.plan,
         }}
         onClose={() => setOrdering(false)}
         onDone={(result) => {

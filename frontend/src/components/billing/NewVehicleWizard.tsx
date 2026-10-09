@@ -25,7 +25,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { EMPTY_VEHICLE, VehicleFields } from '@/components/vehicle/VehicleFields';
 import { centsToInput, formatDateOnly, formatMoney, parseMoney, todayISO } from '@/services/format';
 import { errorCode } from '@/services/stepUp';
-import type { Catalog, CustomerAccount, DeliveryAddress, Device, Subscription, TrackerOrderResult } from '@/types';
+import type { AccountPlan, Catalog, CustomerAccount, DeliveryAddress, Device, Subscription, TrackerOrderResult } from '@/types';
 
 import pageStyles from '@/pages/Page.module.css';
 import styles from './Billing.module.css';
@@ -39,6 +39,8 @@ export interface WizardAdmin {
   deliveryAddress: DeliveryAddress | null;
   /** Assinatura ativa do cliente: o plano dela é a sugestão para o novo veículo. */
   currentPlan: Subscription | null;
+  /** O plano definido para o cliente: quando há, é ele o do novo veículo. */
+  accountPlan?: AccountPlan | null;
 }
 
 interface AdminDraft {
@@ -62,8 +64,10 @@ function optionalMoney(text: string): number | null {
   return text.trim() === '' ? 0 : parseMoney(text);
 }
 
-function adminDraftFrom(c: Catalog, current: Subscription | null): AdminDraft {
-  // Sugere o plano que o cliente já paga; no primeiro veículo, o padrão.
+function adminDraftFrom(c: Catalog, subscription: Subscription | null, account: AccountPlan | null = null): AdminDraft {
+  // Sugere o plano definido para o cliente; sem ele, o que ele já paga; no
+  // primeiro veículo, o padrão.
+  const current = account ?? subscription;
   const preset = current
     ? PLAN_PRESETS.find((p) => p.planName === current.planName && p.priceCents === current.priceCents)
     : undefined;
@@ -176,7 +180,7 @@ export function NewVehicleWizard({
     if (!open) seeded.current = false;
     else if (isAdmin && c && !seeded.current) {
       seeded.current = true;
-      setAdminDraft(adminDraftFrom(c, admin?.currentPlan ?? null));
+      setAdminDraft(adminDraftFrom(c, admin?.currentPlan ?? null, admin?.accountPlan ?? null));
     }
     // O plano atual só importa na abertura (o ref impede semear de novo).
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -552,8 +556,8 @@ export function NewVehicleWizard({
                   />
                 ) : (
                   <p className={pageStyles.description}>
-                    A assinatura começa com o pedido. É o mesmo plano que você já paga (ou o padrão, no
-                    primeiro veículo).
+                    A assinatura começa com o pedido, no plano da sua conta: {c.planName}, vence todo dia{' '}
+                    {c.defaultDueDay}.
                   </p>
                 )}
 

@@ -328,9 +328,17 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehic
 	}, nil
 }
 
-// CustomerPlan é o plano de um novo veículo do cliente: o da assinatura
-// ativa que ele já tem ou, sem nenhuma, o padrão do catálogo.
+// CustomerPlan é o plano de um novo veículo do cliente: o que a central
+// definiu para ele; sem isso, o da assinatura ativa que ele já tem ou, sem
+// nenhuma, o padrão do catálogo.
 func (s *Service) CustomerPlan(ctx context.Context, customerID uuid.UUID) (billing.SubscriptionInput, error) {
+	account, err := s.AccountPlan(ctx, customerID)
+	if err != nil {
+		return billing.SubscriptionInput{}, err
+	}
+	if account != nil {
+		return billing.SubscriptionInput{PlanName: account.PlanName, PriceCents: account.PriceCents, DueDay: account.DueDay}, nil
+	}
 	subscriptions, err := s.billing.ListSubscriptions(ctx, customerID)
 	if err != nil {
 		return billing.SubscriptionInput{}, err

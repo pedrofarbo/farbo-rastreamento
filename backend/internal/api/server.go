@@ -573,6 +573,8 @@ func (s *Server) routes() chi.Router {
 							r.Get("/shipping-quote", s.handleCustomerShippingQuote)
 							r.Get("/launch-promo", s.handleCustomerLaunchPromo)
 							r.Post("/launch-promo/grant", s.handleGrantLaunchPromo)
+							r.Put("/plan", s.handleSetCustomerPlan)
+							r.Delete("/plan", s.handleClearCustomerPlan)
 							r.Delete("/launch-promo/grant", s.handleRevokeLaunchPromo)
 							if s.Affiliates != nil {
 								r.Put("/affiliate", s.handleSetCustomerAffiliate)
