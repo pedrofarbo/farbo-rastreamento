@@ -258,7 +258,8 @@ const inviteHTML = `{{define "content"}}
 <p style="margin:0 0 12px;font-size:15px;line-height:1.6;color:#334155;">Olá{{with .Name}}, {{.}}{{end}}!</p>
 <p style="margin:0;font-size:15px;line-height:1.6;color:#334155;">Sua conta no painel foi criada. É por ele que você acompanha seus veículos em tempo real, vê o histórico de rotas e consulta suas faturas. Para começar, crie a sua senha:</p>
 {{template "button" (button .ActionURL "Criar minha senha")}}
-<p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#475569;">O link vale por <strong>{{.Validity}}</strong>. Depois disso, use "Esqueci minha senha" na tela de login para receber outro.</p>
+<p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#475569;">O link vale por <strong>{{.Validity}}</strong> e serve <strong>uma vez só</strong>, para criar a senha. Depois disso, use "Esqueci minha senha" na tela de login para receber outro.</p>
+<p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#475569;">Com a senha criada, entre sempre por <a href="{{.AppURL}}/login" style="color:#15803d;">{{.AppURL}}/login</a> (ou pelo app instalado no celular), com o seu e-mail e a senha.</p>
 <p style="margin:0;font-size:12px;line-height:1.6;color:#64748b;">Se o botão não funcionar, copie e cole este endereço no navegador:<br><a href="{{.ActionURL}}" style="color:#15803d;word-break:break-all;">{{.ActionURL}}</a></p>
 {{end}}`
 
@@ -269,7 +270,9 @@ Sua conta no painel da Farbo Rastreadores foi criada. É por ele que você acomp
 Para começar, crie a sua senha neste link:
 {{.ActionURL}}
 
-O link vale por {{.Validity}}. Depois disso, use "Esqueci minha senha" na tela de login para receber outro.
+O link vale por {{.Validity}} e serve uma vez só, para criar a senha. Depois disso, use "Esqueci minha senha" na tela de login para receber outro.
+
+Com a senha criada, entre sempre por {{.AppURL}}/login (ou pelo app instalado no celular), com o seu e-mail e a senha.
 
 — Farbo Rastreadores
 `

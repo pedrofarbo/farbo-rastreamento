@@ -298,6 +298,10 @@ func TestAccountMailerInvite(t *testing.T) {
 		if !strings.Contains(body, "3 dias") {
 			t.Errorf("%s sem a validade do convite", name)
 		}
+		// O link serve uma vez: depois de criar a senha, o cliente entra pelo login.
+		if !strings.Contains(body, "uma vez só") || !strings.Contains(body, "https://painel.farbo.test/login") {
+			t.Errorf("%s não diz que o link é de uso único nem por onde entrar depois", name)
+		}
 	}
 	if !strings.Contains(msg.Text, link) {
 		t.Errorf("texto sem o link %q", link)

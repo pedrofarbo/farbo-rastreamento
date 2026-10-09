@@ -122,6 +122,47 @@ export function ResetPasswordPage() {
   }
 
   if (stage === 'invalid') {
+    // Já conectado (o link é velho, de um convite que ele mesmo já usou):
+    // não há nada a fazer aqui, é só abrir o painel.
+    if (user) {
+      return (
+        <AuthLayout tag={tag} title="Você já está conectado" icon={<CheckIcon />}>
+          <div className={styles.stack}>
+            <p className={styles.text}>
+              Este link já foi usado, mas não precisa dele: você já entrou na sua conta neste aparelho.
+            </p>
+            <Button variant="primary" size="large" block onClick={() => navigate('/dashboard', { replace: true })}>
+              Abrir o painel
+            </Button>
+          </div>
+        </AuthLayout>
+      );
+    }
+    // O link de boas-vindas serve uma vez, para criar a senha. Quem volta a
+    // ele depois de criar a senha só precisa entrar.
+    if (welcome) {
+      return (
+        <AuthLayout
+          tag={tag}
+          title="Este convite já foi usado"
+          icon={<AlertIcon />}
+          footer={loginFooter}
+        >
+          <div className={styles.stack}>
+            <p className={styles.text}>
+              O link de boas-vindas serve uma vez só, para criar a senha. Se você já criou a sua, é só entrar com o
+              seu e-mail e a senha. Se o convite venceu antes disso, peça um link novo.
+            </p>
+            <Button variant="primary" size="large" block onClick={() => navigate('/login', { replace: true })}>
+              Entrar
+            </Button>
+            <Button variant="ghost" size="large" block onClick={() => navigate('/esqueci-senha')}>
+              Pedir um novo link
+            </Button>
+          </div>
+        </AuthLayout>
+      );
+    }
     return (
       <AuthLayout
         tag={tag}
