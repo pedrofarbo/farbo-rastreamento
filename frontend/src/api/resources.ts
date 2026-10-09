@@ -564,6 +564,10 @@ export const customersApi = {
   shippingQuote: (customerId: string) => api.get<ShippingQuoteView>(`/api/customers/${customerId}/shipping-quote`),
   /** Se o cliente pode contratar com a promoção de pré-lançamento. */
   launchPromo: (id: string) => api.get<PromoStatus>(`/api/customers/${id}/launch-promo`),
+  /** Libera a promoção de pré-lançamento para quem não está na lista (vale como se estivesse). */
+  grantLaunchPromo: (id: string) => api.post<PromoStatus>(`/api/customers/${id}/launch-promo/grant`),
+  /** Retira a liberação (o que já foi contratado com a promoção continua). */
+  revokeLaunchPromo: (id: string) => api.delete<PromoStatus>(`/api/customers/${id}/launch-promo/grant`),
   /** Assinatura antiga sem veículo: informa qual veículo ela cobre. */
   attachVehicle: (customerId: string, subscriptionId: string, input: VehicleInput) =>
     api.post<Vehicle>(`/api/customers/${customerId}/subscriptions/${subscriptionId}/vehicle`, input),

@@ -143,6 +143,17 @@ export function NewVehicleWizard({
     enabled: open && isAdmin,
   });
   const account = useQuery({ queryKey: ['me', 'account'], queryFn: meApi.account, enabled: open && !isAdmin });
+  // A central libera a promoção para quem não está na lista; ela já vem marcada.
+  const grantPromo = useMutation({
+    mutationFn: () => customersApi.grantLaunchPromo(admin!.customerId),
+    onSuccess: (next) => {
+      queryClient.setQueryData(['customer', admin!.customerId, 'launch-promo'], next);
+      if (next.eligible) {
+        setAdminDraft((d) => (d ? { ...d, promo: true, equipment: centsToInput(next.offer.equipmentCents) } : d));
+      }
+    },
+    onError: (err: Error) => setError(err.message),
+  });
   const c = catalog.data;
   const address = isAdmin ? (admin?.deliveryAddress ?? null) : (account.data?.deliveryAddress ?? null);
 
@@ -436,7 +447,15 @@ export function NewVehicleWizard({
                   </label>
                 ) : (
                   promoStatus.data && (
-                    <p className={styles.muted}>Promoção de pré-lançamento: {promoStatus.data.reason}.</p>
+                    <div className={styles.promoGrant}>
+                      <p className={styles.muted}>Promoção de pré-lançamento: {promoStatus.data.reason}.</p>
+                      {/* Fora da lista: a central pode liberar para este cliente. */}
+                      {promoStatus.data.code === 'NOT_ON_LIST' && (
+                        <Button size="small" variant="secondary" loading={grantPromo.isPending} onClick={() => grantPromo.mutate()}>
+                          Liberar para este cliente
+                        </Button>
+                      )}
+                    </div>
                   )
                 )}
                 <div className={pageStyles.formRow}>

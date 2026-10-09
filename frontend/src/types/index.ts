@@ -911,7 +911,15 @@ export interface PromoOffer {
 export interface PromoStatus {
   eligible: boolean;
   reason: string;
+  /** O motivo sem o texto (vazio: tem direito). Com NOT_ON_LIST, a central pode liberar. */
+  code: '' | 'ENDED' | 'CLAIMED' | 'NOT_ON_LIST' | 'NO_SLOTS';
   offer: PromoOffer;
+  /** O e-mail está na lista de lançamento. */
+  onList: boolean;
+  /** Quando a central liberou a promoção para quem não está na lista (nulo: não liberou). */
+  grantedAt: string | null;
+  /** Já contratou com a promoção. */
+  claimed: boolean;
 }
 
 /** Vagas da promoção de pré-lançamento. */

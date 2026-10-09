@@ -49,6 +49,7 @@ import type { HistoryRetention, Invoice, PixPayment, ReminderKind, Subscription,
 
 import styles from '../Page.module.css';
 import { CustomerReferralCard } from './affiliates/CustomerReferralCard';
+import { LaunchPromoCard } from './LaunchPromoCard';
 
 interface Confirmation {
   title: string;
@@ -321,6 +322,8 @@ export function CustomerDetailsPage() {
         </Card>
 
         <CustomerReferralCard customerId={id} referral={data.affiliate} />
+
+        <LaunchPromoCard customerId={id} />
 
         <Card
           title="Veículos"

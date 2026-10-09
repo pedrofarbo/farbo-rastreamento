@@ -445,6 +445,43 @@ func (s *Server) handleCustomerLaunchPromo(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, status)
 }
 
+// handleGrantLaunchPromo libera a promoção de pré-lançamento para um cliente
+// que não se inscreveu na lista (devolve a situação nova).
+func (s *Server) handleGrantLaunchPromo(w http.ResponseWriter, r *http.Request) {
+	s.changeLaunchPromo(w, r, true)
+}
+
+// handleRevokeLaunchPromo retira a liberação (a vaga já usada continua).
+func (s *Server) handleRevokeLaunchPromo(w http.ResponseWriter, r *http.Request) {
+	s.changeLaunchPromo(w, r, false)
+}
+
+func (s *Server) changeLaunchPromo(w http.ResponseWriter, r *http.Request, grant bool) {
+	customerID, ok := s.customerFromURL(w, r)
+	if !ok {
+		return
+	}
+	var err error
+	action := audit.ActionLaunchPromoRevoked
+	if grant {
+		action = audit.ActionLaunchPromoGranted
+		err = s.Orders.GrantPromo(r.Context(), customerID, actor(r))
+	} else {
+		err = s.Orders.RevokePromo(r.Context(), customerID)
+	}
+	if err != nil {
+		handleStoreError(w, err, "cliente não encontrado")
+		return
+	}
+	s.recordBillingAudit(r, action, map[string]any{"customerId": customerID})
+	status, err := s.Orders.PromoFor(r.Context(), customerID)
+	if err != nil {
+		handleStoreError(w, err, "cliente não encontrado")
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
 // handleLaunchPromoUsage: vagas da promoção usadas e o total.
 func (s *Server) handleLaunchPromoUsage(w http.ResponseWriter, r *http.Request) {
 	usage, err := s.Orders.PromoUsage(r.Context())

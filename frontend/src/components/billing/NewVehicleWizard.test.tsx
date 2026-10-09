@@ -6,10 +6,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ToastProvider } from '@/components/ui/Toast';
-import type { ShippingQuoteView } from '@/types';
+import type { PromoStatus, ShippingQuoteView } from '@/types';
 
 const ordered: unknown[] = [];
 let quote: ShippingQuoteView;
+// A central: o cliente fora da lista de lançamento.
+let promoStatus: PromoStatus;
 // O pedido recusa uma vez por falta do aceite do contrato (quem só acompanhava).
 let needsContract = false;
 const accepted: unknown[] = [];
@@ -35,7 +37,14 @@ vi.mock('@/api/resources', () => ({
     },
     saveAddress: async () => ({}),
   },
-  customersApi: {},
+  customersApi: {
+    launchPromo: async () => promoStatus,
+    grantLaunchPromo: async () => {
+      promoStatus = { ...promoStatus, eligible: true, reason: '', code: '', grantedAt: '2026-10-09T12:00:00Z' };
+      return promoStatus;
+    },
+    shippingQuote: async () => ({ enabled: false, zipCode: '', problem: '', quotes: [], arrange: false }),
+  },
   contractApi: {
     mine: async () => ({
       contract: { version: '1', effectiveDate: '7 de outubro de 2026', title: 'Contrato de Prestação de Serviços de Rastreamento Veicular', intro: [], sections: [], sha256: 'x' },
@@ -104,6 +113,50 @@ afterEach(() => {
   ordered.length = 0;
   accepted.length = 0;
   needsContract = false;
+});
+
+describe('a central e a promoção de pré-lançamento', () => {
+  it('libera ali mesmo para quem está fora da lista, e ela já vem marcada', async () => {
+    promoStatus = {
+      eligible: false, reason: 'o e-mail da conta não está na lista de lançamento', code: 'NOT_ON_LIST',
+      offer: { equipmentCents: 12000, monthlyCents: 3490, insanosMonthlyCents: 2790, insanosPlanName: 'Especial Insanos MC', months: 12 },
+      onList: false, grantedAt: null, claimed: false,
+    };
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    await act(async () =>
+      createRoot(host).render(
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <MemoryRouter>
+            <ToastProvider>
+              <NewVehicleWizard
+                open
+                admin={{ customerId: 'c1', devices: [], deliveryAddress: null, currentPlan: null }}
+                onClose={() => undefined}
+                onDone={() => undefined}
+              />
+            </ToastProvider>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      ),
+    );
+    await flush();
+    const name = Array.from(document.querySelectorAll('input')).find((i) => i.closest('div')?.textContent?.includes('Apelido')) as HTMLInputElement;
+    await act(async () => type(name, 'Moto do Caio'));
+    await act(async () => button('Continuar').click());
+    await flush();
+    expect(text()).toContain('Promoção de pré-lançamento: o e-mail da conta não está na lista de lançamento.');
+    await act(async () => button('Liberar para este cliente').click());
+    await flush();
+    const promo = Array.from(document.querySelectorAll('input[type=checkbox]')).find((i) =>
+      i.closest('label')?.textContent?.includes('Aplicar a promoção de pré-lançamento'),
+    ) as HTMLInputElement;
+    expect(promo?.checked).toBe(true);
+    const label = Array.from(document.querySelectorAll('label')).find((l) => l.textContent?.startsWith('Rastreador J16 (R$)'));
+    const equipment = document.getElementById(label?.htmlFor ?? '') as HTMLInputElement;
+    expect(equipment.value).toBe('120,00');
+    expect(button('Liberar para este cliente')).toBeUndefined();
+  });
 });
 
 describe('frete no pedido', () => {

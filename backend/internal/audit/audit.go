@@ -55,9 +55,13 @@ const (
 	ActionUserUpdated = "USER_UPDATED"
 	ActionUserInvited = "USER_INVITED"
 
-	ActionCustomerCreated      = "CUSTOMER_CREATED"
-	ActionCustomerUpdated      = "CUSTOMER_UPDATED"
-	ActionCustomerInvited      = "CUSTOMER_INVITED"
+	ActionCustomerCreated = "CUSTOMER_CREATED"
+	ActionCustomerUpdated = "CUSTOMER_UPDATED"
+	ActionCustomerInvited = "CUSTOMER_INVITED"
+	// ActionLaunchPromoGranted / Revoked: a central liberou (ou retirou) a
+	// promoção de pré-lançamento para um cliente fora da lista de lançamento.
+	ActionLaunchPromoGranted   = "LAUNCH_PROMO_GRANTED"
+	ActionLaunchPromoRevoked   = "LAUNCH_PROMO_REVOKED"
 	ActionSubscriptionCreated  = "SUBSCRIPTION_CREATED"
 	ActionSubscriptionUpdated  = "SUBSCRIPTION_UPDATED"
 	ActionSubscriptionCanceled = "SUBSCRIPTION_CANCELED"
