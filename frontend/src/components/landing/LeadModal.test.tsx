@@ -61,7 +61,7 @@ describe('LeadModal (pré-cadastro)', () => {
     type(byId(host, 'lead-email'), 'ana@exemplo.com.br');
     expect(submitButton(host).disabled).toBe(true); // falta o WhatsApp
     type(byId(host, 'lead-phone'), '11988887777');
-    expect(byId<HTMLInputElement>(host, 'lead-phone').value).toBe('(11) 98888-7777');
+    expect(byId<HTMLInputElement>(host, 'lead-phone').value).toBe('(11) 9-8888-7777');
     type(byId(host, 'lead-city'), 'Campinas');
     expect(submitButton(host).disabled).toBe(true); // falta o aceite
 
@@ -76,7 +76,7 @@ describe('LeadModal (pré-cadastro)', () => {
       expect.objectContaining({
         name: 'Ana Souza',
         email: 'ana@exemplo.com.br',
-        phone: '(11) 98888-7777',
+        phone: '(11) 9-8888-7777',
         city: 'Campinas',
         plan: 'Preço Especial Insanos MC - R$ 39,90',
         vehicleType: 'moto',
@@ -96,7 +96,7 @@ describe('LeadModal (pré-cadastro)', () => {
     const host = render();
     type(byId(host, 'lead-name'), 'Ana');
     type(byId(host, 'lead-email'), 'ana@x');
-    type(byId(host, 'lead-phone'), '(11) 98888-7777');
+    type(byId(host, 'lead-phone'), '(11) 9-8888-7777');
     act(() => byId<HTMLInputElement>(host, 'lead-consent').click());
     await act(async () => {
       submitButton(host).click();

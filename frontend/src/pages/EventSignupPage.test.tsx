@@ -78,7 +78,7 @@ describe('EventSignupPage', () => {
       type(field('tel'), '11987654321');
       type(field('email'), 'ana@cliente.test');
     });
-    expect(field('tel').value).toBe('(11) 98765-4321');
+    expect(field('tel').value).toBe('(11) 9-8765-4321');
     await act(async () => field('checkbox').click());
     expect(submit().disabled).toBe(true); // falta a cidade
     await act(async () => type(city(), 'São Paulo - SP'));
@@ -88,7 +88,7 @@ describe('EventSignupPage', () => {
     await flush();
     expect(sent).toEqual([
       {
-        name: 'Ana Souza', email: 'ana@cliente.test', phone: '(11) 98765-4321', consent: true, website: '',
+        name: 'Ana Souza', email: 'ana@cliente.test', phone: '(11) 9-8765-4321', consent: true, website: '',
         event: 'encontro-insanos-mc', city: 'São Paulo - SP',
       },
     ]);

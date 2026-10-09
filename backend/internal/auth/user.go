@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/phone"
 )
 
 // Perfis de acesso (RBAC, §27).
@@ -86,7 +87,7 @@ func (r *Repository) Create(ctx context.Context, u *User) error {
 		INSERT INTO users (email, name, role, phone, document, password_hash)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, created_at, updated_at`,
-		strings.TrimSpace(u.Email), u.Name, u.Role, u.Phone, u.Document, u.PasswordHash,
+		strings.TrimSpace(u.Email), u.Name, u.Role, phone.Format(u.Phone), u.Document, u.PasswordHash,
 	).Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt))
 }
 
@@ -122,18 +123,18 @@ func (r *Repository) ListTeam(ctx context.Context) ([]*User, error) {
 // as sessões abertas, para o acesso cair na hora e não só no próximo login.
 // UpdateContact altera nome, telefone e CPF/CNPJ (o próprio cliente, em
 // Meus dados): não mexe na situação da conta.
-func (r *Repository) UpdateContact(ctx context.Context, id uuid.UUID, name, phone, document string) (*User, error) {
+func (r *Repository) UpdateContact(ctx context.Context, id uuid.UUID, name, tel, document string) (*User, error) {
 	return scanUser(r.db.QueryRow(ctx, `
 		UPDATE users SET name = $2, phone = $3, document = $4, updated_at = NOW()
 		WHERE id = $1
-		RETURNING `+userColumns, id, name, phone, document))
+		RETURNING `+userColumns, id, name, phone.Format(tel), document))
 }
 
 func (r *Repository) UpdateProfile(ctx context.Context, id uuid.UUID, p Profile) (*User, error) {
 	user, err := scanUser(r.db.QueryRow(ctx, `
 		UPDATE users SET name = $2, phone = $3, document = $4, active = $5, updated_at = NOW()
 		WHERE id = $1
-		RETURNING `+userColumns, id, p.Name, p.Phone, p.Document, p.Active))
+		RETURNING `+userColumns, id, p.Name, phone.Format(p.Phone), p.Document, p.Active))
 	if err != nil {
 		return nil, err
 	}

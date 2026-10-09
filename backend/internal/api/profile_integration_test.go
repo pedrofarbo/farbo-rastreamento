@@ -27,7 +27,7 @@ func TestMyProfile(t *testing.T) {
 	}
 
 	u := put(map[string]any{"name": "  Lia   Martins Souza ", "phone": "11 98765-4321", "document": "390.533.447-05"}, http.StatusOK)
-	if u.Name != "Lia Martins Souza" || u.Phone != "(11) 98765-4321" || u.Document != "39053344705" || !u.Active || u.Email != "lia@perfil.test" {
+	if u.Name != "Lia Martins Souza" || u.Phone != "(11) 9-8765-4321" || u.Document != "39053344705" || !u.Active || u.Email != "lia@perfil.test" {
 		t.Fatalf("depois de salvar = %+v", u)
 	}
 	var me auth.User

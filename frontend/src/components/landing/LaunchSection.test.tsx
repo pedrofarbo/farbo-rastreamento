@@ -71,7 +71,7 @@ describe('LaunchSection (pré-lançamento)', () => {
     act(() => input(host, 'input[type="checkbox"]').click());
     expect(submit(host).disabled).toBe(true); // falta o WhatsApp
     type(input(host, 'input[type="tel"]'), '11977776666');
-    expect(input(host, 'input[type="tel"]').value).toBe('(11) 97777-6666');
+    expect(input(host, 'input[type="tel"]').value).toBe('(11) 9-7777-6666');
     act(() => input(host, 'input[type="checkbox"]').click());
     expect(submit(host).disabled).toBe(true); // falta o aceite
     act(() => input(host, 'input[type="checkbox"]').click());
@@ -81,7 +81,7 @@ describe('LaunchSection (pré-lançamento)', () => {
       submit(host).click();
     });
     expect(sent).toEqual([
-      { name: '', email: 'bruno@exemplo.com.br', phone: '(11) 97777-6666', consent: true, website: '', ref: 'joao-moto' },
+      { name: '', email: 'bruno@exemplo.com.br', phone: '(11) 9-7777-6666', consent: true, website: '', ref: 'joao-moto' },
     ]);
     expect(host.textContent).toContain('Você está na lista!');
     expect(host.textContent).toContain('use este mesmo e-mail');

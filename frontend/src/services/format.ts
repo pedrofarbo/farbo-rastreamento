@@ -256,10 +256,11 @@ export function todayISO(): string {
 }
 
 /**
- * Máscara do WhatsApp enquanto a pessoa digita: "11999998888" →
- * "(11) 99999-8888" (fixo: "(11) 3333-4444"). Com `previous`, apagar um
- * caractere da máscara (o hífen, o parêntese) apaga o dígito antes dele, em
- * vez de a máscara pôr o caractere de volta.
+ * Máscara do telefone enquanto a pessoa digita, no formato da plataforma (o
+ * mesmo que o servidor grava): celular "11999998888" → "(11) 9-9999-8888";
+ * fixo "(11) 3333-4444". Com `previous`, apagar um caractere da máscara (o
+ * hífen, o parêntese) apaga o dígito antes dele, em vez de a máscara pôr o
+ * caractere de volta.
  */
 export function formatPhoneInput(value: string, previous = ''): string {
   let d = value.replace(/\D/g, '');
@@ -270,9 +271,12 @@ export function formatPhoneInput(value: string, previous = ''): string {
   if (d.length <= 2) return `(${d}`;
   const ddd = d.slice(0, 2);
   const rest = d.slice(2);
+  // Celular: o 9, depois dois blocos de 4.
+  if (rest.startsWith('9')) {
+    return [`(${ddd}) 9`, rest.slice(1, 5), rest.slice(5, 9)].filter(Boolean).join('-');
+  }
   if (rest.length <= 4) return `(${ddd}) ${rest}`;
-  const split = rest.length === 9 ? 5 : 4;
-  return `(${ddd}) ${rest.slice(0, split)}-${rest.slice(split)}`;
+  return `(${ddd}) ${rest.slice(0, 4)}-${rest.slice(4, 8)}`;
 }
 
 /** WhatsApp com DDD completo (10 ou 11 dígitos). */

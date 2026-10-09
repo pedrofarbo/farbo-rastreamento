@@ -14,7 +14,7 @@ import fieldStyles from '@/components/ui/Field.module.css';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { formatMoney } from '@/services/format';
+import { formatMoney, formatPhoneInput } from '@/services/format';
 import { formatTaxId } from '@/services/taxid';
 import type { Lead } from '@/types';
 
@@ -184,7 +184,7 @@ export function CustomersPage() {
           <LeadsTab
             onConvert={(lead) => {
               setFormError('');
-              setDraft({ ...EMPTY, name: lead.name, email: lead.email, phone: lead.phone, lead });
+              setDraft({ ...EMPTY, name: lead.name, email: lead.email, phone: formatPhoneInput(lead.phone), lead });
             }}
           />
         ) : (
@@ -330,9 +330,10 @@ export function CustomersPage() {
             <div className={styles.formRow}>
               <TextField
                 label="Telefone"
-                placeholder="(11) 99999-9999"
                 value={draft.phone}
-                onChange={(event) => setDraft({ ...draft, phone: event.target.value })}
+                inputMode="tel"
+                placeholder="(11) 9-8888-7777"
+                onChange={(event) => setDraft({ ...draft, phone: formatPhoneInput(event.target.value, draft.phone) })}
               />
               <TextField
                 label="CPF ou CNPJ"

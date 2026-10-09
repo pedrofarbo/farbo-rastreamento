@@ -19,6 +19,7 @@ import (
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/phone"
 )
 
 var (
@@ -362,7 +363,7 @@ func (s *Service) Register(ctx context.Context, in NewUser) (*User, error) {
 	}
 	user := &User{
 		Email: email, Name: name, Role: role, PasswordHash: hash, Active: true,
-		Phone: strings.TrimSpace(in.Phone), Document: strings.TrimSpace(in.Document),
+		Phone: phone.Format(in.Phone), Document: strings.TrimSpace(in.Document),
 	}
 	if err := s.users.Create(ctx, user); err != nil {
 		return nil, err

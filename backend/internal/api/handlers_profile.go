@@ -7,7 +7,7 @@ import (
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
-	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/phone"
 )
 
 type myProfileRequest struct {
@@ -18,22 +18,20 @@ type myProfileRequest struct {
 }
 
 // phoneOf confere o telefone (opcional): com o DDD, 10 ou 11 dígitos (o 55
-// do país, se vier, sai). Devolve no formato (11) 91234-5678.
+// do país, se vier, sai). Devolve no formato da plataforma, (11) 9-1234-5678.
 func phoneOf(raw string) (string, bool) {
-	d := payments.Digits(raw)
+	d := phone.Digits(raw)
 	if d == "" {
 		return "", true
 	}
 	if (len(d) == 12 || len(d) == 13) && strings.HasPrefix(d, "55") {
 		d = d[2:]
 	}
-	switch len(d) {
-	case 11:
-		return "(" + d[:2] + ") " + d[2:7] + "-" + d[7:], true
-	case 10:
-		return "(" + d[:2] + ") " + d[2:6] + "-" + d[6:], true
+	// Com o DDD: fixo (10) ou celular com o 9 (11).
+	if len(d) != 10 && (len(d) != 11 || d[2] != '9') {
+		return "", false
 	}
-	return "", false
+	return phone.Format(d), true
 }
 
 // handleUpdateMyProfile: o cliente atualiza o próprio cadastro (Meus dados,

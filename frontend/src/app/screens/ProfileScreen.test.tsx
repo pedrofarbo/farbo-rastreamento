@@ -81,7 +81,7 @@ describe('Meus dados', () => {
   it('mostra o cadastro com as máscaras; o e-mail não muda', async () => {
     await render();
     expect(input('Nome').value).toBe('Lia');
-    expect(input('Celular').value).toBe('(11) 98765-4321');
+    expect(input('Celular').value).toBe('(11) 9-8765-4321');
     expect(input('CPF').value).toBe('529.982.247-25');
     expect(input('E-mail').disabled).toBe(true);
     expect(text()).toContain('NF-e do rastreador e a NFS-e das mensalidades');

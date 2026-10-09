@@ -81,7 +81,7 @@ describe('ReferralSignupPage', () => {
     await flush();
     expect(sent).toEqual([
       {
-        name: 'Bia Lima', email: 'bia@cliente.test', phone: '(11) 94444-3333', consent: true, website: '',
+        name: 'Bia Lima', email: 'bia@cliente.test', phone: '(11) 9-4444-3333', consent: true, website: '',
         event: '', city: 'Campinas - SP', ref: 'joao-moto',
       },
     ]);
