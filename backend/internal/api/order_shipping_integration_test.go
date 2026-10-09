@@ -252,5 +252,13 @@ func TestOrderShippingEndToEnd(t *testing.T) {
 		!strings.HasPrefix(setup["description"].(string), "Frete do rastreador") {
 		t.Errorf("só o frete = %+v", res)
 	}
-
+	// Rastreador parcelado, com frete: no pedido, só o frete; o rastreador
+	// vem nas mensalidades.
+	res = order(admin, "/api/customers/"+customer.ID.String()+"/trackers",
+		map[string]any{"vehicle": vehicle("FRT5E55"), "equipmentCents": 15000, "installments": 10, "plan": plan, "shippingServiceId": 1},
+		http.StatusCreated)
+	if setup, _ := res["setupInvoice"].(map[string]any); setup == nil || setup["amountCents"] != float64(2240) ||
+		setup["description"] != "Frete do rastreador: Correios PAC · rastreador de R$ 150,00 em 10x sem juros, nas mensalidades" {
+		t.Errorf("parcelado com frete = %+v", res)
+	}
 }

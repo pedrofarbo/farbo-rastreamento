@@ -278,18 +278,18 @@ describe('frete no pedido', () => {
     expect(ordered).toEqual([{ vehicle: expect.objectContaining({ name: 'Moto do trabalho' }), launchPromo: false }]);
   });
 
-  it('parcelado em 10x: agora só a 1ª parcela, e o cliente confirma que fica até a última', async () => {
+  it('parcelado em 10x: agora só o frete, a 1ª parcela na 1ª mensalidade, e o cliente confirma que fica até a última', async () => {
     quote = {
       enabled: true, zipCode: '20040020', problem: '', arrange: false,
       quotes: [{ serviceId: 1, service: 'PAC', company: 'Correios', priceCents: 2240, deliveryDays: 7, error: '' }],
     };
     await openWizard(10);
-    expect(text()).toContain('Equipamento: 1ª de 10 parcelas (R$ 150,00 sem juros)R$ 15,00');
-    expect(text()).toContain('Agora: 1ª parcela e freteR$ 37,40');
-    expect(text()).toContain('+ R$ 15,00 do rastreador em cada uma das 9 mensalidades seguintes.');
+    expect(text()).toContain('Equipamento: R$ 150,00 em 10x sem jurosnas mensalidades');
+    expect(text()).toContain('Agora: freteR$ 22,40');
+    expect(text()).toContain('+ R$ 15,00 do rastreador em cada uma das 10 primeiras mensalidades.');
     expect(text()).toContain('fica ativa até a mensalidade com a última parcela (a 10ª)');
     // Sem o "entendi", não confirma.
-    expect(button(/Confirmar pedido · R\$\s37,40/).disabled).toBe(true);
+    expect(button(/Confirmar pedido · R\$\s22,40/).disabled).toBe(true);
     const agree = document.querySelector('input[type=checkbox]') as HTMLInputElement;
     await act(async () => agree.click());
     expect(button(/Confirmar pedido/).disabled).toBe(false);

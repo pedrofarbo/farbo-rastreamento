@@ -2,9 +2,9 @@ import { formatDateOnly, formatMoney } from '@/services/format';
 import type { Subscription } from '@/types';
 
 /**
- * O rastreador parcelado sem juros, por Pix: a 1ª parcela vai na fatura do
- * pedido (com o frete) e as demais, somadas às mensalidades. A assinatura fica
- * ativa até a última; encerrada antes, o saldo vence de uma vez.
+ * O rastreador parcelado sem juros, por Pix: no pedido, só o frete; as
+ * parcelas vêm somadas às mensalidades, a 1ª na 1ª. A assinatura fica ativa
+ * até a última; encerrada antes, o saldo vence de uma vez.
  */
 
 /** Divide como o servidor: a 1ª leva os centavos que sobram (R$ 120,00 em 7x: 17,16 + 6 × 17,14). */

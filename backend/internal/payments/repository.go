@@ -99,11 +99,13 @@ func (r *Repository) ByProviderIDs(ctx context.Context, ids []string) ([]*Charge
 
 // Reusable devolve o Pix pendente mais recente da fatura que ainda vale até
 // `validUntil`, para não gerar um novo a cada clique.
-func (r *Repository) Reusable(ctx context.Context, invoiceID uuid.UUID, validUntil time.Time) (*Charge, error) {
+// Reusable é o Pix pendente da fatura que ainda vale e tem o valor dela: se
+// a central mudou o valor da fatura, o Pix antigo não serve mais.
+func (r *Repository) Reusable(ctx context.Context, invoiceID uuid.UUID, amountCents int, validUntil time.Time) (*Charge, error) {
 	return scanCharge(r.db.QueryRow(ctx, `
 		SELECT `+chargeColumns+` FROM payment_charges
-		WHERE invoice_id = $1 AND status = 'PENDING' AND expires_at > $2
-		ORDER BY created_at DESC LIMIT 1`, invoiceID, validUntil))
+		WHERE invoice_id = $1 AND status = 'PENDING' AND expires_at > $2 AND amount_cents = $3
+		ORDER BY created_at DESC LIMIT 1`, invoiceID, validUntil, amountCents))
 }
 
 // SetStatus grava o status vindo do provedor; paid_at só é preenchido uma vez.

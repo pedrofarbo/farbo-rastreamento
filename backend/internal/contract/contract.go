@@ -31,11 +31,11 @@ import (
 // A versão em vigor. Ao mudar o texto (contrato.md), mude a versão e a data:
 // todo cliente aceita de novo no próximo acesso.
 const (
-	Version       = "3"
-	EffectiveDate = "7 de outubro de 2026"
+	Version       = "4"
+	EffectiveDate = "9 de outubro de 2026"
 	// Changes resume o que mudou desde a versão anterior (o cliente que
 	// aceitou a anterior lê ao aceitar de novo, e recebe por e-mail).
-	Changes = "Entrou o parcelamento do rastreador sem juros, por Pix (cláusulas 5 e 7): a 1ª parcela vence com o pedido e as demais vêm somadas às mensalidades. Quem parcela mantém a assinatura ativa até a última parcela; se encerrar antes, as parcelas restantes vencem de uma vez. Para quem pagou o rastreador à vista, nada muda."
+	Changes = "No rastreador parcelado (cláusula 5), o pedido cobra só o frete: as parcelas vêm todas somadas às mensalidades, uma por mês, a 1ª junto com a 1ª mensalidade — nunca duas no mesmo mês. A assinatura fica ativa até a mensalidade com a última parcela. Para quem pagou o rastreador à vista, nada muda."
 	// MinMonths é a permanência mínima de cada assinatura.
 	MinMonths = 3
 )

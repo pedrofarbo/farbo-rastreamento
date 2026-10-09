@@ -305,10 +305,10 @@ export function NewVehicleWizard({
   const arranged = ships && shippingId === ARRANGE_DELIVERY && shippingQuote.data?.arrange === true;
   // O cliente só confirma com a entrega escolhida (quando o frete é cotado).
   const needsShipping = !isAdmin && ships && shippingQuote.data?.enabled === true;
-  // Parcelado: agora vai só a 1ª parcela; as demais, nas mensalidades.
+  // Parcelado: agora vai só o frete; as parcelas, nas mensalidades (a 1ª na 1ª).
   const choices = installmentChoices(equipmentCents ?? 0, c?.equipmentMaxInstallments ?? 1);
   const parcels = installments > 1 && choices.length >= installments ? splitInstallments(equipmentCents ?? 0, installments) : null;
-  const totalNow = (parcels ? parcels[0] : (equipmentCents ?? 0)) + (freight?.cents ?? 0);
+  const totalNow = (parcels ? 0 : (equipmentCents ?? 0)) + (freight?.cents ?? 0);
 
   const goTo = (next: number) => {
     setError('');
@@ -591,11 +591,11 @@ export function NewVehicleWizard({
                     <div className={styles.orderLine}>
                       <span>
                         {parcels
-                          ? `Equipamento: 1ª de ${parcels.length} parcelas (${formatMoney(equipmentCents)} sem juros)`
+                          ? `Equipamento: ${formatMoney(equipmentCents)} em ${parcels.length}x sem juros`
                           : 'Equipamento'}
                       </span>
                       <span>
-                        {parcels ? formatMoney(parcels[0]) : equipmentCents ? formatMoney(equipmentCents) : 'sem cobrança'}
+                        {parcels ? 'nas mensalidades' : equipmentCents ? formatMoney(equipmentCents) : 'sem cobrança'}
                       </span>
                     </div>
                   )}
@@ -615,7 +615,7 @@ export function NewVehicleWizard({
                   )}
                   <div className={`${styles.orderLine} ${styles.orderTotal}`}>
                     <span>
-                      Agora: {parcels ? (freight ? '1ª parcela e frete' : '1ª parcela') : freight ? 'equipamento e frete' : 'equipamento'}
+                      Agora{parcels ? (freight ? ': frete' : '') : freight ? ': equipamento e frete' : ': equipamento'}
                       {isAdmin && adminDraft && totalNow ? ` · vence ${formatDateOnly(adminDraft.dueDate)}` : ''}
                     </span>
                     <span>{totalNow ? formatMoney(totalNow) : 'sem cobrança'}</span>
@@ -636,10 +636,7 @@ export function NewVehicleWizard({
                         {parcels && (
                           <>
                             <br />
-                            <span className={styles.muted}>
-                              + {formatMoney(parcels[1])} do rastreador em cada uma das {parcels.length - 1} mensalidades
-                              seguintes.
-                            </span>
+                            <span className={styles.muted}>{parcelsNote(parcels)}</span>
                           </>
                         )}
                       </span>
@@ -686,6 +683,18 @@ export function NewVehicleWizard({
   );
 }
 
+/**
+ * As parcelas na assinatura: "+ R$ 15,00 do rastreador em cada uma das 10
+ * primeiras mensalidades." (com a 1ª diferente, ela à parte).
+ */
+function parcelsNote(parcels: number[]): string {
+  const [first, rest] = parcels;
+  if (first === rest) {
+    return `+ ${formatMoney(rest)} do rastreador em cada uma das ${parcels.length} primeiras mensalidades.`;
+  }
+  return `+ ${formatMoney(first)} do rastreador na 1ª mensalidade e ${formatMoney(rest)} em cada uma das ${parcels.length - 1} seguintes.`;
+}
+
 /** A escolha de como pagar o rastreador: à vista ou parcelado sem juros. */
 function InstallmentsField({
   choices,
@@ -703,7 +712,7 @@ function InstallmentsField({
       label={staff ? 'Pagamento do equipamento' : 'Como pagar o rastreador'}
       hint={
         value > 1
-          ? `Por Pix: a 1ª parcela vence agora, ${staff ? 'com o frete' : 'junto com o frete'}; as outras ${value - 1} vêm somadas às mensalidades.`
+          ? `Por Pix: ${staff ? 'no pedido' : 'agora'}, só o frete; as ${value} parcelas vêm somadas às mensalidades, a 1ª junto com a 1ª.`
           : `Por Pix, ou parcelado em até ${choices.length}x sem juros.`
       }
       value={value}

@@ -6,7 +6,7 @@ import (
 )
 
 // A divisão sem juros: a 1ª leva os centavos que sobram; a permanência vai
-// até a mensalidade com a última parcela (a k-ésima vai na mensalidade k-1).
+// até a mensalidade com a última parcela (a k-ésima vai na mensalidade k).
 func TestInstallmentPlan(t *testing.T) {
 	for _, c := range []struct {
 		total, n int
@@ -27,9 +27,9 @@ func TestInstallmentPlan(t *testing.T) {
 		n     int
 		want  string
 	}{
-		{NewDate(2026, 10, 10), 10, "2027-06-10"},
-		{NewDate(2026, 10, 10), 2, "2026-10-10"},
-		{NewDate(2026, 12, 28), 3, "2027-01-28"},
+		{NewDate(2026, 10, 10), 10, "2027-07-10"},
+		{NewDate(2026, 10, 10), 2, "2026-11-10"},
+		{NewDate(2026, 12, 28), 3, "2027-02-28"},
 	} {
 		s := &Subscription{NextDueDate: c.first, DueDay: c.first.Day()}
 		s.PlanInstallments(c.n)

@@ -24,7 +24,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { CustomerAlertsSection } from '@/components/alerts/CustomerAlertsSection';
-import { TextField } from '@/components/ui/Field';
+import { SelectField, TextField } from '@/components/ui/Field';
 import fieldStyles from '@/components/ui/Field.module.css';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
@@ -38,6 +38,7 @@ import {
   formatAddressLines,
   formatDeviceStatus,
   formatMoney,
+  formatPhoneInput,
   parseMoney,
   todayISO,
 } from '@/services/format';
@@ -50,6 +51,7 @@ import type { HistoryRetention, Invoice, PixPayment, ReminderKind, Subscription,
 import styles from '../Page.module.css';
 import { CustomerReferralCard } from './affiliates/CustomerReferralCard';
 import { CustomerPlanCard } from './CustomerPlanCard';
+import { InvoiceAdjustModal } from './InvoiceAdjustModal';
 import { LaunchPromoCard } from './LaunchPromoCard';
 
 interface Confirmation {
@@ -73,7 +75,9 @@ export function CustomerDetailsPage() {
   const [profile, setProfile] = useState<{ name: string; phone: string; document: string } | null>(null);
   // Veículo sem assinatura ativa: nova assinatura para ele.
   const [reactivate, setReactivate] = useState<{ vehicle: VehicleView; draft: SubscriptionDraft } | null>(null);
-  const [editSubscription, setEditSubscription] = useState<{ sub: Subscription; planName: string; price: string } | null>(null);
+  const [editSubscription, setEditSubscription] = useState<{ sub: Subscription; planName: string; price: string; dueDay: number } | null>(null);
+  // A fatura em aberto que a central está alterando (vencimento, parcelamento).
+  const [adjusting, setAdjusting] = useState<Invoice | null>(null);
   const [payment, setPayment] = useState<{ invoice: Invoice; paymentUrl: string; pixCode: string } | null>(null);
   const [newInvoice, setNewInvoice] = useState<{ description: string; amount: string; dueDate: string; paymentUrl: string; pixCode: string } | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
@@ -465,7 +469,9 @@ export function CustomerDetailsPage() {
                                   size="small"
                                   variant="ghost"
                                   onClick={() =>
-                                    openModal(() => setEditSubscription({ sub, planName: sub.planName, price: centsToInput(sub.priceCents) }))
+                                    openModal(() =>
+                                      setEditSubscription({ sub, planName: sub.planName, price: centsToInput(sub.priceCents), dueDay: sub.dueDay }),
+                                    )
                                   }
                                 >
                                   Editar assinatura
@@ -737,6 +743,9 @@ export function CustomerDetailsPage() {
                             >
                               {data.onlinePayment ? 'Outro meio' : 'Pagamento'}
                             </Button>
+                            <Button size="small" variant="ghost" onClick={() => openModal(() => setAdjusting(invoice))}>
+                              Alterar
+                            </Button>
                             <Button
                               size="small"
                               variant="ghost"
@@ -954,7 +963,13 @@ export function CustomerDetailsPage() {
             {formError && <div className={styles.note}>{formError}</div>}
             <TextField label="Nome" value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} />
             <div className={styles.formRow}>
-              <TextField label="Telefone" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} />
+              <TextField
+                label="Telefone"
+                inputMode="tel"
+                placeholder="(11) 9-8888-7777"
+                value={profile.phone}
+                onChange={(e) => setProfile({ ...profile, phone: formatPhoneInput(e.target.value, profile.phone) })}
+              />
               <TextField
                 label="CPF ou CNPJ"
                 value={profile.document}
@@ -982,9 +997,11 @@ export function CustomerDetailsPage() {
                 if (!editSubscription) return;
                 const priceCents = parseMoney(editSubscription.price);
                 if (priceCents === null) return setFormError('Valor mensal inválido. Use, por exemplo, 69,90.');
-                run('Assinatura atualizada', () =>
-                  customersApi.updateSubscription(editSubscription.sub.id, { planName: editSubscription.planName, priceCents }),
-                );
+                run('Assinatura atualizada', async () => {
+                  const { sub, planName, dueDay } = editSubscription;
+                  await customersApi.updateSubscription(sub.id, { planName, priceCents });
+                  if (dueDay !== sub.dueDay) await customersApi.changeDueDay(sub.id, dueDay);
+                });
               }}
             >
               Salvar
@@ -1007,9 +1024,35 @@ export function CustomerDetailsPage() {
               value={editSubscription.price}
               onChange={(e) => setEditSubscription({ ...editSubscription, price: e.target.value })}
             />
+            <SelectField
+              label="Dia de vencimento"
+              hint="As mensalidades em aberto que ainda não venceram vão para o dia novo; as próximas já saem nele."
+              value={editSubscription.dueDay}
+              onChange={(e) => setEditSubscription({ ...editSubscription, dueDay: Number(e.target.value) })}
+            >
+              {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                <option key={d} value={d}>
+                  todo dia {d}
+                </option>
+              ))}
+            </SelectField>
           </div>
         )}
       </Modal>
+
+      {adjusting && (
+        <InvoiceAdjustModal
+          invoice={adjusting}
+          subscriptions={data.subscriptions}
+          vehicles={data.vehicles}
+          onClose={() => setAdjusting(null)}
+          onDone={(message) => {
+            setAdjusting(null);
+            refresh();
+            notify({ tone: 'success', title: 'Fatura alterada', description: message });
+          }}
+        />
+      )}
 
       {/* Link de pagamento / Pix */}
       <Modal

@@ -113,7 +113,7 @@ func (s *Service) PixForInvoice(ctx context.Context, invoiceID uuid.UUID, payer 
 		return nil, ErrInvoiceNotOpen
 	}
 
-	if existing, err := s.repo.Reusable(ctx, invoiceID, time.Now().Add(reuseMargin)); err == nil {
+	if existing, err := s.repo.Reusable(ctx, invoiceID, inv.AmountCents, time.Now().Add(reuseMargin)); err == nil {
 		existing.InvoiceStatus = inv.Status
 		return existing, nil
 	}
@@ -344,6 +344,17 @@ func (s *Service) apply(ctx context.Context, charge *Charge, status string) erro
 
 	switch status {
 	case abacatepay.StatusPaid:
+		// Um Pix antigo, de antes da central mudar o valor da fatura: o
+		// dinheiro entrou, mas não quita sozinho — alguém confere.
+		if current, err := s.invoices.GetInvoice(ctx, charge.InvoiceID); err != nil {
+			return err
+		} else if current.Status == billing.InvoiceOpen && current.AmountCents != charge.AmountCents {
+			s.log.Warn("Pix pago com valor diferente do da fatura", "invoice", charge.InvoiceID, "charge", charge.ID,
+				"charge_cents", charge.AmountCents, "invoice_cents", current.AmountCents)
+			meta["invoiceAmountCents"], meta["reason"] = current.AmountCents, "valor diferente do da fatura"
+			s.record(ctx, audit.ActionPaymentUnmatched, "REVIEW", meta)
+			return nil
+		}
 		inv, err := s.invoices.SettleInvoice(ctx, charge.InvoiceID, PaidViaPix, charge.ID)
 		switch {
 		case err == nil:

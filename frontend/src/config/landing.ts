@@ -33,8 +33,8 @@ export const LAUNCH_OFFER = {
 };
 
 /**
- * O rastreador parcelado sem juros, por Pix (a 1ª parcela no pedido, as
- * demais somadas às mensalidades). O servidor manda no limite
+ * O rastreador parcelado sem juros, por Pix (no pedido, só o frete; as
+ * parcelas somadas às mensalidades). O servidor manda no limite
  * (CATALOG_EQUIPMENT_MAX_INSTALLMENTS): mude os dois juntos.
  */
 export const EQUIPMENT_INSTALLMENTS = 10;

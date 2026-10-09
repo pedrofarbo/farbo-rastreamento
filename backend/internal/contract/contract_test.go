@@ -44,7 +44,7 @@ func TestContractText(t *testing.T) {
 		"serviços de segurança ou de vigilância", "central de monitoramento", "seguro veicular",
 		"equipe tática ou de pronta-resposta de prontidão", "não garante a recuperação do veículo em caso de roubo ou furto",
 		"prazo de arrependimento (cláusula 9)", "nova versão deste contrato (cláusula 14)",
-		"parcelado em até 10 (dez) vezes sem juros, por Pix", "a 1ª parcela vence com o pedido, junto com o frete",
+		"parcelado em até 10 (dez) vezes sem juros, por Pix", "no pedido, paga-se só o frete", "a 1ª junto com a 1ª mensalidade",
 		"ativa até a mensalidade que traz a última parcela", "as parcelas restantes vencem de uma vez, numa fatura só",
 		"não são multa: são o preço do rastreador",
 	} {

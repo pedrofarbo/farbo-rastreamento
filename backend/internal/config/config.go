@@ -327,8 +327,8 @@ type Catalog struct {
 	// SetupDueDays: prazo da fatura do equipamento.
 	SetupDueDays int
 	// EquipmentMaxInstallments: em até quantas vezes sem juros o rastreador
-	// pode ser parcelado (1: só à vista). A 1ª parcela vai na fatura do
-	// pedido; as demais, somadas às mensalidades.
+	// pode ser parcelado (1: só à vista). No pedido, só o frete; as parcelas
+	// vêm somadas às mensalidades, a 1ª na 1ª.
 	EquipmentMaxInstallments int
 	// LaunchPromo é a promoção de pré-lançamento.
 	LaunchPromo LaunchPromo

@@ -70,9 +70,9 @@ type Order struct {
 	// entrega combinada, só fica no acompanhamento.
 	Shipping *fulfillment.Choice
 	// Installments parcela o equipamento sem juros (0 ou 1: à vista; até o
-	// EquipmentMaxInstallments do catálogo): a 1ª parcela vai na fatura do
-	// pedido, com o frete, e as demais, somadas às mensalidades. A assinatura
-	// fica ativa até a última.
+	// EquipmentMaxInstallments do catálogo): no pedido, só o frete; as
+	// parcelas vêm somadas às mensalidades, a 1ª na 1ª. A assinatura fica
+	// ativa até a última.
 	Installments int
 }
 
@@ -162,16 +162,17 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 				return err
 			}
 		}
-		// Parcelado: a fatura do pedido leva só a 1ª parcela.
+		// Parcelado: o rastreador vai inteiro nas mensalidades (a 1ª parcela
+		// na 1ª); no pedido fica só o frete, se houver.
 		var installments []int
+		financed := ""
 		if o.Installments > 0 {
 			if setup == nil {
 				return ValidationError{"não há valor de equipamento para parcelar"}
 			}
-			total := setup.AmountCents
-			installments = billing.SplitInstallments(total, o.Installments)
-			setup.AmountCents = installments[0]
-			setup.Description += fmt.Sprintf(" · parcela 1/%d (%s em %dx sem juros)", o.Installments, money(total), o.Installments)
+			installments = billing.SplitInstallments(setup.AmountCents, o.Installments)
+			financed = fmt.Sprintf(" · rastreador de %s em %dx sem juros, nas mensalidades", money(setup.AmountCents), o.Installments)
+			setup = nil
 			sub.PlanInstallments(o.Installments)
 		}
 		// O frete entra na fatura do equipamento (ou é a fatura, se o
@@ -182,7 +183,7 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 				if setup == nil {
 					var err error
 					if setup, err = s.billing.NewInvoice(customerID, billing.InvoiceInput{
-						Description: "Frete do rastreador: " + o.Shipping.Name, AmountCents: o.Shipping.PriceCents, DueDate: due,
+						Description: "Frete do rastreador: " + o.Shipping.Name + financed, AmountCents: o.Shipping.PriceCents, DueDate: due,
 					}); err != nil {
 						return err
 					}
@@ -241,7 +242,7 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 			}
 		}
 		if installments != nil {
-			return billing.InsertInstallments(ctx, tx, result.Subscription.ID, installments, result.SetupInvoice.ID)
+			return billing.InsertInstallments(ctx, tx, result.Subscription.ID, installments)
 		}
 		return nil
 	})

@@ -12,10 +12,10 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 )
 
-// O rastreador parcelado sem juros, por Pix: a 1ª parcela vai na fatura do
-// pedido (com o frete) e as demais, uma por mês, somadas às mensalidades da
-// assinatura. Ela fica ativa até a última parcela (CommitmentUntil); se for
-// encerrada antes, o saldo vira uma fatura só — ou é dispensado
+// O rastreador parcelado sem juros, por Pix: no pedido, só o frete; as
+// parcelas vêm somadas às mensalidades da assinatura, uma por mês (a 1ª na
+// 1ª mensalidade). Ela fica ativa até a última parcela (CommitmentUntil); se
+// for encerrada antes, o saldo vira uma fatura só — ou é dispensado
 // (arrependimento, pedido desfeito).
 
 // MaxInstallments é o teto do banco; o catálogo diz quantas vezes oferece.
@@ -37,27 +37,23 @@ func SplitInstallments(totalCents, n int) []int {
 }
 
 // PlanInstallments marca a assinatura como de rastreador parcelado em n
-// vezes: a parcela k (k ≥ 2) vai na mensalidade k-1, e a permanência vai até
-// o vencimento da que traz a última.
+// vezes: a parcela k vai na mensalidade k, e a permanência vai até o
+// vencimento da que traz a última.
 func (s *Subscription) PlanInstallments(n int) {
 	last := s.NextDueDate
-	for i := 2; i < n; i++ {
+	for i := 1; i < n; i++ {
 		last = nextMonthly(last, s.DueDay)
 	}
 	s.Installments, s.CommitmentUntil = n, &last
 }
 
-// InsertInstallments grava as parcelas da assinatura; a 1ª já cobrada na
-// fatura do pedido (first).
-func InsertInstallments(ctx context.Context, q database.Querier, subscriptionID uuid.UUID, amounts []int, first uuid.UUID) error {
+// InsertInstallments grava as parcelas da assinatura, todas por cobrar: a
+// geração das mensalidades leva uma por mês.
+func InsertInstallments(ctx context.Context, q database.Querier, subscriptionID uuid.UUID, amounts []int) error {
 	for i, cents := range amounts {
-		var invoice *uuid.UUID
-		if i == 0 {
-			invoice = &first
-		}
 		if _, err := q.Exec(ctx, `
-			INSERT INTO equipment_installments (subscription_id, number, amount_cents, invoice_id)
-			VALUES ($1, $2, $3, $4)`, subscriptionID, i+1, cents, invoice); err != nil {
+			INSERT INTO equipment_installments (subscription_id, number, amount_cents)
+			VALUES ($1, $2, $3)`, subscriptionID, i+1, cents); err != nil {
 			return err
 		}
 	}

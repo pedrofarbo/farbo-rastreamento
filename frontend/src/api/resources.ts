@@ -555,6 +555,18 @@ export const customersApi = {
   /** Manda agora um lembrete da fatura (e-mail e push, com o link de pagamento). */
   remindInvoice: (id: string) => api.post<InvoiceReminder>(`/api/invoices/${id}/remind`),
   cancelInvoice: (id: string) => api.post<Invoice>(`/api/invoices/${id}/cancel`),
+  /** Muda o vencimento de uma fatura em aberto (hoje ou depois). */
+  changeInvoiceDueDate: (id: string, dueDate: string) => api.post<Invoice>(`/api/invoices/${id}/due-date`, { dueDate }),
+  /**
+   * Parcela o rastreador de uma fatura avulsa ainda não paga (pedido feito à
+   * vista): equipmentCents é a parte da fatura que é o rastreador, que vai
+   * para as mensalidades; o resto (frete) fica na fatura.
+   */
+  financeInvoice: (id: string, input: { subscriptionId: string; installments: number; equipmentCents: number }) =>
+    api.post<{ invoice: Invoice; subscription: Subscription }>(`/api/invoices/${id}/installments`, input),
+  /** Muda o dia de vencimento da assinatura (as faturas em aberto não vencidas vão junto). */
+  changeDueDay: (subscriptionId: string, dueDay: number) =>
+    api.post<Subscription>(`/api/subscriptions/${subscriptionId}/due-day`, { dueDay }),
 
   invoicePix: (invoiceId: string) => api.post<PixCharge>(`/api/invoices/${invoiceId}/pix`),
   charge: (id: string) => api.get<PixCharge>(`/api/charges/${id}`),

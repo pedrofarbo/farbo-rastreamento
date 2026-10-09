@@ -496,6 +496,90 @@ func (s *Server) handleUpdateInvoice(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, inv)
 }
 
+// handleChangeInvoiceDueDate: a central muda o vencimento de uma fatura em
+// aberto (para hoje ou depois).
+func (s *Server) handleChangeInvoiceDueDate(w http.ResponseWriter, r *http.Request) {
+	id, err := urlUUID(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	var req struct {
+		DueDate billing.Date `json:"dueDate"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	inv, err := s.Billing.ChangeInvoiceDueDate(r.Context(), id, req.DueDate)
+	if err != nil {
+		writeBillingError(w, err, "fatura não encontrada")
+		return
+	}
+	s.recordBillingAudit(r, audit.ActionInvoiceUpdated, map[string]any{
+		"customerId": inv.CustomerID, "invoiceId": inv.ID, "dueDate": inv.DueDate,
+	})
+	writeJSON(w, http.StatusOK, inv)
+}
+
+// handleFinanceInvoice: a central parcela o rastreador de um pedido feito à
+// vista (a fatura avulsa ainda não paga), na assinatura do veículo.
+func (s *Server) handleFinanceInvoice(w http.ResponseWriter, r *http.Request) {
+	id, err := urlUUID(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	var req struct {
+		SubscriptionID uuid.UUID `json:"subscriptionId"`
+		Installments   int       `json:"installments"`
+		EquipmentCents int       `json:"equipmentCents"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	maxInstallments := billing.MaxInstallments
+	if s.Orders != nil {
+		maxInstallments = s.Orders.Catalog().EquipmentMaxInstallments
+	}
+	inv, sub, err := s.Billing.FinanceInvoice(r.Context(), id, req.SubscriptionID, req.Installments, req.EquipmentCents, maxInstallments)
+	if err != nil {
+		writeBillingError(w, err, "fatura ou assinatura não encontrada")
+		return
+	}
+	s.recordBillingAudit(r, audit.ActionInvoiceUpdated, map[string]any{
+		"customerId": inv.CustomerID, "invoiceId": inv.ID, "subscriptionId": sub.ID,
+		"installments": sub.Installments, "equipmentCents": req.EquipmentCents, "amountCents": inv.AmountCents,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"invoice": inv, "subscription": sub})
+}
+
+// handleChangeDueDay: a central muda o dia de vencimento da assinatura.
+func (s *Server) handleChangeDueDay(w http.ResponseWriter, r *http.Request) {
+	id, err := urlUUID(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	var req struct {
+		DueDay int `json:"dueDay"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	sub, err := s.Billing.ChangeDueDay(r.Context(), id, req.DueDay)
+	if err != nil {
+		writeBillingError(w, err, "assinatura não encontrada")
+		return
+	}
+	s.recordBillingAudit(r, audit.ActionSubscriptionUpdated, map[string]any{
+		"customerId": sub.CustomerID, "subscriptionId": sub.ID, "dueDay": sub.DueDay,
+	})
+	writeJSON(w, http.StatusOK, sub)
+}
+
 // handlePayInvoice dá baixa manual: a central confirmou o recebimento. Se era
 // a fatura que suspendia o cliente, o acesso volta na hora.
 func (s *Server) handlePayInvoice(w http.ResponseWriter, r *http.Request) {
