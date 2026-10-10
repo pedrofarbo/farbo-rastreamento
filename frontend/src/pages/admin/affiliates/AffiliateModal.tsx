@@ -176,6 +176,14 @@ export function AffiliateModal({
                 <Button size="small" variant="ghost" onClick={() => void qr('svg')}>
                   QR Code (SVG)
                 </Button>
+                <a
+                  className={styles.open}
+                  href={`${partnerUrl(affiliate.reportToken)}/flyer`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Gerar flyer
+                </a>
               </div>
             </div>
             <div className={styles.linkBox}>

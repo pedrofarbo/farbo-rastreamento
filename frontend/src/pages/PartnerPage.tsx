@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 
 import { ApiError } from '@/api/client';
 import { publicApi } from '@/api/resources';
@@ -146,15 +146,19 @@ export function PartnerPage() {
                 />
               </div>
               <p className={styles.qrHint}>
-                Quem aponta a câmera do celular cai direto no seu link. Para a gráfica, mande o SVG: não perde qualidade
-                em nenhum tamanho. No impresso, deixe o QR com pelo menos 2,5 cm de lado e a borda branca em volta.
+                Quem aponta a câmera do celular cai direto no seu link. O flyer pronto já vem com a oferta e o seu QR,
+                em A5 para a gráfica, stories ou post. Só o QR, para a sua arte: no impresso, deixe com pelo menos
+                2,5 cm de lado e a borda branca em volta.
               </p>
               <div className={styles.linkActions}>
-                <a className={base.primary} href={publicApi.partnerQrUrl(token, 'png', true)} download>
-                  Baixar PNG
+                <Link className={base.primary} to={`/parceiro/${token}/flyer`}>
+                  Criar flyer pronto
+                </Link>
+                <a className={base.secondary} href={publicApi.partnerQrUrl(token, 'png', true)} download>
+                  Baixar só o QR (PNG)
                 </a>
                 <a className={base.secondary} href={publicApi.partnerQrUrl(token, 'svg', true)} download>
-                  Baixar SVG (para gráfica)
+                  Baixar só o QR (SVG, para gráfica)
                 </a>
               </div>
             </section>

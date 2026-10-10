@@ -72,9 +72,12 @@ describe('PartnerPage', () => {
     expect(qr.getAttribute('src')).toBe('/api/public/partner/segredo-do-joao-0123456789/qr?format=png');
     const links = Array.from(host.querySelectorAll('a[download]')).map((a) => [a.textContent, a.getAttribute('href')]);
     expect(links).toEqual([
-      ['Baixar PNG', '/api/public/partner/segredo-do-joao-0123456789/qr?format=png&download=1'],
-      ['Baixar SVG (para gráfica)', '/api/public/partner/segredo-do-joao-0123456789/qr?format=svg&download=1'],
+      ['Baixar só o QR (PNG)', '/api/public/partner/segredo-do-joao-0123456789/qr?format=png&download=1'],
+      ['Baixar só o QR (SVG, para gráfica)', '/api/public/partner/segredo-do-joao-0123456789/qr?format=svg&download=1'],
     ]);
+    // E o flyer pronto, com a oferta e o QR.
+    const flyer = Array.from(host.querySelectorAll('a')).find((a) => a.textContent === 'Criar flyer pronto');
+    expect(flyer?.getAttribute('href')).toBe('/parceiro/segredo-do-joao-0123456789/flyer');
     // Fora dos buscadores e sem passar o link adiante.
     expect(document.head.querySelector('meta[name=robots]')?.getAttribute('content')).toBe('noindex, nofollow');
   });

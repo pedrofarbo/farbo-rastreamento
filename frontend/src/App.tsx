@@ -33,6 +33,7 @@ const PrivacyPage = page(() => import('@/pages/legal/PrivacyPage'), 'PrivacyPage
 const EventSignupPage = page(() => import('@/pages/EventSignupPage'), 'EventSignupPage');
 const ReferralSignupPage = page(() => import('@/pages/ReferralSignupPage'), 'ReferralSignupPage');
 const PartnerPage = page(() => import('@/pages/PartnerPage'), 'PartnerPage');
+const PartnerFlyerPage = page(() => import('@/pages/PartnerFlyerPage'), 'PartnerFlyerPage');
 const PublicTheftPage = page(() => import('@/pages/PublicTheftPage'), 'PublicTheftPage');
 const TheftReportPage = page(() => import('@/pages/TheftReportPage'), 'TheftReportPage');
 const PublicPayPage = page(() => import('@/pages/PublicPayPage'), 'PublicPayPage');
@@ -84,6 +85,7 @@ export function App() {
                 {/* Afiliados: o link de cadastro e a página do afiliado (link secreto). */}
                 <Route path="/indicacao/:codigo" element={<ReferralSignupPage />} />
                 <Route path="/parceiro/:token" element={<PartnerPage />} />
+                <Route path="/parceiro/:token/flyer" element={<PartnerFlyerPage />} />
                 {/* Modo roubo: a posição ao vivo pelo link (sem login), para a polícia. */}
                 <Route path="/localizar/:token" element={<PublicTheftPage />} />
                 {/* O link de pagamento dos lembretes de fatura (sem login). */}
