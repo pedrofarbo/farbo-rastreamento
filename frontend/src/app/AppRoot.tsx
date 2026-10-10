@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
 
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -14,6 +14,7 @@ import { AuthProvider, useAuth } from '@/stores/AuthContext';
 import { AppLayout } from './AppLayout';
 import { AccountScreen } from './screens/AccountScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
+import { TeamScreen } from './screens/TeamScreen';
 import { SecurityScreen } from './screens/SecurityScreen';
 import { AlertsScreen } from './screens/AlertsScreen';
 import { FenceScreen } from './screens/FenceScreen';
@@ -61,6 +62,13 @@ function RequireCustomer() {
   );
 }
 
+/** Conta empresa: operate deixa o Gestor passar; sem ele, só o titular. */
+function RequireAccount({ operate = false }: { operate?: boolean }) {
+  const { isAccountOwner, canOperateAccount } = useAuth();
+  if (!(operate ? canOperateAccount : isAccountOwner)) return <Navigate to="/conta" replace />;
+  return <Outlet />;
+}
+
 export function AppRoot() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -85,10 +93,17 @@ export function AppRoot() {
                   <Route path="cercas" element={<FencesScreen />} />
                   <Route path="cercas/nova" element={<FenceScreen />} />
                   <Route path="cercas/:id" element={<FenceScreen />} />
-                  <Route path="faturas" element={<InvoicesPage />} />
                   <Route path="conta" element={<AccountScreen />} />
-                  <Route path="conta/dados" element={<ProfileScreen />} />
                   <Route path="conta/seguranca" element={<SecurityScreen />} />
+                  {/* Conta empresa: faturas do titular e do Gestor; cadastro e
+                      equipe, só do titular. */}
+                  <Route element={<RequireAccount operate />}>
+                    <Route path="faturas" element={<InvoicesPage />} />
+                  </Route>
+                  <Route element={<RequireAccount />}>
+                    <Route path="conta/dados" element={<ProfileScreen />} />
+                    <Route path="conta/equipe" element={<TeamScreen />} />
+                  </Route>
                   <Route path="dashboard" element={<Navigate to="/mapa" replace />} />
                   <Route path="*" element={<Navigate to="/mapa" replace />} />
                 </Route>

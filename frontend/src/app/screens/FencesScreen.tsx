@@ -6,6 +6,7 @@ import { isSuspendedError, SuspendedNotice } from '@/components/billing/Suspende
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { useVehicles } from '@/hooks/useVehicles';
+import { useAuth } from '@/stores/AuthContext';
 
 import { formatRadius, MAX_FENCES, notifyLabel } from '../fence';
 import { BackIcon, ChevronIcon } from '../icons';
@@ -16,6 +17,7 @@ export const fencesKey = ['geofences'] as const;
 
 /** As cercas do cliente: aviso quando o veículo entra ou sai de um lugar. */
 export function FencesScreen() {
+  const { canOperateAccount } = useAuth();
   const navigate = useNavigate();
   const fences = useQuery({ queryKey: fencesKey, queryFn: geofencesApi.list });
   const vehicles = useVehicles();
@@ -79,10 +81,17 @@ export function FencesScreen() {
         </div>
       )}
 
-      <Button variant="primary" onClick={() => navigate('/cercas/nova')} disabled={full || fences.isLoading} block>
-        Nova cerca
-      </Button>
-      {full && <p className={styles.muted}>Você chegou ao limite de {MAX_FENCES} cercas: apague uma para criar outra.</p>}
+      {/* Conta empresa: o Visualizador vê as cercas, mas não cria nem muda. */}
+      {canOperateAccount ? (
+        <>
+          <Button variant="primary" onClick={() => navigate('/cercas/nova')} disabled={full || fences.isLoading} block>
+            Nova cerca
+          </Button>
+          {full && <p className={styles.muted}>Você chegou ao limite de {MAX_FENCES} cercas: apague uma para criar outra.</p>}
+        </>
+      ) : (
+        <p className={styles.muted}>Seu acesso a esta conta é para acompanhar: as cercas são criadas pelo titular e pelos gestores.</p>
+      )}
     </div>
   );
 }

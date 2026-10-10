@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/contract"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
 )
@@ -23,7 +24,9 @@ func writeContractRequired(w http.ResponseWriter) {
 func (s *Server) requireContract(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		customerID, isCustomer := customerOf(r)
-		if !isCustomer || s.Contract == nil || strings.HasPrefix(r.URL.Path, "/api/me/contract") {
+		// Quem é da equipe de uma conta usa a plataforma pelo contrato do
+		// titular: não aceita nada, nem fica preso esperando o aceite dele.
+		if !isCustomer || s.Contract == nil || strings.HasPrefix(r.URL.Path, "/api/me/contract") || isTeamMember(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -62,7 +65,17 @@ func (s *Server) handleMyContract(w http.ResponseWriter, r *http.Request) {
 		handleStoreError(w, err, "cliente não encontrado")
 		return
 	}
+	if isTeamMember(r) {
+		// O contrato é do titular: a tela não pede aceite a quem é da equipe.
+		st.Required = false
+	}
 	writeJSON(w, http.StatusOK, st)
+}
+
+// isTeamMember: quem está logado é da equipe da conta de um cliente.
+func isTeamMember(r *http.Request) bool {
+	principal, ok := auth.FromContext(r.Context())
+	return ok && principal.Membership != nil
 }
 
 type acceptContractRequest struct {

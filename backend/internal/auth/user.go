@@ -64,6 +64,10 @@ type User struct {
 	Active    bool      `json:"active"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+
+	// Membership: quem é da equipe de um cliente (conta empresa). Só vem no
+	// login e em /auth/me.
+	Membership *Membership `json:"membership,omitempty"`
 }
 
 const userColumns = `id, email, name, role, phone, document, password_hash, active, created_at, updated_at`

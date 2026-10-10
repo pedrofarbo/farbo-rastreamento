@@ -98,13 +98,14 @@ func (s *Server) writeAlertSettings(w http.ResponseWriter, r *http.Request, user
 
 // --- Cliente -----------------------------------------------------------------
 
+// As escolhas de alertas são de cada pessoa: na conta empresa, cada um da
+// equipe escolhe o que recebe.
 func (s *Server) handleMyAlerts(w http.ResponseWriter, r *http.Request) {
-	customerID, _ := customerOf(r)
-	s.writeAlertSettings(w, r, customerID)
+	s.writeAlertSettings(w, r, personOf(r))
 }
 
 func (s *Server) handleSaveMyAlerts(w http.ResponseWriter, r *http.Request) {
-	customerID, _ := customerOf(r)
+	customerID := personOf(r)
 	if s.saveAlertSettings(w, r, customerID) {
 		s.writeAlertSettings(w, r, customerID)
 	}
@@ -112,7 +113,7 @@ func (s *Server) handleSaveMyAlerts(w http.ResponseWriter, r *http.Request) {
 
 // handleMyAlertsTest manda um e-mail de teste para o próprio cliente, na hora.
 func (s *Server) handleMyAlertsTest(w http.ResponseWriter, r *http.Request) {
-	customerID, _ := customerOf(r)
+	customerID := personOf(r)
 	user, err := s.Auth.GetUser(r.Context(), customerID)
 	if err != nil {
 		handleStoreError(w, err, "usuário não encontrado")

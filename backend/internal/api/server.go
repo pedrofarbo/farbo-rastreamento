@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/accounts"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/addresses"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/adjustment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/affiliates"
@@ -89,6 +90,8 @@ type Deps struct {
 	Push *push.Service
 	// Shares: acessos de terceiros aos veículos dos clientes.
 	Shares *shares.Service
+	// Accounts: a equipe da conta empresa de cada cliente.
+	Accounts *accounts.Service
 	// Analytics: visitas da landing page (sem cookies).
 	Analytics *analytics.Service
 	// Infra: a saúde do sistema (máquina, banco, backups, erros).
@@ -336,7 +339,7 @@ func (s *Server) routes() chi.Router {
 
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", s.handleGetVehicle)
-					r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleCustomer)).Patch("/", s.handleUpdateVehicle)
+					r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleCustomer), s.requireAccountOperator).Patch("/", s.handleUpdateVehicle)
 					r.With(auth.RequireRole(auth.RoleAdmin)).Delete("/", s.handleDeleteVehicle)
 					r.With(auth.RequireRole(auth.RoleAdmin)).Put("/history-retention", s.handleSetVehicleRetention)
 
@@ -350,6 +353,8 @@ func (s *Server) routes() chi.Router {
 					// trava de segurança do corte.
 					r.Group(func(r chi.Router) {
 						r.Use(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator, auth.RoleCustomer))
+						// Da equipe de uma conta, só o Gestor (o Visualizador acompanha).
+						r.Use(s.requireAccountOperator)
 						r.Post("/commands/engine-cut", s.handleEngineCut)
 						r.Get("/commands/engine-cut/check", s.handleEngineCutCheck)
 						r.Post("/commands/engine-resume", s.handleEngineResume)
@@ -362,8 +367,8 @@ func (s *Server) routes() chi.Router {
 					// Modo roubo: o dono e quem pode bloquear ligam; só o dono
 					// (com a biometria ou a senha) desliga.
 					r.Get("/theft", s.handleTheftStatus)
-					r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator, auth.RoleCustomer)).Post("/theft", s.handleTheftActivate)
-					r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleCustomer)).Post("/theft/end", s.handleTheftEnd)
+					r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator, auth.RoleCustomer), s.requireAccountOperator).Post("/theft", s.handleTheftActivate)
+					r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleCustomer), s.requireAccountOperator).Post("/theft/end", s.handleTheftEnd)
 				})
 			})
 
@@ -376,6 +381,7 @@ func (s *Server) routes() chi.Router {
 				r.Get("/", s.handleListGeofences)
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireRole(auth.RoleAdmin, auth.RoleCustomer))
+					r.Use(s.requireAccountOperator)
 					r.Post("/", s.handleCreateGeofence)
 					r.Patch("/{id}", s.handleUpdateGeofence)
 					r.Delete("/{id}", s.handleDeleteGeofence)
@@ -388,25 +394,41 @@ func (s *Server) routes() chi.Router {
 				r.Use(auth.RequireRole(auth.RoleCustomer))
 				// Sem o aceite do contrato, só o próprio contrato (ler e aceitar).
 				r.Use(s.requireContract)
+				// Conta empresa: o titular faz tudo; o Gestor, menos a própria
+				// conta (equipe, cadastro, contrato, pedidos); o Visualizador só
+				// acompanha (sem faturas).
 				r.Get("/contract", s.handleMyContract)
-				r.Post("/contract/accept", s.handleAcceptContract)
+				r.With(s.requireAccountOwner).Post("/contract/accept", s.handleAcceptContract)
 				r.Get("/account", s.handleMyAccount)
 				r.Get("/subscriptions", s.handleMySubscriptions)
-				r.Get("/invoices", s.handleMyInvoices)
-				r.Post("/invoices/{id}/pix", s.handleMyInvoicePix)
-				r.Get("/charges/{id}", s.handleMyCharge)
-				r.Post("/charges/{id}/simulate", s.handleMyChargeSimulate)
-				r.Put("/address", s.handleSaveMyAddress)
-				// Meus dados: nome, telefone e CPF/CNPJ.
-				r.Put("/profile", s.handleUpdateMyProfile)
-				// Novo veículo (veículo → rastreador → assinatura): bloqueado com o
-				// acesso suspenso.
-				r.With(s.requireActiveCustomer).Post("/trackers", s.handleMyOrderTracker)
-				r.Get("/shipping-quote", s.handleMyShippingQuote)
-				// Assinatura antiga sem veículo: o cliente informa qual é.
-				r.Post("/subscriptions/{subscriptionId}/vehicle", s.handleMyAttachVehicle)
-				// Acompanhamento do chip e do rastreador até a casa dele.
-				r.Get("/fulfillments", s.handleMyFulfillments)
+				r.Group(func(r chi.Router) {
+					r.Use(s.requireAccountOperator)
+					r.Get("/invoices", s.handleMyInvoices)
+					r.Post("/invoices/{id}/pix", s.handleMyInvoicePix)
+					r.Get("/charges/{id}", s.handleMyCharge)
+					r.Post("/charges/{id}/simulate", s.handleMyChargeSimulate)
+					// Acompanhamento do chip e do rastreador até a casa dele.
+					r.Get("/fulfillments", s.handleMyFulfillments)
+				})
+				r.Group(func(r chi.Router) {
+					r.Use(s.requireAccountOwner)
+					r.Put("/address", s.handleSaveMyAddress)
+					// Meus dados: nome, telefone e CPF/CNPJ.
+					r.Put("/profile", s.handleUpdateMyProfile)
+					// Novo veículo (veículo → rastreador → assinatura): bloqueado com o
+					// acesso suspenso.
+					r.With(s.requireActiveCustomer).Post("/trackers", s.handleMyOrderTracker)
+					r.Get("/shipping-quote", s.handleMyShippingQuote)
+					// Assinatura antiga sem veículo: o cliente informa qual é.
+					r.Post("/subscriptions/{subscriptionId}/vehicle", s.handleMyAttachVehicle)
+					// A equipe da conta empresa.
+					if s.Accounts != nil {
+						r.Get("/team", s.handleMyTeam)
+						r.With(s.requireActiveCustomer).Post("/team", s.handleAddTeamMember)
+						r.Patch("/team/{id}", s.handleUpdateTeamMember)
+						r.Delete("/team/{id}", s.handleRemoveTeamMember)
+					}
+				})
 				// Alertas por e-mail: escolhas, histórico e e-mail de teste.
 				r.Get("/alerts", s.handleMyAlerts)
 				r.Put("/alerts", s.handleSaveMyAlerts)
@@ -420,8 +442,8 @@ func (s *Server) routes() chi.Router {
 				// Acessos de terceiros aos veículos do cliente.
 				if s.Shares != nil {
 					r.Get("/shares", s.handleMyShares)
-					r.With(s.requireActiveCustomer).Post("/shares", s.handleCreateShare)
-					r.Patch("/shares/{id}", s.handleUpdateShare)
+					r.With(s.requireAccountOwner, s.requireActiveCustomer).Post("/shares", s.handleCreateShare)
+					r.With(s.requireAccountOwner).Patch("/shares/{id}", s.handleUpdateShare)
 					r.Delete("/shares/{id}", s.handleRemoveShare)
 				}
 			})
@@ -567,6 +589,10 @@ func (s *Server) routes() chi.Router {
 							r.Put("/address", s.handleSaveCustomerAddress)
 							r.Put("/history-retention", s.handleSetCustomerRetention)
 							r.Get("/alerts", s.handleGetCustomerAlerts)
+							// A equipe da conta empresa do cliente (só leitura).
+							if s.Accounts != nil {
+								r.Get("/team", s.handleCustomerTeam)
+							}
 							r.Put("/alerts", s.handleSaveCustomerAlerts)
 							r.Post("/invite", s.handleInviteCustomer)
 							r.Post("/invoices", s.handleCreateInvoice)

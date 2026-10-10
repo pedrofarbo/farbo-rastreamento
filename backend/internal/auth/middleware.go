@@ -18,6 +18,10 @@ type Principal struct {
 	UserID uuid.UUID
 	Email  string
 	Role   string
+	// Membership: quem é da equipe de um cliente enxerga a conta do titular,
+	// com o papel que ele deu. Nulo para o próprio titular e para a equipe da
+	// central.
+	Membership *Membership
 }
 
 func (p *Principal) Is(roles ...string) bool {
@@ -31,6 +35,24 @@ func (p *Principal) Is(roles ...string) bool {
 
 // IsCustomer: cliente final, restrito aos próprios veículos e faturas.
 func (p *Principal) IsCustomer() bool { return p.Is(RoleCustomer) }
+
+// Account é a conta de cliente que a requisição enxerga: a do titular, para
+// quem é da equipe dele; a própria, para o titular.
+func (p *Principal) Account() uuid.UUID {
+	if p.Membership != nil {
+		return p.Membership.AccountID
+	}
+	return p.UserID
+}
+
+// IsAccountOwner: o cliente titular da conta (não alguém da equipe dele).
+func (p *Principal) IsAccountOwner() bool { return p.IsCustomer() && p.Membership == nil }
+
+// CanOperateAccount: o titular e o Gestor mexem na conta (comandos, cercas,
+// faturas); o Visualizador só acompanha.
+func (p *Principal) CanOperateAccount() bool {
+	return p.IsCustomer() && (p.Membership == nil || p.Membership.Role == MemberManager)
+}
 
 // CanSendCommands: quem só visualiza não aciona o veículo. Vale para a
 // equipe; o cliente tem rotas próprias, limitadas aos veículos dele.
@@ -73,6 +95,15 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 		}
 
 		principal := &Principal{UserID: userID, Email: claims.Email, Role: claims.Role}
+		// Quem é da equipe de um cliente: conferido a cada requisição, para a
+		// remoção (ou a troca de papel) valer na hora.
+		if claims.Role == RoleCustomer {
+			if principal.Membership, err = s.Membership(r.Context(), userID); err != nil {
+				s.log.Error("falha ao conferir a conta empresa", "user", userID, "err", err)
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro interno"})
+				return
+			}
+		}
 		next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), principal)))
 	})
 }

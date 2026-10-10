@@ -32,6 +32,7 @@ const TermsPage = page(() => import('@/pages/legal/TermsPage'), 'TermsPage');
 const PrivacyPage = page(() => import('@/pages/legal/PrivacyPage'), 'PrivacyPage');
 const EventSignupPage = page(() => import('@/pages/EventSignupPage'), 'EventSignupPage');
 const ReferralSignupPage = page(() => import('@/pages/ReferralSignupPage'), 'ReferralSignupPage');
+const TeamPage = page(() => import('@/pages/customer/TeamPage'), 'TeamPage');
 const PartnerPage = page(() => import('@/pages/PartnerPage'), 'PartnerPage');
 const PartnerFlyerPage = page(() => import('@/pages/PartnerFlyerPage'), 'PartnerFlyerPage');
 const PublicTheftPage = page(() => import('@/pages/PublicTheftPage'), 'PublicTheftPage');
@@ -103,8 +104,14 @@ export function App() {
 
                     <Route element={<RequireCustomer />}>
                       <Route path="meus-veiculos" element={<MyVehiclesPage />} />
-                      <Route path="faturas" element={<InvoicesPage />} />
                       <Route path="alertas" element={<AlertsPage />} />
+                      {/* Conta empresa: faturas do titular e do Gestor; a equipe, só do titular. */}
+                      <Route element={<RequireAccountOperator />}>
+                        <Route path="faturas" element={<InvoicesPage />} />
+                      </Route>
+                      <Route element={<RequireAccountOwner />}>
+                        <Route path="equipe" element={<TeamPage />} />
+                      </Route>
                     </Route>
 
                     <Route element={<RequireStaff />}>
@@ -182,5 +189,19 @@ function RequireStaff() {
 function RequireCustomer() {
   const { isCustomer } = useAuth();
   if (!isCustomer) return <Navigate to="/dashboard" replace />;
+  return <Outlet />;
+}
+
+/** Conta empresa: o que é do titular e do Gestor (o Visualizador só acompanha). */
+function RequireAccountOperator() {
+  const { canOperateAccount } = useAuth();
+  if (!canOperateAccount) return <Navigate to="/dashboard" replace />;
+  return <Outlet />;
+}
+
+/** Conta empresa: o que é só do titular (a equipe). */
+function RequireAccountOwner() {
+  const { isAccountOwner } = useAuth();
+  if (!isAccountOwner) return <Navigate to="/dashboard" replace />;
   return <Outlet />;
 }

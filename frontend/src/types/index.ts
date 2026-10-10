@@ -39,6 +39,29 @@ export interface User {
   document: string;
   active: boolean;
   createdAt: string;
+  /** Quem é da equipe da conta de um cliente (conta empresa): a conta e o papel. */
+  membership?: Membership | null;
+}
+
+/** O papel na equipe da conta: Gestor opera tudo menos a conta; Visualizador só acompanha. */
+export type MemberRole = 'manager' | 'viewer';
+
+/** O vínculo de quem é da equipe da conta de um cliente. */
+export interface Membership {
+  /** O titular da conta. */
+  accountId: string;
+  ownerName: string;
+  role: MemberRole;
+}
+
+/** Uma pessoa da equipe da conta (conta empresa). */
+export interface AccountMember {
+  userId: string;
+  name: string;
+  email: string;
+  role: MemberRole;
+  active: boolean;
+  createdAt: string;
 }
 
 export interface AuthTokens {

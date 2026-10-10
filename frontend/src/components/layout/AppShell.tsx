@@ -72,7 +72,7 @@ function Icon({ name }: { name: string }) {
 }
 
 export function AppShell() {
-  const { user, logout, canManage, canOperate, isCustomer } = useAuth();
+  const { user, logout, canManage, canOperate, isCustomer, membership, isAccountOwner, canOperateAccount } = useAuth();
 
   // Para o cliente, a conta alimenta o aviso de fatura vencida no menu.
   const account = useQuery({
@@ -129,7 +129,11 @@ export function AppShell() {
     return () => window.removeEventListener('keydown', onKey);
   }, [menuOpen]);
   // O ☰ ganha um ponto quando algum item do menu tem aviso.
-  const pending = (isCustomer ? overdue : 0) + (canOperate ? waiting : 0) + (canManage ? newLeads + billsDue : 0);
+  const pending = (canOperateAccount ? overdue : 0) + (canOperate ? waiting : 0) + (canManage ? newLeads + billsDue : 0);
+  // Conta empresa: quem é da equipe vê de quem é a conta e o papel.
+  const accountLabel = membership
+    ? `Conta de ${membership.ownerName} · ${membership.role === 'manager' ? 'Gestor' : 'Visualizador'}`
+    : null;
 
   const navClass = ({ isActive }: { isActive: boolean }) =>
     `${styles.navLink} ${isActive ? styles.navActive : ''}`;
@@ -182,7 +186,7 @@ export function AppShell() {
           {user && (
             <div className={styles.drawerUser}>
               <strong>{user.name || user.email}</strong>
-              <span>{ROLE_LABELS[user.role] ?? user.role}</span>
+              <span>{accountLabel ?? ROLE_LABELS[user.role] ?? user.role}</span>
             </div>
           )}
           <div className={styles.navItems}>
@@ -196,19 +200,28 @@ export function AppShell() {
                 <Icon name="car" />
                 Meus veículos
               </NavLink>
-              <NavLink to="/faturas" className={navClass}>
-                <Icon name="receipt" />
-                Faturas
-                {overdue > 0 && (
-                  <span className={styles.navBadge} title={`${overdue} fatura(s) vencida(s)`}>
-                    {overdue}
-                  </span>
-                )}
-              </NavLink>
+              {canOperateAccount && (
+                <NavLink to="/faturas" className={navClass}>
+                  <Icon name="receipt" />
+                  Faturas
+                  {overdue > 0 && (
+                    <span className={styles.navBadge} title={`${overdue} fatura(s) vencida(s)`}>
+                      {overdue}
+                    </span>
+                  )}
+                </NavLink>
+              )}
               <NavLink to="/alertas" className={navClass}>
                 <Icon name="bell" />
                 Alertas
               </NavLink>
+              {/* Conta empresa: quem da empresa acessa a conta (só o titular). */}
+              {isAccountOwner && (
+                <NavLink to="/equipe" className={navClass}>
+                  <Icon name="users" />
+                  Equipe
+                </NavLink>
+              )}
               {/* O app do cliente (PWA) é outra página: link comum, não do router. */}
               <a href="/app/" className={styles.navLink}>
                 <Icon name="phone" />
@@ -328,7 +341,7 @@ export function AppShell() {
           {user && (
             <NavLink to="/seguranca" className={styles.user} title="Segurança da conta">
               <span className={styles.userName}>{user.name || user.email}</span>
-              <span className={styles.userRole}>{ROLE_LABELS[user.role] ?? user.role}</span>
+              <span className={styles.userRole}>{accountLabel ?? ROLE_LABELS[user.role] ?? user.role}</span>
             </NavLink>
           )}
 

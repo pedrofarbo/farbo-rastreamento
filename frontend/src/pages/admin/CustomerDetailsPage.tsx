@@ -51,6 +51,7 @@ import type { HistoryRetention, Invoice, PixPayment, ReminderKind, Subscription,
 import styles from '../Page.module.css';
 import { CustomerReferralCard } from './affiliates/CustomerReferralCard';
 import { CustomerPlanCard } from './CustomerPlanCard';
+import { CustomerTeamCard } from './CustomerTeamCard';
 import { InvoiceAdjustModal } from './InvoiceAdjustModal';
 import { LaunchPromoCard } from './LaunchPromoCard';
 
@@ -329,6 +330,8 @@ export function CustomerDetailsPage() {
         <CustomerReferralCard customerId={id} referral={data.affiliate} />
 
         <CustomerPlanCard customerId={id} plan={data.plan} />
+
+        <CustomerTeamCard customerId={id} />
 
         <LaunchPromoCard customerId={id} />
 

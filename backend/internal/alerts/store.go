@@ -30,6 +30,10 @@ type Target struct {
 	VehicleName string
 	Plate       string
 	Owner       *Owner
+	// Team é a equipe da conta do dono (conta empresa): cada um recebe os
+	// alertas pelas próprias escolhas, e nada enquanto o dono estiver
+	// suspenso.
+	Team []*Owner
 }
 
 // Owner é o cliente dono do veículo.
@@ -144,7 +148,41 @@ func (s *DBStore) Target(ctx context.Context, deviceID uuid.UUID) (*Target, erro
 		}
 	}
 	t.Owner = owner
+	if t.Team, err = s.team(ctx, owner); err != nil {
+		return nil, err
+	}
 	return &t, nil
+}
+
+// team carrega a equipe da conta do dono, com as escolhas de cada um.
+func (s *DBStore) team(ctx context.Context, owner *Owner) ([]*Owner, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT u.id, u.email, u.name, u.active, st.kinds, st.guard_start, st.guard_end
+		FROM account_members m
+		JOIN users u ON u.id = m.user_id
+		LEFT JOIN alert_settings st ON st.user_id = m.user_id
+		WHERE m.account_id = $1
+		ORDER BY m.created_at`, owner.UserID)
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	defer rows.Close()
+	var out []*Owner
+	for rows.Next() {
+		var (
+			m          Owner
+			kinds      []string
+			guardStart *int
+			guardEnd   *int
+		)
+		if err := rows.Scan(&m.UserID, &m.Email, &m.Name, &m.Active, &kinds, &guardStart, &guardEnd); err != nil {
+			return nil, err
+		}
+		m.Settings = settingsFromRow(kinds, guardStart, guardEnd)
+		m.Suspended = owner.Suspended
+		out = append(out, &m)
+	}
+	return out, rows.Err()
 }
 
 func settingsFromRow(kinds []string, guardStart, guardEnd *int) Settings {

@@ -5,15 +5,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/stores/AuthContext', () => ({
-  useAuth: () => ({
-    user: { id: 'u1', name: 'Pedro Farbo', email: 'pedro@farbo.test', role: 'admin' },
-    logout: vi.fn(),
-    canManage: true,
-    canOperate: true,
-    isCustomer: false,
-  }),
-}));
+// O usuário de cada teste (a central, por padrão).
+const staff = {
+  user: { id: 'u1', name: 'Pedro Farbo', email: 'pedro@farbo.test', role: 'admin' },
+  canManage: true,
+  canOperate: true,
+  isCustomer: false,
+  membership: null,
+  isAccountOwner: false,
+  canOperateAccount: false,
+};
+let auth: Record<string, unknown> = staff;
+vi.mock('@/stores/AuthContext', () => ({ useAuth: () => ({ logout: vi.fn(), ...auth }) }));
 vi.mock('@/hooks/useRealtime', () => ({ useRealtime: () => ({ connected: true }) }));
 vi.mock('@/hooks/useTheme', () => ({ useTheme: () => ({ theme: 'dark', toggle: vi.fn() }) }));
 vi.mock('@/api/resources', () => ({
@@ -51,7 +54,21 @@ async function render() {
 
 afterEach(() => {
   document.body.innerHTML = '';
+  auth = staff;
 });
+
+const customer = (over: Record<string, unknown>) => ({
+  user: { id: 'c1', name: 'Gi Gestora', email: 'gi@frota.test', role: 'customer' },
+  canManage: false,
+  canOperate: false,
+  isCustomer: true,
+  membership: null,
+  isAccountOwner: true,
+  canOperateAccount: true,
+  ...over,
+});
+const menuLabels = (host: HTMLElement) =>
+  Array.from(host.querySelectorAll('#menu-principal a')).map((a) => a.textContent?.trim());
 
 describe('menu do painel', () => {
   it('no celular, abre como barra lateral no ☰ e fecha no Esc e ao trocar de página', async () => {
@@ -84,5 +101,33 @@ describe('menu do painel', () => {
     await act(async () => clients.click());
     expect(host.textContent).toContain('clientes');
     expect(menu.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('conta empresa: o titular vê a Equipe; quem é da equipe vê de quem é a conta, e o Visualizador não vê faturas', async () => {
+    auth = customer({});
+    let host = await render();
+    expect(menuLabels(host)).toEqual(expect.arrayContaining(['Mapa', 'Faturas', 'Equipe']));
+    document.body.innerHTML = '';
+
+    auth = customer({
+      membership: { accountId: 'o1', ownerName: 'Frota Ltda', role: 'viewer' },
+      isAccountOwner: false,
+      canOperateAccount: false,
+    });
+    host = await render();
+    expect(menuLabels(host)).not.toContain('Faturas');
+    expect(menuLabels(host)).not.toContain('Equipe');
+    expect(host.querySelector('#menu-principal')?.textContent).toContain('Conta de Frota Ltda · Visualizador');
+    document.body.innerHTML = '';
+
+    auth = customer({
+      membership: { accountId: 'o1', ownerName: 'Frota Ltda', role: 'manager' },
+      isAccountOwner: false,
+      canOperateAccount: true,
+    });
+    host = await render();
+    expect(menuLabels(host)).toContain('Faturas');
+    expect(menuLabels(host)).not.toContain('Equipe');
+    expect(host.querySelector('#menu-principal')?.textContent).toContain('Conta de Frota Ltda · Gestor');
   });
 });

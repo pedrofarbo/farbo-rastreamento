@@ -8,7 +8,7 @@ import type { LoginResponse } from '@/types';
  */
 
 /** As ações que pedem a confirmação: bloquear, desbloquear, dar acesso a um veículo, desligar o modo roubo. */
-export type StepUpPurpose = 'engine_cut' | 'engine_resume' | 'vehicle_share' | 'supplier_pix' | 'theft_end';
+export type StepUpPurpose = 'engine_cut' | 'engine_resume' | 'vehicle_share' | 'supplier_pix' | 'theft_end' | 'team_member';
 
 export interface StepUpGrant {
   token: string;

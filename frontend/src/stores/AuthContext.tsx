@@ -5,7 +5,7 @@ import { authApi } from '@/api/resources';
 import { ApiError, onUnauthorized, tokens } from '@/api/client';
 import { biometricLogin } from '@/services/stepUp';
 import { rememberTrustedDevice, trustedDeviceFor } from '@/services/trustedDevice';
-import type { AuthTokens, LoginResponse, TwoFactorChallenge, User } from '@/types';
+import type { AuthTokens, LoginResponse, TwoFactorChallenge, User, Membership } from '@/types';
 
 /** O fim do login com a senha: quem entrou, ou o segundo fator que falta. */
 export type LoginOutcome = { user: User; challenge?: undefined } | { user?: undefined; challenge: TwoFactorChallenge };
@@ -31,6 +31,12 @@ interface AuthContextValue {
   isCustomer: boolean;
   /** Equipe da central (admin, operador, visualização). */
   isStaff: boolean;
+  /** Conta empresa: o vínculo de quem é da equipe da conta de um cliente. */
+  membership: Membership | null;
+  /** O cliente titular da conta (não alguém da equipe dele). */
+  isAccountOwner: boolean;
+  /** O titular e o Gestor mexem na conta (comandos, cercas, faturas); o Visualizador só acompanha. */
+  canOperateAccount: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -159,13 +165,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       updateUser,
       // O cliente também comanda (bloqueio, desbloqueio, posição), mas só os
-      // próprios veículos — a API confere o dono.
+      // próprios veículos — a API confere o dono. Da equipe de uma conta, o
+      // Visualizador só acompanha.
       canSendCommands:
-        user?.role === 'admin' || user?.role === 'operator' || user?.role === 'customer',
+        user?.role === 'admin' ||
+        user?.role === 'operator' ||
+        (user?.role === 'customer' && user.membership?.role !== 'viewer'),
       canManage: user?.role === 'admin',
       canOperate: user?.role === 'admin' || user?.role === 'operator',
       isCustomer: user?.role === 'customer',
       isStaff: user !== null && user.role !== 'customer',
+      membership: user?.role === 'customer' ? (user.membership ?? null) : null,
+      isAccountOwner: user?.role === 'customer' && !user.membership,
+      canOperateAccount: user?.role === 'customer' && user.membership?.role !== 'viewer',
     }),
     [user, loading, login, completeLogin, loginWithBiometric, logout, updateUser],
   );

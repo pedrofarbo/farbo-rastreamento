@@ -41,9 +41,12 @@ type vehicleView struct {
 
 // customerOf devolve o id do cliente quando quem chama é um cliente final.
 // Para a equipe da central devolve false, e nada é filtrado.
+// customerOf é a conta de cliente que a requisição enxerga: a do titular,
+// também para quem é da equipe dele (conta empresa). O que é da pessoa
+// (alertas, notificações, o que outros compartilharam com ela) usa personOf.
 func customerOf(r *http.Request) (uuid.UUID, bool) {
 	if principal, ok := auth.FromContext(r.Context()); ok && principal.IsCustomer() {
-		return principal.UserID, true
+		return principal.Account(), true
 	}
 	return uuid.Nil, false
 }
@@ -62,7 +65,7 @@ func (s *Server) handleListVehicles(w http.ResponseWriter, r *http.Request) {
 		handleStoreError(w, err, "veículos não encontrados")
 		return
 	}
-	shared, err := s.sharedWith(r, customerID, isCustomer)
+	shared, err := s.sharedWith(r, personOf(r), isCustomer)
 	if err != nil {
 		handleStoreError(w, err, "veículos não encontrados")
 		return

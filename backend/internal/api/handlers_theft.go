@@ -30,12 +30,17 @@ type theftView struct {
 	DurationHours int `json:"durationHours"`
 }
 
-func (s *Server) theftView(vehicle *vehicles.Vehicle, share *shares.Share, m *theft.Mode) theftView {
+func (s *Server) theftView(r *http.Request, vehicle *vehicles.Vehicle, share *shares.Share, m *theft.Mode) theftView {
 	parked, duration := s.Theft.Settings()
+	// O Visualizador da equipe de uma conta só acompanha o modo roubo.
+	operate := true
+	if principal, ok := auth.FromContext(r.Context()); ok && principal.IsCustomer() {
+		operate = principal.CanOperateAccount()
+	}
 	v := theftView{
 		Mode:          m,
-		CanActivate:   vehicle.DeviceID != nil && (share == nil || share.CanBlock),
-		CanEnd:        share == nil,
+		CanActivate:   operate && vehicle.DeviceID != nil && (share == nil || share.CanBlock),
+		CanEnd:        operate && share == nil,
 		ParkedSeconds: parked,
 		DurationHours: int(duration / time.Hour),
 	}
@@ -67,7 +72,7 @@ func (s *Server) handleTheftStatus(w http.ResponseWriter, r *http.Request) {
 		handleStoreError(w, err, "veículo não encontrado")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.theftView(vehicle, share, m))
+	writeJSON(w, http.StatusOK, s.theftView(r, vehicle, share, m))
 }
 
 // handleTheftActivate liga o modo roubo. Sem confirmação extra: na hora do
@@ -97,7 +102,7 @@ func (s *Server) handleTheftActivate(w http.ResponseWriter, r *http.Request) {
 		}
 		s.recordAudit(r, audit.ActionTheftActivated, &vehicle.ID, &device.ID, meta)
 	}
-	writeJSON(w, status, s.theftView(vehicle, share, m))
+	writeJSON(w, status, s.theftView(r, vehicle, share, m))
 }
 
 type theftEndRequest struct {
@@ -146,7 +151,7 @@ func (s *Server) handleTheftEnd(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordAudit(r, audit.ActionTheftEnded, &vehicle.ID, vehicle.DeviceID,
 		map[string]any{"modeId": m.ID, "outcome": m.Outcome, "restore": m.RestoreStatus})
-	writeJSON(w, http.StatusOK, s.theftView(vehicle, nil, nil))
+	writeJSON(w, http.StatusOK, s.theftView(r, vehicle, nil, nil))
 }
 
 func writeTheftError(w http.ResponseWriter, err error) {

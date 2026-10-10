@@ -43,6 +43,9 @@ const (
 	// PurposeTheftEnd é desligar o modo roubo: quem está com o celular
 	// roubado (junto com o veículo) não para o rastreamento.
 	PurposeTheftEnd = "theft_end"
+	// PurposeTeamMember é pôr alguém na equipe da conta: quem pega o celular
+	// do titular por um instante não dá a si mesmo o acesso à frota.
+	PurposeTeamMember = "team_member"
 )
 
 // Métodos de confirmação (no comprovante e na auditoria).
@@ -66,7 +69,8 @@ const (
 	maxNameLength       = 60
 )
 
-var purposes = []string{PurposeEngineCut, PurposeEngineResume, PurposeVehicleShare, PurposeSupplierPix, PurposeTheftEnd}
+var purposes = []string{PurposeEngineCut, PurposeEngineResume, PurposeVehicleShare, PurposeSupplierPix, PurposeTheftEnd,
+	PurposeTeamMember}
 
 var (
 	ErrWrongPassword      = errors.New("senha incorreta")

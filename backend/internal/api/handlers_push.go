@@ -20,7 +20,7 @@ type pushSubscriptionRequest struct {
 // handleMyPush: chave pública para o navegador se inscrever e os aparelhos
 // em que o cliente já ligou as notificações.
 func (s *Server) handleMyPush(w http.ResponseWriter, r *http.Request) {
-	customerID, _ := customerOf(r)
+	customerID := personOf(r) // os aparelhos são da pessoa
 	devices := []push.Device{}
 	if s.Push.Enabled() {
 		var err error
@@ -35,7 +35,7 @@ func (s *Server) handleMyPush(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMyPushSubscribe(w http.ResponseWriter, r *http.Request) {
-	customerID, _ := customerOf(r)
+	customerID := personOf(r) // os aparelhos são da pessoa
 	var req pushSubscriptionRequest
 	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "corpo inválido")
@@ -55,7 +55,7 @@ func (s *Server) handleMyPushSubscribe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMyPushUnsubscribe(w http.ResponseWriter, r *http.Request) {
-	customerID, _ := customerOf(r)
+	customerID := personOf(r) // os aparelhos são da pessoa
 	var req pushSubscriptionRequest
 	if err := decodeJSON(w, r, &req); err != nil || req.Endpoint == "" {
 		writeError(w, http.StatusBadRequest, "informe o endpoint")
@@ -70,7 +70,7 @@ func (s *Server) handleMyPushUnsubscribe(w http.ResponseWriter, r *http.Request)
 
 // handleMyPushTest manda uma notificação de teste para os aparelhos do cliente.
 func (s *Server) handleMyPushTest(w http.ResponseWriter, r *http.Request) {
-	customerID, _ := customerOf(r)
+	customerID := personOf(r) // os aparelhos são da pessoa
 	delivered, err := s.Push.SendTest(r.Context(), customerID, "/app/alertas")
 	switch {
 	case errors.Is(err, push.ErrDisabled):

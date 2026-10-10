@@ -52,6 +52,7 @@ func (s *Server) websocketScope(r *http.Request) ws.Filter {
 	if !isCustomer {
 		return nil
 	}
+	person := personOf(r)
 	return func(msg ws.Message) bool {
 		if s.Owners == nil {
 			return false
@@ -59,7 +60,7 @@ func (s *Server) websocketScope(r *http.Request) ws.Filter {
 		if s.Owners.Owns(customerID, msg.VehicleID, msg.DeviceID) {
 			return true
 		}
-		return sharedMessage[msg.Type] && s.Owners.SharedWith(customerID, msg.VehicleID, msg.DeviceID)
+		return sharedMessage[msg.Type] && s.Owners.SharedWith(person, msg.VehicleID, msg.DeviceID)
 	}
 }
 

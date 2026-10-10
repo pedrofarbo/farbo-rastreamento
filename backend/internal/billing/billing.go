@@ -566,7 +566,10 @@ const summaryQuery = `
 		$3::boolean AND EXISTS (SELECT 1 FROM invoices i
 			WHERE i.customer_id = u.id AND i.status = 'OPEN' AND i.due_date < $2)
 	FROM users u
-	WHERE u.role = 'customer'`
+	WHERE u.role = 'customer'
+		-- Quem é da equipe da conta de um cliente aparece na ficha dele, não
+		-- como cliente.
+		AND NOT EXISTS (SELECT 1 FROM account_members am WHERE am.user_id = u.id)`
 
 func scanSummary(row database.Scanner) (*CustomerSummary, error) {
 	var c CustomerSummary

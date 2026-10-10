@@ -11,6 +11,7 @@ import { TextField } from '@/components/ui/Field';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useVehicles } from '@/hooks/useVehicles';
+import { useAuth } from '@/stores/AuthContext';
 import type { Geofence, VehicleView } from '@/types';
 
 import { DEFAULT_RADIUS, fenceProblem, formatRadius, NAME_SUGGESTIONS, RADIUS_STEPS, radiusStep } from '../fence';
@@ -86,6 +87,7 @@ function FenceEditor({
   vehicles: VehicleView[];
   preselect: string | null;
 }) {
+  const { canOperateAccount } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { notify } = useToast();
@@ -320,23 +322,26 @@ function FenceEditor({
         </p>
       </section>
 
-      <div className={fence.actions}>
-        {touched && problem && <p className={styles.error}>{problem}</p>}
-        <Button variant="primary" onClick={submit} loading={save.isPending} disabled={busy} block>
-          {existing ? 'Salvar cerca' : 'Criar cerca'}
-        </Button>
-        {existing && (
-          <Button
-            variant={confirmDelete ? 'danger' : 'ghost'}
-            onClick={() => (confirmDelete ? remove.mutate() : setConfirmDelete(true))}
-            loading={remove.isPending}
-            disabled={busy}
-            block
-          >
-            {confirmDelete ? 'Toque de novo para apagar' : 'Apagar cerca'}
+      {/* Conta empresa: o Visualizador só vê a cerca. */}
+      {canOperateAccount && (
+        <div className={fence.actions}>
+          {touched && problem && <p className={styles.error}>{problem}</p>}
+          <Button variant="primary" onClick={submit} loading={save.isPending} disabled={busy} block>
+            {existing ? 'Salvar cerca' : 'Criar cerca'}
           </Button>
-        )}
-      </div>
+          {existing && (
+            <Button
+              variant={confirmDelete ? 'danger' : 'ghost'}
+              onClick={() => (confirmDelete ? remove.mutate() : setConfirmDelete(true))}
+              loading={remove.isPending}
+              disabled={busy}
+              block
+            >
+              {confirmDelete ? 'Toque de novo para apagar' : 'Apagar cerca'}
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

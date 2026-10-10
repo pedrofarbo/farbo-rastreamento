@@ -68,6 +68,10 @@ type Service struct {
 	// guard decide se uma sessão pode renovar (a equipe sem a verificação
 	// em duas etapas, não); nil libera todas.
 	guard func(ctx context.Context, user *User) error
+
+	// memberships acha a conta empresa de quem é da equipe de um cliente
+	// (SetMemberships); nil: todo cliente é titular.
+	memberships MembershipLookup
 }
 
 // SetSessionGuard liga a regra que decide se uma sessão pode renovar.
@@ -230,6 +234,14 @@ func (s *Service) Logout(ctx context.Context, refreshToken string) error {
 
 func (s *Service) issue(ctx context.Context, user *User, userAgent string) (*Tokens, error) {
 	expiresAt := time.Now().Add(s.cfg.AccessTokenTTL)
+	// A tela já entra sabendo se a pessoa é da equipe de um cliente.
+	if user.Role == RoleCustomer {
+		membership, err := s.Membership(ctx, user.ID)
+		if err != nil {
+			return nil, err
+		}
+		user.Membership = membership
+	}
 
 	claims := Claims{
 		Role:  user.Role,

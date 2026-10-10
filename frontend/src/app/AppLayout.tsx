@@ -4,6 +4,7 @@ import { NavLink, Outlet, useLocation, useNavigationType } from 'react-router-do
 
 import { meApi } from '@/api/resources';
 import { useRealtime } from '@/hooks/useRealtime';
+import { useAuth } from '@/stores/AuthContext';
 
 import { BellIcon, CarIcon, MapIcon, ReceiptIcon, UserIcon } from './icons';
 import { applyUpdate, usePwa } from './pwa';
@@ -69,6 +70,9 @@ export function AppLayout() {
   const location = useLocation();
   const navigation = useNavigationType();
   const account = useQuery({ queryKey: ['me', 'account'], queryFn: meApi.account, staleTime: 60_000 });
+  // Conta empresa: o Visualizador não vê faturas (a aba sai).
+  const { canOperateAccount } = useAuth();
+  const tabs = canOperateAccount ? TABS : TABS.filter((tab) => tab.to !== '/faturas');
   const overdue = account.data?.overdueInvoices ?? 0;
   const live = online && connected;
   const liveLabel = live ? 'Ao vivo' : online ? 'Conectando…' : 'Offline';
@@ -128,11 +132,16 @@ export function AppLayout() {
             Sem internet: você está vendo os últimos dados guardados neste celular.
           </div>
         )}
-        {account.data?.suspended && (
-          <NavLink to="/faturas" className={`${styles.banner} ${styles.bannerDanger}`}>
-            Acesso suspenso por fatura vencida. Toque para pagar e voltar a ver o mapa.
-          </NavLink>
-        )}
+        {account.data?.suspended &&
+          (canOperateAccount ? (
+            <NavLink to="/faturas" className={`${styles.banner} ${styles.bannerDanger}`}>
+              Acesso suspenso por fatura vencida. Toque para pagar e voltar a ver o mapa.
+            </NavLink>
+          ) : (
+            <div className={`${styles.banner} ${styles.bannerDanger}`} role="status">
+              Acesso suspenso por fatura vencida da conta. Fale com o titular.
+            </div>
+          ))}
         {updateReady && (
           <button type="button" className={`${styles.banner} ${styles.bannerAccent}`} onClick={applyUpdate}>
             Nova versão do app disponível — toque para atualizar
@@ -163,8 +172,12 @@ export function AppLayout() {
         </div>
       </main>
 
-      <nav className={styles.tabbar} aria-label="Navegação principal">
-        {TABS.map(({ to, label, icon: Icon }) => (
+      <nav
+        className={styles.tabbar}
+        aria-label="Navegação principal"
+        style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}
+      >
+        {tabs.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}

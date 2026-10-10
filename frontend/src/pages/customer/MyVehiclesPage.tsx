@@ -26,6 +26,7 @@ import { useToast } from '@/components/ui/Toast';
 import { formatDateTime, formatDeviceStatus, formatRelative } from '@/services/format';
 import { stepOf, trackerTone } from '@/services/fulfillment';
 import { subscriptionsByVehicle, subscriptionsWithoutVehicle } from '@/services/subscriptions';
+import { useAuth } from '@/stores/AuthContext';
 import { SharesModal, sharesKey } from '@/components/vehicle/SharesModal';
 import { EMPTY_VEHICLE, VehicleFields } from '@/components/vehicle/VehicleFields';
 import type { CustomerAccount, CustomerFulfillment, Invoice, Subscription, VehicleView } from '@/types';
@@ -57,11 +58,18 @@ export function MyVehiclesPage() {
   // que a pessoa está deixando de acompanhar.
   const [sharing, setSharing] = useState<VehicleView | null>(null);
   const [leaving, setLeaving] = useState<string | null>(null);
+  // Conta empresa: novo veículo, endereço e acessos são do titular; editar o
+  // veículo, também do Gestor; o Visualizador só acompanha.
+  const { isAccountOwner, canOperateAccount } = useAuth();
 
   const vehicles = useQuery({ queryKey: ['vehicles'], queryFn: vehiclesApi.list });
   const account = useQuery({ queryKey: ['me', 'account'], queryFn: meApi.account });
   const subscriptions = useQuery({ queryKey: ['me', 'subscriptions'], queryFn: meApi.subscriptions });
-  const fulfillments = useQuery({ queryKey: ['me', 'fulfillments'], queryFn: meApi.fulfillments });
+  const fulfillments = useQuery({
+    queryKey: ['me', 'fulfillments'],
+    queryFn: meApi.fulfillments,
+    enabled: canOperateAccount,
+  });
   const shares = useQuery({ queryKey: sharesKey, queryFn: sharesApi.list });
 
   const leave = useMutation({
@@ -125,11 +133,13 @@ export function MyVehiclesPage() {
               veículo: você informa o veículo, recebe o rastreador e a assinatura começa.
             </p>
           </div>
-          <div className={styles.actions}>
-            <Button variant="primary" onClick={() => setOrdering(true)}>
-              Novo veículo
-            </Button>
-          </div>
+          {isAccountOwner && (
+            <div className={styles.actions}>
+              <Button variant="primary" onClick={() => setOrdering(true)}>
+                Novo veículo
+              </Button>
+            </div>
+          )}
         </header>
 
         {onlyShared && (
@@ -140,6 +150,7 @@ export function MyVehiclesPage() {
 
         {account.data &&
           !onlyShared &&
+          isAccountOwner &&
           (address ? (
             <DeliveryBox address={address} label="Endereço de entrega" onChange={() => setEditingAddress(true)} />
           ) : (
@@ -166,9 +177,11 @@ export function MyVehiclesPage() {
               title="Nenhum veículo ainda"
               description="Em Novo veículo você informa o veículo, recebe o rastreador e a assinatura começa."
               action={
-                <Button variant="primary" onClick={() => setOrdering(true)}>
-                  Novo veículo
-                </Button>
+                isAccountOwner ? (
+                  <Button variant="primary" onClick={() => setOrdering(true)}>
+                    Novo veículo
+                  </Button>
+                ) : undefined
               }
             />
           </Card>
@@ -182,10 +195,12 @@ export function MyVehiclesPage() {
                 order={orderOf.get(vehicle.id) ?? null}
                 onFollow={(order) => setFollowing(order)}
                 onOpen={() => navigate(`/veiculos/${vehicle.id}`)}
-                onEdit={() => setForm({ mode: 'edit', vehicle, input: vehicleInputFrom(vehicle) })}
+                onEdit={
+                  canOperateAccount ? () => setForm({ mode: 'edit', vehicle, input: vehicleInputFrom(vehicle) }) : undefined
+                }
                 onShowInstallers={() => setShowInstallers(true)}
                 shareCount={sharesOf.get(vehicle.id) ?? 0}
-                onShares={() => setSharing(vehicle)}
+                onShares={isAccountOwner ? () => setSharing(vehicle) : undefined}
               />
             ))}
             {withoutVehicle.map((sub) => (
@@ -199,15 +214,17 @@ export function MyVehiclesPage() {
                 <div className={billing.vehicleMeta}>
                   Esta assinatura é de antes do cadastro por veículo. Informe qual veículo ela cobre.
                 </div>
-                <div className={billing.vehicleActions}>
-                  <Button
-                    size="small"
-                    variant="primary"
-                    onClick={() => setForm({ mode: 'attach', subscription: sub, input: EMPTY_VEHICLE })}
-                  >
-                    Informar veículo
-                  </Button>
-                </div>
+                {isAccountOwner && (
+                  <div className={billing.vehicleActions}>
+                    <Button
+                      size="small"
+                      variant="primary"
+                      onClick={() => setForm({ mode: 'attach', subscription: sub, input: EMPTY_VEHICLE })}
+                    >
+                      Informar veículo
+                    </Button>
+                  </div>
+                )}
               </article>
             ))}
           </div>
@@ -401,11 +418,13 @@ function VehicleCard({
   order: CustomerFulfillment | null;
   onFollow: (order: CustomerFulfillment) => void;
   onOpen: () => void;
-  onEdit: () => void;
+  /** Sem ele (Visualizador da equipe), sem o botão. */
+  onEdit?: () => void;
   onShowInstallers: () => void;
   /** Quantas pessoas acompanham o veículo (acessos de terceiros). */
   shareCount: number;
-  onShares: () => void;
+  /** Só o titular dá acessos. */
+  onShares?: () => void;
 }) {
   const status = vehicle.device?.status;
   // Instalado = o rastreador já deu sinal. O aparelho é vinculado antes, na
@@ -506,17 +525,21 @@ function VehicleCard({
             Ver prestadores
           </Button>
         )}
-        <Button size="small" variant="secondary" onClick={onEdit}>
-          Editar
-        </Button>
-        <Button
-          size="small"
-          variant="secondary"
-          onClick={onShares}
-          title="Quem mais acompanha este veículo e pode bloqueá-lo numa emergência"
-        >
-          {shareCount > 0 ? `Acessos (${shareCount})` : 'Acessos'}
-        </Button>
+        {onEdit && (
+          <Button size="small" variant="secondary" onClick={onEdit}>
+            Editar
+          </Button>
+        )}
+        {onShares && (
+          <Button
+            size="small"
+            variant="secondary"
+            onClick={onShares}
+            title="Quem mais acompanha este veículo e pode bloqueá-lo numa emergência"
+          >
+            {shareCount > 0 ? `Acessos (${shareCount})` : 'Acessos'}
+          </Button>
+        )}
       </div>
     </article>
   );

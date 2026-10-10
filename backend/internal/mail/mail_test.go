@@ -461,3 +461,37 @@ func TestShareMailer(t *testing.T) {
 		t.Errorf("aviso de bloqueio: %q\n%s", msg.Subject, msg.Text)
 	}
 }
+
+// Os e-mails da conta empresa: o convite leva ao link de criar a senha e
+// diz de quem é a conta e o papel; o aviso (quem já tinha conta) leva ao
+// login. O que o papel permite muda com ele.
+func TestTeamMailer(t *testing.T) {
+	capture := &captureSender{}
+	mailer := NewTeamMailer(capture, "https://painel.farbo.test")
+	ctx := context.Background()
+	n := TeamNotice{OwnerName: "Frota Ltda", MemberName: "Gi Gestora", Role: "manager"}
+
+	if err := mailer.MemberInvited(ctx, "gi@frota.test", n, "tok123", 72*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	msg := capture.last
+	for _, want := range []string{"Olá, Gi!", "Frota Ltda adicionou você à equipe", "como Gestor", "bloqueio do motor e faturas",
+		"https://painel.farbo.test/redefinir-senha#token=tok123&boasvindas=1", "3 dias"} {
+		if !strings.Contains(msg.Text, want) {
+			t.Errorf("convite sem %q:\n%s", want, msg.Text)
+		}
+	}
+	if !strings.Contains(msg.Subject, "Frota Ltda adicionou você à equipe") || msg.To != "gi@frota.test" {
+		t.Errorf("convite = %q para %q", msg.Subject, msg.To)
+	}
+
+	viewer := n
+	viewer.Role = "viewer"
+	if err := mailer.MemberAdded(ctx, "vi@frota.test", viewer); err != nil {
+		t.Fatal(err)
+	}
+	if msg := capture.last; !strings.Contains(msg.Text, "como Visualizador") || strings.Contains(msg.Text, "bloqueio") ||
+		!strings.Contains(msg.Text, "https://painel.farbo.test/login") {
+		t.Errorf("aviso ao Visualizador:\n%s", msg.Text)
+	}
+}

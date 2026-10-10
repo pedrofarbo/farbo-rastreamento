@@ -327,8 +327,9 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
   if (!canSendCommands) {
     return (
       <div className={styles.notice}>
-        Seu perfil permite apenas visualizar. Comandos são enviados por operadores e
-        administradores.
+        {isCustomer
+          ? 'Seu acesso a esta conta é para acompanhar: os comandos ficam com o titular e os gestores.'
+          : 'Seu perfil permite apenas visualizar. Comandos são enviados por operadores e administradores.'}
       </div>
     );
   }

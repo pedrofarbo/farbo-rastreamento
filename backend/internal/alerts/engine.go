@@ -560,24 +560,34 @@ func (e *Engine) resolveKind(c candidate, s Settings) string {
 
 func (e *Engine) recipients(t *Target, c candidate) []recipient {
 	if c.kind == KindGeofence {
-		// A cerca é do cliente: o aviso é só dele, e só enquanto o veículo
-		// for dele.
+		// A cerca é do cliente: o aviso é só da conta dele (ele e a equipe),
+		// e só enquanto o veículo for dele.
 		o := t.Owner
-		if o == nil || !o.Active || o.Suspended || o.UserID.String() != c.fenceOwner {
+		if o == nil || o.UserID.String() != c.fenceOwner {
 			return nil
 		}
-		id := o.UserID
-		return []recipient{{email: o.Email, name: o.Name, userID: &id, kind: KindGeofence, settings: o.Settings}}
+		out := []recipient{}
+		for _, p := range append([]*Owner{o}, t.Team...) {
+			if p.Active && !p.Suspended {
+				id := p.UserID
+				out = append(out, recipient{email: p.Email, name: p.Name, userID: &id, kind: KindGeofence, settings: p.Settings})
+			}
+		}
+		return out
 	}
 	out := []recipient{}
-	ownerEmail := ""
+	account := map[string]bool{}
 	if o := t.Owner; o != nil {
-		ownerEmail = strings.ToLower(o.Email)
-		// Cliente inativo ou com o acesso suspenso por atraso não recebe.
-		if o.Active && !o.Suspended {
-			if kind := e.resolveKind(c, o.Settings); kind != "" {
-				id := o.UserID
-				out = append(out, recipient{email: o.Email, name: o.Name, userID: &id, kind: kind, settings: o.Settings})
+		// O dono e a equipe da conta dele, cada um pelas próprias escolhas.
+		// Inativo ou com o acesso suspenso por atraso não recebe.
+		for _, p := range append([]*Owner{o}, t.Team...) {
+			account[strings.ToLower(p.Email)] = true
+			if !p.Active || p.Suspended {
+				continue
+			}
+			if kind := e.resolveKind(c, p.Settings); kind != "" {
+				id := p.UserID
+				out = append(out, recipient{email: p.Email, name: p.Name, userID: &id, kind: kind, settings: p.Settings})
 			}
 		}
 	}
@@ -592,7 +602,7 @@ func (e *Engine) recipients(t *Target, c candidate) []recipient {
 		return out
 	}
 	for _, email := range e.cfg.CentralEmails {
-		if strings.ToLower(email) == ownerEmail {
+		if account[strings.ToLower(email)] {
 			continue
 		}
 		out = append(out, recipient{email: email, kind: kind, settings: defaults, central: true})

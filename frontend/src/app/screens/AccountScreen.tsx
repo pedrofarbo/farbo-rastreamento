@@ -15,7 +15,7 @@ import styles from './Screen.module.css';
 
 /** Conta: quem está conectado, instalar o app, painel completo e sair. */
 export function AccountScreen() {
-  const { user, logout } = useAuth();
+  const { user, logout, membership, isAccountOwner } = useAuth();
   const { installEvent, installed } = usePwa();
   const { notify } = useToast();
   const navigate = useNavigate();
@@ -48,22 +48,43 @@ export function AccountScreen() {
         <h1 className={styles.title}>Conta</h1>
         <p className={styles.lead}>{user?.name}</p>
         <p className={styles.muted}>{user?.email}</p>
+        {membership && (
+          <p className={styles.muted}>
+            Conta de <strong>{membership.ownerName}</strong> · {membership.role === 'manager' ? 'Gestor' : 'Visualizador'}
+          </p>
+        )}
       </div>
 
       <section className={styles.section}>
         <ul className={styles.list}>
-          <li>
-            <Link to="/conta/dados" className={styles.listLink}>
-              <span>
-                <strong>Meus dados</strong>
-                <br />
-                <span className={styles.muted}>Nome, celular, CPF e endereço de entrega</span>
-              </span>
-              <span className={styles.chevron}>
-                <ChevronIcon />
-              </span>
-            </Link>
-          </li>
+          {isAccountOwner && (
+            <>
+              <li>
+                <Link to="/conta/dados" className={styles.listLink}>
+                  <span>
+                    <strong>Meus dados</strong>
+                    <br />
+                    <span className={styles.muted}>Nome, celular, CPF e endereço de entrega</span>
+                  </span>
+                  <span className={styles.chevron}>
+                    <ChevronIcon />
+                  </span>
+                </Link>
+              </li>
+              <li>
+                <Link to="/conta/equipe" className={styles.listLink}>
+                  <span>
+                    <strong>Equipe</strong>
+                    <br />
+                    <span className={styles.muted}>Quem da sua empresa acessa os veículos da conta</span>
+                  </span>
+                  <span className={styles.chevron}>
+                    <ChevronIcon />
+                  </span>
+                </Link>
+              </li>
+            </>
+          )}
           <li>
             <Link to="/conta/seguranca" className={styles.listLink}>
               <span>

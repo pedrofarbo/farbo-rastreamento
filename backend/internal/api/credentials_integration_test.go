@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/accounts"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
@@ -208,6 +209,9 @@ type credEnvOptions struct {
 	shares shares.Notifier
 	// theft liga o modo roubo, com os e-mails neste Mailer.
 	theft theft.Mailer
+	// team liga a conta empresa (a equipe de cada cliente), com os e-mails
+	// neste Notifier.
+	team accounts.Notifier
 }
 
 func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
@@ -220,6 +224,8 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 		Auth: config.Auth{
 			JWTSecret:      []byte("segredo-de-teste-integracao-0123456789abcdef"),
 			AccessTokenTTL: time.Hour, RefreshTokenTTL: time.Hour, BcryptCost: bcrypt.MinCost,
+			// Os convites (equipe, compartilhamento) precisam valer no teste.
+			InviteTTL: time.Hour, PasswordResetTTL: time.Hour,
 		},
 		Commands: config.Commands{
 			AckTimeout: time.Minute, EngineCutMaxSpeedKmh: 5,
@@ -276,6 +282,12 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 		sharesSvc = shares.NewService(db, authSvc, opts.shares, log)
 		sharesSvc.SetSync()
 	}
+	var accountsSvc *accounts.Service
+	if opts.team != nil {
+		accountsSvc = accounts.NewService(db, authSvc, opts.team, log)
+		accountsSvc.SetSync()
+		authSvc.SetMemberships(accountsSvc.Lookup)
+	}
 	if opts.theft != nil {
 		env.theft = theft.NewService(db, env.devices, env.commands, env.sender.isConnected, opts.theft, theft.Config{
 			Duration: 72 * time.Hour, Reminder: 24 * time.Hour, ParkedSeconds: 30, ReportSeconds: 10,
@@ -284,7 +296,7 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 		env.theft.SetSync()
 	}
 	server := NewServer(Deps{
-		StepUp: stepUpSvc, Shares: sharesSvc, Theft: env.theft,
+		StepUp: stepUpSvc, Shares: sharesSvc, Theft: env.theft, Accounts: accountsSvc,
 		Config: cfg, Log: log, Metrics: metrics, DB: db, Auth: authSvc,
 		Devices: env.devices, Vehicles: env.vehicles, Events: eventSvc, Commands: env.commands,
 		Audit: auditSvc, Billing: billingSvc,

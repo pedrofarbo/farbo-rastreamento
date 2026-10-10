@@ -2,6 +2,8 @@ import type { TeamRole } from '@/services/roles';
 
 import { api, apiUrl, download, fetchBlob, request } from './client';
 import type {
+  AccountMember,
+  MemberRole,
   VehicleKind,
   PriceAdjustmentOverview,
   LoginResponse,
@@ -342,6 +344,16 @@ export interface VehicleShareInput {
 
 const withStepUp = (token?: string) => (token ? { 'X-Step-Up-Token': token } : undefined);
 
+/** A equipe da conta empresa (só o titular). */
+export const teamApi = {
+  list: () => api.get<AccountMember[]>('/api/me/team'),
+  /** Põe alguém na equipe: pede a confirmação extra (biometria ou senha). */
+  add: (input: { name: string; email: string; role: MemberRole }, stepUpToken: string) =>
+    request<AccountMember>('/api/me/team', { method: 'POST', body: input, headers: withStepUp(stepUpToken) }),
+  setRole: (userId: string, role: MemberRole) => api.patch<AccountMember>(`/api/me/team/${userId}`, { role }),
+  remove: (userId: string) => api.delete<void>(`/api/me/team/${userId}`),
+};
+
 export const sharesApi = {
   /** Os acessos que o cliente deu, de todos os veículos dele. */
   list: () => api.get<VehicleShare[]>('/api/me/shares'),
@@ -512,6 +524,8 @@ export type EquipmentBalance = 'CHARGE' | 'WAIVE';
 
 /** Administração (perfil admin). */
 export const customersApi = {
+  /** A equipe da conta empresa do cliente (só leitura, para a central). */
+  team: (id: string) => api.get<AccountMember[]>(`/api/customers/${id}/team`),
   list: () => api.get<CustomerSummary[]>('/api/customers'),
   /** Alertas do cliente: o que ele escolheu e o que foi enviado. */
   alerts: (id: string) => api.get<AlertSettings>(`/api/customers/${id}/alerts`),

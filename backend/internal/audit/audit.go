@@ -44,7 +44,11 @@ const (
 	ActionVehicleShared       = "VEHICLE_SHARED"
 	ActionVehicleShareUpdated = "VEHICLE_SHARE_UPDATED"
 	ActionVehicleShareRemoved = "VEHICLE_SHARE_REMOVED"
-	ActionSharedEngineCut     = "SHARED_ENGINE_CUT"
+	// A equipe da conta empresa (o titular põe, troca o papel e tira).
+	ActionAccountMemberAdded   = "ACCOUNT_MEMBER_ADDED"
+	ActionAccountMemberUpdated = "ACCOUNT_MEMBER_UPDATED"
+	ActionAccountMemberRemoved = "ACCOUNT_MEMBER_REMOVED"
+	ActionSharedEngineCut      = "SHARED_ENGINE_CUT"
 	// Modo roubo: ligado pelo dono (ou por quem pode bloquear) e encerrado.
 	ActionTheftActivated  = "THEFT_ACTIVATED"
 	ActionTheftEnded      = "THEFT_ENDED"

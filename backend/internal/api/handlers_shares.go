@@ -60,7 +60,7 @@ func (s *Server) vehicleForViewer(w http.ResponseWriter, r *http.Request, requir
 			writeError(w, http.StatusNotFound, "veículo não encontrado")
 			return nil, nil, nil, false
 		}
-		share, err = s.Shares.Access(r.Context(), customerID, vehicle.ID)
+		share, err = s.Shares.Access(r.Context(), personOf(r), vehicle.ID)
 		if err != nil {
 			handleStoreError(w, err, "veículo não encontrado")
 			return nil, nil, nil, false
@@ -101,10 +101,10 @@ func (s *Server) shareActive(w http.ResponseWriter, r *http.Request, share *shar
 // Rotas do dono (e de quem recebeu, para deixar de acompanhar)
 // ---------------------------------------------------------------------------
 
-// handleMyShares: os acessos que o cliente deu, de todos os veículos dele.
+// handleMyShares: os acessos que o cliente deu, de todos os veículos dele
+// (quem é da equipe de uma conta não deu nenhum).
 func (s *Server) handleMyShares(w http.ResponseWriter, r *http.Request) {
-	customerID, _ := customerOf(r)
-	list, err := s.Shares.ByOwner(r.Context(), customerID)
+	list, err := s.Shares.ByOwner(r.Context(), personOf(r))
 	if err != nil {
 		handleStoreError(w, err, "acessos não encontrados")
 		return
@@ -186,7 +186,9 @@ func (s *Server) handleUpdateShare(w http.ResponseWriter, r *http.Request) {
 // handleRemoveShare tira o acesso: o dono remove, ou quem recebeu deixa de
 // acompanhar. Vale na hora.
 func (s *Server) handleRemoveShare(w http.ResponseWriter, r *http.Request) {
-	customerID, _ := customerOf(r)
+	// Como pessoa: o titular tira os acessos que deu; quem recebeu (também
+	// alguém da equipe de outra conta) deixa de acompanhar.
+	customerID := personOf(r)
 	id, err := urlUUID(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "id inválido")

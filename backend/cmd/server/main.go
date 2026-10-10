@@ -17,6 +17,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/accounts"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/addresses"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/adjustment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/affiliates"
@@ -332,6 +333,10 @@ func run() error {
 
 	// Acessos de terceiros aos veículos (acompanhar e bloqueio de emergência).
 	sharesSvc := shares.NewService(db, authSvc, mail.NewShareMailer(mailer, cfg.Mail.AppURL), log)
+	// A conta empresa: a equipe de cada cliente, conferida no login e a cada
+	// requisição.
+	accountsSvc := accounts.NewService(db, authSvc, mail.NewTeamMailer(mailer, cfg.Mail.AppURL), log)
+	authSvc.SetMemberships(accountsSvc.Lookup)
 	if pushSvc.Enabled() {
 		sharesSvc.SetPusher(pushSvc)
 	}
@@ -399,8 +404,9 @@ func run() error {
 		Support:   supportSvc,
 		Leads: leads.NewService(leads.NewRepository(db),
 			leads.MailNotifier{Mailer: mail.NewLeadMailer(mailer, cfg.Mail.AppURL), To: cfg.Leads.NotifyEmails}, log),
-		Alerts: alertEngine, AlertStore: alertStore, Push: pushSvc, Shares: sharesSvc, Analytics: analyticsSvc,
-		Infra: infraSvc, Finance: financeSvc, Affiliates: affiliatesSvc, SMSSetup: smsSvc, Theft: theftSvc,
+		Alerts: alertEngine, AlertStore: alertStore, Push: pushSvc, Shares: sharesSvc, Accounts: accountsSvc,
+		Analytics: analyticsSvc,
+		Infra:     infraSvc, Finance: financeSvc, Affiliates: affiliatesSvc, SMSSetup: smsSvc, Theft: theftSvc,
 		Dunning: dunningSvc, Contract: contractSvc, Adjustment: adjustmentSvc,
 		StepUp:    stepup.NewService(db, cfg.StepUp, authSvc),
 		TwoFactor: twoFactorSvc,

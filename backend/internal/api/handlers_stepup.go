@@ -282,11 +282,13 @@ func (s *Server) requireTeamStepUp(w http.ResponseWriter, r *http.Request, purpo
 // senha) para a ação. A equipe da central segue como antes. Devolve false se
 // já respondeu.
 func (s *Server) requireStepUp(w http.ResponseWriter, r *http.Request, purpose string) bool {
-	customerID, isCustomer := customerOf(r)
+	_, isCustomer := customerOf(r)
 	if !isCustomer || s.StepUp == nil {
 		return true
 	}
-	method, err := s.StepUp.Consume(r.Context(), customerID, purpose, r.Header.Get(stepUpHeader))
+	// A confirmação é de quem está logado (alguém da equipe confirma com a
+	// própria senha ou biometria, não com as do titular).
+	method, err := s.StepUp.Consume(r.Context(), personOf(r), purpose, r.Header.Get(stepUpHeader))
 	if err != nil {
 		if !errors.Is(err, stepup.ErrNoGrant) {
 			s.Log.Error("falha ao conferir a confirmação extra", "err", err)
