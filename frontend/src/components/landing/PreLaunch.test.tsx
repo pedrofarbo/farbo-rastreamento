@@ -11,7 +11,7 @@ import { LAUNCH_ANCHOR, PRE_LAUNCH, priceParts } from '@/config/landing';
 import { Footer } from './Footer';
 import { HeroSection } from './HeroSection';
 import { Navbar } from './Navbar';
-import { PricingSection } from './PricingSection';
+import { PricingSection, fleetMessage } from './PricingSection';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -96,6 +96,39 @@ describe.runIf(PRE_LAUNCH)('landing em pré-lançamento', () => {
     expect(sources).toContain('/assets/anatel-logo.png');
     expect(sources).not.toContain('/assets/insanos-skull.png');
     expect(sources).not.toContain('/assets/tracker-gt06.png');
+  });
+});
+
+describe('frotas', () => {
+  it('no lugar do rastreador, o preço especial para frotas, com o WhatsApp e a mensagem pronta', () => {
+    const host = render(<PricingSection onOpenModal={() => {}} />);
+    const cards = Array.from(host.querySelectorAll('h3')).map((h) => h.textContent);
+    // Os três planos lado a lado; o rastreador, largo, embaixo deles.
+    expect(cards).toEqual(['PLANO MENSAL', 'FROTAS', 'EQUIPAMENTO']);
+    const text = host.textContent ?? '';
+    expect(text).toContain('PARA EMPRESAS');
+    expect(text).toContain('Preço especial');
+    const [cta] = links(host, 'Pedir orçamento no WhatsApp');
+    expect(cta?.getAttribute('href')).toBe(whatsappUrl(fleetMessage()));
+    expect(cta?.getAttribute('target')).toBe('_blank');
+    expect(cta?.dataset.analytics).toBe('plano-frotas');
+
+    // Escolhido o tamanho da frota, ele vai na mensagem; de novo, sai.
+    const chip = Array.from(host.querySelectorAll('button')).find((b) => b.textContent === '6 a 10') as HTMLButtonElement;
+    act(() => chip.click());
+    expect(chip.getAttribute('aria-pressed')).toBe('true');
+    expect(links(host, 'Pedir orçamento no WhatsApp')[0].getAttribute('href')).toBe(whatsappUrl(fleetMessage('6 a 10')));
+    act(() => chip.click());
+    expect(links(host, 'Pedir orçamento no WhatsApp')[0].getAttribute('href')).toBe(whatsappUrl(fleetMessage()));
+  });
+
+  it('a mensagem do WhatsApp', () => {
+    expect(fleetMessage()).toBe(
+      'Olá! Vim pelo site da Farbo Rastreadores e quero o preço especial para frotas. Pode me passar um orçamento?',
+    );
+    expect(fleetMessage('Mais de 30')).toBe(
+      'Olá! Vim pelo site da Farbo Rastreadores e quero o preço especial para frotas. Tenho mais de 30 veículos para rastrear. Pode me passar um orçamento?',
+    );
   });
 });
 

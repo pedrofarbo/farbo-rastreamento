@@ -338,22 +338,119 @@
   letter-spacing: 0.5px;
 }
 
-/* Equipment Card special layout */
-.equipmentCard {
-  overflow: hidden;
+/* --- Frotas: preço sob consulta, pelo WhatsApp --- */
+
+.badgeFleet {
+  background: #ffffff;
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.25);
 }
 
-/* Embaixo do preço: a foto do rastreador centralizada no espaço que sobra
-   (o cartão do Insanos é mais alto) e a lista com a largura toda. */
-.equipmentBody {
-  flex: 1;
+.fleetPrice {
+  font-size: 2.5rem;
+  font-weight: 900;
+  letter-spacing: -1px;
+  line-height: 1.05;
+  color: #ffffff;
+  margin-bottom: 0.5rem;
+}
+
+/* O tamanho da frota e o botão ficam juntos no pé do cartão. */
+.fleetSize {
+  margin-top: auto;
+  margin-bottom: 1rem;
+}
+
+.fleetSizeLabel {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.fleetChips {
   display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  margin-top: 1rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.fleetChip {
+  padding: 0.45rem 0.875rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: transparent;
+  color: #cbd5e1;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.fleetChip:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+  color: #ffffff;
+}
+
+.fleetChipActive,
+.fleetChipActive:hover {
+  border-color: #25d366;
+  background: rgba(37, 211, 102, 0.12);
+  color: #25d366;
+}
+
+.whatsappBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  width: 100%;
+  background: #25d366;
+  color: #04150a;
+  border-radius: 999px;
+  padding: 0.9375rem 1.25rem;
+  font-size: 0.9375rem;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 0 20px rgba(37, 211, 102, 0.35);
+  transition: all 0.2s ease;
+}
+
+.whatsappBtn:hover {
+  text-decoration: none;
+  background: #1ebe5a;
+  transform: translateY(-1px);
+  box-shadow: 0 0 30px rgba(37, 211, 102, 0.5);
+}
+
+/* --- O rastreador: largo, embaixo dos planos (o preço vale para todos) --- */
+
+.equipmentCard {
+  overflow: hidden;
+  margin-top: 1.75rem;
+  display: grid;
+  grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1.6fr);
+  align-items: center;
+  column-gap: 2.5rem;
+  padding: 2rem 2.5rem;
+}
+
+.equipmentCard .cardHeader {
+  margin-bottom: 0;
+}
+
+/* A foto e a lista lado a lado (a lista em duas colunas). */
+.equipmentBody {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
 }
 
 .equipmentBody .checkList {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.875rem 1.5rem;
   margin-bottom: 0;
 }
 
@@ -388,8 +485,8 @@
 }
 
 .trackerImg {
-  margin: auto;
-  width: 150px;
+  flex-shrink: 0;
+  width: 130px;
   height: auto;
   object-fit: contain;
   filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.65));
@@ -401,6 +498,36 @@
     max-width: 520px;
     margin: 0 auto;
     gap: 2.5rem;
+  }
+
+  /* Uma coluna: o rastreador vira um cartão como os outros. */
+  .equipmentCard {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    max-width: 520px;
+    margin: 2.5rem auto 0;
+    padding: 2.25rem 1.75rem;
+  }
+
+  .equipmentCard .cardHeader {
+    margin-bottom: 1rem;
+  }
+
+  .equipmentBody {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1.25rem;
+  }
+
+  .equipmentBody .checkList {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .trackerImg {
+    align-self: center;
+    width: 150px;
   }
 }
 
@@ -416,6 +543,14 @@
 
   .card {
     padding: 1.75rem 1.5rem;
+  }
+
+  .equipmentCard {
+    margin-top: 1.75rem;
+  }
+
+  .fleetPrice {
+    font-size: 2.125rem;
   }
 
   .partnerText {

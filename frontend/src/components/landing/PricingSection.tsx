@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
+
+import { WHATSAPP_NUMBER, whatsappUrl } from '@/config/contact';
 
 import {
   ANATEL_HOMOLOGATION,
@@ -10,6 +12,7 @@ import {
   priceParts,
 } from '@/config/landing';
 
+import { WhatsAppIcon } from './WhatsAppFloat';
 import styles from './PricingSection.module.css';
 
 const monthlyPromo = priceParts(LAUNCH_OFFER.monthlyCents);
@@ -17,11 +20,28 @@ const equipmentPromo = priceParts(LAUNCH_OFFER.equipmentCents);
 const insanosPromo = priceParts(LAUNCH_OFFER.insanosMonthlyCents);
 const insanosRegular = priceParts(INSANOS_MONTHLY.cents);
 
+/** O tamanho da frota (opcional): vai na mensagem do WhatsApp. */
+const FLEET_SIZES = [
+  { label: '2 a 5', text: 'de 2 a 5' },
+  { label: '6 a 10', text: 'de 6 a 10' },
+  { label: '11 a 30', text: 'de 11 a 30' },
+  { label: 'Mais de 30', text: 'mais de 30' },
+];
+
+/** A mensagem de quem pede o preço de frota pelo WhatsApp. */
+export function fleetMessage(size = ''): string {
+  const fleet = FLEET_SIZES.find((option) => option.label === size);
+  return fleet
+    ? `Olá! Vim pelo site da Farbo Rastreadores e quero o preço especial para frotas. Tenho ${fleet.text} veículos para rastrear. Pode me passar um orçamento?`
+    : 'Olá! Vim pelo site da Farbo Rastreadores e quero o preço especial para frotas. Pode me passar um orçamento?';
+}
+
 interface PricingSectionProps {
   onOpenModal: (plan?: string) => void;
 }
 
 export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) => {
+  const [fleetSize, setFleetSize] = useState('');
   return (
     <section className={styles.pricingSection} id="planos">
       <div className={styles.container}>
@@ -220,81 +240,159 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
             </button>
           </div>
 
-          {/* Card 3: EQUIPAMENTO */}
-          <div className={`${styles.card} ${styles.equipmentCard}`}>
+          {/* Card 3: FROTAS. Preço sob consulta: o botão abre o WhatsApp com a
+              mensagem já escrita (e o tamanho da frota, se escolhido). */}
+          <div className={`${styles.card} ${styles.fleetCard}`}>
+            <div className={`${styles.badgeTop} ${styles.badgeFleet}`}>PARA EMPRESAS</div>
             <div className={styles.cardHeader}>
-              <h3 className={styles.cardTitle}>EQUIPAMENTO</h3>
-              <div className={styles.deviceSubtitle}>Rastreador J16 GT06</div>
-              {PRE_LAUNCH ? (
-                <>
-                  <div className={styles.priceStrikethrough}>
-                    De <span>{LAUNCH_OFFER.equipmentRegular},00</span>
-                  </div>
-                  <div className={styles.priceMain}>
-                    <span className={styles.currency}>R$</span>
-                    <span className={styles.amount}>{equipmentPromo.reais}</span>
-                    <span className={styles.cents}>{equipmentPromo.cents}</span>
-                  </div>
-                  <div className={styles.priceSub}>
-                    à vista, ou {installmentsOf(LAUNCH_OFFER.equipmentCents)}
-                    <br />
-                    sem juros no Pix
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className={styles.priceMain}>
-                    <span className={styles.currency}>R$</span>
-                    <span className={styles.amount}>150</span>
-                    <span className={styles.cents}>,00</span>
-                  </div>
-                  <div className={styles.priceSub}>
-                    à vista, ou {installmentsOf(LAUNCH_OFFER.equipmentRegularCents)}
-                    <br />
-                    sem juros no Pix
-                  </div>
-                </>
-              )}
+              <h3 className={styles.cardTitle}>FROTAS</h3>
+              <div className={styles.deviceSubtitle}>Empresas, frotistas e locadoras</div>
+              <div className={styles.fleetPrice}>Preço especial</div>
+              <div className={styles.priceSub}>
+                mensalidade por volume de veículos
+                <br />
+                condições sob medida para a sua frota
+              </div>
             </div>
 
-            {/* A foto ocupa o espaço entre o preço e a lista, que fica com a
-                largura toda. */}
-            <div className={styles.equipmentBody}>
-              <img
-                src="/assets/rastreador-j16-farbo.webp"
-                width={150}
-                height={199}
-                loading="lazy"
-                decoding="async"
-                alt="Rastreador J16 com a marca Farbo e o chicote de instalação"
-                className={styles.trackerImg}
-              />
-              <ul className={styles.checkList}>
-                <li>
-                  <span className={styles.checkIcon}>✓</span>
-                  Alta precisão GPS
-                </li>
-                <li>
-                  <span className={styles.checkIcon}>✓</span>
-                  Bloqueio remoto (opcional)
-                </li>
-                <li>
-                  <span className={styles.checkIcon}>✓</span>
-                  Suporte a comandos
-                </li>
-                <li>
-                  <span className={styles.checkIcon}>✓</span>
-                  Resistente e confiável
-                </li>
-                <li className={styles.anatelItem}>
-                  {/* Selo Anatel: a logo e o número de homologação. */}
-                  <span className={styles.anatelSeal} title={`Homologação Anatel nº ${ANATEL_HOMOLOGATION}`}>
-                    <img src="/assets/anatel-logo.png" width={86} height={23} loading="lazy" decoding="async" alt="Anatel" />
-                    <span className={styles.anatelNumber}>{ANATEL_HOMOLOGATION}</span>
-                  </span>
-                </li>
-              </ul>
+            <ul className={styles.checkList}>
+              <li>
+                <span className={styles.checkIcon}>✓</span>
+                Todos os veículos no mesmo mapa
+              </li>
+              <li>
+                <span className={styles.checkIcon}>✓</span>
+                Mensalidade especial por volume
+              </li>
+              <li>
+                <span className={styles.checkIcon}>✓</span>
+                Cercas virtuais e alertas por veículo
+              </li>
+              <li>
+                <span className={styles.checkIcon}>✓</span>
+                Histórico de rotas de cada veículo
+              </li>
+              <li>
+                <span className={styles.checkIcon}>✓</span>
+                Acesso compartilhado com a equipe
+              </li>
+              <li>
+                <span className={styles.checkIcon}>✓</span>
+                Atendimento dedicado
+              </li>
+            </ul>
+
+            <div className={styles.fleetSize} role="group" aria-label="Quantos veículos tem a sua frota?">
+              <span className={styles.fleetSizeLabel}>Quantos veículos?</span>
+              <div className={styles.fleetChips}>
+                {FLEET_SIZES.map((option) => (
+                  <button
+                    key={option.label}
+                    type="button"
+                    aria-pressed={fleetSize === option.label}
+                    className={`${styles.fleetChip} ${fleetSize === option.label ? styles.fleetChipActive : ''}`}
+                    onClick={() => setFleetSize(fleetSize === option.label ? '' : option.label)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {WHATSAPP_NUMBER ? (
+              <a
+                className={styles.whatsappBtn}
+                href={whatsappUrl(fleetMessage(fleetSize))}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-analytics="plano-frotas"
+              >
+                <WhatsAppIcon size={20} />
+                Pedir orçamento no WhatsApp
+              </a>
+            ) : (
+              <button className={styles.whiteBtn} onClick={() => onOpenModal('Frotas')} data-analytics="plano-frotas">
+                Pedir orçamento
+              </button>
+            )}
+          </div>
+        </div>
+
+      {/* O rastreador (o equipamento), largo, embaixo dos planos: o preço
+          vale para qualquer plano. */}
+      <div className={`${styles.card} ${styles.equipmentCard}`} id="rastreador">
+          <div className={styles.cardHeader}>
+            <h3 className={styles.cardTitle}>EQUIPAMENTO</h3>
+            <div className={styles.deviceSubtitle}>Rastreador J16 GT06</div>
+            {PRE_LAUNCH ? (
+              <>
+                <div className={styles.priceStrikethrough}>
+                  De <span>{LAUNCH_OFFER.equipmentRegular},00</span>
+                </div>
+                <div className={styles.priceMain}>
+                  <span className={styles.currency}>R$</span>
+                  <span className={styles.amount}>{equipmentPromo.reais}</span>
+                  <span className={styles.cents}>{equipmentPromo.cents}</span>
+                </div>
+                <div className={styles.priceSub}>
+                  à vista, ou {installmentsOf(LAUNCH_OFFER.equipmentCents)}
+                  <br />
+                  sem juros no Pix
+                </div>
+              </>
+            ) : (
+              <>
+                <div className={styles.priceMain}>
+                  <span className={styles.currency}>R$</span>
+                  <span className={styles.amount}>150</span>
+                  <span className={styles.cents}>,00</span>
+                </div>
+                <div className={styles.priceSub}>
+                  à vista, ou {installmentsOf(LAUNCH_OFFER.equipmentRegularCents)}
+                  <br />
+                  sem juros no Pix
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* A foto ocupa o espaço entre o preço e a lista, que fica com a
+              largura toda. */}
+          <div className={styles.equipmentBody}>
+            <img
+              src="/assets/rastreador-j16-farbo.webp"
+              width={150}
+              height={199}
+              loading="lazy"
+              decoding="async"
+              alt="Rastreador J16 com a marca Farbo e o chicote de instalação"
+              className={styles.trackerImg}
+            />
+            <ul className={styles.checkList}>
+              <li>
+                <span className={styles.checkIcon}>✓</span>
+                Alta precisão GPS
+              </li>
+              <li>
+                <span className={styles.checkIcon}>✓</span>
+                Bloqueio remoto (opcional)
+              </li>
+              <li>
+                <span className={styles.checkIcon}>✓</span>
+                Suporte a comandos
+              </li>
+              <li>
+                <span className={styles.checkIcon}>✓</span>
+                Resistente e confiável
+              </li>
+              <li className={styles.anatelItem}>
+                {/* Selo Anatel: a logo e o número de homologação. */}
+                <span className={styles.anatelSeal} title={`Homologação Anatel nº ${ANATEL_HOMOLOGATION}`}>
+                  <img src="/assets/anatel-logo.png" width={86} height={23} loading="lazy" decoding="async" alt="Anatel" />
+                  <span className={styles.anatelNumber}>{ANATEL_HOMOLOGATION}</span>
+                </span>
+              </li>
+            </ul>
           </div>
         </div>
       </div>
