@@ -1,7 +1,8 @@
 // Package affiliates é o programa de afiliados (influenciadores). O admin
 // cria cada afiliado com o link de cadastro (/indicacao/<code>) e o valor por
-// cliente indicado; quem se cadastra pelo link fica com o afiliado e, ao
-// virar cliente, rende a comissão em cada mês em que pagou a mensalidade. No
+// veículo ativo; quem se cadastra pelo link fica com o afiliado e, ao virar
+// cliente, rende a comissão por veículo, em cada mês em que a mensalidade
+// dele foi paga (dois veículos, duas comissões). No
 // fechamento do mês, as comissões de cada afiliado viram uma conta a pagar na
 // Empresa; o afiliado acompanha os números por uma página com link secreto.
 package affiliates
@@ -19,7 +20,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// MaxCommissionCents: R$ 1.000 por cliente por mês barra um zero a mais.
+// MaxCommissionCents: R$ 1.000 por veículo por mês barra um zero a mais.
 const MaxCommissionCents = 100_000
 
 // ValidationError é um dado recusado; a mensagem vai para a tela.
@@ -53,6 +54,9 @@ type Affiliate struct {
 	// Customers: clientes indicados; ActiveCustomers: com assinatura ativa.
 	Customers       int `json:"customers"`
 	ActiveCustomers int `json:"activeCustomers"`
+	// ActiveVehicles: as assinaturas ativas (veículos) dos clientes
+	// indicados — cada uma rende a comissão no mês em que é paga.
+	ActiveVehicles int `json:"activeVehicles"`
 	// PendingCents: ainda não fechado; OpenCents: fechado, a pagar; PaidCents: pago.
 	PendingCents int64 `json:"pendingCents"`
 	OpenCents    int64 `json:"openCents"`

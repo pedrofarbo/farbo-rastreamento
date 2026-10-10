@@ -41,7 +41,7 @@ const PAYOUT_STATUS: Record<AffiliatePayout['status'], { label: string; tone: Ba
 
 /**
  * Programa de afiliados: os links de cadastro de cada influenciador, o
- * valor por cliente indicado e o fechamento do mês (as comissões viram
+ * valor por veículo ativo e o fechamento do mês (as comissões viram
  * contas a pagar em Empresa).
  */
 export function AffiliatesTab() {
@@ -68,7 +68,8 @@ export function AffiliatesTab() {
     <>
       <div className={styles.note}>
         Cada afiliado tem um link de cadastro. Quem se cadastra por ele e vira cliente rende ao afiliado o valor dele
-        (padrão {formatMoney(defaultCents)}) <strong>por cliente, em cada mês em que o cliente paga a mensalidade</strong>.
+        (padrão {formatMoney(defaultCents)}) <strong>por veículo ativo, em cada mês em que a mensalidade dele é paga</strong>{' '}
+        — o cliente com dois veículos rende duas comissões.
         No fechamento do mês, as comissões viram contas a pagar em{' '}
         <Link to="/empresa?aba=pagar">Empresa → Contas a pagar</Link>; pagar a conta paga as comissões. O afiliado
         acompanha os números pela página dele, sem ver dados de ninguém.
@@ -80,9 +81,11 @@ export function AffiliatesTab() {
           <span className={billing.tileValue}>{affiliates.data ? list.filter((a) => a.active).length : '—'}</span>
         </div>
         <div className={billing.tile}>
-          <span className={billing.tileLabel}>Clientes indicados</span>
-          <span className={billing.tileValue}>{affiliates.data ? sum((a) => a.activeCustomers) : '—'}</span>
-          <span className={billing.tileHint}>ativos, de {sum((a) => a.customers)}</span>
+          <span className={billing.tileLabel}>Veículos ativos</span>
+          <span className={billing.tileValue}>{affiliates.data ? sum((a) => a.activeVehicles) : '—'}</span>
+          <span className={billing.tileHint}>
+            de {sum((a) => a.activeCustomers)} clientes ativos ({sum((a) => a.customers)} indicados)
+          </span>
         </div>
         <div className={billing.tile}>
           <span className={billing.tileLabel}>A fechar</span>
@@ -125,9 +128,10 @@ export function AffiliatesTab() {
                 <tr>
                   <th>Afiliado</th>
                   <th>Link</th>
-                  <th className={company.right}>Por cliente/mês</th>
+                  <th className={company.right}>Por veículo/mês</th>
                   <th className={company.right}>Cadastros</th>
                   <th className={company.right}>Clientes</th>
+                  <th className={company.right}>Veículos</th>
                   <th className={company.right}>A receber</th>
                   <th className={company.right}>Pago</th>
                   <th />
@@ -154,7 +158,7 @@ export function AffiliatesTab() {
                         </button>
                       </span>
                     </td>
-                    <td data-label="Por cliente/mês" className={company.right}>
+                    <td data-label="Por veículo/mês" className={company.right}>
                       {formatMoney(a.commissionCents)}
                     </td>
                     <td data-label="Cadastros" className={company.right}>
@@ -163,6 +167,9 @@ export function AffiliatesTab() {
                     <td data-label="Clientes" className={company.right} title={`${a.activeCustomers} ativos de ${a.customers}`}>
                       {a.activeCustomers}
                       {a.customers !== a.activeCustomers && <span className={company.muted}> / {a.customers}</span>}
+                    </td>
+                    <td data-label="Veículos" className={company.right} title={`${a.activeVehicles} veículos ativos`}>
+                      {a.activeVehicles}
                     </td>
                     <td data-label="A receber" className={company.right}>
                       {formatMoney(a.pendingCents + a.openCents)}
@@ -228,7 +235,7 @@ function SettingsCard({ defaultCents, loaded }: { defaultCents: number; loaded: 
 
   const cents = parseMoney(value);
   return (
-    <Card title="Valor por cliente" subtitle="Quanto o afiliado ganha por mês por cliente indicado que pagou a mensalidade.">
+    <Card title="Valor por veículo" subtitle="Quanto o afiliado ganha por mês por veículo ativo de cliente indicado (com a mensalidade paga).">
       <div className={local.settings}>
         <TextField label="Valor padrão (R$)" value={value} inputMode="decimal" onChange={(e) => setValue(e.target.value)} />
         <label className={company.check}>

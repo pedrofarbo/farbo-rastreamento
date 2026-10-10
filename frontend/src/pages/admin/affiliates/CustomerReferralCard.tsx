@@ -41,7 +41,7 @@ export function CustomerReferralCard({ customerId, referral }: { customerId: str
       title="Indicado por"
       subtitle={
         referral
-          ? `${referral.handle ? `@${referral.handle}` : referral.name}, ${SOURCE[referral.source]} (desde ${new Date(referral.since).toLocaleDateString('pt-BR')}). Cada mês pago rende a comissão ao afiliado.`
+          ? `${referral.handle ? `@${referral.handle}` : referral.name}, ${SOURCE[referral.source]} (desde ${new Date(referral.since).toLocaleDateString('pt-BR')}). Cada veículo do cliente, em cada mês pago, rende a comissão ao afiliado.`
           : 'Ninguém: o cliente não veio pelo link de um afiliado.'
       }
     >

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -12,13 +13,15 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/finance"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/qrcode"
 )
 
 // O programa de afiliados de ponta a ponta: o admin cria os links; quem se
 // cadastra por eles fica com o afiliado e, ao virar cliente, rende a
-// comissão em cada mês pago (uma por cliente, não por veículo); o
+// comissão em cada mês pago (uma por veículo, não por cliente); o
 // fechamento vira conta a pagar na Empresa, e pagar a conta paga as
-// comissões na página do afiliado. Precisa de FARBO_TEST_DATABASE_URL.
+// comissões na página do afiliado, que também dá o QR Code do link.
+// Precisa de FARBO_TEST_DATABASE_URL.
 func TestAffiliatesEndToEnd(t *testing.T) {
 	env, _ := newLeadsEnv(t)
 	ctx := context.Background()
@@ -130,9 +133,9 @@ func TestAffiliatesEndToEnd(t *testing.T) {
 		t.Errorf("caio = %+v", caio.Affiliate)
 	}
 
-	// As mensalidades. Ana tem dois veículos (uma comissão por mês, não
-	// duas), uma mensalidade de antes da indicação e a fatura do
-	// equipamento (que não rendem).
+	// As mensalidades. Ana tem dois veículos (duas comissões no mês: é por
+	// veículo, não por cliente), uma mensalidade de antes da indicação e a
+	// fatura do equipamento (que não rendem).
 	brt, _ := time.LoadLocation("America/Sao_Paulo")
 	now := time.Now().In(brt)
 	cur := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
@@ -179,7 +182,8 @@ func TestAffiliatesEndToEnd(t *testing.T) {
 		return out
 	}
 	list := byID()
-	if a := list[joao.ID.String()]; a.Signups != 1 || a.Customers != 1 || a.ActiveCustomers != 1 || a.PendingCents != 600 {
+	if a := list[joao.ID.String()]; a.Signups != 1 || a.Customers != 1 || a.ActiveCustomers != 1 || a.ActiveVehicles != 2 ||
+		a.PendingCents != 1200 {
 		t.Errorf("joão = %+v", a)
 	}
 	if a := list[maria.ID.String()]; a.Signups != 1 || a.Customers != 1 || a.PendingCents != 1000 {
@@ -196,7 +200,7 @@ func TestAffiliatesEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	list = byID()
-	if a := list[joao.ID.String()]; a.PendingCents != 1400 {
+	if a := list[joao.ID.String()]; a.PendingCents != 2000 {
 		t.Errorf("joão depois do valor novo = %+v", a)
 	}
 	if a := list[maria.ID.String()]; a.PendingCents != 0 {
@@ -207,14 +211,14 @@ func TestAffiliatesEndToEnd(t *testing.T) {
 	month := cur.Format("2006-01")
 	var preview []affiliates.ClosingLine
 	call(http.MethodGet, "/api/affiliates/closing?month="+month, nil, http.StatusOK, &preview)
-	if len(preview) != 1 || preview[0].AffiliateID != joao.ID || preview[0].AmountCents != 600 || preview[0].Commissions != 1 {
+	if len(preview) != 1 || preview[0].AffiliateID != joao.ID || preview[0].AmountCents != 1200 || preview[0].Commissions != 2 {
 		t.Fatalf("prévia = %+v", preview)
 	}
 	env.must(admin, http.MethodGet, "/api/affiliates/closing?month=outubro", nil, http.StatusBadRequest)
 	due := cur.AddDate(0, 1, 4).Format(time.DateOnly)
 	var payouts []*affiliates.Payout
 	call(http.MethodPost, "/api/affiliates/closing", map[string]any{"month": month, "dueDate": due}, http.StatusCreated, &payouts)
-	if len(payouts) != 1 || payouts[0].AmountCents != 600 || payouts[0].Status != "OPEN" || payouts[0].EntryID == nil {
+	if len(payouts) != 1 || payouts[0].AmountCents != 1200 || payouts[0].Status != "OPEN" || payouts[0].EntryID == nil {
 		t.Fatalf("fechamento = %+v", payouts)
 	}
 	env.must(admin, http.MethodPost, "/api/affiliates/closing", map[string]any{"month": month, "dueDate": due}, http.StatusBadRequest)
@@ -222,7 +226,7 @@ func TestAffiliatesEndToEnd(t *testing.T) {
 	// A conta a pagar na Empresa, com o afiliado de fornecedor.
 	var entries []finance.Entry
 	call(http.MethodGet, "/api/finance/entries?kind=PAYABLE", nil, http.StatusOK, &entries)
-	if len(entries) != 1 || entries[0].AmountCents != 600 || entries[0].DueDate.Format(time.DateOnly) != due ||
+	if len(entries) != 1 || entries[0].AmountCents != 1200 || entries[0].DueDate.Format(time.DateOnly) != due ||
 		!strings.Contains(entries[0].Description, "João Motoca") || !strings.Contains(entries[0].Notes, "joao@pix.test") {
 		t.Fatalf("conta a pagar = %+v", entries)
 	}
@@ -241,8 +245,9 @@ func TestAffiliatesEndToEnd(t *testing.T) {
 		return &r, string(raw)
 	}
 	r, raw := report(joao.ReportToken, http.StatusOK)
-	if r.ToReceiveCents != 1400 || r.PaidCents != 0 || r.Customers != 1 || r.ActiveCustomers != 1 || r.Signups != 1 || len(r.Months) != 2 ||
-		r.Months[0].Status != "pending" || r.Months[0].AmountCents != 800 || r.Months[1].Status != "closed" {
+	if r.ToReceiveCents != 2000 || r.PaidCents != 0 || r.Customers != 1 || r.ActiveCustomers != 1 || r.ActiveVehicles != 2 ||
+		r.Signups != 1 || len(r.Months) != 2 || r.Months[0].Status != "pending" || r.Months[0].AmountCents != 800 ||
+		r.Months[0].Vehicles != 1 || r.Months[1].Status != "closed" || r.Months[1].Vehicles != 2 || r.Months[1].AmountCents != 1200 {
 		t.Errorf("página do joão = %s", raw)
 	}
 	for _, secret := range []string{"ana@", "Ana", "joao@pix.test", ana.ID} {
@@ -252,10 +257,36 @@ func TestAffiliatesEndToEnd(t *testing.T) {
 	}
 	report("token-que-nao-existe-de-jeito-nenhum", http.StatusNotFound)
 
+	// O QR Code do link de indicação, pela página do João, para o flyer.
+	svg := env.must("", http.MethodGet, "/api/public/partner/"+joao.ReportToken+"/qr", nil, http.StatusOK)
+	if want, _ := qrcode.SVG("https://farborastreadores.com.br/indicacao/joao-moto"); !bytes.Equal(svg, want) {
+		t.Errorf("o QR (SVG) não é o do link de indicação do João")
+	}
+	png := env.must("", http.MethodGet, "/api/public/partner/"+joao.ReportToken+"/qr?format=png&download=1", nil, http.StatusOK)
+	if want, _ := qrcode.PNG("https://farborastreadores.com.br/indicacao/joao-moto", 20); !bytes.Equal(png, want) {
+		t.Errorf("o QR (PNG) não é o do link de indicação do João")
+	}
+	// Baixar vem como arquivo, com o nome; sem o download=1, para mostrar.
+	for query, want := range map[string]string{
+		"?format=png&download=1": `attachment; filename=qrcode-indicacao-joao-moto.png`,
+		"?format=svg&download=1": `attachment; filename=qrcode-indicacao-joao-moto.svg`,
+		"?format=png":            `inline; filename=qrcode-indicacao-joao-moto.png`,
+	} {
+		resp, err := http.Get(env.srv.URL + "/api/public/partner/" + joao.ReportToken + "/qr" + query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if got := resp.Header.Get("Content-Disposition"); got != want {
+			t.Errorf("QR %s: Content-Disposition = %q", query, got)
+		}
+	}
+	env.must("", http.MethodGet, "/api/public/partner/token-que-nao-existe-de-jeito-nenhum/qr", nil, http.StatusNotFound)
+
 	// Pagar a conta paga as comissões; a paga não se desfaz.
 	env.must(admin, http.MethodPost, "/api/finance/entries/"+payouts[0].EntryID.String()+"/pay", map[string]any{}, http.StatusOK)
 	r, raw = report(joao.ReportToken, http.StatusOK)
-	if r.PaidCents != 600 || r.ToReceiveCents != 800 || r.Months[1].Status != "paid" {
+	if r.PaidCents != 1200 || r.ToReceiveCents != 800 || r.Months[1].Status != "paid" {
 		t.Errorf("página depois de pagar = %s", raw)
 	}
 	env.must(admin, http.MethodDelete, "/api/affiliates/payouts/"+payouts[0].ID.String(), nil, http.StatusBadRequest)
@@ -274,7 +305,7 @@ func TestAffiliatesEndToEnd(t *testing.T) {
 	if len(payouts) != 1 || payouts[0].Status != "PAID" {
 		t.Errorf("fechamentos = %+v", payouts)
 	}
-	if a := byID()[joao.ID.String()]; a.PendingCents != 800 || a.PaidCents != 600 || a.OpenCents != 0 {
+	if a := byID()[joao.ID.String()]; a.PendingCents != 800 || a.PaidCents != 1200 || a.OpenCents != 0 {
 		t.Errorf("joão depois de desfazer = %+v", a)
 	}
 
@@ -289,6 +320,8 @@ func TestAffiliatesEndToEnd(t *testing.T) {
 		"name": "João Motoca", "handle": "joao.moto", "code": "joao-moto", "active": false,
 	}, http.StatusOK, nil)
 	env.must("", http.MethodGet, "/api/public/affiliates/joao-moto", nil, http.StatusNotFound)
+	// Pausado, sem QR (o link não indica mais).
+	env.must("", http.MethodGet, "/api/public/partner/"+renewed.ReportToken+"/qr", nil, http.StatusNotFound)
 	launch("depois@inativo.test", "joao-moto")
 	call(http.MethodGet, "/api/leads/waitlist", nil, http.StatusOK, &waitlist)
 	for _, e := range waitlist {

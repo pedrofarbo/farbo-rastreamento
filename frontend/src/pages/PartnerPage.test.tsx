@@ -8,7 +8,10 @@ import { ApiError } from '@/api/client';
 import type { PartnerReport } from '@/types';
 
 let respond: (token: string) => Promise<PartnerReport>;
-vi.mock('@/api/resources', () => ({ publicApi: { partner: (token: string) => respond(token) } }));
+vi.mock('@/api/resources', async () => {
+  const actual = await vi.importActual<typeof import('@/api/resources')>('@/api/resources');
+  return { publicApi: { partner: (token: string) => respond(token), partnerQrUrl: actual.publicApi.partnerQrUrl } };
+});
 
 import { PartnerPage } from './PartnerPage';
 
@@ -42,29 +45,49 @@ describe('PartnerPage', () => {
       expect(token).toBe('segredo-do-joao-0123456789');
       return {
         name: 'João Motoca', handle: 'joao.moto', code: 'joao-moto', active: true, commissionCents: 600,
-        signups: 12, customers: 4, activeCustomers: 3, toReceiveCents: 1400, paidCents: 600,
+        signups: 12, customers: 4, activeCustomers: 3, activeVehicles: 5, toReceiveCents: 1400, paidCents: 600,
         months: [
-          { month: '2026-11', customers: 1, amountCents: 800, status: 'pending' },
-          { month: '2026-10', customers: 3, amountCents: 1800, status: 'closed' },
-          { month: '2026-09', customers: 1, amountCents: 600, status: 'paid' },
+          { month: '2026-11', vehicles: 1, amountCents: 800, status: 'pending' },
+          { month: '2026-10', vehicles: 3, amountCents: 1800, status: 'closed' },
+          { month: '2026-09', vehicles: 1, amountCents: 600, status: 'paid' },
         ],
       };
     };
     const host = await render();
     const t = text(host);
     expect(t).toContain('Olá, João!');
-    expect(t).toContain('R$ 6,00 por mês por cliente');
+    expect(t).toContain('R$ 6,00 por mês por veículo ativo dos clientes que você indicou');
     expect(t).toContain('farborastreadores.com.br/indicacao/joao-moto');
     expect(t).toContain('A receberR$ 14,00');
     expect(t).toContain('Já recebidoR$ 6,00');
     expect(t).toContain('12Cadastros pelo link');
-    expect(t).toContain('3Clientes ativos');
-    expect(t).toContain('nov/20261 clienteR$ 8,00Aguardando fechamento');
-    expect(t).toContain('out/20263 clientesR$ 18,00A pagar');
-    expect(t).toContain('set/20261 clienteR$ 6,00Pago');
+    expect(t).toContain('5Veículos ativos');
+    expect(t).toContain('nov/20261 veículoR$ 8,00Aguardando fechamento');
+    expect(t).toContain('out/20263 veículosR$ 18,00A pagar');
+    expect(t).toContain('set/20261 veículoR$ 6,00Pago');
     expect(t).not.toContain('pausado');
+    // O QR Code do link, para o flyer: na tela e para baixar.
+    expect(t).toContain('QR Code para o seu flyer');
+    const qr = host.querySelector('img[alt="QR Code do seu link de indicação"]') as HTMLImageElement;
+    expect(qr.getAttribute('src')).toBe('/api/public/partner/segredo-do-joao-0123456789/qr?format=png');
+    const links = Array.from(host.querySelectorAll('a[download]')).map((a) => [a.textContent, a.getAttribute('href')]);
+    expect(links).toEqual([
+      ['Baixar PNG', '/api/public/partner/segredo-do-joao-0123456789/qr?format=png&download=1'],
+      ['Baixar SVG (para gráfica)', '/api/public/partner/segredo-do-joao-0123456789/qr?format=svg&download=1'],
+    ]);
     // Fora dos buscadores e sem passar o link adiante.
     expect(document.head.querySelector('meta[name=robots]')?.getAttribute('content')).toBe('noindex, nofollow');
+  });
+
+  it('afiliado pausado: sem QR Code', async () => {
+    respond = async () => ({
+      name: 'João Motoca', handle: 'joao.moto', code: 'joao-moto', active: false, commissionCents: 600,
+      signups: 0, customers: 0, activeCustomers: 0, activeVehicles: 0, toReceiveCents: 0, paidCents: 0, months: [],
+    });
+    const host = await render();
+    expect(text(host)).toContain('Seu link está pausado');
+    expect(text(host)).not.toContain('QR Code');
+    expect(host.querySelector('a[download]')).toBeNull();
   });
 
   it('link trocado ou inválido', async () => {

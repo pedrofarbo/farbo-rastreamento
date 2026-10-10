@@ -111,7 +111,7 @@ export function AffiliateModal({
     setError('');
     const cents = draft.commission.trim() === '' ? null : parseMoney(draft.commission);
     if (draft.commission.trim() !== '' && cents === null) {
-      setError('Valor por cliente inválido.');
+      setError('Valor por veículo inválido.');
       return;
     }
     save.mutate({
@@ -213,6 +213,9 @@ export function AffiliateModal({
                 Clientes <strong>{affiliate.activeCustomers}</strong> ativos de <strong>{affiliate.customers}</strong>
               </span>
               <span>
+                Veículos ativos <strong>{affiliate.activeVehicles}</strong>
+              </span>
+              <span>
                 A fechar <strong>{formatMoney(affiliate.pendingCents)}</strong>
               </span>
               <span>
@@ -250,14 +253,14 @@ export function AffiliateModal({
             }
           />
           <TextField
-            label="Valor por cliente, por mês (R$)"
+            label="Valor por veículo ativo, por mês (R$)"
             value={draft.commission}
             inputMode="decimal"
             onChange={(e) => set('commission', e.target.value)}
             hint={
               affiliate
-                ? 'O valor novo vale para os meses ainda não pagos pelos clientes.'
-                : `Padrão: ${formatMoney(defaultCents)}. Conta em cada mês em que o cliente indicado paga a mensalidade.`
+                ? 'O valor novo vale para as mensalidades ainda não pagas.'
+                : `Padrão: ${formatMoney(defaultCents)}. Conta por veículo do cliente indicado, em cada mês em que a mensalidade dele é paga.`
             }
           />
           <TextField label="E-mail" type="email" value={draft.email} maxLength={254} onChange={(e) => set('email', e.target.value)} />

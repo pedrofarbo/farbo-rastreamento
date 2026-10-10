@@ -254,6 +254,7 @@ func (s *Server) routes() chi.Router {
 		if s.Affiliates != nil {
 			r.With(affiliateLimiter.middleware).Get("/public/affiliates/{code}", s.handlePublicAffiliate)
 			r.With(affiliateLimiter.middleware).Get("/public/partner/{token}", s.handlePartnerReport)
+			r.With(affiliateLimiter.middleware).Get("/public/partner/{token}/qr", s.handlePartnerQR)
 		}
 		// O contrato em vigor, para ler antes de contratar.
 		if s.Contract != nil {

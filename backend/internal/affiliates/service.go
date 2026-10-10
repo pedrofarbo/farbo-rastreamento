@@ -91,6 +91,8 @@ const columns = `a.id, a.name, a.handle, a.code, a.report_token, a.commission_ce
 	(SELECT count(*) FROM affiliate_referrals r WHERE r.affiliate_id = a.id),
 	(SELECT count(*) FROM affiliate_referrals r WHERE r.affiliate_id = a.id AND EXISTS (
 		SELECT 1 FROM subscriptions sb WHERE sb.customer_id = r.customer_id AND sb.status = 'ACTIVE')),
+	(SELECT count(*) FROM affiliate_referrals r JOIN subscriptions sb ON sb.customer_id = r.customer_id
+		WHERE r.affiliate_id = a.id AND sb.status = 'ACTIVE'),
 	COALESCE((SELECT sum(c.amount_cents) FROM affiliate_commissions c
 		WHERE c.affiliate_id = a.id AND c.payout_id IS NULL), 0)::bigint,
 	COALESCE((SELECT sum(p.amount_cents) FROM affiliate_payouts p LEFT JOIN finance_entries e ON e.id = p.finance_entry_id
@@ -102,7 +104,7 @@ func scan(row database.Scanner) (*Affiliate, error) {
 	var a Affiliate
 	err := row.Scan(&a.ID, &a.Name, &a.Handle, &a.Code, &a.ReportToken, &a.CommissionCents, &a.Email, &a.Phone,
 		&a.PixKey, &a.Notes, &a.SupplierID, &a.Active, &a.CreatedAt,
-		&a.Signups, &a.Customers, &a.ActiveCustomers, &a.PendingCents, &a.OpenCents, &a.PaidCents)
+		&a.Signups, &a.Customers, &a.ActiveCustomers, &a.ActiveVehicles, &a.PendingCents, &a.OpenCents, &a.PaidCents)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -332,24 +334,25 @@ func (s *Service) SetCustomer(ctx context.Context, customerID uuid.UUID, affilia
 // Comissões
 // ---------------------------------------------------------------------------
 
-// Reconcile acerta as comissões com as mensalidades: cada mês pago de um
-// cliente indicado (a partir do mês da indicação) rende uma comissão ao
-// afiliado ativo, pelo valor dele; a de uma mensalidade estornada — ou de
-// um cliente que mudou de afiliado — sai, se ainda não foi fechada.
-// Idempotente: roda de hora em hora e antes dos relatórios.
+// Reconcile acerta as comissões com as mensalidades: cada mês pago de cada
+// veículo (assinatura) de um cliente indicado, a partir do mês da indicação,
+// rende uma comissão ao afiliado ativo, pelo valor dele — o cliente com dois
+// veículos rende duas. A de uma mensalidade estornada — ou de um cliente que
+// mudou de afiliado — sai, se ainda não foi fechada. Idempotente: roda de
+// hora em hora e antes dos relatórios.
 func (s *Service) Reconcile(ctx context.Context) (created, removed int64, err error) {
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `
-			INSERT INTO affiliate_commissions (affiliate_id, customer_id, month, amount_cents)
-			SELECT r.affiliate_id, i.customer_id, date_trunc('month', i.due_date)::date, a.commission_cents
+			INSERT INTO affiliate_commissions (affiliate_id, customer_id, subscription_id, month, amount_cents)
+			SELECT r.affiliate_id, i.customer_id, i.subscription_id, date_trunc('month', i.due_date)::date, a.commission_cents
 			FROM invoices i
 			JOIN affiliate_referrals r ON r.customer_id = i.customer_id
 			JOIN affiliates a ON a.id = r.affiliate_id
 			WHERE i.status = 'PAID' AND i.subscription_id IS NOT NULL AND i.amount_cents > 0
 				AND a.active AND a.commission_cents > 0
 				AND i.due_date >= date_trunc('month', r.created_at AT TIME ZONE $1)::date
-			GROUP BY 1, 2, 3, 4
-			ON CONFLICT (affiliate_id, customer_id, month) DO NOTHING`, s.loc.String())
+			GROUP BY 1, 2, 3, 4, 5
+			ON CONFLICT (affiliate_id, subscription_id, month) DO NOTHING`, s.loc.String())
 		if err != nil {
 			return err
 		}
@@ -358,7 +361,7 @@ func (s *Service) Reconcile(ctx context.Context) (created, removed int64, err er
 			DELETE FROM affiliate_commissions c
 			WHERE c.payout_id IS NULL AND (
 				NOT EXISTS (SELECT 1 FROM invoices i
-					WHERE i.customer_id = c.customer_id AND i.status = 'PAID' AND i.subscription_id IS NOT NULL
+					WHERE i.subscription_id = c.subscription_id AND i.customer_id = c.customer_id AND i.status = 'PAID'
 						AND date_trunc('month', i.due_date)::date = c.month)
 				OR NOT EXISTS (SELECT 1 FROM affiliate_referrals r
 					WHERE r.customer_id = c.customer_id AND r.affiliate_id = c.affiliate_id))`)
@@ -520,7 +523,7 @@ func (s *Service) Close(ctx context.Context, month string, due billing.Date, by 
 			}
 			var entry uuid.UUID
 			description := fmt.Sprintf("Comissão de afiliado: %s (até %s)", l.name, monthLabel(m))
-			notes := fmt.Sprintf("%d comissão(ões) de clientes indicados.", len(l.commissions))
+			notes := fmt.Sprintf("%d comissão(ões) por veículo de clientes indicados.", len(l.commissions))
 			if l.pix != "" {
 				notes += " Pix: " + l.pix
 			}
@@ -645,9 +648,10 @@ func (s *Service) UndoPayout(ctx context.Context, id uuid.UUID) error {
 
 // ReportMonth é um mês na página do afiliado.
 type ReportMonth struct {
-	Month       string `json:"month"`
-	Customers   int    `json:"customers"`
-	AmountCents int64  `json:"amountCents"`
+	Month string `json:"month"`
+	// Vehicles: os veículos com a mensalidade paga no mês (uma comissão cada).
+	Vehicles    int   `json:"vehicles"`
+	AmountCents int64 `json:"amountCents"`
 	// Status: pending (o mês ainda não foi fechado), closed (fechado, a
 	// pagar) ou paid (pago).
 	Status string `json:"status"`
@@ -663,9 +667,24 @@ type Report struct {
 	Signups         int           `json:"signups"`
 	Customers       int           `json:"customers"`
 	ActiveCustomers int           `json:"activeCustomers"`
+	ActiveVehicles  int           `json:"activeVehicles"`
 	ToReceiveCents  int64         `json:"toReceiveCents"`
 	PaidCents       int64         `json:"paidCents"`
 	Months          []ReportMonth `json:"months"`
+}
+
+// ReferralCode é o código do link de indicação do afiliado ativo, pelo link
+// secreto da página dele ("" se o link não vale ou o afiliado está pausado).
+func (s *Service) ReferralCode(ctx context.Context, token string) (string, error) {
+	if len(token) < 20 || len(token) > 64 {
+		return "", nil
+	}
+	var code string
+	err := s.db.QueryRow(ctx, `SELECT code FROM affiliates WHERE report_token = $1 AND active`, token).Scan(&code)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return code, database.MapError(err)
 }
 
 // Report é a página do afiliado pelo link secreto (nil se o link não vale).
@@ -682,7 +701,7 @@ func (s *Service) Report(ctx context.Context, token string) (*Report, error) {
 	}
 	out := &Report{
 		Name: a.Name, Handle: a.Handle, Code: a.Code, Active: a.Active, CommissionCents: a.CommissionCents,
-		Signups: a.Signups, Customers: a.Customers, ActiveCustomers: a.ActiveCustomers,
+		Signups: a.Signups, Customers: a.Customers, ActiveCustomers: a.ActiveCustomers, ActiveVehicles: a.ActiveVehicles,
 		ToReceiveCents: a.PendingCents + a.OpenCents, PaidCents: a.PaidCents, Months: []ReportMonth{},
 	}
 	from := time.Date(s.now().In(s.loc).Year(), s.now().In(s.loc).Month()-11, 1, 0, 0, 0, 0, time.UTC)
@@ -701,11 +720,11 @@ func (s *Service) Report(ctx context.Context, token string) (*Report, error) {
 	for rows.Next() {
 		var m ReportMonth
 		var open, paid int
-		if err := rows.Scan(&m.Month, &m.Customers, &m.AmountCents, &open, &paid); err != nil {
+		if err := rows.Scan(&m.Month, &m.Vehicles, &m.AmountCents, &open, &paid); err != nil {
 			return nil, err
 		}
 		switch {
-		case paid == m.Customers:
+		case paid == m.Vehicles:
 			m.Status = "paid"
 		case open > 0:
 			m.Status = "pending"

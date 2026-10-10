@@ -203,11 +203,20 @@ func (s *Server) handleDeleteLead(w http.ResponseWriter, r *http.Request) {
 // handleLeadQR desenha o QR Code de um link (o da tela do evento), para
 // imprimir: ?format=svg (vetor) ou png. Só o admin.
 func (s *Server) handleLeadQR(w http.ResponseWriter, r *http.Request) {
-	text := strings.TrimSpace(r.URL.Query().Get("text"))
+	name := leads.EventSlug(r.URL.Query().Get("name"))
+	if name == "" {
+		name = "qrcode"
+	}
+	writeQR(w, strings.TrimSpace(r.URL.Query().Get("text")), name, r.URL.Query().Get("format"), true)
+}
+
+// writeQR responde o QR Code do texto em SVG (vetor, o padrão) ou PNG
+// (format=png); download manda como arquivo (name.ext), senão para mostrar.
+func writeQR(w http.ResponseWriter, text, name, format string, download bool) {
 	var body []byte
 	var err error
 	contentType, ext := "image/svg+xml", "svg"
-	if r.URL.Query().Get("format") == "png" {
+	if format == "png" {
 		contentType, ext = "image/png", "png"
 		body, err = qrcode.PNG(text, 20)
 	} else {
@@ -217,12 +226,12 @@ func (s *Server) handleLeadQR(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	name := leads.EventSlug(r.URL.Query().Get("name"))
-	if name == "" {
-		name = "qrcode"
+	disposition := "inline"
+	if download {
+		disposition = "attachment"
 	}
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name + "." + ext}))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": name + "." + ext}))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, max-age=300")
 	w.WriteHeader(http.StatusOK)

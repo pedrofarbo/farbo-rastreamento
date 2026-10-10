@@ -549,6 +549,10 @@ type Infra struct {
 type Leads struct {
 	// NotifyEmails recebem o aviso de cada pré-cliente novo.
 	NotifyEmails []string
+	// SiteURL é o endereço público do site (a landing): o link de indicação
+	// do afiliado (SITE_URL/indicacao/<código>) e o QR Code dele apontam
+	// para ele. O mesmo SITE_URL do frontend (config/landing.ts).
+	SiteURL string
 }
 
 // WhatsApp configura o atendimento pelo WhatsApp (API oficial da Meta, a
@@ -838,7 +842,10 @@ func Load() (*Config, error) {
 		// Sem lista própria: os e-mails da central; sem eles, o do admin.
 		HandoffEmails: csv("WHATSAPP_HANDOFF_EMAILS", centralEmails()),
 	}
-	cfg.Leads = Leads{NotifyEmails: csv("LEADS_NOTIFY_EMAILS", centralEmails())}
+	cfg.Leads = Leads{
+		NotifyEmails: csv("LEADS_NOTIFY_EMAILS", centralEmails()),
+		SiteURL:      strings.TrimRight(str("SITE_URL", "https://farborastreadores.com.br"), "/"),
+	}
 	cfg.Infra = Infra{BackupDir: strings.TrimSpace(str("BACKUP_DIR", ""))}
 	cfg.SMS = SMS{
 		SMSDevAPIKey:  strings.TrimSpace(str("SMSDEV_API_KEY", "")),

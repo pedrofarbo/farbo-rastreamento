@@ -21,8 +21,8 @@ const money = (cents: number) => formatMoney(cents).replace(/ /g, ' ');
 
 /**
  * A página do afiliado (/parceiro/<link secreto>): o link de indicação dele
- * e os números — cadastros, clientes, quanto tem a receber e o que já
- * recebeu, mês a mês. Sem dado pessoal de ninguém. Quem tem o link vê:
+ * (e o QR Code, para o flyer) e os números — cadastros, clientes, quanto tem
+ * a receber e o que já recebeu, mês a mês. Sem dado pessoal de ninguém. Quem tem o link vê:
  * por isso não vai para buscadores nem passa adiante no Referer.
  */
 export function PartnerPage() {
@@ -95,8 +95,8 @@ export function PartnerPage() {
           <section className={base.intro}>
             <h1 className={base.title}>Olá, {report.name.split(' ')[0]}!</h1>
             <p className={base.lead}>
-              Você ganha <strong className={styles.white}>{money(report.commissionCents)}</strong> por mês por cliente
-              indicado, em cada mês em que ele paga a mensalidade.
+              Você ganha <strong className={styles.white}>{money(report.commissionCents)}</strong> por mês por veículo
+              ativo dos clientes que você indicou, em cada mês em que a mensalidade dele é paga.
             </p>
             {!report.active && (
               <p className={base.error}>Seu link está pausado: cadastros novos não contam. Fale com a Farbo.</p>
@@ -133,6 +133,33 @@ export function PartnerPage() {
             </div>
           </section>
 
+          {report.active && (
+            <section className={styles.qrCard} aria-label="QR Code do seu link">
+              <span className={styles.label}>QR Code para o seu flyer</span>
+              <div className={styles.qrBox}>
+                <img
+                  className={styles.qr}
+                  src={publicApi.partnerQrUrl(token, 'png')}
+                  width={220}
+                  height={220}
+                  alt="QR Code do seu link de indicação"
+                />
+              </div>
+              <p className={styles.qrHint}>
+                Quem aponta a câmera do celular cai direto no seu link. Para a gráfica, mande o SVG: não perde qualidade
+                em nenhum tamanho. No impresso, deixe o QR com pelo menos 2,5 cm de lado e a borda branca em volta.
+              </p>
+              <div className={styles.linkActions}>
+                <a className={base.primary} href={publicApi.partnerQrUrl(token, 'png', true)} download>
+                  Baixar PNG
+                </a>
+                <a className={base.secondary} href={publicApi.partnerQrUrl(token, 'svg', true)} download>
+                  Baixar SVG (para gráfica)
+                </a>
+              </div>
+            </section>
+          )}
+
           <section className={styles.money} aria-label="Valores">
             <div className={styles.moneyMain}>
               <span className={styles.label}>A receber</span>
@@ -147,14 +174,14 @@ export function PartnerPage() {
           <section className={styles.stats} aria-label="Indicações">
             <Stat value={report.signups} label="Cadastros pelo link" />
             <Stat value={report.customers} label="Viraram clientes" />
-            <Stat value={report.activeCustomers} label="Clientes ativos" />
+            <Stat value={report.activeVehicles} label="Veículos ativos" />
           </section>
 
           <section className={styles.months}>
             <h2 className={styles.heading}>Mês a mês</h2>
             {report.months.length === 0 ? (
               <p className={base.hint}>
-                Ainda sem comissões. Elas aparecem quando um cliente indicado paga a mensalidade.
+                Ainda sem comissões. Elas aparecem quando é paga a mensalidade de um veículo de cliente indicado.
               </p>
             ) : (
               <ul className={styles.monthList}>
@@ -163,7 +190,7 @@ export function PartnerPage() {
                     <div>
                       <strong>{monthLabel(m.month)}</strong>
                       <span className={styles.muted}>
-                        {m.customers} {m.customers === 1 ? 'cliente' : 'clientes'}
+                        {m.vehicles} {m.vehicles === 1 ? 'veículo' : 'veículos'}
                       </span>
                     </div>
                     <div className={styles.monthRight}>

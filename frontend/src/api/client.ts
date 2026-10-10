@@ -214,6 +214,11 @@ async function fetchFile(path: string, retrying = false): Promise<{ blob: Blob; 
   return { blob: await response.blob(), filename: match ? decodeURIComponent(match[1]) : 'arquivo' };
 }
 
+/** O endereço completo de um caminho da API (para imagem ou link de arquivo público). */
+export function apiUrl(path: string): string {
+  return `${API_URL}${path}`;
+}
+
 /** O arquivo protegido como Blob (para mostrar uma imagem, por exemplo). */
 export async function fetchBlob(path: string): Promise<Blob> {
   return (await fetchFile(path)).blob;

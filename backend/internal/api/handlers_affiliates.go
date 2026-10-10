@@ -75,6 +75,32 @@ func (s *Server) handlePartnerReport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, report)
 }
 
+// handlePartnerQR: o QR Code do link de indicação do afiliado, pela página
+// dele (link secreto), para o flyer: ?format=svg (vetor, para a gráfica) ou
+// png; ?download=1 baixa o arquivo. Afiliado pausado não tem QR.
+func (s *Server) handlePartnerQR(w http.ResponseWriter, r *http.Request) {
+	code, err := s.Affiliates.ReferralCode(r.Context(), chi.URLParam(r, "token"))
+	if err != nil {
+		affiliateError(w, err, "")
+		return
+	}
+	if code == "" {
+		writeError(w, http.StatusNotFound, "link inválido ou pausado: fale com a Farbo")
+		return
+	}
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	writeQR(w, s.siteURL()+"/indicacao/"+code, "qrcode-indicacao-"+code, r.URL.Query().Get("format"),
+		r.URL.Query().Get("download") == "1")
+}
+
+// siteURL é o endereço público do site (os links de indicação).
+func (s *Server) siteURL() string {
+	if s.Config != nil && s.Config.Leads.SiteURL != "" {
+		return s.Config.Leads.SiteURL
+	}
+	return "https://farborastreadores.com.br"
+}
+
 func (s *Server) handleListAffiliates(w http.ResponseWriter, r *http.Request) {
 	list, err := s.Affiliates.List(r.Context())
 	if err != nil {

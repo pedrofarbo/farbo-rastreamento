@@ -1,6 +1,6 @@
 import type { TeamRole } from '@/services/roles';
 
-import { api, download, fetchBlob, request } from './client';
+import { api, apiUrl, download, fetchBlob, request } from './client';
 import type {
   VehicleKind,
   PriceAdjustmentOverview,
@@ -710,6 +710,9 @@ export const publicApi = {
   /** A página do afiliado, pelo link secreto. */
   partner: (token: string) =>
     request<PartnerReport>(`/api/public/partner/${encodeURIComponent(token)}`, { anonymous: true }),
+  /** O QR Code do link de indicação do afiliado (para o flyer): o endereço da imagem ou do arquivo. */
+  partnerQrUrl: (token: string, format: 'png' | 'svg', download = false) =>
+    apiUrl(`/api/public/partner/${encodeURIComponent(token)}/qr?format=${format}${download ? '&download=1' : ''}`),
 };
 
 /** Configuração do rastreador por SMS (SMSDev) na ativação. */

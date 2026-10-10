@@ -1615,7 +1615,7 @@ export interface Affiliate {
   code: string;
   /** O segredo da página do afiliado (/parceiro/<token>). */
   reportToken: string;
-  /** Por cliente indicado, por mês pago. */
+  /** Por veículo ativo de cliente indicado, por mês pago. */
   commissionCents: number;
   email: string;
   phone: string;
@@ -1629,6 +1629,8 @@ export interface Affiliate {
   customers: number;
   /** Clientes indicados com assinatura ativa. */
   activeCustomers: number;
+  /** Assinaturas ativas (veículos) dos clientes indicados: cada uma rende a comissão. */
+  activeVehicles: number;
   /** Ainda não fechado. */
   pendingCents: number;
   /** Fechado, a pagar na Empresa. */
@@ -1701,7 +1703,8 @@ export interface AffiliatePayout {
 /** Um mês na página do afiliado. */
 export interface PartnerMonth {
   month: string;
-  customers: number;
+  /** Veículos com a mensalidade paga no mês (uma comissão cada). */
+  vehicles: number;
   amountCents: number;
   /** pending: o mês não foi fechado; closed: fechado, a pagar; paid: pago. */
   status: 'pending' | 'closed' | 'paid';
@@ -1717,6 +1720,7 @@ export interface PartnerReport {
   signups: number;
   customers: number;
   activeCustomers: number;
+  activeVehicles: number;
   toReceiveCents: number;
   paidCents: number;
   months: PartnerMonth[];

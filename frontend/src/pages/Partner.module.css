@@ -39,6 +39,45 @@
   gap: 0.625rem;
 }
 
+.qrCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  background: #0d130e;
+}
+
+/* O QR sempre no branco (a câmera lê melhor), centralizado. */
+.qrBox {
+  align-self: center;
+  padding: 0.5rem;
+  border-radius: 16px;
+  background: #ffffff;
+  line-height: 0;
+}
+
+.qr {
+  display: block;
+  width: 220px;
+  max-width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+/* Os botões de baixar são links: sem o sublinhado do hover dos links. */
+.qrCard a:hover {
+  text-decoration: none;
+}
+
+.qrHint {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
 .money {
   display: grid;
   grid-template-columns: 1fr 1fr;

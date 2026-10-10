@@ -1473,6 +1473,7 @@ mais importam:
 | `WHATSAPP_AI_MAX_REPLIES_PER_DAY` | `40` | respostas da IA por contato em 24 h antes de passar para a equipe |
 | `WHATSAPP_HANDOFF_EMAILS` | `ALERTS_CENTRAL_EMAILS` | quem recebe o aviso de conversa transferida |
 | `LEADS_NOTIFY_EMAILS` | `ALERTS_CENTRAL_EMAILS` | quem recebe o aviso de pré-cliente novo |
+| `SITE_URL` | `https://farborastreadores.com.br` | site público: o link de indicação dos afiliados e o QR Code deles |
 | `BACKUP_DIR` | vazio | pasta dos backups do banco para o painel de infraestrutura (produção: `/backups`) |
 | `LAUNCH_PROMO_ENABLED` | `true` | promoção de pré-lançamento para quem está na lista |
 | `LAUNCH_PROMO_EQUIPMENT_CENTS` / `_MONTHLY_CENTS` | `12000` / `3490` | rastreador e mensalidade na promoção |
