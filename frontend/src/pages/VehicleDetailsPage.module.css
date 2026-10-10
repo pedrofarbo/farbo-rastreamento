@@ -128,10 +128,18 @@
 }
 
 @media (max-width: 1000px) {
+  /* Uma coluna que rola: o topo (título, histórico, mapa e telemetria) com a
+     altura que precisa, o mapa com altura fixa e os cartões embaixo. Em grade,
+     a linha do topo (min-height: 0, do layout de computador) encolhia: presa
+     em 55dvh, ou até zero, e o mapa transbordava por cima dos cartões. */
   .page {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(300px, 55dvh) 1fr;
+    display: block;
     overflow-y: auto;
+  }
+
+  .mapArea {
+    flex: none;
+    height: clamp(280px, 50dvh, 520px);
   }
 
   .sidebar {

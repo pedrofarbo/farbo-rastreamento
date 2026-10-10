@@ -85,10 +85,13 @@ a:hover {
   background: transparent;
 }
 
-/* O Leaflet traz tema claro por padrão; ajustamos o que aparece sobre o mapa. */
+/* O Leaflet traz tema claro por padrão; ajustamos o que aparece sobre o mapa.
+   isolation: as camadas do Leaflet (z-index 400 a 1000) ficam presas dentro
+   do mapa, sem passar por cima do que vem depois na página. */
 .leaflet-container {
   font-family: var(--font-sans);
   background: var(--surface-sunken);
+  isolation: isolate;
 }
 
 /* No tema escuro, os tiles do OpenStreetMap são invertidos para o mapa não
