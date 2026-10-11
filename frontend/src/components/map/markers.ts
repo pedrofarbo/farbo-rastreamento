@@ -58,6 +58,9 @@ interface VehicleIconOptions {
   online?: boolean;
   /** A velocidade, na etiqueta do veículo selecionado em movimento. */
   speedKmh?: number | null;
+  /** Sem as ondas (fica o halo): numa frota com muitos andando na tela, as
+   * ondas de centenas de veículos pesam no navegador. */
+  calm?: boolean;
 }
 
 /** A velocidade da etiqueta: um número de 0 a 400; qualquer outra coisa, nada. */
@@ -105,6 +108,7 @@ export function vehicleIcon({
   online = true,
   speedKmh = null,
   kind = 'CAR',
+  calm = false,
 }: VehicleIconOptions): L.DivIcon {
   const color = ignition === true ? IGNITION_ON : ignition === false ? IGNITION_OFF : IGNITION_UNKNOWN;
   const rotation = safeHeading(heading);
@@ -126,11 +130,13 @@ export function vehicleIcon({
   const live = moving && online;
   if (live) {
     const ring = { cx: 16, cy: 16, r: 9, fill: color, 'fill-opacity': 0.12, stroke: color, 'stroke-width': 2 };
-    vehicle.append(
-      svgNode('circle', { class: 'vehicle-pulse', ...ring }),
-      svgNode('circle', { class: 'vehicle-pulse vehicle-pulse-late', ...ring }),
-      svgNode('circle', { cx: 16, cy: 16, r: 12, fill: color, opacity: 0.2 }),
-    );
+    if (!calm) {
+      vehicle.append(
+        svgNode('circle', { class: 'vehicle-pulse', ...ring }),
+        svgNode('circle', { class: 'vehicle-pulse vehicle-pulse-late', ...ring }),
+      );
+    }
+    vehicle.append(svgNode('circle', { cx: 16, cy: 16, r: 12, fill: color, opacity: 0.2 }));
   }
   if (selected) {
     vehicle.append(
@@ -242,6 +248,36 @@ function blockedBadge(cx: number, cy: number): SVGElement[] {
     svgNode('circle', { cx, cy, r: 6, fill: BLOCKED_BADGE, stroke: '#ffffff', 'stroke-width': 1.25 }),
     lock,
   ];
+}
+
+/**
+ * Um grupo de veículos próximos (numa frota), com quantos são: verde, ou
+ * vermelho se algum deles está em modo roubo. Cresce um pouco com o total.
+ */
+export function clusterIcon(count: number, alert = false): L.DivIcon {
+  const total = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+  const size = total < 10 ? 34 : total < 100 ? 40 : total < 1000 ? 46 : 52;
+  const center = size / 2;
+  const color = alert ? IGNITION_OFF : IGNITION_ON;
+  const label = svgNode('text', {
+    x: center, y: center, 'font-size': total < 1000 ? 13 : 12, 'font-weight': 800, 'text-anchor': 'middle',
+    'dominant-baseline': 'central', fill: '#ffffff', 'font-family': 'system-ui, sans-serif',
+  });
+  label.textContent = String(total);
+  return L.divIcon({
+    className: 'vehicle-cluster',
+    html: asIconHtml(
+      svgNode(
+        'svg',
+        { width: size, height: size, viewBox: `0 0 ${size} ${size}` },
+        svgNode('circle', { cx: center, cy: center, r: center - 1, fill: color, opacity: 0.22 }),
+        svgNode('circle', { cx: center, cy: center, r: center - 6, fill: OUTLINE, stroke: color, 'stroke-width': 2.5 }),
+        label,
+      ),
+    ),
+    iconSize: [size, size],
+    iconAnchor: [center, center],
+  });
 }
 
 function dotIcon(className: string, size: number, radius: number, color: string, strokeWidth: number): L.DivIcon {

@@ -1,9 +1,12 @@
 import { TileLayer } from 'react-leaflet';
+import type { LeafletEventHandlerFnMap } from 'leaflet';
 
-/** Mapa base do OpenStreetMap, igual em todos os mapas do painel e do app. */
-export function OsmTiles() {
+/** Mapa base do OpenStreetMap, igual em todos os mapas do painel e do app.
+ * `eventHandlers` acompanha as imagens chegando (o carregamento do mapa). */
+export function OsmTiles({ eventHandlers }: { eventHandlers?: LeafletEventHandlerFnMap }) {
   return (
     <TileLayer
+      eventHandlers={eventHandlers}
       attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       maxZoom={19}

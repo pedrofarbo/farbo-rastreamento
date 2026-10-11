@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 
-import { endpointIcon, historyIcon, safeHeading, safeSpeed, vehicleIcon } from './markers';
+import { clusterIcon, endpointIcon, historyIcon, safeHeading, safeSpeed, vehicleIcon } from './markers';
 
 /** O que o Leaflet põe no mapa: a div criada pelo próprio ícone. */
 function render(icon: ReturnType<typeof vehicleIcon>): HTMLElement {
@@ -108,6 +108,13 @@ describe('o veículo andando', () => {
     }
   });
 
+  it('calmo (frota com muitos na tela): sem as ondas, mas com o halo', () => {
+    const calm = render(vehicleIcon({ ignition: true, heading: 0, moving: true, selected: false, blocked: false, calm: true }));
+    expect(calm.className).toContain('vehicle-marker-moving');
+    expect(calm.querySelectorAll('.vehicle-pulse')).toHaveLength(0);
+    expect(calm.querySelector('circle[r="12"]')?.getAttribute('fill')).toBe('#3be558');
+  });
+
   it('o selecionado mostra a velocidade; valor estranho não vira texto', () => {
     const tag = (speedKmh: unknown, selected = true) =>
       render(
@@ -120,6 +127,19 @@ describe('o veículo andando', () => {
     }
     expect(safeSpeed(0)).toBe(0);
     expect(safeSpeed('60')).toBeNull();
+  });
+});
+
+describe('o grupo de veículos', () => {
+  it('mostra quantos são, verde ou vermelho (roubo), e cresce com o total', () => {
+    const group = render(clusterIcon(128));
+    expect(group.className).toContain('vehicle-cluster');
+    expect(group.querySelector('text')?.textContent).toBe('128');
+    expect(group.querySelector('circle')?.getAttribute('fill')).toBe('#3be558');
+    expect(group.querySelector('svg')?.getAttribute('width')).toBe('46');
+    expect(render(clusterIcon(3, true)).querySelector('circle')?.getAttribute('fill')).toBe('#ef5b52');
+    expect(render(clusterIcon(3)).querySelector('svg')?.getAttribute('width')).toBe('34');
+    expect(render(clusterIcon(Number.NaN)).querySelector('text')?.textContent).toBe('0');
   });
 });
 

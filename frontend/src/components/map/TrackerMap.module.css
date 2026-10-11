@@ -87,6 +87,130 @@
   pointer-events: none;
 }
 
+/* O carregamento: uma grade de "ruas" com um brilho passando e, no meio, o
+   progresso. Fica por cima do mapa até as imagens da tela chegarem. */
+.loading {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-map-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--surface-sunken);
+  transition: opacity 300ms ease;
+}
+
+.loading::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
+  background-size: 56px 56px;
+}
+
+.loading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 35%, var(--accent-soft) 50%, transparent 65%);
+  background-size: 250% 100%;
+  animation: mapShimmer 1.8s linear infinite;
+}
+
+.loadingDone {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loadingCard {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: min(240px, calc(100% - 2 * var(--space-4)));
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.loadingRing {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: mapSpin 0.9s linear infinite;
+}
+
+.loadingTitle {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.loadingBar {
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  background: var(--border-subtle);
+  border-radius: 999px;
+}
+
+.loadingBar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width 200ms ease;
+}
+
+.loadingDetail {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sem o mapa de fundo (sem internet, bloqueio): um aviso discreto num canto
+   que a lista do app nunca cobre. */
+.offline {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  z-index: var(--z-map-overlay);
+  max-width: calc(100% - 2 * var(--space-3));
+  padding: 6px 12px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+}
+
+@keyframes mapShimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+@keyframes mapSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .popupBlocked {
   font-size: var(--text-xs);
   font-weight: 600;
@@ -125,5 +249,10 @@
   :global(.vehicle-pulse) {
     animation: none;
     opacity: 0;
+  }
+
+  .loading::after,
+  .loadingRing {
+    animation: none;
   }
 }

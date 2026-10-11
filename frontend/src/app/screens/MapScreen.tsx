@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { geofencesApi } from '@/api/resources';
 import { isSuspendedError, SuspendedNotice } from '@/components/billing/SuspendedNotice';
+import { FLEET_SIZE } from '@/components/map/fleet';
 import { TrackerMap } from '@/components/map/TrackerMap';
 import { Badge } from '@/components/ui/Badge';
 import type { BadgeTone } from '@/components/ui/Badge';
@@ -30,6 +31,9 @@ export function statusTone(vehicle: VehicleView): BadgeTone {
   }
 }
 
+/** Cartões por vez: numa frota, milhares de uma vez pesam no celular. A busca acha o resto. */
+export const LIST_PAGE = 50;
+
 /** Primeiro os que estão comunicando, depois por nome. */
 function sortVehicles(list: VehicleView[]): VehicleView[] {
   const rank = (v: VehicleView) => (v.device?.status === 'ONLINE' ? 0 : v.device ? 1 : 2);
@@ -45,6 +49,14 @@ export function MapScreen() {
   const [mapInset, setMapInset] = useState(0);
   const growTimer = useRef<number>();
   const list = useMemo(() => sortVehicles(vehicles.data ?? []), [vehicles.data]);
+  const [search, setSearch] = useState('');
+  const [limit, setLimit] = useState(LIST_PAGE);
+  const found = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return term
+      ? list.filter((v) => v.name.toLowerCase().includes(term) || v.plate?.toLowerCase().includes(term))
+      : list;
+  }, [list, search]);
 
   // O mapa termina onde a lista para (até o meio), para o veículo ficar no
   // centro da parte visível. Ao abrir a lista, o mapa encolhe só depois da
@@ -97,7 +109,21 @@ export function MapScreen() {
             </Button>
           </div>
         )}
-        {list.map((vehicle) => {
+        {list.length > FLEET_SIZE && (
+          <input
+            className={styles.fleetSearch}
+            type="search"
+            placeholder="Buscar por nome ou placa"
+            aria-label="Buscar veículo"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setLimit(LIST_PAGE);
+            }}
+          />
+        )}
+        {search && found.length === 0 && <p className={styles.muted}>Nenhum veículo com “{search.trim()}”.</p>}
+        {found.slice(0, limit).map((vehicle) => {
           const position = vehicle.lastPosition;
           const acc = vehicle.state?.acc ?? position?.acc ?? null;
           return (
@@ -139,6 +165,13 @@ export function MapScreen() {
             </button>
           );
         })}
+        {found.length > limit && (
+          <button type="button" className={styles.more} onClick={() => setLimit((current) => current + LIST_PAGE)}>
+            {found.length - limit > LIST_PAGE
+              ? `Mostrar mais ${LIST_PAGE} (faltam ${found.length - limit})`
+              : `Mostrar os ${found.length - limit} restantes`}
+          </button>
+        )}
       </BottomSheet>
     </div>
   );

@@ -85,6 +85,13 @@
   bottom: calc(var(--app-bottom) + var(--map-inset, 0px));
 }
 
+/* O carregamento do mapa: o cartão logo abaixo do topo, onde a lista (aberta
+   até o meio ao entrar) não cobre. */
+.map :global(.map-loading) {
+  align-items: flex-start;
+  padding-top: calc(var(--app-top) + var(--space-7));
+}
+
 /* Créditos do OpenStreetMap (obrigatórios) logo abaixo do topo, onde a
    lista nunca cobre. */
 .map :global(.leaflet-bottom.leaflet-right) {
@@ -103,6 +110,33 @@
 
 .map :global(.leaflet-control-attribution a) {
   color: var(--text-secondary);
+}
+
+/* A busca da lista numa frota (16px: o iOS não aproxima a tela ao tocar). */
+.fleetSearch {
+  width: 100%;
+  padding: 10px var(--space-3);
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+.fleetSearch:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.more {
+  width: 100%;
+  padding: var(--space-3);
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  background: none;
+  border: none;
+  cursor: pointer;
 }
 
 .vehicleCard {
