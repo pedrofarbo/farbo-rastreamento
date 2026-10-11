@@ -37,9 +37,14 @@ const DUE_DAYS = Array.from({ length: 28 }, (_, i) => i + 1);
 export function SubscriptionFields({
   draft,
   onChange,
+  lockedDueDay = null,
+  dueDayHint,
 }: {
   draft: SubscriptionDraft;
   onChange: (draft: SubscriptionDraft) => void;
+  /** O vencimento da conta, quando ela já tem um: o veículo novo vence nele. */
+  lockedDueDay?: number | null;
+  dueDayHint?: string;
 }) {
   const custom = draft.preset === 'custom';
 
@@ -67,8 +72,13 @@ export function SubscriptionFields({
         </SelectField>
         <SelectField
           label="Vencimento"
-          hint="Até o dia 28, para existir em todos os meses."
-          value={draft.dueDay}
+          hint={
+            lockedDueDay !== null
+              ? 'O da conta: todos os veículos do cliente vencem no mesmo dia (para mudar, edite uma assinatura).'
+              : (dueDayHint ?? 'Até o dia 28, para existir em todos os meses.')
+          }
+          value={lockedDueDay ?? draft.dueDay}
+          disabled={lockedDueDay !== null}
           onChange={(event) => onChange({ ...draft, dueDay: Number(event.target.value) })}
         >
           {DUE_DAYS.map((day) => (

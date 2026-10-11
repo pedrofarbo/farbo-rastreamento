@@ -41,6 +41,8 @@ export interface WizardAdmin {
   currentPlan: Subscription | null;
   /** O plano definido para o cliente: quando há, é ele o do novo veículo. */
   accountPlan?: AccountPlan | null;
+  /** O vencimento da conta (o das assinaturas ativas): o veículo novo entra nele. */
+  accountDueDay?: number | null;
 }
 
 interface AdminDraft {
@@ -64,7 +66,12 @@ function optionalMoney(text: string): number | null {
   return text.trim() === '' ? 0 : parseMoney(text);
 }
 
-function adminDraftFrom(c: Catalog, subscription: Subscription | null, account: AccountPlan | null = null): AdminDraft {
+function adminDraftFrom(
+  c: Catalog,
+  subscription: Subscription | null,
+  account: AccountPlan | null = null,
+  accountDueDay: number | null = null,
+): AdminDraft {
   // Sugere o plano definido para o cliente; sem ele, o que ele já paga; no
   // primeiro veículo, o padrão.
   const current = account ?? subscription;
@@ -79,6 +86,8 @@ function adminDraftFrom(c: Catalog, subscription: Subscription | null, account: 
         dueDay: current.dueDay,
       }
     : { ...DEFAULT_SUBSCRIPTION, dueDay: c.defaultDueDay };
+  // A conta vence num dia só: o veículo novo entra no dela.
+  if (accountDueDay) plan.dueDay = accountDueDay;
   return {
     deviceId: '',
     equipment: centsToInput(c.equipmentPriceCents),
@@ -180,7 +189,7 @@ export function NewVehicleWizard({
     if (!open) seeded.current = false;
     else if (isAdmin && c && !seeded.current) {
       seeded.current = true;
-      setAdminDraft(adminDraftFrom(c, admin?.currentPlan ?? null, admin?.accountPlan ?? null));
+      setAdminDraft(adminDraftFrom(c, admin?.currentPlan ?? null, admin?.accountPlan ?? null, admin?.accountDueDay ?? null));
     }
     // O plano atual só importa na abertura (o ref impede semear de novo).
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -553,6 +562,7 @@ export function NewVehicleWizard({
                   <SubscriptionFields
                     draft={adminDraft.plan}
                     onChange={(plan) => setAdminDraft({ ...adminDraft, plan })}
+                    lockedDueDay={admin.accountDueDay ?? null}
                   />
                 ) : (
                   <p className={pageStyles.description}>

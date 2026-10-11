@@ -38,15 +38,26 @@ func (s *Service) AccountPlan(ctx context.Context, customerID uuid.UUID) (*Accou
 	return &p, nil
 }
 
-// SetAccountPlan define (ou troca) o plano do cliente. Vale para os
-// veículos novos; as assinaturas que já existem não mudam.
+// SetAccountPlan define (ou troca) o plano do cliente. O nome e o valor
+// valem para os veículos novos (as assinaturas que já existem não mudam); o
+// vencimento é o da conta: num dia diferente, todas as assinaturas ativas
+// vão para ele.
 func (s *Service) SetAccountPlan(ctx context.Context, customerID uuid.UUID, in billing.SubscriptionInput, by *uuid.UUID) (*AccountPlan, error) {
 	in.FirstDueDate = nil
 	if err := s.billing.Validate(in); err != nil {
 		return nil, err
 	}
+	day, err := s.billing.AccountDueDay(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+	if day > 0 && day != in.DueDay {
+		if _, err := s.billing.ChangeAccountDueDay(ctx, customerID, in.DueDay); err != nil {
+			return nil, err
+		}
+	}
 	var p AccountPlan
-	err := s.db.QueryRow(ctx, `
+	err = s.db.QueryRow(ctx, `
 		INSERT INTO customer_plans (customer_id, plan_name, price_cents, due_day, updated_by)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (customer_id) DO UPDATE SET plan_name = EXCLUDED.plan_name, price_cents = EXCLUDED.price_cents,
@@ -58,6 +69,12 @@ func (s *Service) SetAccountPlan(ctx context.Context, customerID uuid.UUID, in b
 		return nil, database.MapError(err)
 	}
 	return &p, nil
+}
+
+// SyncPlanDueDay leva o vencimento novo da conta ao plano dela, se houver.
+func (s *Service) SyncPlanDueDay(ctx context.Context, customerID uuid.UUID, day int) error {
+	_, err := s.db.Exec(ctx, `UPDATE customer_plans SET due_day = $2, updated_at = NOW() WHERE customer_id = $1`, customerID, day)
+	return database.MapError(err)
 }
 
 // ClearAccountPlan volta o cliente ao padrão (o da assinatura ativa, ou o

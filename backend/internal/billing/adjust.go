@@ -171,78 +171,111 @@ func (s *Service) FinanceInvoice(ctx context.Context, invoiceID, subscriptionID 
 	return inv, sub, s.repo.fillInstallments(ctx, sub)
 }
 
-// ChangeDueDay muda o dia de vencimento da assinatura: as mensalidades em
-// aberto que ainda não venceram vão para o dia novo no mesmo mês (se ele
-// ainda não passou), e as próximas já saem nele. As vencidas ficam como
-// estão. O fim da promoção e da permanência acompanham o dia novo.
-func (s *Service) ChangeDueDay(ctx context.Context, id uuid.UUID, day int) (*Subscription, error) {
+// ChangeAccountDueDay muda o vencimento da conta: todas as assinaturas
+// ativas do cliente vão para o dia novo, numa transação só (ver
+// changeDueDay). É o único jeito de mudar o dia: a conta vence num dia só.
+func (s *Service) ChangeAccountDueDay(ctx context.Context, customerID uuid.UUID, day int) ([]*Subscription, error) {
 	if day < 1 || day > 28 {
 		return nil, ValidationError{"o dia de vencimento vai de 1 a 28"}
 	}
 	today := s.Today()
-	var sub *Subscription
+	var out []*Subscription
 	err := pgx.BeginFunc(ctx, s.repo.db, func(tx pgx.Tx) error {
-		var err error
-		if sub, err = scanSubscription(tx.QueryRow(ctx, `SELECT `+subscriptionColumns+` FROM subscriptions WHERE id = $1 FOR UPDATE`, id)); err != nil {
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM users WHERE id = $1 FOR UPDATE`, customerID); err != nil {
 			return err
 		}
-		if sub.Status != SubscriptionActive {
-			return ErrAlreadyCanceled
-		}
-		if sub.DueDay == day {
-			return nil
-		}
 		rows, err := tx.Query(ctx, `
-			SELECT id, due_date FROM invoices WHERE subscription_id = $1 AND status = 'OPEN' AND due_date >= $2
-			ORDER BY due_date`, id, today.Time)
+			SELECT `+subscriptionColumns+` FROM subscriptions WHERE customer_id = $1 AND status = 'ACTIVE'
+			ORDER BY created_at FOR UPDATE`, customerID)
 		if err != nil {
 			return err
 		}
-		moves := map[uuid.UUID]Date{}
+		var subs []*Subscription
 		for rows.Next() {
-			var invID uuid.UUID
-			var due time.Time
-			if err := rows.Scan(&invID, &due); err != nil {
+			sub, err := scanSubscription(rows)
+			if err != nil {
 				rows.Close()
 				return err
 			}
-			if moved := withDay(Date{due}, day); !moved.Before(today) {
-				moves[invID] = moved
-			}
+			subs = append(subs, sub)
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {
 			return err
 		}
-		for invID, due := range moves {
-			if _, err := tx.Exec(ctx, `UPDATE invoices SET due_date = $2, updated_at = NOW() WHERE id = $1`, invID, due.Time); err != nil {
-				if errors.Is(database.MapError(err), database.ErrConflict) {
-					return ErrDueDateTaken
-				}
+		for _, sub := range subs {
+			changed, err := changeDueDay(ctx, tx, sub, day, today)
+			if err != nil {
 				return err
 			}
+			out = append(out, changed)
 		}
-		next := withDay(sub.NextDueDate, day)
-		if next.Before(today) {
-			next = nextMonthly(next, day)
-		}
-		shift := func(d *Date) *time.Time {
-			if d == nil {
-				return nil
-			}
-			moved := withDay(*d, day)
-			return &moved.Time
-		}
-		sub, err = scanSubscription(tx.QueryRow(ctx, `
-			UPDATE subscriptions SET due_day = $2, next_due_date = $3, promo_until = $4, commitment_until = $5, updated_at = NOW()
-			WHERE id = $1 RETURNING `+subscriptionColumns,
-			id, day, next.Time, shift(sub.PromoUntil), shift(sub.CommitmentUntil)))
-		return err
+		return nil
 	})
 	if err != nil {
 		return nil, database.MapError(err)
 	}
-	return sub, s.repo.fillInstallments(ctx, sub)
+	for _, sub := range out {
+		if err := s.repo.fillInstallments(ctx, sub); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// changeDueDay muda o dia de vencimento de uma assinatura: as mensalidades
+// em aberto que ainda não venceram vão para o dia novo no mesmo mês (se ele
+// ainda não passou), e as próximas já saem nele. As vencidas ficam como
+// estão. O fim da promoção e da permanência acompanham o dia novo.
+func changeDueDay(ctx context.Context, tx pgx.Tx, sub *Subscription, day int, today Date) (*Subscription, error) {
+	if sub.DueDay == day {
+		return sub, nil
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT id, due_date FROM invoices WHERE subscription_id = $1 AND status = 'OPEN' AND due_date >= $2
+		ORDER BY due_date`, sub.ID, today.Time)
+	if err != nil {
+		return nil, err
+	}
+	moves := map[uuid.UUID]Date{}
+	for rows.Next() {
+		var invID uuid.UUID
+		var due time.Time
+		if err := rows.Scan(&invID, &due); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if moved := withDay(Date{due}, day); !moved.Before(today) {
+			moves[invID] = moved
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for invID, due := range moves {
+		if _, err := tx.Exec(ctx, `UPDATE invoices SET due_date = $2, updated_at = NOW() WHERE id = $1`, invID, due.Time); err != nil {
+			if errors.Is(database.MapError(err), database.ErrConflict) {
+				return nil, ErrDueDateTaken
+			}
+			return nil, err
+		}
+	}
+	next := withDay(sub.NextDueDate, day)
+	if next.Before(today) {
+		next = nextMonthly(next, day)
+	}
+	shift := func(d *Date) *time.Time {
+		if d == nil {
+			return nil
+		}
+		moved := withDay(*d, day)
+		return &moved.Time
+	}
+	return scanSubscription(tx.QueryRow(ctx, `
+		UPDATE subscriptions SET due_day = $2, next_due_date = $3, promo_until = $4, commitment_until = $5, updated_at = NOW()
+		WHERE id = $1 RETURNING `+subscriptionColumns,
+		sub.ID, day, next.Time, shift(sub.PromoUntil), shift(sub.CommitmentUntil)))
 }
 
 // moneyText: 15000 → "R$ 150,00".

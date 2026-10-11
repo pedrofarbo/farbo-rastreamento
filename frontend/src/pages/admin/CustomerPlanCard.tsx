@@ -18,11 +18,13 @@ import type { AccountPlan } from '@/types';
 
 import pageStyles from '../Page.module.css';
 
-/** O rascunho do modal a partir do plano atual (ou do padrão). */
-function draftFrom(plan: AccountPlan | null): SubscriptionDraft {
-  if (!plan) return DEFAULT_SUBSCRIPTION;
-  const preset = PLAN_PRESETS.find((p) => p.planName === plan.planName && p.priceCents === plan.priceCents);
-  return { preset: preset?.id ?? 'custom', planName: plan.planName, price: centsToInput(plan.priceCents), dueDay: plan.dueDay };
+/** O rascunho do modal a partir do plano atual (ou do padrão), no vencimento da conta. */
+function draftFrom(plan: AccountPlan | null, accountDueDay: number | null): SubscriptionDraft {
+  const preset = plan && PLAN_PRESETS.find((p) => p.planName === plan.planName && p.priceCents === plan.priceCents);
+  const draft = plan
+    ? { preset: preset?.id ?? 'custom', planName: plan.planName, price: centsToInput(plan.priceCents), dueDay: plan.dueDay }
+    : DEFAULT_SUBSCRIPTION;
+  return accountDueDay ? { ...draft, dueDay: accountDueDay } : draft;
 }
 
 /**
@@ -30,7 +32,16 @@ function draftFrom(plan: AccountPlan | null): SubscriptionDraft {
  * veículos (ex.: o Especial Insanos MC): todo veículo novo dele sai nesse
  * plano, pelo app ou pela central. O cliente não escolhe plano.
  */
-export function CustomerPlanCard({ customerId, plan }: { customerId: string; plan: AccountPlan | null }) {
+export function CustomerPlanCard({
+  customerId,
+  plan,
+  accountDueDay = null,
+}: {
+  customerId: string;
+  plan: AccountPlan | null;
+  /** O vencimento das assinaturas ativas (null sem nenhuma). */
+  accountDueDay?: number | null;
+}) {
   const { notify } = useToast();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<SubscriptionDraft | null>(null);
@@ -46,7 +57,14 @@ export function CustomerPlanCard({ customerId, plan }: { customerId: string; pla
     onSuccess: (saved) => {
       refresh();
       setDraft(null);
-      notify({ tone: 'success', title: 'Plano do cliente salvo', description: `${saved.planName}: vale para os veículos novos.` });
+      const moved = accountDueDay !== null && saved.dueDay !== accountDueDay;
+      notify({
+        tone: 'success',
+        title: 'Plano do cliente salvo',
+        description: moved
+          ? `${saved.planName}: vale para os veículos novos. A conta passou a vencer todo dia ${saved.dueDay}.`
+          : `${saved.planName}: vale para os veículos novos.`,
+      });
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -62,7 +80,7 @@ export function CustomerPlanCard({ customerId, plan }: { customerId: string; pla
   return (
     <Card
       title="Plano do cliente"
-      subtitle="Vale para todo veículo novo, pelo app ou pela central; as assinaturas que já existem não mudam. O cliente não escolhe plano."
+      subtitle="Vale para todo veículo novo, pelo app ou pela central; o nome e o valor das assinaturas que já existem não mudam, e o vencimento é o da conta (um dia só para todas). O cliente não escolhe plano."
       actions={
         <div className={pageStyles.actions}>
           {plan && (
@@ -75,7 +93,7 @@ export function CustomerPlanCard({ customerId, plan }: { customerId: string; pla
             variant={plan ? 'secondary' : 'primary'}
             onClick={() => {
               setError('');
-              setDraft(draftFrom(plan));
+              setDraft(draftFrom(plan, accountDueDay));
             }}
           >
             {plan ? 'Trocar o plano' : 'Definir o plano'}
@@ -106,7 +124,15 @@ export function CustomerPlanCard({ customerId, plan }: { customerId: string; pla
       >
         {draft && (
           <div className={pageStyles.form}>
-            <SubscriptionFields draft={draft} onChange={setDraft} />
+            <SubscriptionFields
+              draft={draft}
+              onChange={setDraft}
+              dueDayHint={
+                accountDueDay !== null
+                  ? 'É o vencimento da conta: num dia diferente, todas as assinaturas ativas do cliente vão para ele.'
+                  : undefined
+              }
+            />
             <p className={pageStyles.description} style={{ margin: 0 }}>
               Na promoção de pré-lançamento, o plano Especial Insanos MC tem a mensalidade promocional dos Insanos.
             </p>

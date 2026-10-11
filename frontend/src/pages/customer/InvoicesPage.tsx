@@ -5,6 +5,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { meApi } from '@/api/resources';
 import type { PixApi } from '@/api/resources';
 import billing from '@/components/billing/Billing.module.css';
+import { InvoiceDayRows } from '@/components/billing/InvoiceDayRows';
+import { InvoiceLines } from '@/components/billing/InvoiceLines';
 import { InvoiceStatus } from '@/components/billing/InvoiceStatus';
 import { MonthlyPrice } from '@/components/billing/MonthlyPrice';
 import { PixPaymentModal } from '@/components/billing/PixPaymentModal';
@@ -16,8 +18,16 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { adjustmentNoticeVisible } from '@/services/adjustment';
 import { formatDateOnly, formatMoney } from '@/services/format';
-import { groupIds, monthlyGroups, overdueGroup } from '@/services/invoiceGroups';
-import type { InvoiceGroup } from '@/services/invoiceGroups';
+import {
+  CLOSED_PAGE,
+  groupIds,
+  groupOf,
+  historyRows,
+  monthlyGroups,
+  oldestClosedDue,
+  overdueGroup,
+} from '@/services/invoiceGroups';
+import type { HistoryDay, InvoiceGroup } from '@/services/invoiceGroups';
 import type { Invoice } from '@/types';
 
 import styles from '../Page.module.css';
@@ -65,8 +75,36 @@ export function InvoicesPage() {
   const activeSubscriptions = (subscriptions.data ?? []).filter((s) => s.status === 'ACTIVE');
   // A fatura do mês (frota: uma por veículo, no mesmo vencimento) e as
   // vencidas de mais de um mês, para pagar num Pix só.
-  const groups = onlinePayment ? monthlyGroups(invoices.data ?? []) : [];
-  const late = onlinePayment ? overdueGroup(invoices.data ?? []) : null;
+  const groups = useMemo(() => (onlinePayment ? monthlyGroups(invoices.data ?? []) : []), [onlinePayment, invoices.data]);
+  const late = useMemo(() => (onlinePayment ? overdueGroup(invoices.data ?? []) : null), [onlinePayment, invoices.data]);
+
+  // O histórico vem em páginas (as fechadas; o último vencimento sempre
+  // inteiro): a primeira junto com as em aberto, as mais antigas sob demanda.
+  const [older, setOlder] = useState<Invoice[]>([]);
+  const [olderDone, setOlderDone] = useState(false);
+  const [olderLoading, setOlderLoading] = useState(false);
+  const [olderError, setOlderError] = useState('');
+  const all = useMemo(() => [...(invoices.data ?? []), ...older], [invoices.data, older]);
+  const rows = useMemo(() => historyRows(all), [all]);
+  const firstClosed = useMemo(() => (invoices.data ?? []).filter((i) => i.status !== 'OPEN').length, [invoices.data]);
+  const canLoadOlder = !olderDone && firstClosed >= CLOSED_PAGE;
+  const loadOlder = async () => {
+    const before = oldestClosedDue(all);
+    if (!before) return;
+    setOlderLoading(true);
+    setOlderError('');
+    try {
+      const page = await meApi.olderInvoices(before);
+      setOlder((current) => [...current, ...page]);
+      if (page.length < CLOSED_PAGE) setOlderDone(true);
+    } catch (err) {
+      setOlderError(err instanceof Error ? err.message : 'Não deu para carregar agora.');
+    } finally {
+      setOlderLoading(false);
+    }
+  };
+  const payDay = (day: HistoryDay) =>
+    payGroup(groupOf(day.open, day.dueDate), `${day.open.length} faturas · vencimento ${formatDateOnly(day.dueDate)}`);
 
   return (
     <div className={styles.page}>
@@ -178,18 +216,12 @@ export function InvoicesPage() {
               </Button>
             }
           >
-            <ul className={billing.groupList}>
-              {g.invoices.map((inv) => (
-                <li key={inv.id}>
-                  <span>{inv.description}</span>
-                  <strong>{formatMoney(inv.amountCents)}</strong>
-                </li>
-              ))}
-              <li className={billing.groupTotal}>
-                <span>Total</span>
-                <strong>{formatMoney(g.amountCents)}</strong>
-              </li>
-            </ul>
+            <InvoiceLines
+              lines={g.invoices.map((inv) => ({ key: inv.id, description: inv.description, amountCents: inv.amountCents }))}
+              totalCents={g.amountCents}
+              className={billing.groupList}
+              totalClassName={billing.groupTotal}
+            />
           </Card>
         ))}
 
@@ -215,25 +247,34 @@ export function InvoicesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(invoices.data ?? []).map((invoice) => (
-                    <tr key={invoice.id}>
-                      <td>{invoice.description}</td>
-                      <td data-label="Vencimento">{formatDateOnly(invoice.dueDate)}</td>
-                      <td data-label="Valor" className={billing.amount}>{formatMoney(invoice.amountCents)}</td>
-                      <td data-label="Situação">
-                        <InvoiceStatus invoice={invoice} />
-                      </td>
-                      <td>
-                        <PayActions
-                          invoice={invoice}
-                          onlinePayment={onlinePayment}
-                          onPayPix={() => setPaying(invoice)}
-                        />
-                      </td>
-                    </tr>
-                  ))}
+                  {rows.map((row) =>
+                    row.kind === 'invoice' ? (
+                      <InvoiceRow
+                        key={row.invoice.id}
+                        invoice={row.invoice}
+                        onlinePayment={onlinePayment}
+                        onPay={setPaying}
+                      />
+                    ) : (
+                      <DayRows
+                        key={row.dueDate}
+                        day={row}
+                        onlinePayment={onlinePayment}
+                        onPay={setPaying}
+                        onPayDay={payDay}
+                      />
+                    ),
+                  )}
                 </tbody>
               </table>
+            </div>
+          )}
+          {(canLoadOlder || olderError) && (
+            <div className={billing.olderBar}>
+              {olderError && <span className={billing.muted}>{olderError}</span>}
+              <Button size="small" variant="ghost" loading={olderLoading} onClick={() => void loadOlder()}>
+                Ver faturas mais antigas
+              </Button>
             </div>
           )}
         </Card>
@@ -297,6 +338,72 @@ export function InvoicesPage() {
         onPaid={onPaid}
       />
     </div>
+  );
+}
+
+function InvoiceRow({
+  invoice,
+  onlinePayment,
+  onPay,
+  sub = false,
+}: {
+  invoice: Invoice;
+  onlinePayment: boolean;
+  onPay: (invoice: Invoice) => void;
+  /** Uma das faturas de um vencimento aberto no histórico. */
+  sub?: boolean;
+}) {
+  return (
+    <tr className={sub ? billing.subRow : undefined}>
+      <td>{invoice.description}</td>
+      <td data-label="Vencimento">{formatDateOnly(invoice.dueDate)}</td>
+      <td data-label="Valor" className={billing.amount}>
+        {formatMoney(invoice.amountCents)}
+      </td>
+      <td data-label="Situação">
+        <InvoiceStatus invoice={invoice} />
+      </td>
+      <td>
+        <PayActions invoice={invoice} onlinePayment={onlinePayment} onPayPix={() => onPay(invoice)} />
+      </td>
+    </tr>
+  );
+}
+
+/** Um vencimento de frota no histórico, com o Pix de todas as em aberto do dia. */
+function DayRows({
+  day,
+  onlinePayment,
+  onPay,
+  onPayDay,
+}: {
+  day: HistoryDay;
+  onlinePayment: boolean;
+  onPay: (invoice: Invoice) => void;
+  onPayDay: (day: HistoryDay) => void;
+}) {
+  const openCents = day.open.reduce((sum, i) => sum + i.amountCents, 0);
+  return (
+    <InvoiceDayRows
+      day={day}
+      renderInvoice={(invoice) => (
+        <InvoiceRow key={invoice.id} invoice={invoice} onlinePayment={onlinePayment} onPay={onPay} sub />
+      )}
+      actions={
+        onlinePayment &&
+        day.open.length > 0 && (
+          <div className={styles.actions}>
+            <Button
+              size="small"
+              variant="primary"
+              onClick={() => (day.open.length === 1 ? onPay(day.open[0]) : onPayDay(day))}
+            >
+              {day.open.length === 1 ? 'Pagar com Pix' : `Pagar ${formatMoney(openCents)} com Pix`}
+            </Button>
+          </div>
+        )
+      }
+    />
   );
 }
 

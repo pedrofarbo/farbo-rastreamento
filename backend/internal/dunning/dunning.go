@@ -314,17 +314,6 @@ func (s *Service) deliver(ctx context.Context, customerID uuid.UUID, kind string
 		// A que vence primeiro é a que importa.
 		r.DaysToDue = -items[0].daysLate
 	}
-	// Várias no mesmo vencimento (a fatura do mês de uma frota): um Pix só
-	// para todas, pelo link de qualquer uma (a página junta as do dia).
-	if len(items) > 1 {
-		sameDay := true
-		for _, it := range items[1:] {
-			sameDay = sameDay && it.invoice.DueDate.Equal(items[0].invoice.DueDate.Time)
-		}
-		if sameDay {
-			r.PayAllURL = s.PayURL(items[0].invoice.ID) + "?todas=1"
-		}
-	}
 	if s.cfg.SuspendAfterDays > 0 && r.DaysLate > 0 {
 		r.SuspendIn = s.cfg.SuspendAfterDays + 1 - r.DaysLate
 		r.SuspendOn = s.invoices.Today().AddDays(r.SuspendIn).Format("02/01/2006")

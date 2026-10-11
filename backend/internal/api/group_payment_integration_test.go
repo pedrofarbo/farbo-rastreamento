@@ -188,14 +188,15 @@ func TestGroupedInvoicePayment(t *testing.T) {
 		t.Errorf("revisões = %d", review)
 	}
 
-	// O lembrete das duas de novembro (vencendo juntas) leva o "pagar todas".
+	// O lembrete das duas de novembro sai junto, cada uma com o link dela (o
+	// e-mail junta as do mesmo dia num botão só: ver mail.TestInvoiceReminderFleet).
 	clock = time.Date(2026, 11, 11, 10, 0, 0, 0, time.UTC)
 	svc.Work(ctx)
 	mailer.mu.Lock()
 	last := mailer.last
 	mailer.mu.Unlock()
-	if len(last.Invoices) != 2 || !strings.HasPrefix(last.PayAllURL, "https://painel.farbo.test/pagar/") ||
-		!strings.HasSuffix(last.PayAllURL, "?todas=1") {
+	if len(last.Invoices) != 2 || last.Invoices[0].DueDate != last.Invoices[1].DueDate ||
+		!strings.HasPrefix(last.Invoices[0].PayURL, "https://painel.farbo.test/pagar/") {
 		t.Errorf("lembrete de novembro = %+v", last)
 	}
 
@@ -250,4 +251,31 @@ func TestGroupedInvoicePayment(t *testing.T) {
 		t.Errorf("%d das 1000 não quitaram com o Pix da frota", left)
 	}
 	t.Logf("frota de 1000: Pix, reaproveitar e pagar em %v", time.Since(start).Round(time.Millisecond))
+
+	// O histórico: a primeira página traz dezembro inteiro (as 1000 pagas,
+	// sem cortar o mês) e para aí; "antes de 13/12" traz outubro.
+	closed := func(path string) map[string]int {
+		var list []struct {
+			Status  string `json:"status"`
+			DueDate string `json:"dueDate"`
+		}
+		_ = json.Unmarshal(env.must(customer, http.MethodGet, path, nil, http.StatusOK), &list)
+		out := map[string]int{}
+		for _, inv := range list {
+			if inv.Status != "OPEN" {
+				out[inv.DueDate]++
+			}
+		}
+		return out
+	}
+	if got := closed("/api/me/invoices"); len(got) != 1 || got[dec.String()] != 1000 {
+		t.Errorf("primeira página do histórico = %v", got)
+	}
+	if got := closed("/api/me/invoices?antes=" + dec.String()); len(got) != 1 || got[due.String()] != 3 {
+		t.Errorf("antes de dezembro = %v", got)
+	}
+	if got := closed("/api/me/invoices?antes=" + due.String()); len(got) != 0 {
+		t.Errorf("antes de outubro = %v", got)
+	}
+	env.must(customer, http.MethodGet, "/api/me/invoices?antes=13-12-2026", nil, http.StatusBadRequest)
 }

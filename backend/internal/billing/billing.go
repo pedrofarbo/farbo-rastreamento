@@ -349,23 +349,41 @@ func (r *Repository) GetInvoice(ctx context.Context, id uuid.UUID) (*Invoice, er
 	return scanInvoice(r.db.QueryRow(ctx, `SELECT `+invoiceColumns+` FROM invoices WHERE id = $1`, id))
 }
 
-// closedInvoicesListed é quantas faturas já fechadas (pagas ou canceladas) a
-// lista do cliente traz, das mais recentes.
-const closedInvoicesListed = 120
+// ClosedInvoicesPage é quantas faturas já fechadas (pagas ou canceladas) a
+// lista do cliente traz por vez, das mais recentes — no mínimo: o último
+// vencimento entra inteiro (numa frota, um vencimento são centenas, uma por
+// veículo, e cortar no meio mostraria um mês pela metade).
+const ClosedInvoicesPage = 120
 
 // ListInvoices devolve as faturas do cliente, as mais recentes primeiro:
 // todas as em aberto — numa frota são uma por veículo no mês, e cortar
-// alguma faria o "pagar todas" pagar só parte — e as últimas já fechadas.
+// alguma faria o "pagar todas" pagar só parte — e a primeira página das já
+// fechadas (ver ClosedInvoicesPage).
 func (r *Repository) ListInvoices(ctx context.Context, customerID uuid.UUID) ([]*Invoice, error) {
 	return r.queryInvoices(ctx, `
 		SELECT `+invoiceColumns+` FROM (
 			(SELECT `+invoiceColumns+` FROM invoices WHERE customer_id = $1 AND status = 'OPEN')
 			UNION ALL
-			(SELECT `+invoiceColumns+` FROM invoices WHERE customer_id = $1 AND status <> 'OPEN'
-				ORDER BY due_date DESC, created_at DESC LIMIT $2)
+			(SELECT `+invoiceColumns+` FROM invoices WHERE customer_id = $1 AND status <> 'OPEN' AND `+closedPage+`)
 		) i
-		ORDER BY due_date DESC, created_at DESC`, customerID, closedInvoicesListed)
+		ORDER BY due_date DESC, created_at DESC`, customerID, ClosedInvoicesPage, nil)
 }
+
+// ClosedInvoicesBefore é a página seguinte das faturas fechadas: as que
+// vencem antes de `before` (o vencimento mais antigo já mostrado).
+func (r *Repository) ClosedInvoicesBefore(ctx context.Context, customerID uuid.UUID, before Date) ([]*Invoice, error) {
+	return r.queryInvoices(ctx, `
+		SELECT `+invoiceColumns+` FROM invoices WHERE customer_id = $1 AND status <> 'OPEN' AND `+closedPage+`
+		ORDER BY due_date DESC, created_at DESC`, customerID, ClosedInvoicesPage, before.Time)
+}
+
+// closedPage: as fechadas a partir do vencimento da N-ésima mais recente
+// ($2), antes de $3 (nulo: desde a mais nova). O vencimento do corte entra
+// inteiro; com menos de N, todas.
+const closedPage = `($3::date IS NULL OR due_date < $3::date) AND due_date >= COALESCE((
+				SELECT due_date FROM invoices
+				WHERE customer_id = $1 AND status <> 'OPEN' AND ($3::date IS NULL OR due_date < $3::date)
+				ORDER BY due_date DESC, created_at DESC OFFSET $2 - 1 LIMIT 1), '-infinity'::date)`
 
 // GetInvoices devolve as faturas pedidas que existem, numa consulta só (o
 // Pix de várias, numa frota, junta centenas).

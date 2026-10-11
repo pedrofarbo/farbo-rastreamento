@@ -7,6 +7,7 @@ import { customersApi, devicesApi, twoFactorApi, vehicleInputFrom, vehiclesApi }
 import type { EquipmentBalance, VehicleInput } from '@/api/resources';
 import { AddressModal } from '@/components/address/AddressModal';
 import billing from '@/components/billing/Billing.module.css';
+import { InvoiceDayRows } from '@/components/billing/InvoiceDayRows';
 import { CustomerStatus, InvoiceStatus } from '@/components/billing/InvoiceStatus';
 import { MonthlyPrice } from '@/components/billing/MonthlyPrice';
 import { installmentProgress } from '@/components/billing/installments';
@@ -44,7 +45,8 @@ import {
 } from '@/services/format';
 import { formatTaxId } from '@/services/taxid';
 import { stepOf, trackerTone } from '@/services/fulfillment';
-import { subscriptionsByVehicle, subscriptionsWithoutVehicle } from '@/services/subscriptions';
+import { historyRows } from '@/services/invoiceGroups';
+import { accountDueDay, activeDueDays, subscriptionsByVehicle, subscriptionsWithoutVehicle } from '@/services/subscriptions';
 import { HISTORY_RETENTION_OPTIONS } from '@/types';
 import type { HistoryRetention, Invoice, PixPayment, ReminderKind, Subscription, VehicleView } from '@/types';
 
@@ -329,7 +331,7 @@ export function CustomerDetailsPage() {
 
         <CustomerReferralCard customerId={id} referral={data.affiliate} />
 
-        <CustomerPlanCard customerId={id} plan={data.plan} />
+        <CustomerPlanCard customerId={id} plan={data.plan} accountDueDay={accountDueDay(data.subscriptions)} />
 
         <CustomerTeamCard customerId={id} />
 
@@ -345,6 +347,37 @@ export function CustomerDetailsPage() {
           }
           flush
         >
+          {(() => {
+            // Conta de antes da regra, com vencimentos em dias diferentes: unificar.
+            const days = activeDueDays(data.subscriptions);
+            const day = accountDueDay(data.subscriptions);
+            const any = data.subscriptions.find((s) => s.status === 'ACTIVE');
+            if (days.length < 2 || day === null || !any) return null;
+            return (
+              <div className={`${billing.banner} ${billing.bannerWarning}`} role="status" style={{ margin: 'var(--space-3) var(--space-4)' }}>
+                <span>
+                  <strong>Vencimentos em dias diferentes ({days.join(', ')}).</strong> A conta vence num dia só: unifique para as
+                  mensalidades saírem juntas, num lembrete e num Pix.
+                </span>
+                <Button
+                  size="small"
+                  variant="primary"
+                  onClick={() =>
+                    setConfirmation({
+                      title: `Unificar no dia ${day}?`,
+                      body: `Todas as assinaturas ativas passam a vencer todo dia ${day}. As mensalidades em aberto que ainda não venceram vão para o dia ${day} do mesmo mês; as vencidas ficam como estão.`,
+                      label: `Unificar no dia ${day}`,
+                      success: 'Vencimento unificado',
+                      tone: 'primary',
+                      run: () => customersApi.changeDueDay(any.id, day),
+                    })
+                  }
+                >
+                  Unificar no dia {day}
+                </Button>
+              </div>
+            );
+          })()}
           {data.vehicles.length === 0 && withoutVehicle.length === 0 ? (
             <EmptyState
               icon="🚗"
@@ -669,107 +702,117 @@ export function CustomerDetailsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.invoices.map((invoice) => (
-                    <tr key={invoice.id}>
-                      <td>
-                        {invoice.description}
-                        {invoice.status === 'OPEN' && !data.onlinePayment && !invoice.paymentUrl && !invoice.pixCode && (
-                          <div className={billing.muted}>sem link nem Pix informado</div>
-                        )}
-                        {invoice.paidAt && <div className={billing.muted}>paga em {formatDateTime(invoice.paidAt)}</div>}
-                        {invoice.status === 'OPEN' && data.reminders?.[invoice.id] && (
-                          <div className={billing.muted}>
-                            lembrete: {reminderLabel(data.reminders[invoice.id].kind)} ·{' '}
-                            {formatDateTime(data.reminders[invoice.id].createdAt)}
-                            {!data.reminders[invoice.id].emailed && ' (e-mail não saiu)'}
-                          </div>
-                        )}
-                      </td>
-                      <td>{formatDateOnly(invoice.dueDate)}</td>
-                      <td className={billing.amount}>{formatMoney(invoice.amountCents)}</td>
-                      <td>
-                        <InvoiceStatus invoice={invoice} />
-                      </td>
-                      <td>
-                        {invoice.status === 'OPEN' && (
-                          <div className={styles.actions}>
-                            <Button
-                              size="small"
-                              variant="primary"
-                              onClick={() =>
-                                setConfirmation({
-                                  title: 'Dar baixa na fatura?',
-                                  body: (
-                                    <>
-                                      Confirme que <strong>{formatMoney(invoice.amountCents)}</strong> de “{invoice.description}” foi recebido.
-                                      {data.suspended && ' Se era o motivo da suspensão, o acesso do cliente volta na hora.'}
-                                    </>
-                                  ),
-                                  label: 'Dar baixa',
-                                  success: 'Baixa registrada',
-                                  tone: 'primary',
-                                  run: () => customersApi.payInvoice(invoice.id),
-                                })
-                              }
-                            >
-                              Dar baixa
-                            </Button>
-                            {data.onlinePayment && (
-                              <Button size="small" variant="secondary" onClick={() => setPix(invoice)}>
-                                Gerar Pix
-                              </Button>
+                  {(() => {
+                    // Numa frota, cada vencimento numa linha só, que abre as faturas.
+                    const invoiceRow = (invoice: Invoice, sub = false) => (
+                        <tr key={invoice.id} className={sub ? billing.subRow : undefined}>
+                          <td>
+                            {invoice.description}
+                            {invoice.status === 'OPEN' && !data.onlinePayment && !invoice.paymentUrl && !invoice.pixCode && (
+                              <div className={billing.muted}>sem link nem Pix informado</div>
                             )}
-                            {data.paymentLinks?.[invoice.id] && (
-                              <Button
-                                size="small"
-                                variant="ghost"
-                                title="O link abre o Pix desta fatura sem login: mande pelo WhatsApp"
-                                onClick={() => void copyPayLink(data.paymentLinks[invoice.id])}
-                              >
-                                Copiar link
-                              </Button>
+                            {invoice.paidAt && <div className={billing.muted}>paga em {formatDateTime(invoice.paidAt)}</div>}
+                            {invoice.status === 'OPEN' && data.reminders?.[invoice.id] && (
+                              <div className={billing.muted}>
+                                lembrete: {reminderLabel(data.reminders[invoice.id].kind)} ·{' '}
+                                {formatDateTime(data.reminders[invoice.id].createdAt)}
+                                {!data.reminders[invoice.id].emailed && ' (e-mail não saiu)'}
+                              </div>
                             )}
-                            <Button
-                              size="small"
-                              variant="ghost"
-                              loading={remind.isPending && remind.variables === invoice.id}
-                              onClick={() => remind.mutate(invoice.id)}
-                            >
-                              Lembrar
-                            </Button>
-                            <Button
-                              size="small"
-                              variant="ghost"
-                              onClick={() =>
-                                openModal(() => setPayment({ invoice, paymentUrl: invoice.paymentUrl, pixCode: invoice.pixCode }))
-                              }
-                            >
-                              {data.onlinePayment ? 'Outro meio' : 'Pagamento'}
-                            </Button>
-                            <Button size="small" variant="ghost" onClick={() => openModal(() => setAdjusting(invoice))}>
-                              Alterar
-                            </Button>
-                            <Button
-                              size="small"
-                              variant="ghost"
-                              onClick={() =>
-                                setConfirmation({
-                                  title: 'Cancelar fatura?',
-                                  body: `“${invoice.description}” deixa de ser cobrada. Não dá para reabrir depois.`,
-                                  label: 'Cancelar fatura',
-                                  success: 'Fatura cancelada',
-                                  tone: 'danger',
-                                  run: () => customersApi.cancelInvoice(invoice.id),
-                                })
-                              }
-                            >
-                              Cancelar
-                            </Button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                          </td>
+                          <td>{formatDateOnly(invoice.dueDate)}</td>
+                          <td className={billing.amount}>{formatMoney(invoice.amountCents)}</td>
+                          <td>
+                            <InvoiceStatus invoice={invoice} />
+                          </td>
+                          <td>
+                            {invoice.status === 'OPEN' && (
+                              <div className={styles.actions}>
+                                <Button
+                                  size="small"
+                                  variant="primary"
+                                  onClick={() =>
+                                    setConfirmation({
+                                      title: 'Dar baixa na fatura?',
+                                      body: (
+                                        <>
+                                          Confirme que <strong>{formatMoney(invoice.amountCents)}</strong> de “{invoice.description}” foi recebido.
+                                          {data.suspended && ' Se era o motivo da suspensão, o acesso do cliente volta na hora.'}
+                                        </>
+                                      ),
+                                      label: 'Dar baixa',
+                                      success: 'Baixa registrada',
+                                      tone: 'primary',
+                                      run: () => customersApi.payInvoice(invoice.id),
+                                    })
+                                  }
+                                >
+                                  Dar baixa
+                                </Button>
+                                {data.onlinePayment && (
+                                  <Button size="small" variant="secondary" onClick={() => setPix(invoice)}>
+                                    Gerar Pix
+                                  </Button>
+                                )}
+                                {data.paymentLinks?.[invoice.id] && (
+                                  <Button
+                                    size="small"
+                                    variant="ghost"
+                                    title="O link abre o Pix desta fatura sem login: mande pelo WhatsApp"
+                                    onClick={() => void copyPayLink(data.paymentLinks[invoice.id])}
+                                  >
+                                    Copiar link
+                                  </Button>
+                                )}
+                                <Button
+                                  size="small"
+                                  variant="ghost"
+                                  loading={remind.isPending && remind.variables === invoice.id}
+                                  onClick={() => remind.mutate(invoice.id)}
+                                >
+                                  Lembrar
+                                </Button>
+                                <Button
+                                  size="small"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    openModal(() => setPayment({ invoice, paymentUrl: invoice.paymentUrl, pixCode: invoice.pixCode }))
+                                  }
+                                >
+                                  {data.onlinePayment ? 'Outro meio' : 'Pagamento'}
+                                </Button>
+                                <Button size="small" variant="ghost" onClick={() => openModal(() => setAdjusting(invoice))}>
+                                  Alterar
+                                </Button>
+                                <Button
+                                  size="small"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    setConfirmation({
+                                      title: 'Cancelar fatura?',
+                                      body: `“${invoice.description}” deixa de ser cobrada. Não dá para reabrir depois.`,
+                                      label: 'Cancelar fatura',
+                                      success: 'Fatura cancelada',
+                                      tone: 'danger',
+                                      run: () => customersApi.cancelInvoice(invoice.id),
+                                    })
+                                  }
+                                >
+                                  Cancelar
+                                </Button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                    );
+                    return historyRows(data.invoices).map((row) =>
+                      row.kind === 'invoice' ? (
+                        invoiceRow(row.invoice)
+                      ) : (
+                        <InvoiceDayRows key={row.dueDate} day={row} renderInvoice={(invoice) => invoiceRow(invoice, true)} />
+                      ),
+                    );
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -789,6 +832,7 @@ export function CustomerDetailsPage() {
           deliveryAddress: data.deliveryAddress,
           currentPlan: data.subscriptions.find((s) => s.status === 'ACTIVE') ?? null,
           accountPlan: data.plan,
+          accountDueDay: accountDueDay(data.subscriptions),
         }}
         onClose={() => setOrdering(false)}
         onDone={(result) => {
@@ -1028,8 +1072,8 @@ export function CustomerDetailsPage() {
               onChange={(e) => setEditSubscription({ ...editSubscription, price: e.target.value })}
             />
             <SelectField
-              label="Dia de vencimento"
-              hint="As mensalidades em aberto que ainda não venceram vão para o dia novo; as próximas já saem nele."
+              label="Vencimento da conta"
+              hint="Muda todas as assinaturas ativas do cliente: a conta vence num dia só. As mensalidades em aberto que ainda não venceram vão para o dia novo; as próximas já saem nele."
               value={editSubscription.dueDay}
               onChange={(e) => setEditSubscription({ ...editSubscription, dueDay: Number(e.target.value) })}
             >

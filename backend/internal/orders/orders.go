@@ -156,6 +156,10 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 		if err := lockCustomer(ctx, tx, customerID); err != nil {
 			return err
 		}
+		// A conta vence num dia só: o veículo novo entra no dia dela.
+		if err := s.billing.AlignDueDay(ctx, tx, sub, o.Plan.FirstDueDate != nil); err != nil {
+			return err
+		}
 		if o.LaunchPromo {
 			var err error
 			if setup, err = s.applyPromo(ctx, tx, customerID, sub, setup); err != nil {
@@ -331,8 +335,24 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehic
 
 // CustomerPlan é o plano de um novo veículo do cliente: o que a central
 // definiu para ele; sem isso, o da assinatura ativa que ele já tem ou, sem
-// nenhuma, o padrão do catálogo.
+// nenhuma, o padrão do catálogo. O vencimento é sempre o da conta (o das
+// assinaturas ativas), quando ela já tem um.
 func (s *Service) CustomerPlan(ctx context.Context, customerID uuid.UUID) (billing.SubscriptionInput, error) {
+	plan, err := s.customerPlan(ctx, customerID)
+	if err != nil {
+		return plan, err
+	}
+	day, err := s.billing.AccountDueDay(ctx, customerID)
+	if err != nil {
+		return plan, err
+	}
+	if day > 0 {
+		plan.DueDay = day
+	}
+	return plan, nil
+}
+
+func (s *Service) customerPlan(ctx context.Context, customerID uuid.UUID) (billing.SubscriptionInput, error) {
 	account, err := s.AccountPlan(ctx, customerID)
 	if err != nil {
 		return billing.SubscriptionInput{}, err
@@ -411,6 +431,9 @@ func (s *Service) Reactivate(ctx context.Context, customerID, vehicleID uuid.UUI
 	var created *billing.Subscription
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		if err := lockCustomer(ctx, tx, customerID); err != nil {
+			return err
+		}
+		if err := s.billing.AlignDueDay(ctx, tx, sub, plan.FirstDueDate != nil); err != nil {
 			return err
 		}
 		var owner *uuid.UUID

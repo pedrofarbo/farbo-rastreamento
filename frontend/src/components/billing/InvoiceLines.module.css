@@ -1,0 +1,36 @@
+.search {
+  width: 100%;
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  color: inherit;
+  font: inherit;
+  /* 16px: o iOS não aproxima a tela ao tocar. */
+  font-size: 16px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.search:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.note {
+  color: var(--text-muted);
+}
+
+.more {
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.more:hover {
+  text-decoration: underline;
+}

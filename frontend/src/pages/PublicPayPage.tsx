@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 
 import { ApiError } from '@/api/client';
 import { GROUP_SUFFIX, payLinkApi } from '@/api/resources';
+import { InvoiceLines } from '@/components/billing/InvoiceLines';
 import { PixCheckout, usePixCheckout } from '@/components/billing/PixCheckout';
 import { Button } from '@/components/ui/Button';
 import { formatDateOnly, formatDateTime, formatMoney } from '@/services/format';
@@ -131,14 +132,11 @@ export function PublicPayPage() {
               <h2 className={styles.title}>
                 {group.items.length} faturas vencem neste dia · {money(group.amountCents)}
               </h2>
-              <ul className={styles.items}>
-                {group.items.map((item, i) => (
-                  <li key={i}>
-                    <span>{item.description}</span>
-                    <strong>{money(item.amountCents)}</strong>
-                  </li>
-                ))}
-              </ul>
+              <InvoiceLines
+                lines={group.items.map((item, i) => ({ key: String(i), ...item }))}
+                className={styles.items}
+                money={money}
+              />
               <div className={styles.choice} role="radiogroup" aria-label="O que pagar">
                 <button
                   type="button"

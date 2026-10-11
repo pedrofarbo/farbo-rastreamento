@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { Invoice } from '@/types';
 
-import { groupIds, monthlyGroups, overdueGroup } from './invoiceGroups';
+import { HISTORY_GROUP_MIN, dayStatus, groupIds, historyRows, monthlyGroups, oldestClosedDue, overdueGroup } from './invoiceGroups';
+import type { HistoryDay } from './invoiceGroups';
 
 const inv = (id: string, dueDate: string, amountCents: number, over: Partial<Invoice> = {}): Invoice =>
   ({ id, dueDate, amountCents, status: 'OPEN', overdue: false, description: id, ...over }) as Invoice;
@@ -34,5 +35,59 @@ describe('faturas para pagar juntas', () => {
     ]);
     expect(late?.ids).toEqual(['set', 'out']);
     expect(late?.amountCents).toBe(9980);
+  });
+});
+
+describe('o histórico de faturas', () => {
+  const fleet = (dueDate: string, n: number, over: Partial<Invoice> = {}) =>
+    Array.from({ length: n }, (_, i) => inv(`${dueDate}-${i}`, dueDate, 4990, over));
+
+  it('com poucas no dia, cada uma na sua linha; numa frota, o dia numa linha só', () => {
+    const rows = historyRows([
+      ...fleet('2026-10-13', 3, { status: 'PAID' }),
+      ...fleet('2026-11-13', 1000),
+      inv('frete', '2026-11-20', 2240),
+    ]);
+    expect(rows.map((r) => (r.kind === 'invoice' ? r.invoice.id : `${r.dueDate}×${r.invoices.length}`))).toEqual([
+      'frete',
+      '2026-11-13×1000',
+      '2026-10-13-0',
+      '2026-10-13-1',
+      '2026-10-13-2',
+    ]);
+    const day = rows[1] as HistoryDay;
+    expect(day.amountCents).toBe(1000 * 4990);
+    expect(day.open).toHaveLength(1000);
+  });
+
+  it('junta as páginas: um vencimento que veio em duas partes vira uma linha só, no lugar certo', () => {
+    const firstPage = [...fleet('2026-11-13', 4, { status: 'PAID' }), inv('agosto', '2026-08-13', 4990, { overdue: true })];
+    const older = [...fleet('2026-09-13', 6, { status: 'PAID' }), ...fleet('2026-08-13', HISTORY_GROUP_MIN - 1, { status: 'PAID' })];
+    const rows = historyRows([...firstPage, ...older]);
+    expect(rows.map((r) => (r.kind === 'invoice' ? r.invoice.dueDate : `${r.dueDate}×${r.invoices.length}`))).toEqual([
+      '2026-11-13',
+      '2026-11-13',
+      '2026-11-13',
+      '2026-11-13',
+      '2026-09-13×6',
+      `2026-08-13×${HISTORY_GROUP_MIN}`,
+    ]);
+    expect(oldestClosedDue([...firstPage, ...older])).toBe('2026-08-13');
+    expect(oldestClosedDue([inv('a', '2026-01-13', 100)])).toBeNull();
+  });
+
+  it('a situação do dia numa frase', () => {
+    const status = (list: Invoice[]) => dayStatus(historyRows(list)[0] as HistoryDay);
+    expect(status(fleet('2026-10-13', 5, { status: 'PAID' }))).toEqual({ tone: 'success', label: 'Pagas' });
+    expect(status([...fleet('2026-10-13', 4, { status: 'PAID' }), inv('c', '2026-10-13', 1, { status: 'CANCELED' })])).toEqual({
+      tone: 'success',
+      label: 'Pagas · 1 cancelada',
+    });
+    expect(status(fleet('2026-11-13', 5))).toEqual({ tone: 'warning', label: '5 em aberto' });
+    expect(status([...fleet('2026-09-13', 2, { overdue: true }), ...fleet('2026-09-13', 3, { status: 'PAID' })])).toEqual({
+      tone: 'danger',
+      label: '2 vencidas · 3 pagas',
+    });
+    expect(status(fleet('2026-09-13', 5, { status: 'CANCELED' }))).toEqual({ tone: 'neutral', label: 'Canceladas' });
   });
 });

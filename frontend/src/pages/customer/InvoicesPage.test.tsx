@@ -10,6 +10,7 @@ import type { Invoice, PixCharge } from '@/types';
 
 const calls: unknown[] = [];
 let invoices: Invoice[] = [];
+let olderPages: Invoice[][] = [];
 const charge = { id: 'c1', invoiceId: 'van', amountCents: 9980, status: 'PENDING', brCode: '000201', qrCodeImage: 'data:image/png;base64,AA',
   devMode: false, expiresAt: null, paidAt: null, invoiceStatus: 'OPEN' } as unknown as PixCharge;
 vi.mock('@/api/resources', () => ({
@@ -17,6 +18,10 @@ vi.mock('@/api/resources', () => ({
     account: async () => ({ onlinePayment: true, overdueInvoices: 0, suspended: false, openAmountCents: 0, openInvoices: 0,
       nextInvoice: null, activeSubscriptions: 2, vehicles: 2, suspendAfterDays: 10 }),
     invoices: async () => invoices,
+    olderInvoices: async (before: string) => {
+      calls.push(['antigas', before]);
+      return olderPages.shift() ?? [];
+    },
     subscriptions: async () => [],
     invoicePix: async (id: string) => {
       calls.push(['uma', id]);
@@ -63,6 +68,7 @@ async function render() {
 afterEach(() => {
   document.body.innerHTML = '';
   calls.length = 0;
+  olderPages = [];
 });
 
 describe('faturas do cliente', () => {
@@ -90,8 +96,44 @@ describe('faturas do cliente', () => {
     expect(text()).not.toContain('Fatura de ');
     const buttons = Array.from(document.querySelectorAll('button')).filter((b) => b.textContent === 'Pagar com Pix');
     expect(buttons).toHaveLength(2);
-    await act(async () => buttons[0].click());
+    const van = buttons.find((b) => b.closest('tr')?.textContent?.includes('van'));
+    await act(async () => van?.click());
     await flush();
     expect(calls).toEqual([['uma', 'van']]);
+  });
+
+  it('frota de 1000: o mês resumido, o histórico por vencimento e as mais antigas sob demanda', async () => {
+    const fleet = (dueDate: string, n: number, over: Partial<Invoice> = {}) =>
+      Array.from({ length: n }, (_, i) => inv(`${dueDate} Van ${String(i + 1).padStart(4, '0')}`, dueDate, 4990, over));
+    invoices = [...fleet('2026-11-13', 1000), ...fleet('2026-10-13', 1000, { status: 'PAID', paidVia: 'PIX' })];
+    olderPages = [fleet('2026-09-13', 1000, { status: 'PAID' })];
+    await render();
+    // O cartão do mês: 5 linhas, o resto sob demanda.
+    expect(text()).toContain('1000 faturas no mesmo vencimento');
+    expect(text()).toContain('2026-11-13 Van 0005');
+    expect(text()).not.toContain('2026-11-13 Van 0006');
+    expect(text()).toContain('e mais 995 faturas · ver todas as 1000');
+    // O histórico: uma linha por vencimento, em vez de 2000.
+    expect(document.querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(text()).toContain('1000 em aberto');
+    expect(text()).toContain('Pagas');
+    // Abrir outubro mostra 50 e "mostrar mais".
+    await act(async () => Array.from(document.querySelectorAll('button')).filter((b) => b.textContent === 'Ver as 1000')[1].click());
+    expect(document.querySelectorAll('tbody tr')).toHaveLength(2 + 50 + 1);
+    expect(text()).toContain('Mostrar mais 50 (faltam 950)');
+    // As mais antigas: setembro, antes de outubro.
+    await act(async () => button('Ver faturas mais antigas').click());
+    await flush();
+    expect(calls).toEqual([['antigas', '2026-10-13']]);
+    expect(text()).toContain('13/09/2026');
+    // Veio uma página cheia: ainda pode haver mais.
+    expect(button('Ver faturas mais antigas')).toBeTruthy();
+    // Pagar o mês pela linha do histórico: um Pix só, das 1000.
+    const payMonth = Array.from(document.querySelectorAll('tbody button')).find((b) =>
+      b.textContent?.replace(/\u00a0/g, ' ').startsWith('Pagar R$ 49.900,00'),
+    ) as HTMLButtonElement;
+    await act(async () => payMonth.click());
+    await flush();
+    expect((calls[1] as [string, string[]])[1]).toHaveLength(1000);
   });
 });

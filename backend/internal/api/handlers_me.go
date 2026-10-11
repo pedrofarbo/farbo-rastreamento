@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/addresses"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
@@ -110,8 +111,25 @@ func (s *Server) handleMySubscriptions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
+// handleMyInvoices: as em aberto e a primeira página das fechadas; com
+// ?antes=AAAA-MM-DD, a página seguinte das fechadas (o "ver mais antigas").
 func (s *Server) handleMyInvoices(w http.ResponseWriter, r *http.Request) {
 	customerID, _ := customerOf(r)
+	if raw := r.URL.Query().Get("antes"); raw != "" {
+		before, err := time.Parse(time.DateOnly, raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "data inválida (use AAAA-MM-DD)")
+			return
+		}
+		list, err := s.Billing.ClosedInvoicesBefore(r.Context(), customerID,
+			billing.NewDate(before.Year(), before.Month(), before.Day()))
+		if err != nil {
+			handleStoreError(w, err, "faturas não encontradas")
+			return
+		}
+		writeJSON(w, http.StatusOK, list)
+		return
+	}
 	list, err := s.Billing.ListInvoices(r.Context(), customerID)
 	if err != nil {
 		handleStoreError(w, err, "faturas não encontradas")

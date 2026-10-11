@@ -21,3 +21,31 @@ export function subscriptionsByVehicle(subscriptions: Subscription[]): Map<strin
 export function subscriptionsWithoutVehicle(subscriptions: Subscription[]): Subscription[] {
   return subscriptions.filter((sub) => sub.status === 'ACTIVE' && !sub.vehicleId);
 }
+
+/**
+ * O vencimento da conta: o dia das assinaturas ativas, que vencem todas no
+ * mesmo (numa conta de antes da regra, com dias diferentes, o mais comum; no
+ * empate, o da mais antiga — como o servidor). Null sem nenhuma ativa.
+ */
+export function accountDueDay(subscriptions: Subscription[]): number | null {
+  const days = new Map<number, { count: number; oldest: string }>();
+  for (const sub of subscriptions) {
+    if (sub.status !== 'ACTIVE') continue;
+    const day = days.get(sub.dueDay);
+    if (day) {
+      day.count += 1;
+      if (sub.createdAt < day.oldest) day.oldest = sub.createdAt;
+    } else days.set(sub.dueDay, { count: 1, oldest: sub.createdAt });
+  }
+  let best: number | null = null;
+  for (const [day, info] of days) {
+    const current = best === null ? null : days.get(best)!;
+    if (!current || info.count > current.count || (info.count === current.count && info.oldest < current.oldest)) best = day;
+  }
+  return best;
+}
+
+/** Os dias de vencimento das assinaturas ativas (mais de um: conta de antes da regra, para unificar). */
+export function activeDueDays(subscriptions: Subscription[]): number[] {
+  return [...new Set(subscriptions.filter((s) => s.status === 'ACTIVE').map((s) => s.dueDay))].sort((a, b) => a - b);
+}

@@ -273,6 +273,19 @@ func (s *Service) ListInvoices(ctx context.Context, customerID uuid.UUID) ([]*In
 	return list, nil
 }
 
+// ClosedInvoicesBefore é a página seguinte do histórico (as fechadas que
+// vencem antes de `before`).
+func (s *Service) ClosedInvoicesBefore(ctx context.Context, customerID uuid.UUID, before Date) ([]*Invoice, error) {
+	list, err := s.repo.ClosedInvoicesBefore(ctx, customerID, before)
+	if err != nil {
+		return nil, err
+	}
+	for _, inv := range list {
+		s.decorate(inv)
+	}
+	return list, nil
+}
+
 // PaidManually marca a baixa feita pela central.
 const PaidManually = "MANUAL"
 

@@ -555,7 +555,9 @@ func (s *Server) handleFinanceInvoice(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"invoice": inv, "subscription": sub})
 }
 
-// handleChangeDueDay: a central muda o dia de vencimento da assinatura.
+// handleChangeDueDay: a central muda o dia de vencimento pela assinatura —
+// e muda a conta inteira: todas as assinaturas ativas do cliente (e o plano
+// da conta) vão para o dia novo, porque a conta vence num dia só.
 func (s *Server) handleChangeDueDay(w http.ResponseWriter, r *http.Request) {
 	id, err := urlUUID(r, "id")
 	if err != nil {
@@ -569,14 +571,33 @@ func (s *Server) handleChangeDueDay(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "corpo inválido")
 		return
 	}
-	sub, err := s.Billing.ChangeDueDay(r.Context(), id, req.DueDay)
+	sub, err := s.Billing.GetSubscription(r.Context(), id)
 	if err != nil {
 		writeBillingError(w, err, "assinatura não encontrada")
 		return
 	}
+	if sub.Status != billing.SubscriptionActive {
+		writeBillingError(w, billing.ErrAlreadyCanceled, "assinatura não encontrada")
+		return
+	}
+	subs, err := s.Billing.ChangeAccountDueDay(r.Context(), sub.CustomerID, req.DueDay)
+	if err != nil {
+		writeBillingError(w, err, "assinatura não encontrada")
+		return
+	}
+	if s.Orders != nil {
+		if err := s.Orders.SyncPlanDueDay(r.Context(), sub.CustomerID, req.DueDay); err != nil {
+			s.Log.Error("falha ao levar o vencimento novo ao plano da conta", "customer", sub.CustomerID, "err", err)
+		}
+	}
 	s.recordBillingAudit(r, audit.ActionSubscriptionUpdated, map[string]any{
-		"customerId": sub.CustomerID, "subscriptionId": sub.ID, "dueDay": sub.DueDay,
+		"customerId": sub.CustomerID, "subscriptionId": sub.ID, "dueDay": req.DueDay, "subscriptions": len(subs),
 	})
+	for _, changed := range subs {
+		if changed.ID == sub.ID {
+			sub = changed
+		}
+	}
 	writeJSON(w, http.StatusOK, sub)
 }
 

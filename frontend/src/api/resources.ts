@@ -806,6 +806,8 @@ export const meApi = {
   account: () => api.get<CustomerAccount>('/api/me/account'),
   subscriptions: () => api.get<Subscription[]>('/api/me/subscriptions'),
   invoices: () => api.get<Invoice[]>('/api/me/invoices'),
+  /** A página seguinte do histórico: as fechadas que vencem antes de `before` (AAAA-MM-DD). */
+  olderInvoices: (before: string) => api.get<Invoice[]>(`/api/me/invoices?antes=${encodeURIComponent(before)}`),
 
   invoicePix: (invoiceId: string) => api.post<PixCharge>(`/api/me/invoices/${invoiceId}/pix`),
   /** Um Pix só para várias faturas (a do mês da frota, ou as vencidas). */
