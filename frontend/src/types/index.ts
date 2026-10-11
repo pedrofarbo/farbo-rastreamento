@@ -220,8 +220,29 @@ export interface Vehicle {
   ownerId: string | null;
   /** Exceção do veículo (7, 14 ou 30 dias); nulo segue o cliente. */
   historyRetentionDays: HistoryRetention | null;
+  /** O grupo do veículo na conta (nulo: sem grupo). */
+  groupId: string | null;
+  /** Os dois campos personalizados que a conta nomeia (ex.: nº do contrato). */
+  custom1: string;
+  custom2: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Um grupo de veículos da conta, com quantos veículos tem. */
+export interface VehicleGroup {
+  id: string;
+  name: string;
+  vehicles: number;
+}
+
+/** A organização da frota da conta: os grupos e os nomes dos dois campos personalizados. */
+export interface FleetSettings {
+  groups: VehicleGroup[];
+  labels: { label1: string; label2: string };
+  maxGroups: number;
+  maxCustomLength: number;
+  maxLabelLength: number;
 }
 
 /** Por quantos dias o histórico (trajeto e eventos) é guardado. */
@@ -1858,6 +1879,9 @@ export interface ReportSummaryRow {
   vehicleId: string;
   name: string;
   plate: string;
+  groupId: string | null;
+  custom1: string;
+  custom2: string;
   distanceKm: number;
   movingSeconds: number;
   /** Parado com a ignição ligada (ocioso). */

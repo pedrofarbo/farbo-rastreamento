@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -41,6 +42,12 @@ type Vehicle struct {
 	// segue o cliente (ver o pacote retention).
 	HistoryRetentionDays *int `json:"historyRetentionDays"`
 
+	// GroupID é o grupo do veículo na conta (nulo: sem grupo); Custom1 e
+	// Custom2, os dois campos personalizados que a conta nomeia.
+	GroupID *uuid.UUID `json:"groupId"`
+	Custom1 string     `json:"custom1"`
+	Custom2 string     `json:"custom2"`
+
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -60,10 +67,17 @@ type Input struct {
 	// OwnerID só é lido na criação feita pela central; a edição não troca o
 	// dono de um veículo.
 	OwnerID *uuid.UUID `json:"ownerId"`
+	// GroupID: o grupo da conta do dono ("" tira do grupo). Custom1/Custom2:
+	// os campos personalizados. Ausentes (nulos), a edição mantém o que já
+	// tinha — a tela que não mostra os campos não os apaga.
+	GroupID *string `json:"groupId"`
+	Custom1 *string `json:"custom1"`
+	Custom2 *string `json:"custom2"`
 }
 
 const columns = `id, name, kind, COALESCE(plate, ''), COALESCE(brand, ''), COALESCE(model, ''), year,
-	COALESCE(color, ''), speed_limit_kmh, device_id, owner_id, history_retention_days, created_at, updated_at`
+	COALESCE(color, ''), speed_limit_kmh, device_id, owner_id, history_retention_days, group_id, custom1, custom2,
+	created_at, updated_at`
 
 type Repository struct{ db *database.DB }
 
@@ -72,21 +86,36 @@ func NewRepository(db *database.DB) *Repository { return &Repository{db: db} }
 func scan(row database.Scanner) (*Vehicle, error) {
 	var v Vehicle
 	err := row.Scan(&v.ID, &v.Name, &v.Kind, &v.Plate, &v.Brand, &v.Model, &v.Year, &v.Color,
-		&v.SpeedLimitKmh, &v.DeviceID, &v.OwnerID, &v.HistoryRetentionDays, &v.CreatedAt, &v.UpdatedAt)
+		&v.SpeedLimitKmh, &v.DeviceID, &v.OwnerID, &v.HistoryRetentionDays, &v.GroupID, &v.Custom1, &v.Custom2,
+		&v.CreatedAt, &v.UpdatedAt)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
 	return &v, nil
 }
 
+// O grupo só entra se for da conta do dono do veículo: o de outra conta vira
+// "sem grupo".
 const insertVehicle = `
-	INSERT INTO vehicles (name, plate, brand, model, year, color, speed_limit_kmh, device_id, owner_id, kind)
-	VALUES ($1, NULLIF($2, ''), $3, $4, $5, $6, $7, $8, $9, COALESCE(NULLIF($10, ''), 'CAR'))
+	INSERT INTO vehicles (name, plate, brand, model, year, color, speed_limit_kmh, device_id, owner_id, kind,
+		group_id, custom1, custom2)
+	VALUES ($1, NULLIF($2, ''), $3, $4, $5, $6, $7, $8, $9, COALESCE(NULLIF($10, ''), 'CAR'),
+		(SELECT g.id FROM vehicle_groups g WHERE g.id = NULLIF($11, '')::uuid AND g.owner_id = $9),
+		COALESCE($12, ''), COALESCE($13, ''))
 	RETURNING ` + columns
 
 func insertArgs(in Input) []any {
 	return []any{in.Name, strings.ToUpper(strings.TrimSpace(in.Plate)), in.Brand, in.Model,
-		in.Year, in.Color, in.SpeedLimitKmh, in.DeviceID, in.OwnerID, normalizeKind(in.Kind)}
+		in.Year, in.Color, in.SpeedLimitKmh, in.DeviceID, in.OwnerID, normalizeKind(in.Kind),
+		in.GroupID, trimmed(in.Custom1), trimmed(in.Custom2)}
+}
+
+func trimmed(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	t := strings.TrimSpace(*s)
+	return &t
 }
 
 // normalizeKind aceita o tipo em qualquer caixa; vazio continua vazio.
@@ -119,11 +148,15 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, in Input) (*Vehic
 	return scan(r.db.QueryRow(ctx, `
 		UPDATE vehicles SET name = $2, plate = NULLIF($3, ''), brand = $4, model = $5,
 			year = $6, color = $7, speed_limit_kmh = $8, device_id = $9,
-			kind = COALESCE(NULLIF($10, ''), kind), updated_at = NOW()
+			kind = COALESCE(NULLIF($10, ''), kind),
+			group_id = CASE WHEN $11::text IS NULL THEN group_id ELSE (
+				SELECT g.id FROM vehicle_groups g WHERE g.id = NULLIF($11, '')::uuid AND g.owner_id = vehicles.owner_id) END,
+			custom1 = COALESCE($12, custom1), custom2 = COALESCE($13, custom2), updated_at = NOW()
 		WHERE id = $1
 		RETURNING `+columns,
 		id, in.Name, strings.ToUpper(strings.TrimSpace(in.Plate)), in.Brand, in.Model,
-		in.Year, in.Color, in.SpeedLimitKmh, in.DeviceID, normalizeKind(in.Kind)))
+		in.Year, in.Color, in.SpeedLimitKmh, in.DeviceID, normalizeKind(in.Kind),
+		in.GroupID, trimmed(in.Custom1), trimmed(in.Custom2)))
 }
 
 func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
@@ -233,6 +266,16 @@ func Validate(in Input) error {
 	}
 	if in.SpeedLimitKmh != nil && (*in.SpeedLimitKmh < 0 || *in.SpeedLimitKmh > 300) {
 		return ValidationError{Message: "limite de velocidade fora da faixa 0..300 km/h"}
+	}
+	if in.GroupID != nil && *in.GroupID != "" {
+		if _, err := uuid.Parse(*in.GroupID); err != nil {
+			return ValidationError{Message: "grupo inválido"}
+		}
+	}
+	for _, c := range []*string{in.Custom1, in.Custom2} {
+		if c != nil && utf8.RuneCountInString(strings.TrimSpace(*c)) > MaxCustomLength {
+			return ValidationError{Message: fmt.Sprintf("os campos personalizados vão até %d caracteres", MaxCustomLength)}
+		}
 	}
 	return nil
 }

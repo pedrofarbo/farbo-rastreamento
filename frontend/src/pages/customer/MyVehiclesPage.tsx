@@ -27,7 +27,9 @@ import { useToast } from '@/components/ui/Toast';
 import { formatDateTime, formatDeviceStatus, formatRelative } from '@/services/format';
 import { stepOf, trackerTone } from '@/services/fulfillment';
 import { subscriptionsByVehicle, subscriptionsWithoutVehicle } from '@/services/subscriptions';
-import { matchesVehicle, situationOf } from '@/services/vehicleFilters';
+import { NO_GROUP, inGroup, matchesVehicle, situationOf } from '@/services/vehicleFilters';
+import { FleetSettingsModal } from '@/components/vehicle/FleetSettingsModal';
+import { fieldLabel, useFleet } from '@/hooks/useFleet';
 import type { Situation } from '@/services/vehicleFilters';
 import { useAuth } from '@/stores/AuthContext';
 import { SharesModal, sharesKey } from '@/components/vehicle/SharesModal';
@@ -72,7 +74,10 @@ export function MyVehiclesPage() {
   // Numa frota: a busca, o filtro por situação e quantos cartões aparecem.
   const [search, setSearch] = useState('');
   const [situation, setSituation] = useState<Situation | ''>('');
+  const [groupFilter, setGroupFilter] = useState('');
   const [limit, setLimit] = useState(VEHICLES_PAGE);
+  const [managing, setManaging] = useState(false);
+  const { fleet, groups, groupName } = useFleet();
 
   const vehicles = useQuery({ queryKey: ['vehicles'], queryFn: vehiclesApi.list });
   const account = useQuery({ queryKey: ['me', 'account'], queryFn: meApi.account });
@@ -133,8 +138,10 @@ export function MyVehiclesPage() {
   // O pedido mais recente de cada veículo (a lista vem do mais novo).
   const orderOf = new Map<string, CustomerFulfillment>();
   for (const f of fulfillments.data ?? []) if (!orderOf.has(f.vehicleId)) orderOf.set(f.vehicleId, f);
-  const filtering = Boolean(search.trim() || situation);
-  const found = filtering ? list.filter((v) => matchesVehicle(v, search) && (!situation || situationOf(v) === situation)) : list;
+  const filtering = Boolean(search.trim() || situation || groupFilter);
+  const found = filtering
+    ? list.filter((v) => matchesVehicle(v, search) && (!situation || situationOf(v) === situation) && inGroup(v, groupFilter))
+    : list;
   const counts = { online: 0, offline: 0, pending: 0 };
   for (const v of list) counts[situationOf(v)] += 1;
   const left = found.length - limit;
@@ -150,11 +157,18 @@ export function MyVehiclesPage() {
               veículo: você informa o veículo, recebe o rastreador e a assinatura começa.
             </p>
           </div>
-          {isAccountOwner && (
+          {(isAccountOwner || canOperateAccount) && (
             <div className={styles.actions}>
-              <Button variant="primary" onClick={() => setOrdering(true)}>
-                Novo veículo
-              </Button>
+              {canOperateAccount && (
+                <Button variant="secondary" onClick={() => setManaging(true)}>
+                  Grupos e campos
+                </Button>
+              )}
+              {isAccountOwner && (
+                <Button variant="primary" onClick={() => setOrdering(true)}>
+                  Novo veículo
+                </Button>
+              )}
             </div>
           )}
         </header>
@@ -204,13 +218,17 @@ export function MyVehiclesPage() {
           </Card>
         ) : (
           <>
-            {list.length > FILTERS_FROM && (
+            {(list.length > FILTERS_FROM || groups.length > 0) && (
               <div className={billing.vehicleFilters}>
                 <input
                   className={fieldStyles.input}
                   type="search"
                   aria-label="Buscar veículo"
-                  placeholder="Buscar por nome, placa, modelo ou IMEI"
+                  placeholder={
+                    fleet?.labels.label1 || fleet?.labels.label2
+                      ? `Buscar por nome, placa ou ${[fleet.labels.label1, fleet.labels.label2].filter(Boolean).join(' / ').toLowerCase()}`
+                      : 'Buscar por nome, placa, modelo ou IMEI'
+                  }
                   value={search}
                   onChange={(e) => {
                     setSearch(e.target.value);
@@ -231,6 +249,25 @@ export function MyVehiclesPage() {
                   <option value="offline">Sem sinal ({counts.offline})</option>
                   <option value="pending">Aguardando o rastreador ({counts.pending})</option>
                 </select>
+                {groups.length > 0 && (
+                  <select
+                    className={fieldStyles.select}
+                    aria-label="Grupo"
+                    value={groupFilter}
+                    onChange={(e) => {
+                      setGroupFilter(e.target.value);
+                      setLimit(VEHICLES_PAGE);
+                    }}
+                  >
+                    <option value="">Todos os grupos</option>
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name} ({g.vehicles})
+                      </option>
+                    ))}
+                    <option value={NO_GROUP}>Sem grupo</option>
+                  </select>
+                )}
               </div>
             )}
             {filtering && found.length === 0 && <p className={billing.muted}>Nenhum veículo com esse filtro.</p>}
@@ -249,6 +286,11 @@ export function MyVehiclesPage() {
                   onShowInstallers={() => setShowInstallers(true)}
                   shareCount={sharesOf.get(vehicle.id) ?? 0}
                   onShares={isAccountOwner ? () => setSharing(vehicle) : undefined}
+                  groupName={groupName(vehicle.groupId)}
+                  customs={[
+                    vehicle.custom1 ? `${fieldLabel(fleet, 1)}: ${vehicle.custom1}` : '',
+                    vehicle.custom2 ? `${fieldLabel(fleet, 2)}: ${vehicle.custom2}` : '',
+                  ].filter(Boolean)}
                 />
               ))}
               {!filtering && withoutVehicle.map((sub) => (
@@ -360,7 +402,7 @@ export function MyVehiclesPage() {
       >
         {form && (
           <div className={styles.form}>
-            <VehicleFields value={form.input} onChange={(input) => setForm({ ...form, input })} autoFocus />
+            <VehicleFields value={form.input} onChange={(input) => setForm({ ...form, input })} fleet={fleet} autoFocus />
             <TextField
               label="Alerta de velocidade (km/h)"
               type="number"
@@ -380,8 +422,10 @@ export function MyVehiclesPage() {
         )}
       </Modal>
 
+      {managing && <FleetSettingsModal open fleet={fleet} onClose={() => setManaging(false)} />}
       <NewVehicleWizard
         open={ordering}
+        fleet={fleet}
         onClose={() => setOrdering(false)}
         onDone={(result) => {
           setOrdering(false);
@@ -468,6 +512,8 @@ function VehicleCard({
   onShowInstallers,
   shareCount,
   onShares,
+  groupName = '',
+  customs = [],
 }: {
   vehicle: VehicleView;
   subscription: Subscription | null;
@@ -481,6 +527,9 @@ function VehicleCard({
   shareCount: number;
   /** Só o titular dá acessos. */
   onShares?: () => void;
+  /** O grupo do veículo e os campos personalizados preenchidos ("Nº do contrato: 42"). */
+  groupName?: string;
+  customs?: string[];
 }) {
   const status = vehicle.device?.status;
   // Instalado = o rastreador já deu sinal. O aparelho é vinculado antes, na
@@ -495,6 +544,12 @@ function VehicleCard({
         <div>
           <div className={billing.vehicleName}>{vehicle.name}</div>
           {details && <div className={billing.vehicleMeta}>{details}</div>}
+          {groupName && <div className={billing.vehicleGroup}>{groupName}</div>}
+          {customs.map((c) => (
+            <div key={c} className={billing.vehicleMeta}>
+              {c}
+            </div>
+          ))}
         </div>
         {vehicle.plate && <span className={billing.plate}>{vehicle.plate}</span>}
       </div>

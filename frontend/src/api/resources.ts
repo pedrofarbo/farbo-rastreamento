@@ -109,6 +109,8 @@ import type {
   ReportSummaryRow,
   ReportTrip,
   ReportVehicle,
+  FleetSettings,
+  VehicleGroup,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -237,6 +239,11 @@ export interface VehicleInput {
   color?: string;
   speedLimitKmh?: number | null;
   deviceId?: string | null;
+  /** O grupo da conta ("" tira do grupo); ausente, a edição mantém. */
+  groupId?: string;
+  /** Os campos personalizados; ausentes, a edição mantém. */
+  custom1?: string;
+  custom2?: string;
 }
 
 /** Monta o corpo de edição a partir do veículo atual (a API substitui todos os campos). */
@@ -251,9 +258,22 @@ export function vehicleInputFrom(vehicle: Vehicle, changes: Partial<VehicleInput
     color: vehicle.color,
     speedLimitKmh: vehicle.speedLimitKmh,
     deviceId: vehicle.deviceId,
+    groupId: vehicle.groupId ?? '',
+    custom1: vehicle.custom1 ?? '',
+    custom2: vehicle.custom2 ?? '',
     ...changes,
   };
 }
+
+/** A organização da frota da conta: os grupos e os nomes dos campos personalizados. */
+export const fleetApi = {
+  get: () => api.get<FleetSettings>('/api/me/fleet'),
+  createGroup: (name: string) => api.post<VehicleGroup>('/api/me/fleet/groups', { name }),
+  renameGroup: (id: string, name: string) => api.patch<void>(`/api/me/fleet/groups/${id}`, { name }),
+  deleteGroup: (id: string) => api.delete<void>(`/api/me/fleet/groups/${id}`),
+  setLabels: (labels: { label1: string; label2: string }) =>
+    api.put<{ label1: string; label2: string }>('/api/me/fleet/labels', labels),
+};
 
 export const vehiclesApi = {
   list: () => api.get<VehicleView[]>('/api/vehicles'),
@@ -488,11 +508,14 @@ export interface ReportQuery {
   from: string;
   to: string;
   vehicleId?: string;
+  /** Só os veículos de um grupo da conta. */
+  groupId?: string;
 }
 
 function reportPath(kind: string, q: ReportQuery, csv = false): string {
   const params = new URLSearchParams({ de: q.from, ate: q.to });
   if (q.vehicleId) params.set('veiculo', q.vehicleId);
+  if (q.groupId) params.set('grupo', q.groupId);
   if (csv) params.set('formato', 'csv');
   return `/api/reports/${kind}?${params}`;
 }

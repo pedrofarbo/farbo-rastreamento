@@ -453,6 +453,12 @@ func (s *Server) routes() chi.Router {
 				r.Put("/alerts", s.handleSaveMyAlerts)
 				r.Post("/alerts/test", s.handleMyAlertsTest)
 				r.With(s.requireAccountOperator).Put("/alerts/recipients", s.handleSaveMyAlertRecipients)
+				// A organização da frota: grupos e campos personalizados.
+				r.Get("/fleet", s.handleMyFleet)
+				r.With(s.requireAccountOperator).Post("/fleet/groups", s.handleCreateFleetGroup)
+				r.With(s.requireAccountOperator).Patch("/fleet/groups/{id}", s.handleRenameFleetGroup)
+				r.With(s.requireAccountOperator).Delete("/fleet/groups/{id}", s.handleDeleteFleetGroup)
+				r.With(s.requireAccountOperator).Put("/fleet/labels", s.handleSetFleetLabels)
 				// Notificações no celular (app do cliente).
 				r.Get("/push", s.handleMyPush)
 				r.Post("/push/subscriptions", s.handleMyPushSubscribe)

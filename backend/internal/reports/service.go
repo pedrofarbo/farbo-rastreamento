@@ -17,6 +17,9 @@ type Vehicle struct {
 	ID        uuid.UUID  `json:"id"`
 	Name      string     `json:"name"`
 	Plate     string     `json:"plate"`
+	GroupID   *uuid.UUID `json:"groupId"`
+	Custom1   string     `json:"custom1"`
+	Custom2   string     `json:"custom2"`
 	DeviceID  *uuid.UUID `json:"-"`
 	CreatedAt time.Time  `json:"-"`
 }
@@ -26,6 +29,9 @@ type SummaryRow struct {
 	VehicleID     uuid.UUID  `json:"vehicleId"`
 	Name          string     `json:"name"`
 	Plate         string     `json:"plate"`
+	GroupID       *uuid.UUID `json:"groupId"`
+	Custom1       string     `json:"custom1"`
+	Custom2       string     `json:"custom2"`
 	DistanceKm    float64    `json:"distanceKm"`
 	MovingSeconds int        `json:"movingSeconds"`
 	IdleSeconds   int        `json:"idleSeconds"`
@@ -86,7 +92,7 @@ func (s *Service) Location() *time.Location { return s.loc }
 // Vehicles são os veículos da conta (os próprios, não os compartilhados).
 func (s *Service) Vehicles(ctx context.Context, ownerID uuid.UUID) ([]Vehicle, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT id, name, COALESCE(plate, ''), device_id, created_at FROM vehicles
+		SELECT id, name, COALESCE(plate, ''), group_id, custom1, custom2, device_id, created_at FROM vehicles
 		WHERE owner_id = $1 ORDER BY name, id`, ownerID)
 	if err != nil {
 		return nil, database.MapError(err)
@@ -95,7 +101,7 @@ func (s *Service) Vehicles(ctx context.Context, ownerID uuid.UUID) ([]Vehicle, e
 	var out []Vehicle
 	for rows.Next() {
 		var v Vehicle
-		if err := rows.Scan(&v.ID, &v.Name, &v.Plate, &v.DeviceID, &v.CreatedAt); err != nil {
+		if err := rows.Scan(&v.ID, &v.Name, &v.Plate, &v.GroupID, &v.Custom1, &v.Custom2, &v.DeviceID, &v.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, v)
@@ -146,6 +152,7 @@ func (s *Service) Summary(ctx context.Context, vehicles []Vehicle, from, to time
 	for _, v := range vehicles {
 		r := byVehicle[v.ID]
 		r.VehicleID, r.Name, r.Plate = v.ID, v.Name, v.Plate
+		r.GroupID, r.Custom1, r.Custom2 = v.GroupID, v.Custom1, v.Custom2
 		out = append(out, r)
 	}
 	return out, nil

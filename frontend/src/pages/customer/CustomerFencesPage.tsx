@@ -18,7 +18,9 @@ import { TextField } from '@/components/ui/Field';
 import fieldStyles from '@/components/ui/Field.module.css';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
+import { useFleet } from '@/hooks/useFleet';
 import { useVehicles } from '@/hooks/useVehicles';
+import { matchesVehicle } from '@/services/vehicleFilters';
 import { useAuth } from '@/stores/AuthContext';
 import type { Geofence, VehicleView } from '@/types';
 
@@ -219,10 +221,13 @@ function FenceEditor({
     onError: (error: Error) => notify({ tone: 'error', title: 'Não foi possível apagar', description: error.message }),
   });
 
-  const foundVehicles = useMemo(() => {
-    const t = vehicleSearch.trim().toLowerCase();
-    return t ? vehicles.filter((v) => `${v.name} ${v.plate ?? ''}`.toLowerCase().includes(t)) : vehicles;
-  }, [vehicles, vehicleSearch]);
+  const { groups } = useFleet();
+  const foundVehicles = useMemo(
+    () => (vehicleSearch.trim() ? vehicles.filter((v) => matchesVehicle(v, vehicleSearch)) : vehicles),
+    [vehicles, vehicleSearch],
+  );
+  const markGroup = (groupId: string) =>
+    set({ vehicleIds: [...new Set([...form.vehicleIds, ...vehicles.filter((v) => v.groupId === groupId).map((v) => v.id)])] });
   const toggle = (id: string) =>
     set({ vehicleIds: form.vehicleIds.includes(id) ? form.vehicleIds.filter((v) => v !== id) : [...form.vehicleIds, id] });
   const center: [number, number] = [form.latitude, form.longitude];
@@ -337,7 +342,7 @@ function FenceEditor({
               <legend>
                 Veículos ({form.vehicleIds.length} de {vehicles.length})
               </legend>
-              {vehicles.length > SEARCH_FROM && (
+              {(vehicles.length > SEARCH_FROM || groups.length > 0) && (
                 <div className={styles.vehicleTools}>
                   <input
                     className={fieldStyles.input}
@@ -360,6 +365,21 @@ function FenceEditor({
                   <Button size="small" variant="ghost" onClick={() => set({ vehicleIds: [] })}>
                     Desmarcar todos
                   </Button>
+                  {groups.length > 0 && (
+                    <select
+                      className={fieldStyles.select}
+                      aria-label="Marcar os veículos de um grupo"
+                      value=""
+                      onChange={(e) => e.target.value && markGroup(e.target.value)}
+                    >
+                      <option value="">Marcar um grupo…</option>
+                      {groups.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.name} ({g.vehicles})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               )}
               <ul className={styles.vehicles}>

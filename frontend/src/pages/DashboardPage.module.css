@@ -87,3 +87,8 @@
     flex: 1 0 240px;
   }
 }
+
+/* O filtro de grupo da frota, acima da busca. */
+.groupFilter {
+  padding: var(--space-3) var(--space-3) 0;
+}

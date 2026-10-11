@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import fieldStyles from '@/components/ui/Field.module.css';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
+import { useFleet } from '@/hooks/useFleet';
 import { formatDateOnly, formatSpeed, todayISO } from '@/services/format';
 import {
   PRESETS,
@@ -56,6 +57,10 @@ export function ReportsPage() {
   const [tab, setTab] = useState<Tab>('summary');
   const [vehicleId, setVehicleId] = useState('');
   const [downloading, setDownloading] = useState(false);
+  // O grupo escolhido vale para as quatro abas e para a planilha.
+  const { groups } = useFleet();
+  const [group, setGroup] = useState('');
+  const scope: ReportQuery = useMemo(() => ({ ...period, groupId: group || undefined }), [period, group]);
   const { notify } = useToast();
   const problem = periodProblem(draft.from, draft.to);
 
@@ -72,9 +77,9 @@ export function ReportsPage() {
   };
 
   // O resumo traz os veículos da conta (para escolher o das viagens).
-  const summary = useQuery({ queryKey: ['reports', 'summary', period], queryFn: () => reportsApi.summary(period) });
+  const summary = useQuery({ queryKey: ['reports', 'summary', scope], queryFn: () => reportsApi.summary(scope) });
   const vehicles = summary.data?.rows ?? [];
-  const query: ReportQuery = { ...period, vehicleId: tab === 'trips' ? vehicleId : undefined };
+  const query: ReportQuery = { ...scope, vehicleId: tab === 'trips' ? vehicleId : undefined };
 
   const download = async () => {
     setDownloading(true);
@@ -153,6 +158,26 @@ export function ReportsPage() {
               Ver
             </Button>
           </div>
+          {groups.length > 0 && (
+            <label className={styles.date}>
+              Grupo
+              <select
+                className={fieldStyles.select}
+                value={group}
+                onChange={(e) => {
+                  setGroup(e.target.value);
+                  setVehicleId('');
+                }}
+              >
+                <option value="">Toda a frota</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {problem && <p className={styles.problem}>{problem}</p>}
         </div>
 
@@ -182,11 +207,11 @@ export function ReportsPage() {
         ) : tab === 'summary' ? (
           <SummaryTab rows={vehicles} />
         ) : tab === 'daily' ? (
-          <DailyTab period={period} />
+          <DailyTab period={scope} />
         ) : tab === 'trips' ? (
-          <TripsTab period={period} vehicles={vehicles} vehicleId={vehicleId} onVehicle={setVehicleId} />
+          <TripsTab period={scope} vehicles={vehicles} vehicleId={vehicleId} onVehicle={setVehicleId} />
         ) : (
-          <OverspeedTab period={period} />
+          <OverspeedTab period={scope} />
         )}
       </div>
     </div>
@@ -229,7 +254,7 @@ function useRows<T>(rows: T[], text: (row: T) => string) {
 
 function SummaryTab({ rows }: { rows: ReportSummaryRow[] }) {
   const sorted = useMemo(() => [...rows].sort((a, b) => b.distanceKm - a.distanceKm || a.name.localeCompare(b.name)), [rows]);
-  const { visible, found, searchBox, more } = useRows(sorted, (r) => `${r.name} ${r.plate}`);
+  const { visible, found, searchBox, more } = useRows(sorted, (r) => `${r.name} ${r.plate} ${r.custom1 ?? ''} ${r.custom2 ?? ''}`);
   const total = rows.reduce(
     (t, r) => ({
       km: t.km + r.distanceKm,

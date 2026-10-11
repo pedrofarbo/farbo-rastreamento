@@ -11,7 +11,9 @@ import { Badge } from '@/components/ui/Badge';
 import type { BadgeTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
+import { useFleet } from '@/hooks/useFleet';
 import { useVehicles } from '@/hooks/useVehicles';
+import { NO_GROUP, inGroup, matchesVehicle } from '@/services/vehicleFilters';
 import { formatDeviceStatus, formatRelative, formatSpeed } from '@/services/format';
 import type { VehicleView } from '@/types';
 
@@ -51,12 +53,11 @@ export function MapScreen() {
   const list = useMemo(() => sortVehicles(vehicles.data ?? []), [vehicles.data]);
   const [search, setSearch] = useState('');
   const [limit, setLimit] = useState(LIST_PAGE);
-  const found = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return term
-      ? list.filter((v) => v.name.toLowerCase().includes(term) || v.plate?.toLowerCase().includes(term))
-      : list;
-  }, [list, search]);
+  // O grupo escolhido filtra a lista e o mapa.
+  const { groups } = useFleet();
+  const [group, setGroup] = useState('');
+  const inView = useMemo(() => (group ? list.filter((v) => inGroup(v, group)) : list), [list, group]);
+  const found = useMemo(() => (search.trim() ? inView.filter((v) => matchesVehicle(v, search)) : inView), [inView, search]);
 
   // O mapa termina onde a lista para (até o meio), para o veículo ficar no
   // centro da parte visível. Ao abrir a lista, o mapa encolhe só depois da
@@ -88,7 +89,7 @@ export function MapScreen() {
     <div className={styles.mapScreen} style={{ '--map-inset': `${mapInset}px` } as CSSProperties}>
       <div className={styles.map}>
         <TrackerMap
-          vehicles={list}
+          vehicles={inView}
           selectedId={selected}
           onSelect={setSelected}
           geofences={fences.data}
@@ -109,11 +110,30 @@ export function MapScreen() {
             </Button>
           </div>
         )}
+        {groups.length > 0 && (
+          <select
+            className={styles.fleetSearch}
+            aria-label="Grupo"
+            value={group}
+            onChange={(event) => {
+              setGroup(event.target.value);
+              setLimit(LIST_PAGE);
+            }}
+          >
+            <option value="">Todos os grupos</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name} ({g.vehicles})
+              </option>
+            ))}
+            <option value={NO_GROUP}>Sem grupo</option>
+          </select>
+        )}
         {list.length > FLEET_SIZE && (
           <input
             className={styles.fleetSearch}
             type="search"
-            placeholder="Buscar por nome ou placa"
+            placeholder="Buscar por nome, placa ou campo"
             aria-label="Buscar veículo"
             value={search}
             onChange={(event) => {

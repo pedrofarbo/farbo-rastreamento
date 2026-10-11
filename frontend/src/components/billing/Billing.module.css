@@ -760,3 +760,15 @@
   display: flex;
   justify-content: center;
 }
+
+/* O grupo do veículo, no cartão. */
+.vehicleGroup {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 8px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+}

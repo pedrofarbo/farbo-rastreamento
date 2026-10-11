@@ -1,7 +1,8 @@
 import type { VehicleInput } from '@/api/resources';
 import { SelectField, TextField } from '@/components/ui/Field';
 import fieldStyles from '@/components/ui/Field.module.css';
-import type { Device, VehicleKind } from '@/types';
+import { fieldLabel } from '@/hooks/useFleet';
+import type { Device, FleetSettings, VehicleKind } from '@/types';
 
 import styles from '@/pages/Page.module.css';
 import local from './VehicleFields.module.css';
@@ -15,17 +16,20 @@ const KINDS: { id: VehicleKind; label: string }[] = [
 
 /**
  * Campos do cadastro de veículo, os mesmos para o cliente e para a central.
- * Com `devices`, mostra também a escolha do rastreador (só a central vincula).
+ * Com `devices`, mostra também a escolha do rastreador (só a central vincula);
+ * com `fleet` (o cliente), o grupo e os dois campos personalizados da conta.
  */
 export function VehicleFields({
   value,
   onChange,
   devices,
+  fleet,
   autoFocus = false,
 }: {
   value: VehicleInput;
   onChange: (value: VehicleInput) => void;
   devices?: Device[];
+  fleet?: FleetSettings;
   autoFocus?: boolean;
 }) {
   const kind = value.kind ?? 'CAR';
@@ -91,6 +95,41 @@ export function VehicleFields({
           onChange={(event) => onChange({ ...value, year: event.target.value ? Number(event.target.value) : null })}
         />
       </div>
+      {fleet && (
+        <>
+          {fleet.groups.length > 0 && (
+            <SelectField
+              label="Grupo"
+              hint="Para filtrar a frota no mapa, nos relatórios e nas cercas."
+              value={value.groupId ?? ''}
+              onChange={(event) => onChange({ ...value, groupId: event.target.value })}
+            >
+              <option value="">Sem grupo</option>
+              {fleet.groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </SelectField>
+          )}
+          <div className={styles.formRow}>
+            <TextField
+              label={fieldLabel(fleet, 1)}
+              placeholder={fleet.labels.label1 ? '' : 'Ex.: nº do contrato'}
+              maxLength={fleet.maxCustomLength}
+              value={value.custom1 ?? ''}
+              onChange={(event) => onChange({ ...value, custom1: event.target.value })}
+            />
+            <TextField
+              label={fieldLabel(fleet, 2)}
+              placeholder={fleet.labels.label2 ? '' : 'Ex.: centro de custo'}
+              maxLength={fleet.maxCustomLength}
+              value={value.custom2 ?? ''}
+              onChange={(event) => onChange({ ...value, custom2: event.target.value })}
+            />
+          </div>
+        </>
+      )}
       {devices && (
         <SelectField
           label="Rastreador"

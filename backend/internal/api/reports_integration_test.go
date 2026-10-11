@@ -142,8 +142,8 @@ func TestFleetReports(t *testing.T) {
 
 	// A planilha: BOM, ponto e vírgula, vírgula decimal.
 	_, raw := env.do(customer, http.MethodGet, "/api/reports/summary?formato=csv&"+period, nil)
-	if !bytes.HasPrefix(raw, []byte{0xEF, 0xBB, 0xBF}) || !strings.Contains(string(raw), "Veículo;Placa;Km") ||
-		!strings.Contains(string(raw), "Van 01;REL1A11;12,0;") {
+	if !bytes.HasPrefix(raw, []byte{0xEF, 0xBB, 0xBF}) || !strings.Contains(string(raw), "Veículo;Placa;Grupo;Km") ||
+		!strings.Contains(string(raw), "Van 01;REL1A11;;12,0;") {
 		t.Errorf("CSV do resumo:\n%s", raw)
 	}
 

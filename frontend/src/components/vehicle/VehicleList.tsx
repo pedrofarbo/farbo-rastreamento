@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/stores/AuthContext';
 import { formatDeviceStatus, formatRelative, formatSpeed } from '@/services/format';
+import { matchesVehicle } from '@/services/vehicleFilters';
 import type { DeviceStatus, VehicleView } from '@/types';
 
 import styles from './VehicleList.module.css';
@@ -44,15 +45,7 @@ export function VehicleList({ vehicles, selectedId, onSelect }: VehicleListProps
   const [limit, setLimit] = useState(PAGE_SIZE);
 
   const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    const matching = term
-      ? vehicles.filter(
-          (vehicle) =>
-            vehicle.name.toLowerCase().includes(term) ||
-            vehicle.plate?.toLowerCase().includes(term) ||
-            vehicle.device?.imei.includes(term),
-        )
-      : vehicles;
+    const matching = search.trim() ? vehicles.filter((vehicle) => matchesVehicle(vehicle, search)) : vehicles;
 
     // Online primeiro: é o que o operador precisa ver sem rolar.
     const rank: Record<string, number> = { ONLINE: 0, STALE: 1, OFFLINE: 2 };

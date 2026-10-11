@@ -25,7 +25,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { EMPTY_VEHICLE, VehicleFields } from '@/components/vehicle/VehicleFields';
 import { centsToInput, formatDateOnly, formatMoney, parseMoney, todayISO } from '@/services/format';
 import { errorCode } from '@/services/stepUp';
-import type { AccountPlan, Catalog, CustomerAccount, DeliveryAddress, Device, Subscription, TrackerOrderResult } from '@/types';
+import type { AccountPlan, Catalog, CustomerAccount, DeliveryAddress, Device, Subscription, TrackerOrderResult, FleetSettings } from '@/types';
 
 import pageStyles from '@/pages/Page.module.css';
 import styles from './Billing.module.css';
@@ -119,11 +119,14 @@ function isPromoUnavailable(error: unknown): boolean {
 export function NewVehicleWizard({
   open,
   admin,
+  fleet,
   onClose,
   onDone,
 }: {
   open: boolean;
   admin?: WizardAdmin;
+  /** A organização da frota do cliente: ele já escolhe o grupo e preenche os campos personalizados. */
+  fleet?: FleetSettings;
   onClose: () => void;
   onDone: (result: TrackerOrderResult) => void;
 }) {
@@ -414,7 +417,7 @@ export function NewVehicleWizard({
                 <p className={pageStyles.description}>
                   Qual veículo vai receber o rastreador?
                 </p>
-                <VehicleFields value={vehicle} onChange={setVehicle} autoFocus />
+                <VehicleFields value={vehicle} onChange={setVehicle} fleet={isAdmin ? undefined : fleet} autoFocus />
               </>
             )}
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 
@@ -11,12 +11,19 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { TelemetryBar } from '@/components/vehicle/TelemetryBar';
 import { VehicleList } from '@/components/vehicle/VehicleList';
+import fieldStyles from '@/components/ui/Field.module.css';
+import { useFleet } from '@/hooks/useFleet';
 import { useVehicles } from '@/hooks/useVehicles';
+import { NO_GROUP, inGroup } from '@/services/vehicleFilters';
 
 import styles from './DashboardPage.module.css';
 
 export function DashboardPage() {
-  const { data: vehicles = [], isLoading, error } = useVehicles();
+  const { data: all = [], isLoading, error } = useVehicles();
+  // O grupo escolhido filtra a lista e o mapa.
+  const { groups } = useFleet();
+  const [group, setGroup] = useState('');
+  const vehicles = useMemo(() => (group ? all.filter((v) => inGroup(v, group)) : all), [all, group]);
   const { data: geofences = [] } = useQuery({
     queryKey: ['geofences'],
     queryFn: geofencesApi.list,
@@ -53,6 +60,27 @@ export function DashboardPage() {
             {online} de {vehicles.length} online
           </span>
         </div>
+        {groups.length > 0 && (
+          <div className={styles.groupFilter}>
+            <select
+              className={fieldStyles.select}
+              aria-label="Grupo"
+              value={group}
+              onChange={(e) => {
+                setGroup(e.target.value);
+                setSelectedId(null);
+              }}
+            >
+              <option value="">Todos os grupos</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name} ({g.vehicles})
+                </option>
+              ))}
+              <option value={NO_GROUP}>Sem grupo</option>
+            </select>
+          </div>
+        )}
         <VehicleList vehicles={vehicles} selectedId={selectedId} onSelect={setSelectedId} />
       </aside>
 
