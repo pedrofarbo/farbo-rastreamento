@@ -732,3 +732,31 @@
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border-subtle);
 }
+
+/* Meus veículos numa frota: a busca e o filtro, e o "mostrar mais". */
+.vehicleFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.vehicleFilters input {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.vehicleFilters select {
+  flex: 0 1 280px;
+  width: auto;
+}
+
+@media (max-width: 600px) {
+  .vehicleFilters select {
+    flex-basis: 100%;
+  }
+}
+
+.vehicleMore {
+  display: flex;
+  justify-content: center;
+}

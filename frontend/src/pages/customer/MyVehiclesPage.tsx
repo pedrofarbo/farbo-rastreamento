@@ -20,18 +20,26 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { TextField } from '@/components/ui/Field';
+import fieldStyles from '@/components/ui/Field.module.css';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateTime, formatDeviceStatus, formatRelative } from '@/services/format';
 import { stepOf, trackerTone } from '@/services/fulfillment';
 import { subscriptionsByVehicle, subscriptionsWithoutVehicle } from '@/services/subscriptions';
+import { matchesVehicle, situationOf } from '@/services/vehicleFilters';
+import type { Situation } from '@/services/vehicleFilters';
 import { useAuth } from '@/stores/AuthContext';
 import { SharesModal, sharesKey } from '@/components/vehicle/SharesModal';
 import { EMPTY_VEHICLE, VehicleFields } from '@/components/vehicle/VehicleFields';
 import type { CustomerAccount, CustomerFulfillment, Invoice, Subscription, VehicleView } from '@/types';
 
 import styles from '../Page.module.css';
+
+/** Cartões por vez: numa frota são centenas (cada um com rastreador, assinatura e pedido). */
+const VEHICLES_PAGE = 30;
+/** Com mais que isso, a lista ganha a busca e o filtro por situação. */
+const FILTERS_FROM = 12;
 
 /** Edição de um veículo, ou o veículo de uma assinatura antiga que ficou sem. */
 type VehicleForm =
@@ -61,6 +69,10 @@ export function MyVehiclesPage() {
   // Conta empresa: novo veículo, endereço e acessos são do titular; editar o
   // veículo, também do Gestor; o Visualizador só acompanha.
   const { isAccountOwner, canOperateAccount } = useAuth();
+  // Numa frota: a busca, o filtro por situação e quantos cartões aparecem.
+  const [search, setSearch] = useState('');
+  const [situation, setSituation] = useState<Situation | ''>('');
+  const [limit, setLimit] = useState(VEHICLES_PAGE);
 
   const vehicles = useQuery({ queryKey: ['vehicles'], queryFn: vehiclesApi.list });
   const account = useQuery({ queryKey: ['me', 'account'], queryFn: meApi.account });
@@ -121,6 +133,11 @@ export function MyVehiclesPage() {
   // O pedido mais recente de cada veículo (a lista vem do mais novo).
   const orderOf = new Map<string, CustomerFulfillment>();
   for (const f of fulfillments.data ?? []) if (!orderOf.has(f.vehicleId)) orderOf.set(f.vehicleId, f);
+  const filtering = Boolean(search.trim() || situation);
+  const found = filtering ? list.filter((v) => matchesVehicle(v, search) && (!situation || situationOf(v) === situation)) : list;
+  const counts = { online: 0, offline: 0, pending: 0 };
+  for (const v of list) counts[situationOf(v)] += 1;
+  const left = found.length - limit;
 
   return (
     <div className={styles.page}>
@@ -186,48 +203,87 @@ export function MyVehiclesPage() {
             />
           </Card>
         ) : (
-          <div className={billing.vehicleGrid}>
-            {list.map((vehicle) => (
-              <VehicleCard
-                key={vehicle.id}
-                vehicle={vehicle}
-                subscription={byVehicle.get(vehicle.id) ?? null}
-                order={orderOf.get(vehicle.id) ?? null}
-                onFollow={(order) => setFollowing(order)}
-                onOpen={() => navigate(`/veiculos/${vehicle.id}`)}
-                onEdit={
-                  canOperateAccount ? () => setForm({ mode: 'edit', vehicle, input: vehicleInputFrom(vehicle) }) : undefined
-                }
-                onShowInstallers={() => setShowInstallers(true)}
-                shareCount={sharesOf.get(vehicle.id) ?? 0}
-                onShares={isAccountOwner ? () => setSharing(vehicle) : undefined}
-              />
-            ))}
-            {withoutVehicle.map((sub) => (
-              <article key={sub.id} className={`${billing.vehicleCard} ${billing.slotCard}`}>
-                <div>
-                  <div className={billing.vehicleName}>Assinatura sem veículo</div>
-                  <div className={billing.subscriptionLine}>
-                    {sub.planName} · <MonthlyPrice sub={sub} /> · vence dia {sub.dueDay}
+          <>
+            {list.length > FILTERS_FROM && (
+              <div className={billing.vehicleFilters}>
+                <input
+                  className={fieldStyles.input}
+                  type="search"
+                  aria-label="Buscar veículo"
+                  placeholder="Buscar por nome, placa, modelo ou IMEI"
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setLimit(VEHICLES_PAGE);
+                  }}
+                />
+                <select
+                  className={fieldStyles.select}
+                  aria-label="Situação"
+                  value={situation}
+                  onChange={(e) => {
+                    setSituation(e.target.value as Situation | '');
+                    setLimit(VEHICLES_PAGE);
+                  }}
+                >
+                  <option value="">Todos ({list.length})</option>
+                  <option value="online">Comunicando ({counts.online})</option>
+                  <option value="offline">Sem sinal ({counts.offline})</option>
+                  <option value="pending">Aguardando o rastreador ({counts.pending})</option>
+                </select>
+              </div>
+            )}
+            {filtering && found.length === 0 && <p className={billing.muted}>Nenhum veículo com esse filtro.</p>}
+            <div className={billing.vehicleGrid}>
+              {found.slice(0, limit).map((vehicle) => (
+                <VehicleCard
+                  key={vehicle.id}
+                  vehicle={vehicle}
+                  subscription={byVehicle.get(vehicle.id) ?? null}
+                  order={orderOf.get(vehicle.id) ?? null}
+                  onFollow={(order) => setFollowing(order)}
+                  onOpen={() => navigate(`/veiculos/${vehicle.id}`)}
+                  onEdit={
+                    canOperateAccount ? () => setForm({ mode: 'edit', vehicle, input: vehicleInputFrom(vehicle) }) : undefined
+                  }
+                  onShowInstallers={() => setShowInstallers(true)}
+                  shareCount={sharesOf.get(vehicle.id) ?? 0}
+                  onShares={isAccountOwner ? () => setSharing(vehicle) : undefined}
+                />
+              ))}
+              {!filtering && withoutVehicle.map((sub) => (
+                <article key={sub.id} className={`${billing.vehicleCard} ${billing.slotCard}`}>
+                  <div>
+                    <div className={billing.vehicleName}>Assinatura sem veículo</div>
+                    <div className={billing.subscriptionLine}>
+                      {sub.planName} · <MonthlyPrice sub={sub} /> · vence dia {sub.dueDay}
+                    </div>
                   </div>
-                </div>
-                <div className={billing.vehicleMeta}>
-                  Esta assinatura é de antes do cadastro por veículo. Informe qual veículo ela cobre.
-                </div>
-                {isAccountOwner && (
-                  <div className={billing.vehicleActions}>
-                    <Button
-                      size="small"
-                      variant="primary"
-                      onClick={() => setForm({ mode: 'attach', subscription: sub, input: EMPTY_VEHICLE })}
-                    >
-                      Informar veículo
-                    </Button>
+                  <div className={billing.vehicleMeta}>
+                    Esta assinatura é de antes do cadastro por veículo. Informe qual veículo ela cobre.
                   </div>
-                )}
-              </article>
-            ))}
-          </div>
+                  {isAccountOwner && (
+                    <div className={billing.vehicleActions}>
+                      <Button
+                        size="small"
+                        variant="primary"
+                        onClick={() => setForm({ mode: 'attach', subscription: sub, input: EMPTY_VEHICLE })}
+                      >
+                        Informar veículo
+                      </Button>
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+            {left > 0 && (
+              <div className={billing.vehicleMore}>
+                <Button variant="ghost" onClick={() => setLimit((n) => n + VEHICLES_PAGE)}>
+                  {left > VEHICLES_PAGE ? `Mostrar mais ${VEHICLES_PAGE} (faltam ${left})` : `Mostrar os ${left} restantes`}
+                </Button>
+              </div>
+            )}
+          </>
         )}
 
         {sharedWithMe.length > 0 && (
