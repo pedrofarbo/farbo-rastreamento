@@ -696,6 +696,9 @@ export const contractApi = {
   current: () => request<ContractDocument>('/api/public/contract', { anonymous: true }),
 };
 
+/** No link de pagamento, a chave do Pix de todas as faturas do vencimento. */
+export const GROUP_SUFFIX = ':todas';
+
 /** O link de pagamento da fatura (sem login). */
 export const payLinkApi = {
   invoice: (token: string) => request<PublicInvoice>(`/api/public/invoices/${encodeURIComponent(token)}`, { anonymous: true }),
@@ -703,7 +706,9 @@ export const payLinkApi = {
   pix: (token: string): PixApi => {
     const base = `/api/public/invoices/${encodeURIComponent(token)}`;
     return {
-      invoicePix: () => request<PixCharge>(`${base}/pix`, { method: 'POST', anonymous: true }),
+      // A chave termina em ":todas": o Pix de todas as faturas do vencimento.
+      invoicePix: (key: string) =>
+        request<PixCharge>(key.endsWith(GROUP_SUFFIX) ? `${base}/pix-group` : `${base}/pix`, { method: 'POST', anonymous: true }),
       charge: (id: string) => request<PixCharge>(`${base}/charges/${id}`, { anonymous: true }),
       simulateCharge: (id: string) => request<PixCharge>(`${base}/charges/${id}/simulate`, { method: 'POST', anonymous: true }),
     };
@@ -803,6 +808,8 @@ export const meApi = {
   invoices: () => api.get<Invoice[]>('/api/me/invoices'),
 
   invoicePix: (invoiceId: string) => api.post<PixCharge>(`/api/me/invoices/${invoiceId}/pix`),
+  /** Um Pix só para várias faturas (a do mês da frota, ou as vencidas). */
+  invoicesPix: (invoiceIds: string[]) => api.post<PixCharge>('/api/me/invoices/pix', { invoiceIds }),
   charge: (id: string) => api.get<PixCharge>(`/api/me/charges/${id}`),
   simulateCharge: (id: string) => api.post<PixCharge>(`/api/me/charges/${id}/simulate`),
 

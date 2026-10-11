@@ -286,6 +286,24 @@ func (s *Service) SettleInvoice(ctx context.Context, id uuid.UUID, via string, c
 	return s.decorated(s.repo.MarkInvoicePaid(ctx, id, via, &chargeID))
 }
 
+// GetInvoices devolve as faturas pedidas que existem (em qualquer ordem).
+func (s *Service) GetInvoices(ctx context.Context, ids []uuid.UUID) ([]*Invoice, error) {
+	list, err := s.repo.GetInvoices(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, inv := range list {
+		s.decorate(inv)
+	}
+	return list, nil
+}
+
+// SettleInvoices quita de uma vez as faturas em aberto de um Pix de várias e
+// devolve quais quitou (as que já não estavam em aberto ficam de fora).
+func (s *Service) SettleInvoices(ctx context.Context, ids []uuid.UUID, via string, chargeID uuid.UUID) ([]uuid.UUID, error) {
+	return s.repo.MarkInvoicesPaid(ctx, ids, via, &chargeID)
+}
+
 // ReopenInvoice reabre a fatura cujo pagamento foi estornado.
 func (s *Service) ReopenInvoice(ctx context.Context, id uuid.UUID) (*Invoice, error) {
 	return s.decorated(s.repo.ReopenInvoice(ctx, id))

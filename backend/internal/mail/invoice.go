@@ -50,6 +50,10 @@ type InvoiceReminder struct {
 	// formatado; SuspendIn, em quantos dias.
 	SuspendOn string
 	SuspendIn int
+	// PayAllURL abre um Pix só para todas as faturas do lembrete (a fatura
+	// do mês de uma frota, uma por veículo, no mesmo vencimento). Com ele, o
+	// e-mail mostra o total com um botão e a lista sem um botão por fatura.
+	PayAllURL string
 }
 
 type invoiceData struct {
@@ -202,24 +206,39 @@ const invoiceHTML = `{{define "content"}}
 <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0d130e;">{{.Headline}}</h1>
 <p style="margin:0 0 12px;font-size:15px;line-height:1.6;color:#334155;">Olá{{with .Name}}, {{.}}{{end}}!</p>
 <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">{{.Lead}}</p>
-{{range .Lines}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 12px;border:1px solid #e2e8f0;border-radius:12px;">
+{{if .PayAllURL}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 12px;border:1px solid #e2e8f0;border-radius:12px;">
+<tr><td style="padding:14px 16px;">
+<p style="margin:0;font-size:15px;font-weight:700;color:#0d130e;">{{len .Lines}} faturas · total {{.Total}}</p>
+<p style="margin:4px 0 12px;font-size:14px;color:#475569;">Pague todas de uma vez, com um Pix só.</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="border-radius:999px;background:#3be558;">
+<a href="{{.PayAllURL}}" style="display:inline-block;padding:11px 22px;font-size:15px;font-weight:700;color:#060907;text-decoration:none;border-radius:999px;">Pagar {{.Total}} com Pix</a>
+</td></tr></table>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:14px 0 0;border-top:1px solid #e2e8f0;">
+{{range .Lines}}<tr><td style="padding:8px 0 0;font-size:13px;color:#475569;">{{.Description}}</td><td align="right" style="padding:8px 0 0;font-size:13px;color:#0d130e;white-space:nowrap;">{{.Amount}}</td></tr>{{end}}
+</table>
+</td></tr></table>{{else}}{{range .Lines}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 12px;border:1px solid #e2e8f0;border-radius:12px;">
 <tr><td style="padding:14px 16px;">
 <p style="margin:0;font-size:15px;font-weight:700;color:#0d130e;">{{.Description}}</p>
 <p style="margin:4px 0 12px;font-size:14px;color:#475569;"><strong style="color:#0d130e;">{{.Amount}}</strong> · vencimento {{.DueDate}}</p>
 <table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="border-radius:999px;background:#3be558;">
 <a href="{{.PayURL}}" style="display:inline-block;padding:11px 22px;font-size:15px;font-weight:700;color:#060907;text-decoration:none;border-radius:999px;">Pagar com Pix</a>
 </td></tr></table>
-</td></tr></table>{{end}}
+</td></tr></table>{{end}}{{end}}
 <p style="margin:16px 0 0;font-size:13px;line-height:1.6;color:#64748b;">O botão abre o QR Code e o Pix copia-e-cola da fatura, sem precisar entrar no painel. Já pagou? Pode desconsiderar: a baixa é automática.</p>
 {{end}}`
 
 const invoiceText = `Olá{{with .Name}}, {{.}}{{end}}!
 
 {{.Headline}}. {{.Lead}}
+{{if .PayAllURL}}
+Pague as {{len .Lines}} faturas ({{.Total}}) de uma vez, com um Pix só:
+{{.PayAllURL}}
 {{range .Lines}}
+- {{.Description}}: {{.Amount}}{{end}}
+{{else}}{{range .Lines}}
 - {{.Description}}: {{.Amount}}, vencimento {{.DueDate}}
   Pagar com Pix: {{.PayURL}}
-{{end}}
+{{end}}{{end}}
 O link abre o QR Code e o Pix copia-e-cola da fatura, sem precisar entrar no painel. Já pagou? Pode desconsiderar: a baixa é automática.
 
 — Farbo Rastreadores

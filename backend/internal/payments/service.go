@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments/abacatepay"
 )
 
@@ -34,7 +36,13 @@ var (
 	ErrNotRefundable = errors.New("só um pagamento confirmado, e fora de disputa, pode ser estornado")
 	// ErrRefundPending: o estorno já foi pedido e ainda está em andamento.
 	ErrRefundPending = errors.New("o estorno deste pagamento já foi pedido e está em andamento")
+	// ErrNoInvoices: o Pix de várias faturas precisa de pelo menos uma.
+	ErrNoInvoices = errors.New("escolha as faturas para pagar")
 )
+
+// MaxGroupInvoices limita o Pix de várias faturas: folga para a fatura do mês
+// das maiores frotas (uma por veículo), com o pedido ainda pequeno.
+const MaxGroupInvoices = 5000
 
 const (
 	// reuseMargin: um Pix que expira em menos que isso não é reaproveitado —
@@ -62,7 +70,9 @@ type Gateway interface {
 // Invoices é o que o serviço usa da cobrança. *billing.Service implementa.
 type Invoices interface {
 	GetInvoice(ctx context.Context, id uuid.UUID) (*billing.Invoice, error)
+	GetInvoices(ctx context.Context, ids []uuid.UUID) ([]*billing.Invoice, error)
 	SettleInvoice(ctx context.Context, id uuid.UUID, via string, chargeID uuid.UUID) (*billing.Invoice, error)
+	SettleInvoices(ctx context.Context, ids []uuid.UUID, via string, chargeID uuid.UUID) ([]uuid.UUID, error)
 	ReopenInvoice(ctx context.Context, id uuid.UUID) (*billing.Invoice, error)
 }
 
@@ -145,6 +155,102 @@ func (s *Service) PixForInvoice(ctx context.Context, invoiceID uuid.UUID, payer 
 	}
 	s.log.Info("Pix gerado", "invoice", inv.ID, "charge", charge.ID, "provider_charge", pix.ID,
 		"amount_cents", pix.Amount, "dev_mode", pix.DevMode)
+	return charge, nil
+}
+
+// PixForInvoices devolve um Pix só para pagar várias faturas do mesmo
+// cliente de uma vez — a fatura do mês de uma frota, uma por veículo, ou
+// tudo o que está vencido. Reaproveita o pendente que paga exatamente as
+// mesmas pelo total de agora; com uma fatura, é o PixForInvoice.
+func (s *Service) PixForInvoices(ctx context.Context, customerID uuid.UUID, invoiceIDs []uuid.UUID, payer *Payer) (*Charge, error) {
+	if !s.Enabled() {
+		return nil, ErrDisabled
+	}
+	seen := map[uuid.UUID]bool{}
+	unique := make([]uuid.UUID, 0, len(invoiceIDs))
+	for _, id := range invoiceIDs {
+		if !seen[id] {
+			seen[id] = true
+			unique = append(unique, id)
+		}
+	}
+	switch {
+	case len(unique) == 0:
+		return nil, ErrNoInvoices
+	case len(unique) > MaxGroupInvoices:
+		return nil, fmt.Errorf("%w: no máximo %d de uma vez", ErrNoInvoices, MaxGroupInvoices)
+	}
+	invoices, err := s.invoices.GetInvoices(ctx, unique)
+	if err != nil {
+		return nil, err
+	}
+	if len(invoices) != len(unique) {
+		return nil, database.ErrNotFound
+	}
+	total := 0
+	for _, inv := range invoices {
+		if inv.CustomerID != customerID {
+			return nil, database.ErrNotFound
+		}
+		if inv.Status != billing.InvoiceOpen || inv.AmountCents <= 0 {
+			return nil, ErrInvoiceNotOpen
+		}
+		total += inv.AmountCents
+	}
+	if len(invoices) == 1 {
+		return s.PixForInvoice(ctx, invoices[0].ID, payer)
+	}
+	// A primeira a vencer é a principal (a que a lista de pagamentos mostra).
+	sort.Slice(invoices, func(i, j int) bool {
+		if !invoices[i].DueDate.Equal(invoices[j].DueDate.Time) {
+			return invoices[i].DueDate.Before(invoices[j].DueDate)
+		}
+		return invoices[i].CreatedAt.Before(invoices[j].CreatedAt)
+	})
+	ids := make([]uuid.UUID, len(invoices))
+	items := make([]ChargeInvoice, len(invoices))
+	for i, inv := range invoices {
+		ids[i] = inv.ID
+		items[i] = ChargeInvoice{InvoiceID: inv.ID, AmountCents: inv.AmountCents}
+	}
+
+	if existing, err := s.repo.ReusableGroup(ctx, ids, total, time.Now().Add(reuseMargin)); err == nil {
+		existing.InvoiceStatus, existing.InvoiceIDs = billing.InvoiceOpen, ids
+		return existing, nil
+	}
+
+	description := fmt.Sprintf("Farbo Rastreadores — %d faturas", len(invoices))
+	if first, last := invoices[0].DueDate, invoices[len(invoices)-1].DueDate; first.Equal(last.Time) {
+		description += ", vencimento " + first.Format("02/01/2006")
+	}
+	chargeID := uuid.New()
+	pix, err := s.gateway.CreatePix(ctx, abacatepay.PixRequest{
+		AmountCents: total,
+		Description: description,
+		ExpiresIn:   s.cfg.PixExpiresIn,
+		ExternalID:  chargeID.String(),
+		Customer:    customerFor(payer),
+		Metadata: map[string]string{
+			"invoiceId":  ids[0].String(),
+			"invoices":   fmt.Sprint(len(ids)),
+			"customerId": customerID.String(),
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gerando Pix: %w", err)
+	}
+	charge := &Charge{
+		ID: chargeID, InvoiceID: ids[0], Provider: providerAbacatePay,
+		ProviderChargeID: pix.ID, AmountCents: pix.Amount, Status: pix.Status,
+		BrCode: pix.BrCode, QRCodeImage: pix.BrCodeBase64, DevMode: pix.DevMode,
+		ExpiresAt: pix.ExpiresAt, InvoiceStatus: billing.InvoiceOpen, PlatformFeeCents: pix.PlatformFee,
+		InvoiceIDs: ids,
+	}
+	if err := s.repo.InsertGroup(ctx, charge, items); err != nil {
+		return nil, err
+	}
+	s.log.Info("Pix de várias faturas gerado", "customer", customerID, "invoices", len(ids), "charge", charge.ID,
+		"provider_charge", pix.ID, "amount_cents", pix.Amount, "dev_mode", pix.DevMode)
 	return charge, nil
 }
 
@@ -342,6 +448,15 @@ func (s *Service) apply(ctx context.Context, charge *Charge, status string) erro
 		"devMode": charge.DevMode,
 	}
 
+	group, err := s.repo.ChargeInvoices(ctx, charge.ID)
+	if err != nil {
+		return err
+	}
+	if len(group) > 1 {
+		meta["invoiceIds"] = group
+		return s.applyGroup(ctx, charge, status, group, meta)
+	}
+
 	switch status {
 	case abacatepay.StatusPaid:
 		// Um Pix antigo, de antes da central mudar o valor da fatura: o
@@ -391,6 +506,74 @@ func (s *Service) apply(ctx context.Context, charge *Charge, status string) erro
 	return nil
 }
 
+// applyGroup aplica o status do Pix de várias faturas. Pago, quita todas —
+// se nenhuma mudou desde o Pix (todas em aberto, o mesmo total); senão o
+// dinheiro entrou, mas nada é quitado sozinho: alguém confere. Estornado,
+// reabre as que este Pix quitou.
+func (s *Service) applyGroup(ctx context.Context, charge *Charge, status string, ids []uuid.UUID, meta map[string]any) error {
+	invoices, err := s.invoices.GetInvoices(ctx, ids)
+	if err != nil {
+		return err
+	}
+	switch status {
+	case abacatepay.StatusPaid:
+		total, open := 0, len(invoices) == len(ids)
+		for _, inv := range invoices {
+			total += inv.AmountCents
+			open = open && inv.Status == billing.InvoiceOpen
+		}
+		if !open || total != charge.AmountCents {
+			s.log.Warn("Pix de várias faturas pago, mas as faturas mudaram", "charge", charge.ID,
+				"charge_cents", charge.AmountCents, "invoices_cents", total, "all_open", open)
+			meta["invoicesAmountCents"], meta["reason"] = total, "as faturas mudaram depois do Pix"
+			s.record(ctx, audit.ActionPaymentUnmatched, "REVIEW", meta)
+			return nil
+		}
+		// Todas num comando só: um Pix de centenas não fica pago pela metade.
+		settled, err := s.invoices.SettleInvoices(ctx, ids, PaidViaPix, charge.ID)
+		if err != nil {
+			return err
+		}
+		if len(settled) < len(ids) {
+			// Quitadas por fora no meio do caminho: as outras entraram, e
+			// alguém confere estas.
+			paid := map[uuid.UUID]bool{}
+			for _, id := range settled {
+				paid[id] = true
+			}
+			var outside []uuid.UUID
+			for _, id := range ids {
+				if !paid[id] {
+					outside = append(outside, id)
+				}
+			}
+			s.log.Warn("faturas do Pix de várias já não estavam em aberto", "invoices", outside, "charge", charge.ID)
+			s.record(ctx, audit.ActionPaymentUnmatched, "REVIEW",
+				map[string]any{"chargeId": charge.ID, "invoiceIds": outside, "reason": "quitadas por fora"})
+		}
+		meta["settled"], meta["customerId"] = len(settled), invoices[0].CustomerID
+		meta["via"] = PaidViaPix
+		s.record(ctx, audit.ActionInvoicePaid, "OK", meta)
+
+	case abacatepay.StatusRefunded:
+		reopened := 0
+		for _, inv := range invoices {
+			if inv.Status == billing.InvoicePaid && inv.PaidChargeID != nil && *inv.PaidChargeID == charge.ID {
+				if _, err := s.invoices.ReopenInvoice(ctx, inv.ID); err != nil && !errors.Is(err, billing.ErrNotOpen) {
+					return err
+				}
+				reopened++
+			}
+		}
+		meta["invoicesReopened"] = reopened
+		s.record(ctx, audit.ActionPaymentRefunded, "OK", meta)
+
+	case abacatepay.StatusUnderDispute:
+		s.record(ctx, audit.ActionPaymentDisputed, "REVIEW", meta)
+	}
+	return nil
+}
+
 func withVia(meta map[string]any, inv *billing.Invoice) map[string]any {
 	meta["via"] = PaidViaPix
 	if inv != nil {
@@ -407,6 +590,21 @@ func (s *Service) record(ctx context.Context, action, result string, meta map[st
 }
 
 func (s *Service) withInvoiceStatus(ctx context.Context, charge *Charge) *Charge {
+	group, err := s.repo.ChargeInvoices(ctx, charge.ID)
+	if err == nil && len(group) > 1 {
+		// Várias: quitado quando todas quitaram.
+		charge.InvoiceIDs, charge.InvoiceStatus = group, billing.InvoiceOpen
+		if list, err := s.invoices.GetInvoices(ctx, group); err == nil && len(list) == len(group) {
+			charge.InvoiceStatus = billing.InvoicePaid
+			for _, inv := range list {
+				if inv.Status != billing.InvoicePaid {
+					charge.InvoiceStatus = billing.InvoiceOpen
+					break
+				}
+			}
+		}
+		return charge
+	}
 	if inv, err := s.invoices.GetInvoice(ctx, charge.InvoiceID); err == nil {
 		charge.InvoiceStatus = inv.Status
 	}

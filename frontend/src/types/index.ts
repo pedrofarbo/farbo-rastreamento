@@ -607,6 +607,8 @@ export interface PixCharge {
   paidAt: string | null;
   createdAt: string;
   invoiceStatus?: Invoice['status'];
+  /** As faturas que o Pix paga de uma vez (a do mês da frota); vazio no Pix de uma só. */
+  invoiceIds?: string[];
   /** Estorno pedido pela central (em produção conclui depois, assíncrono). */
   refundRequestedAt: string | null;
   refundId: string;
@@ -910,6 +912,8 @@ export interface PublicInvoice {
   onlinePayment: boolean;
   paymentUrl: string;
   pixCode: string;
+  /** As faturas em aberto do mesmo vencimento (a do mês da frota), para pagar num Pix só. */
+  group?: { amountCents: number; items: { description: string; amountCents: number }[] } | null;
 }
 
 /**

@@ -269,6 +269,7 @@ func (s *Server) routes() chi.Router {
 				r.Use(payLinkLimiter.middleware)
 				r.Get("/", s.handlePublicInvoice)
 				r.Post("/pix", s.handlePublicInvoicePix)
+				r.Post("/pix-group", s.handlePublicInvoiceGroupPix)
 				r.Get("/charges/{chargeId}", s.handlePublicCharge)
 				r.Post("/charges/{chargeId}/simulate", s.handlePublicChargeSimulate)
 			})
@@ -405,6 +406,8 @@ func (s *Server) routes() chi.Router {
 					r.Use(s.requireAccountOperator)
 					r.Get("/invoices", s.handleMyInvoices)
 					r.Post("/invoices/{id}/pix", s.handleMyInvoicePix)
+					// Várias de uma vez: a fatura do mês da frota, ou as vencidas.
+					r.Post("/invoices/pix", s.handleMyInvoicesPix)
 					r.Get("/charges/{id}", s.handleMyCharge)
 					r.Post("/charges/{id}/simulate", s.handleMyChargeSimulate)
 					// Acompanhamento do chip e do rastreador até a casa dele.

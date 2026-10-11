@@ -24,6 +24,8 @@ func (s *Server) writePaymentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusServiceUnavailable, "o pagamento online não está disponível no momento")
 	case errors.Is(err, payments.ErrInvoiceNotOpen):
 		writeError(w, http.StatusConflict, "esta fatura não está mais em aberto")
+	case errors.Is(err, payments.ErrNoInvoices):
+		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, payments.ErrNotDevMode),
 		errors.Is(err, payments.ErrNotRefundable),
 		errors.Is(err, payments.ErrRefundPending):
@@ -116,6 +118,41 @@ func (s *Server) handleMyInvoicePix(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.createPix(w, r, inv)
+}
+
+type invoicesPixRequest struct {
+	InvoiceIDs []uuid.UUID `json:"invoiceIds"`
+}
+
+// handleMyInvoicesPix gera (ou reaproveita) um Pix só para várias faturas do
+// cliente — a fatura do mês da frota (uma por veículo) ou tudo o que está
+// vencido. Também com o acesso suspenso: é assim que ele volta.
+func (s *Server) handleMyInvoicesPix(w http.ResponseWriter, r *http.Request) {
+	var req invoicesPixRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	customerID, _ := customerOf(r)
+	s.createGroupPix(w, r, customerID, req.InvoiceIDs)
+}
+
+// createGroupPix gera o Pix de várias faturas do cliente e registra.
+func (s *Server) createGroupPix(w http.ResponseWriter, r *http.Request, customerID uuid.UUID, ids []uuid.UUID) {
+	charge, err := s.Payments.PixForInvoices(r.Context(), customerID, ids, s.payerFor(r, customerID))
+	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "fatura não encontrada")
+			return
+		}
+		s.writePaymentError(w, err)
+		return
+	}
+	s.recordBillingAudit(r, audit.ActionPaymentPixCreated, map[string]any{
+		"customerId": customerID, "invoiceIds": charge.InvoiceIDs, "invoiceId": charge.InvoiceID,
+		"chargeId": charge.ID, "amountCents": charge.AmountCents, "devMode": charge.DevMode,
+	})
+	writeJSON(w, http.StatusOK, charge)
 }
 
 // handleMyCharge devolve o status do Pix, consultando o provedor. A tela

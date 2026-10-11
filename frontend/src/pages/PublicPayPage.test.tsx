@@ -20,14 +20,15 @@ const charge = (status: string): PixCharge =>
   }) as unknown as PixCharge;
 
 vi.mock('@/api/resources', () => ({
+  GROUP_SUFFIX: ':todas',
   payLinkApi: {
     invoice: (token: string) => {
       calls.push('fatura ' + token);
       return invoice();
     },
-    pix: (token: string) => ({
-      invoicePix: async () => {
-        calls.push('pix ' + token);
+    pix: () => ({
+      invoicePix: async (key: string) => {
+        calls.push('pix ' + key);
         return charge('PENDING');
       },
       charge: async () => charge(chargeStatus),
@@ -107,6 +108,32 @@ describe('link de pagamento da fatura', () => {
     invoice = async () => open({ status: 'CANCELED' });
     await render();
     expect(text()).toContain('Esta fatura foi cancelada');
+  });
+
+  it('com outras faturas no mesmo vencimento (a frota): paga todas num Pix só, ou só esta', async () => {
+    invoice = async () =>
+      open({
+        description: 'Plano Frota — outubro/2026 (Van 01)',
+        amountCents: 4990,
+        group: {
+          amountCents: 13970,
+          items: [
+            { description: 'Plano Frota — outubro/2026 (Van 01)', amountCents: 4990 },
+            { description: 'Plano Frota — outubro/2026 (Carro 02)', amountCents: 4990 },
+            { description: 'Plano Frota — outubro/2026 (Moto 03)', amountCents: 3990 },
+          ],
+        },
+      });
+    await render();
+    expect(text()).toContain('3 faturas vencem neste dia · R$ 139,70');
+    expect(text()).toContain('Plano Frota — outubro/2026 (Moto 03)R$ 39,90');
+    expect(text()).toContain('3 faturas num Pix só');
+    expect(calls).toEqual(['fatura tok123', 'pix tok123:todas']);
+    const onlyThis = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Só esta (R$ 49,90)') as HTMLButtonElement;
+    await act(async () => onlyThis.click());
+    await flush();
+    expect(onlyThis.getAttribute('aria-checked')).toBe('true');
+    expect(calls).toEqual(['fatura tok123', 'pix tok123:todas', 'pix tok123']);
   });
 
   it('link inexistente', async () => {

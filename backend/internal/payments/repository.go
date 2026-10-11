@@ -2,10 +2,12 @@ package payments
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 )
@@ -35,8 +37,18 @@ type Charge struct {
 	RefundReason      string     `json:"refundReason"`
 
 	// InvoiceStatus acompanha a cobrança para a tela saber, na mesma
-	// resposta, se a fatura já quitou.
+	// resposta, se a fatura já quitou (no Pix de várias, se todas quitaram).
 	InvoiceStatus string `json:"invoiceStatus,omitempty"`
+	// InvoiceIDs: as faturas que o Pix paga de uma vez (a do mês de uma
+	// frota); vazio no Pix de uma fatura só (InvoiceID).
+	InvoiceIDs []uuid.UUID `json:"invoiceIds,omitempty"`
+}
+
+// ChargeInvoice é uma das faturas de um Pix de várias, com o valor dela na
+// hora em que o Pix foi gerado.
+type ChargeInvoice struct {
+	InvoiceID   uuid.UUID
+	AmountCents int
 }
 
 const chargeColumns = `id, invoice_id, provider, provider_charge_id, amount_cents, status, br_code,
@@ -83,6 +95,64 @@ func (r *Repository) Insert(ctx context.Context, c *Charge) error {
 		c.ID, c.InvoiceID, c.Provider, c.ProviderChargeID, c.AmountCents, c.Status, c.BrCode,
 		c.QRCodeImage, c.DevMode, c.ExpiresAt, max(c.PlatformFeeCents, 0),
 	).Scan(&c.CreatedAt))
+}
+
+// InsertGroup grava o Pix de várias faturas e as faturas dele.
+func (r *Repository) InsertGroup(ctx context.Context, c *Charge, items []ChargeInvoice) error {
+	return database.MapError(pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO payment_charges (id, invoice_id, provider, provider_charge_id, amount_cents,
+				status, br_code, qr_code_image, dev_mode, expires_at, platform_fee_cents, checked_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+			RETURNING created_at`,
+			c.ID, c.InvoiceID, c.Provider, c.ProviderChargeID, c.AmountCents, c.Status, c.BrCode,
+			c.QRCodeImage, c.DevMode, c.ExpiresAt, max(c.PlatformFeeCents, 0),
+		).Scan(&c.CreatedAt); err != nil {
+			return err
+		}
+		// As faturas num comando só (numa frota, centenas).
+		ids := make([]uuid.UUID, len(items))
+		cents := make([]int32, len(items))
+		for i, it := range items {
+			ids[i], cents[i] = it.InvoiceID, int32(it.AmountCents)
+		}
+		_, err := tx.Exec(ctx, `
+			INSERT INTO payment_charge_invoices (charge_id, invoice_id, amount_cents)
+			SELECT $1, i.id, i.cents FROM unnest($2::uuid[], $3::int[]) AS i(id, cents)`, c.ID, ids, cents)
+		return err
+	}))
+}
+
+// ChargeInvoices são as faturas de um Pix de várias (vazio: o Pix é de uma
+// fatura só, a InvoiceID).
+func (r *Repository) ChargeInvoices(ctx context.Context, chargeID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT pci.invoice_id FROM payment_charge_invoices pci JOIN invoices i ON i.id = pci.invoice_id
+		WHERE pci.charge_id = $1 ORDER BY i.due_date, i.created_at, i.id`, chargeID)
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	defer rows.Close()
+	var out []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// ReusableGroup é o Pix de várias, pendente e ainda valendo, que paga
+// exatamente estas faturas pelo total de agora.
+func (r *Repository) ReusableGroup(ctx context.Context, invoiceIDs []uuid.UUID, totalCents int, validUntil time.Time) (*Charge, error) {
+	return scanCharge(r.db.QueryRow(ctx, `
+		SELECT `+chargeColumns+` FROM payment_charges c
+		WHERE c.status = 'PENDING' AND c.expires_at > $2 AND c.amount_cents = $3 AND c.invoice_id = ANY($1)
+			AND (SELECT array_agg(pci.invoice_id ORDER BY pci.invoice_id) FROM payment_charge_invoices pci
+				WHERE pci.charge_id = c.id) = (SELECT array_agg(x ORDER BY x) FROM unnest($1::uuid[]) AS x)
+		ORDER BY c.created_at DESC LIMIT 1`, invoiceIDs, validUntil, totalCents))
 }
 
 func (r *Repository) Get(ctx context.Context, id uuid.UUID) (*Charge, error) {
@@ -161,7 +231,8 @@ type Payment struct {
 // cliente — o que já movimentou dinheiro. Pendentes e expirados ficam fora.
 func (r *Repository) PaymentsForCustomer(ctx context.Context, customerID uuid.UUID) ([]*Payment, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT `+prefixed("c", chargeColumns)+`, i.description, i.paid_charge_id IS NOT DISTINCT FROM c.id
+		SELECT `+prefixed("c", chargeColumns)+`, i.description, i.paid_charge_id IS NOT DISTINCT FROM c.id,
+			(SELECT count(*) FROM payment_charge_invoices pci WHERE pci.charge_id = c.id)
 		FROM payment_charges c
 		JOIN invoices i ON i.id = c.invoice_id
 		WHERE i.customer_id = $1 AND (c.paid_at IS NOT NULL OR c.status IN ('PAID', 'REFUNDED', 'UNDER_DISPUTE'))
@@ -176,11 +247,15 @@ func (r *Repository) PaymentsForCustomer(ctx context.Context, customerID uuid.UU
 	for rows.Next() {
 		var p Payment
 		var c Charge
+		var grouped int
 		if err := rows.Scan(&c.ID, &c.InvoiceID, &c.Provider, &c.ProviderChargeID, &c.AmountCents,
 			&c.Status, &c.BrCode, &c.QRCodeImage, &c.DevMode, &c.ExpiresAt, &c.PaidAt, &c.CheckedAt,
 			&c.CreatedAt, &c.RefundRequestedAt, &c.RefundID, &c.RefundReason,
-			&p.InvoiceDescription, &p.SettledInvoice); err != nil {
+			&p.InvoiceDescription, &p.SettledInvoice, &grouped); err != nil {
 			return nil, err
+		}
+		if grouped > 1 {
+			p.InvoiceDescription = fmt.Sprintf("%d faturas pagas juntas (%s e mais)", grouped, p.InvoiceDescription)
 		}
 		// A lista não precisa da imagem do QR Code (alguns KB por linha).
 		c.QRCodeImage, c.BrCode = "", ""

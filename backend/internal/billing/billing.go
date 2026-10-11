@@ -349,13 +349,35 @@ func (r *Repository) GetInvoice(ctx context.Context, id uuid.UUID) (*Invoice, er
 	return scanInvoice(r.db.QueryRow(ctx, `SELECT `+invoiceColumns+` FROM invoices WHERE id = $1`, id))
 }
 
-// ListInvoices devolve as faturas do cliente, as mais recentes primeiro.
+// closedInvoicesListed é quantas faturas já fechadas (pagas ou canceladas) a
+// lista do cliente traz, das mais recentes.
+const closedInvoicesListed = 120
+
+// ListInvoices devolve as faturas do cliente, as mais recentes primeiro:
+// todas as em aberto — numa frota são uma por veículo no mês, e cortar
+// alguma faria o "pagar todas" pagar só parte — e as últimas já fechadas.
 func (r *Repository) ListInvoices(ctx context.Context, customerID uuid.UUID) ([]*Invoice, error) {
-	rows, err := r.db.Query(ctx, `
-		SELECT `+invoiceColumns+` FROM invoices
-		WHERE customer_id = $1
-		ORDER BY due_date DESC, created_at DESC
-		LIMIT 120`, customerID)
+	return r.queryInvoices(ctx, `
+		SELECT `+invoiceColumns+` FROM (
+			(SELECT `+invoiceColumns+` FROM invoices WHERE customer_id = $1 AND status = 'OPEN')
+			UNION ALL
+			(SELECT `+invoiceColumns+` FROM invoices WHERE customer_id = $1 AND status <> 'OPEN'
+				ORDER BY due_date DESC, created_at DESC LIMIT $2)
+		) i
+		ORDER BY due_date DESC, created_at DESC`, customerID, closedInvoicesListed)
+}
+
+// GetInvoices devolve as faturas pedidas que existem, numa consulta só (o
+// Pix de várias, numa frota, junta centenas).
+func (r *Repository) GetInvoices(ctx context.Context, ids []uuid.UUID) ([]*Invoice, error) {
+	if len(ids) == 0 {
+		return []*Invoice{}, nil
+	}
+	return r.queryInvoices(ctx, `SELECT `+invoiceColumns+` FROM invoices WHERE id = ANY($1)`, ids)
+}
+
+func (r *Repository) queryInvoices(ctx context.Context, sql string, args ...any) ([]*Invoice, error) {
+	rows, err := r.db.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -392,6 +414,29 @@ func (r *Repository) transitionInvoice(ctx context.Context, id uuid.UUID, set st
 func (r *Repository) MarkInvoicePaid(ctx context.Context, id uuid.UUID, via string, chargeID *uuid.UUID) (*Invoice, error) {
 	return r.transitionInvoice(ctx, id,
 		`status = 'PAID', paid_at = NOW(), paid_via = $2, paid_charge_id = $3`, via, chargeID)
+}
+
+// MarkInvoicesPaid quita de uma vez, num comando só, as faturas pedidas que
+// estão em aberto, e devolve quais quitou: ou todas entram, ou nenhuma (um
+// Pix de centenas não fica pago pela metade se algo cair no meio).
+func (r *Repository) MarkInvoicesPaid(ctx context.Context, ids []uuid.UUID, via string, chargeID *uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.db.Query(ctx, `
+		UPDATE invoices SET status = 'PAID', paid_at = NOW(), paid_via = $2, paid_charge_id = $3, updated_at = NOW()
+		WHERE id = ANY($1) AND status = 'OPEN'
+		RETURNING id`, ids, via, chargeID)
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	defer rows.Close()
+	out := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // ReopenInvoice devolve a fatura paga para "em aberto" — quando o pagamento

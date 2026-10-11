@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -31,6 +32,44 @@ type publicInvoiceView struct {
 	OnlinePayment bool   `json:"onlinePayment"`
 	PaymentURL    string `json:"paymentUrl"`
 	PixCode       string `json:"pixCode"`
+	// Group: as faturas em aberto do cliente no mesmo vencimento (a fatura do
+	// mês de uma frota, uma por veículo), para pagar todas com um Pix só.
+	// Nulo quando é só esta.
+	Group *publicInvoiceGroup `json:"group"`
+}
+
+// publicInvoiceGroup é a fatura do mês: o total e o que entra nele.
+type publicInvoiceGroup struct {
+	AmountCents int                 `json:"amountCents"`
+	Items       []publicInvoiceItem `json:"items"`
+}
+
+type publicInvoiceItem struct {
+	Description string `json:"description"`
+	AmountCents int    `json:"amountCents"`
+}
+
+// invoiceGroup são as faturas em aberto do cliente que vencem no mesmo dia
+// que esta (ela inclusa), na ordem em que foram geradas; nil se é só ela ou
+// se ela não está em aberto.
+func (s *Server) invoiceGroup(r *http.Request, inv *billing.Invoice) ([]*billing.Invoice, error) {
+	if inv.Status != billing.InvoiceOpen {
+		return nil, nil
+	}
+	list, err := s.Billing.ListInvoices(r.Context(), inv.CustomerID)
+	if err != nil {
+		return nil, err
+	}
+	var out []*billing.Invoice
+	for _, other := range list {
+		if other.Status == billing.InvoiceOpen && other.AmountCents > 0 && other.DueDate.Equal(inv.DueDate.Time) {
+			out = append(out, other)
+		}
+	}
+	if len(out) < 2 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 // linkInvoice é a fatura do link de pagamento da rota (link inválido: 404).
@@ -70,7 +109,43 @@ func (s *Server) handlePublicInvoice(w http.ResponseWriter, r *http.Request) {
 			view.FirstName = fields[0]
 		}
 	}
+	group, err := s.invoiceGroup(r, inv)
+	if err != nil {
+		handleStoreError(w, err, "link de pagamento não encontrado")
+		return
+	}
+	if group != nil {
+		view.Group = &publicInvoiceGroup{Items: []publicInvoiceItem{}}
+		for _, g := range group {
+			view.Group.AmountCents += g.AmountCents
+			view.Group.Items = append(view.Group.Items, publicInvoiceItem{Description: g.Description, AmountCents: g.AmountCents})
+		}
+	}
 	writeJSON(w, http.StatusOK, view)
+}
+
+// handlePublicInvoiceGroupPix gera (ou reaproveita) um Pix só para todas as
+// faturas em aberto do cliente que vencem no mesmo dia que a do link.
+func (s *Server) handlePublicInvoiceGroupPix(w http.ResponseWriter, r *http.Request) {
+	inv, ok := s.linkInvoice(w, r)
+	if !ok {
+		return
+	}
+	group, err := s.invoiceGroup(r, inv)
+	if err != nil {
+		handleStoreError(w, err, "link de pagamento não encontrado")
+		return
+	}
+	if group == nil {
+		// Só esta (ou já não está em aberto): o Pix dela.
+		s.createPix(w, r, inv)
+		return
+	}
+	ids := make([]uuid.UUID, len(group))
+	for i, g := range group {
+		ids[i] = g.ID
+	}
+	s.createGroupPix(w, r, inv.CustomerID, ids)
 }
 
 // handlePublicInvoicePix gera (ou reaproveita) o Pix da fatura do link.
@@ -94,7 +169,7 @@ func (s *Server) linkCharge(w http.ResponseWriter, r *http.Request) (uuid.UUID, 
 		return uuid.Nil, false
 	}
 	charge, err := s.Payments.Charge(r.Context(), id)
-	if err != nil || charge.InvoiceID != inv.ID {
+	if err != nil || (charge.InvoiceID != inv.ID && !slices.Contains(charge.InvoiceIDs, inv.ID)) {
 		writeError(w, http.StatusNotFound, "cobrança não encontrada")
 		return uuid.Nil, false
 	}

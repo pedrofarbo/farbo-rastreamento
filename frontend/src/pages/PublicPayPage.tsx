@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 
 import { ApiError } from '@/api/client';
-import { payLinkApi } from '@/api/resources';
+import { GROUP_SUFFIX, payLinkApi } from '@/api/resources';
 import { PixCheckout, usePixCheckout } from '@/components/billing/PixCheckout';
 import { Button } from '@/components/ui/Button';
 import { formatDateOnly, formatDateTime, formatMoney } from '@/services/format';
@@ -18,6 +18,8 @@ const money = (cents: number) => formatMoney(cents).replace(/\u00a0/g, ' ');
  * O link de pagamento da fatura (/pagar/<link secreto>), que vai nos
  * lembretes: abre o Pix daquela fatura sem login — o primeiro nome, o que é,
  * o valor e o vencimento, nada além. Quando o pagamento cai, mostra "pago".
+ * Com outras faturas no mesmo vencimento (a do mês de uma frota, uma por
+ * veículo), oferece pagar todas com um Pix só — o padrão — ou só esta.
  */
 export function PublicPayPage() {
   const { token = '' } = useParams();
@@ -25,6 +27,9 @@ export function PublicPayPage() {
   const [missing, setMissing] = useState(false);
   const [error, setError] = useState('');
   const [justPaid, setJustPaid] = useState(false);
+  // Todas as do vencimento (padrão, e o "?todas=1" do lembrete) ou só esta.
+  const [params] = useSearchParams();
+  const [onlyThis, setOnlyThis] = useState(params.get('todas') === '0');
 
   useEffect(() => {
     document.title = 'Pagar fatura · Farbo Rastreadores';
@@ -52,11 +57,13 @@ export function PublicPayPage() {
 
   const api = useMemo(() => payLinkApi.pix(token), [token]);
   const open = invoice?.status === 'OPEN' && invoice.onlinePayment;
+  const group = invoice?.status === 'OPEN' ? (invoice.group ?? null) : null;
+  const whole = Boolean(group) && !onlyThis;
   const onPaid = useCallback(() => {
     setJustPaid(true);
     load();
   }, [load]);
-  const checkout = usePixCheckout(open ? token : null, api, onPaid);
+  const checkout = usePixCheckout(open ? (whole ? token + GROUP_SUFFIX : token) : null, api, onPaid);
 
   const copyManual = async () => {
     try {
@@ -119,9 +126,49 @@ export function PublicPayPage() {
             </section>
           )}
 
+          {open && group && (
+            <section className={styles.card}>
+              <h2 className={styles.title}>
+                {group.items.length} faturas vencem neste dia · {money(group.amountCents)}
+              </h2>
+              <ul className={styles.items}>
+                {group.items.map((item, i) => (
+                  <li key={i}>
+                    <span>{item.description}</span>
+                    <strong>{money(item.amountCents)}</strong>
+                  </li>
+                ))}
+              </ul>
+              <div className={styles.choice} role="radiogroup" aria-label="O que pagar">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={whole}
+                  className={whole ? styles.choiceOn : styles.choiceOff}
+                  onClick={() => setOnlyThis(false)}
+                >
+                  Pagar as {group.items.length} ({money(group.amountCents)})
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!whole}
+                  className={!whole ? styles.choiceOn : styles.choiceOff}
+                  onClick={() => setOnlyThis(true)}
+                >
+                  Só esta ({money(invoice.amountCents)})
+                </button>
+              </div>
+            </section>
+          )}
+
           {open && (
             <section className={styles.card}>
-              <PixCheckout state={checkout} paidText="Pagamento recebido. Obrigado!" />
+              <PixCheckout
+                state={checkout}
+                description={whole && group ? `${group.items.length} faturas num Pix só` : undefined}
+                paidText="Pagamento recebido. Obrigado!"
+              />
             </section>
           )}
 

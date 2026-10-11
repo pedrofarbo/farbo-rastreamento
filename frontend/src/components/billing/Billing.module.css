@@ -662,3 +662,34 @@
 .promoGrant p {
   margin: 0;
 }
+
+/* A fatura do mês (várias faturas no mesmo vencimento): o que entra e o total. */
+.groupList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.groupList li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+}
+
+.groupList strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.groupList .groupTotal {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  font-weight: 700;
+  color: var(--text-primary);
+}

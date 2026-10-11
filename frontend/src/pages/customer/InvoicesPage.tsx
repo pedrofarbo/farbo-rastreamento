@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { meApi } from '@/api/resources';
+import type { PixApi } from '@/api/resources';
 import billing from '@/components/billing/Billing.module.css';
 import { InvoiceStatus } from '@/components/billing/InvoiceStatus';
 import { MonthlyPrice } from '@/components/billing/MonthlyPrice';
@@ -15,6 +16,8 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { adjustmentNoticeVisible } from '@/services/adjustment';
 import { formatDateOnly, formatMoney } from '@/services/format';
+import { groupIds, monthlyGroups, overdueGroup } from '@/services/invoiceGroups';
+import type { InvoiceGroup } from '@/services/invoiceGroups';
 import type { Invoice } from '@/types';
 
 import styles from '../Page.module.css';
@@ -22,7 +25,19 @@ import styles from '../Page.module.css';
 /** Faturas e assinaturas do cliente. Continua acessível mesmo com o acesso suspenso. */
 export function InvoicesPage() {
   const queryClient = useQueryClient();
-  const [paying, setPaying] = useState<Invoice | null>(null);
+  const [paying, setPaying] = useState<Pick<Invoice, 'id' | 'description'> | null>(null);
+  // A janela de Pix serve a uma fatura ou a um grupo (a chave "grupo:<ids>").
+  const pixApi = useMemo<PixApi>(
+    () => ({
+      ...meApi,
+      invoicePix: (key: string) => {
+        const ids = groupIds(key);
+        return ids ? meApi.invoicesPix(ids) : meApi.invoicePix(key);
+      },
+    }),
+    [],
+  );
+  const payGroup = (g: InvoiceGroup, description: string) => setPaying({ id: g.key, description });
 
   const account = useQuery({ queryKey: ['me', 'account'], queryFn: meApi.account });
   const invoices = useQuery({ queryKey: ['me', 'invoices'], queryFn: meApi.invoices });
@@ -48,6 +63,10 @@ export function InvoicesPage() {
     queryClient.invalidateQueries({ queryKey: ['vehicles'] });
   }, [queryClient]);
   const activeSubscriptions = (subscriptions.data ?? []).filter((s) => s.status === 'ACTIVE');
+  // A fatura do mês (frota: uma por veículo, no mesmo vencimento) e as
+  // vencidas de mais de um mês, para pagar num Pix só.
+  const groups = onlinePayment ? monthlyGroups(invoices.data ?? []) : [];
+  const late = onlinePayment ? overdueGroup(invoices.data ?? []) : null;
 
   return (
     <div className={styles.page}>
@@ -129,6 +148,50 @@ export function InvoicesPage() {
             </span>
           </div>
         </div>
+
+        {late && (
+          <div className={`${billing.banner} ${billing.bannerDanger}`} role="status">
+            <span>
+              <strong>
+                {late.invoices.length} faturas vencidas · {formatMoney(late.amountCents)}.
+              </strong>{' '}
+              Pague todas de uma vez, com um Pix só.
+            </span>
+            <Button size="small" variant="primary" onClick={() => payGroup(late, `${late.invoices.length} faturas vencidas`)}>
+              Pagar as vencidas
+            </Button>
+          </div>
+        )}
+
+        {groups.map((g) => (
+          <Card
+            key={g.key}
+            title={`Fatura de ${formatDateOnly(g.dueDate)}`}
+            subtitle={`${g.invoices.length} faturas no mesmo vencimento — pague todas com um Pix só.`}
+            actions={
+              <Button
+                size="small"
+                variant="primary"
+                onClick={() => payGroup(g, `${g.invoices.length} faturas · vencimento ${formatDateOnly(g.dueDate)}`)}
+              >
+                Pagar {formatMoney(g.amountCents)} com Pix
+              </Button>
+            }
+          >
+            <ul className={billing.groupList}>
+              {g.invoices.map((inv) => (
+                <li key={inv.id}>
+                  <span>{inv.description}</span>
+                  <strong>{formatMoney(inv.amountCents)}</strong>
+                </li>
+              ))}
+              <li className={billing.groupTotal}>
+                <span>Total</span>
+                <strong>{formatMoney(g.amountCents)}</strong>
+              </li>
+            </ul>
+          </Card>
+        ))}
 
         <Card title="Histórico de faturas" flush>
           {invoices.isLoading ? (
@@ -228,7 +291,7 @@ export function InvoicesPage() {
 
       <PixPaymentModal
         invoice={paying}
-        api={meApi}
+        api={pixApi}
         audience="customer"
         onClose={() => setPaying(null)}
         onPaid={onPaid}

@@ -6,8 +6,8 @@ import type { Invoice } from '@/types';
 import { PixCheckout, usePixCheckout } from './PixCheckout';
 
 interface PixPaymentModalProps {
-  /** Fatura a pagar; nula fecha a janela. */
-  invoice: Invoice | null;
+  /** Fatura a pagar (ou um grupo delas, pela chave); nula fecha a janela. */
+  invoice: Pick<Invoice, 'id' | 'description'> | null;
   api: PixApi;
   /** Quem está vendo: muda só o texto do fim. */
   audience: 'customer' | 'staff';
