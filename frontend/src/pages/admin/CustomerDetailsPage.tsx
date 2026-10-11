@@ -45,9 +45,10 @@ import {
 } from '@/services/format';
 import { formatTaxId } from '@/services/taxid';
 import { stepOf, trackerTone } from '@/services/fulfillment';
+import { useFleet } from '@/hooks/useFleet';
 import { historyRows } from '@/services/invoiceGroups';
 import { accountDueDay, activeDueDays, subscriptionsByVehicle, subscriptionsWithoutVehicle } from '@/services/subscriptions';
-import { HISTORY_RETENTION_OPTIONS } from '@/types';
+import { HISTORY_RETENTION_OPTIONS, retentionLabel } from '@/types';
 import type { HistoryRetention, Invoice, PixPayment, ReminderKind, Subscription, VehicleView } from '@/types';
 
 import styles from '../Page.module.css';
@@ -68,6 +69,8 @@ interface Confirmation {
 
 export function CustomerDetailsPage() {
   const { id = '' } = useParams<{ id: string }>();
+  // A organização da frota do cliente (no Novo veículo: o grupo e os campos personalizados).
+  const { fleet } = useFleet(id);
   const { notify } = useToast();
   const queryClient = useQueryClient();
 
@@ -203,6 +206,9 @@ export function CustomerDetailsPage() {
             </p>
           </div>
           <div className={styles.actions}>
+            <Link to={`/clientes/${id}/relatorios`}>
+              <Button variant="secondary">Relatórios</Button>
+            </Link>
             <Button
               variant="secondary"
               onClick={() => openModal(() => setProfile({ name: data.name, phone: data.phone, document: data.document }))}
@@ -308,7 +314,7 @@ export function CustomerDetailsPage() {
 
         <Card
           title="Histórico dos veículos"
-          subtitle="Por quantos dias guardar o trajeto e os eventos. O que passa do prazo é apagado; cada veículo pode ter o próprio prazo."
+          subtitle="Por quanto tempo guardar o trajeto e os eventos; cada veículo pode ter o próprio prazo. Os últimos 30 dias ficam com todos os pontos; num prazo maior, o trajeto mais velho fica compactado (um ponto por minuto andando). O que passa do prazo é apagado."
         >
           <select
             className={fieldStyles.select}
@@ -320,10 +326,10 @@ export function CustomerDetailsPage() {
               run('Prazo do histórico atualizado', () => customersApi.setHistoryRetention(id, days));
             }}
           >
-            <option value="">Padrão da central ({data.defaultHistoryDays} dias)</option>
+            <option value="">Padrão da central ({retentionLabel(data.defaultHistoryDays)})</option>
             {HISTORY_RETENTION_OPTIONS.map((days) => (
               <option key={days} value={days}>
-                {days} dias
+                {retentionLabel(days)}
               </option>
             ))}
           </select>
@@ -421,11 +427,11 @@ export function CustomerDetailsPage() {
                             }}
                           >
                             <option value="">
-                              Histórico: do cliente ({data.historyRetentionDays ?? data.defaultHistoryDays} dias)
+                              Histórico: do cliente ({retentionLabel(data.historyRetentionDays ?? data.defaultHistoryDays)})
                             </option>
                             {HISTORY_RETENTION_OPTIONS.map((days) => (
                               <option key={days} value={days}>
-                                Histórico: {days} dias
+                                Histórico: {retentionLabel(days)}
                               </option>
                             ))}
                           </select>
@@ -826,6 +832,7 @@ export function CustomerDetailsPage() {
       {/* O único caminho de um veículo novo: veículo → rastreador → assinatura */}
       <NewVehicleWizard
         open={ordering}
+        fleet={fleet}
         admin={{
           customerId: id,
           devices: (devices.data ?? []).filter((d) => !linkedTo.has(d.id)),

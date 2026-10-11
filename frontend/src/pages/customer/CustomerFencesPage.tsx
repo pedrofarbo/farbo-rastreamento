@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { geofencesApi } from '@/api/resources';
-import { DEFAULT_RADIUS, fenceProblem, formFromFence, formatRadius, notifyLabel, RADIUS_STEPS, radiusStep, scheduleLabel, shapeLabel } from '@/app/fence';
+import { DEFAULT_RADIUS, fenceProblem, formFromFence, formatRadius, notifyLabel, RADIUS_STEPS, scheduleLabel, shapeLabel } from '@/app/fence';
 import type { FenceForm } from '@/app/fence';
 import { FenceMap } from '@/app/FenceMap';
 import type { FenceFocus } from '@/app/FenceMap';
@@ -33,13 +33,19 @@ const SEARCH_FROM = 8;
 const VEHICLES_PAGE = 100;
 const DEFAULT_CENTER: [number, number] = [-23.5505, -46.6333];
 
+/** Raios da cerca da central: os do cliente e mais, até 200 km. */
+const CENTRAL_RADIUS_STEPS = [20, ...RADIUS_STEPS, 100_000, 200_000];
+
 /**
- * As cercas do cliente no painel: a lista e o mapa com todas; o editor com
- * círculo (o pino no meio, arrastando o mapa) ou área desenhada (clique a
- * clique), os veículos que ela vigia, os avisos e o horário deles.
+ * As cercas no painel: a lista e o mapa com todas; o editor com círculo (o
+ * pino no meio, arrastando o mapa) ou área desenhada (clique a clique). Do
+ * cliente: os veículos que ela vigia, os avisos e o horário deles. Da
+ * central (central): valem para todos os veículos e só ficam no histórico;
+ * quem mexe é o administrador.
  */
-export function CustomerFencesPage() {
-  const { canOperateAccount } = useAuth();
+export function CustomerFencesPage({ central = false }: { central?: boolean } = {}) {
+  const { canOperateAccount, canManage } = useAuth();
+  const canEdit = central ? canManage : canOperateAccount;
   const fences = useQuery({ queryKey: fencesKey, queryFn: geofencesApi.list });
   const limit = useQuery({ queryKey: [...fencesKey, 'limit'], queryFn: geofencesApi.limit });
   const vehicles = useVehicles();
@@ -62,7 +68,8 @@ export function CustomerFencesPage() {
         key={editing === 'new' ? 'nova' : editing.id}
         existing={editing === 'new' ? undefined : editing}
         vehicles={own}
-        canEdit={canOperateAccount}
+        canEdit={canEdit}
+        central={central}
         onDone={() => setEditing(null)}
       />
     );
@@ -75,12 +82,13 @@ export function CustomerFencesPage() {
           <div>
             <h1 className={pageStyles.title}>Cercas</h1>
             <p className={pageStyles.description}>
-              Avisos quando um veículo entra ou sai de um lugar: um círculo (casa, garagem) ou uma área desenhada (o pátio,
-              um bairro, uma rota), só nos horários que você quiser.
+              {central
+                ? 'As cercas da central valem para todos os veículos: a entrada e a saída ficam no histórico de cada um (sem aviso ao cliente). Um círculo ou uma área desenhada.'
+                : 'Avisos quando um veículo entra ou sai de um lugar: um círculo (casa, garagem) ou uma área desenhada (o pátio, um bairro, uma rota), só nos horários que você quiser.'}
               {max !== null && ` Esta conta tem ${list.length} de ${max} cercas.`}
             </p>
           </div>
-          {canOperateAccount && (
+          {canEdit && (
             <div className={pageStyles.actions}>
               <Button variant="primary" disabled={full || fences.isLoading} onClick={() => setEditing('new')}>
                 Nova cerca
@@ -129,11 +137,17 @@ export function CustomerFencesPage() {
                   </span>
                   <span className={styles.fenceMeta}>
                     <span>{shapeLabel(fence)}</span>
-                    <span>
-                      {fence.vehicleIds.length} {fence.vehicleIds.length === 1 ? 'veículo' : 'veículos'}
-                    </span>
-                    <span>{notifyLabel(fence)}</span>
-                    <span>{scheduleLabel(fence)}</span>
+                    {central ? (
+                      <span>Todos os veículos · só no histórico</span>
+                    ) : (
+                      <>
+                        <span>
+                          {fence.vehicleIds.length} {fence.vehicleIds.length === 1 ? 'veículo' : 'veículos'}
+                        </span>
+                        <span>{notifyLabel(fence)}</span>
+                        <span>{scheduleLabel(fence)}</span>
+                      </>
+                    )}
                   </span>
                 </button>
               ))}
@@ -149,6 +163,11 @@ export function CustomerFencesPage() {
   );
 }
 
+/** As cercas da central (/cercas para a equipe): valem para todos os veículos. */
+export function CentralFencesPage() {
+  return <CustomerFencesPage central />;
+}
+
 /** Os pontos que enquadram as cercas: os vértices das áreas e as bordas dos círculos. */
 function framePoints(fences: Geofence[]): [number, number][] {
   return fences.flatMap((f) => {
@@ -160,6 +179,15 @@ function framePoints(fences: Geofence[]): [number, number][] {
       [f.latitude + dLat, f.longitude + dLon],
     ] as [number, number][];
   });
+}
+
+/** O passo do controle mais próximo do raio. */
+function nearestStep(steps: number[], meters: number): number {
+  let best = 0;
+  steps.forEach((s, i) => {
+    if (Math.abs(s - meters) < Math.abs(steps[best] - meters)) best = i;
+  });
+  return best;
 }
 
 function newForm(vehicles: VehicleView[]): FenceForm {
@@ -184,23 +212,28 @@ function FenceEditor({
   existing,
   vehicles,
   canEdit,
+  central = false,
   onDone,
 }: {
   existing?: Geofence;
   vehicles: VehicleView[];
   canEdit: boolean;
+  central?: boolean;
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
   const { notify } = useToast();
-  const [form, setForm] = useState<FenceForm>(() => (existing ? formFromFence(existing) : newForm(vehicles)));
+  const [form, setForm] = useState<FenceForm>(() =>
+    existing ? formFromFence(existing) : central ? { ...newForm(vehicles), vehicleIds: [] } : newForm(vehicles),
+  );
+  const steps = central ? CENTRAL_RADIUS_STEPS : RADIUS_STEPS;
   const [focus] = useState<FenceFocus>(() => ({ lat: form.latitude, lon: form.longitude, key: 0 }));
   const [touched, setTouched] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [vehicleSearch, setVehicleSearch] = useState('');
   const [vehicleLimit, setVehicleLimit] = useState(VEHICLES_PAGE);
   const set = (patch: Partial<FenceForm>) => setForm((current) => ({ ...current, ...patch }));
-  const problem = fenceProblem(form);
+  const problem = fenceProblem(form, central);
 
   const done = (title: string) => {
     queryClient.invalidateQueries({ queryKey: fencesKey });
@@ -328,94 +361,98 @@ function FenceEditor({
                 <input
                   type="range"
                   min={0}
-                  max={RADIUS_STEPS.length - 1}
+                  max={steps.length - 1}
                   step={1}
-                  value={radiusStep(form.radiusMeters)}
+                  value={nearestStep(steps, form.radiusMeters)}
                   disabled={!canEdit}
-                  onChange={(e) => set({ radiusMeters: RADIUS_STEPS[Number(e.target.value)] })}
+                  onChange={(e) => set({ radiusMeters: steps[Number(e.target.value)] })}
                   aria-valuetext={formatRadius(form.radiusMeters)}
                 />
               </label>
             )}
 
-            <fieldset className={styles.group} disabled={!canEdit}>
-              <legend>
-                Veículos ({form.vehicleIds.length} de {vehicles.length})
-              </legend>
-              {(vehicles.length > SEARCH_FROM || groups.length > 0) && (
-                <div className={styles.vehicleTools}>
-                  <input
-                    className={fieldStyles.input}
-                    type="search"
-                    placeholder="Buscar por nome ou placa"
-                    aria-label="Buscar veículo"
-                    value={vehicleSearch}
-                    onChange={(e) => {
-                      setVehicleSearch(e.target.value);
-                      setVehicleLimit(VEHICLES_PAGE);
-                    }}
-                  />
-                  <Button
-                    size="small"
-                    variant="ghost"
-                    onClick={() => set({ vehicleIds: [...new Set([...form.vehicleIds, ...foundVehicles.map((v) => v.id)])] })}
-                  >
-                    Marcar {vehicleSearch.trim() ? 'os achados' : 'todos'}
-                  </Button>
-                  <Button size="small" variant="ghost" onClick={() => set({ vehicleIds: [] })}>
-                    Desmarcar todos
-                  </Button>
-                  {groups.length > 0 && (
-                    <select
-                      className={fieldStyles.select}
-                      aria-label="Marcar os veículos de um grupo"
-                      value=""
-                      onChange={(e) => e.target.value && markGroup(e.target.value)}
-                    >
-                      <option value="">Marcar um grupo…</option>
-                      {groups.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name} ({g.vehicles})
-                        </option>
-                      ))}
-                    </select>
+            {!central && (
+              <>
+                <fieldset className={styles.group} disabled={!canEdit}>
+                  <legend>
+                    Veículos ({form.vehicleIds.length} de {vehicles.length})
+                  </legend>
+                  {(vehicles.length > SEARCH_FROM || groups.length > 0) && (
+                    <div className={styles.vehicleTools}>
+                      <input
+                        className={fieldStyles.input}
+                        type="search"
+                        placeholder="Buscar por nome ou placa"
+                        aria-label="Buscar veículo"
+                        value={vehicleSearch}
+                        onChange={(e) => {
+                          setVehicleSearch(e.target.value);
+                          setVehicleLimit(VEHICLES_PAGE);
+                        }}
+                      />
+                      <Button
+                        size="small"
+                        variant="ghost"
+                        onClick={() => set({ vehicleIds: [...new Set([...form.vehicleIds, ...foundVehicles.map((v) => v.id)])] })}
+                      >
+                        Marcar {vehicleSearch.trim() ? 'os achados' : 'todos'}
+                      </Button>
+                      <Button size="small" variant="ghost" onClick={() => set({ vehicleIds: [] })}>
+                        Desmarcar todos
+                      </Button>
+                      {groups.length > 0 && (
+                        <select
+                          className={fieldStyles.select}
+                          aria-label="Marcar os veículos de um grupo"
+                          value=""
+                          onChange={(e) => e.target.value && markGroup(e.target.value)}
+                        >
+                          <option value="">Marcar um grupo…</option>
+                          {groups.map((g) => (
+                            <option key={g.id} value={g.id}>
+                              {g.name} ({g.vehicles})
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
                   )}
-                </div>
-              )}
-              <ul className={styles.vehicles}>
-                {foundVehicles.slice(0, vehicleLimit).map((v) => (
-                  <li key={v.id}>
-                    <label>
-                      <input type="checkbox" checked={form.vehicleIds.includes(v.id)} onChange={() => toggle(v.id)} />
-                      <span>{v.name}</span>
-                      {v.plate && <span className={styles.plate}>{v.plate}</span>}
-                    </label>
-                  </li>
-                ))}
-              </ul>
-              {foundVehicles.length > vehicleLimit && (
-                <Button size="small" variant="ghost" onClick={() => setVehicleLimit((n) => n + VEHICLES_PAGE)}>
-                  Mostrar mais {Math.min(VEHICLES_PAGE, foundVehicles.length - vehicleLimit)}
-                </Button>
-              )}
-            </fieldset>
+                  <ul className={styles.vehicles}>
+                    {foundVehicles.slice(0, vehicleLimit).map((v) => (
+                      <li key={v.id}>
+                        <label>
+                          <input type="checkbox" checked={form.vehicleIds.includes(v.id)} onChange={() => toggle(v.id)} />
+                          <span>{v.name}</span>
+                          {v.plate && <span className={styles.plate}>{v.plate}</span>}
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                  {foundVehicles.length > vehicleLimit && (
+                    <Button size="small" variant="ghost" onClick={() => setVehicleLimit((n) => n + VEHICLES_PAGE)}>
+                      Mostrar mais {Math.min(VEHICLES_PAGE, foundVehicles.length - vehicleLimit)}
+                    </Button>
+                  )}
+                </fieldset>
 
-            <fieldset className={styles.group} disabled={!canEdit}>
-              <legend>Avisar quando</legend>
-              <label className={styles.check}>
-                <input type="checkbox" checked={form.notifyEnter} onChange={() => set({ notifyEnter: !form.notifyEnter })} />
-                Entrar na cerca
-              </label>
-              <label className={styles.check}>
-                <input type="checkbox" checked={form.notifyExit} onChange={() => set({ notifyExit: !form.notifyExit })} />
-                Sair da cerca
-              </label>
-            </fieldset>
+                <fieldset className={styles.group} disabled={!canEdit}>
+                  <legend>Avisar quando</legend>
+                  <label className={styles.check}>
+                    <input type="checkbox" checked={form.notifyEnter} onChange={() => set({ notifyEnter: !form.notifyEnter })} />
+                    Entrar na cerca
+                  </label>
+                  <label className={styles.check}>
+                    <input type="checkbox" checked={form.notifyExit} onChange={() => set({ notifyExit: !form.notifyExit })} />
+                    Sair da cerca
+                  </label>
+                </fieldset>
 
-            <fieldset className={styles.group} disabled={!canEdit}>
-              <legend>Horário dos avisos</legend>
-              <ScheduleFields value={form} onChange={(schedule) => set(schedule)} />
-            </fieldset>
+                <fieldset className={styles.group} disabled={!canEdit}>
+                  <legend>Horário dos avisos</legend>
+                  <ScheduleFields value={form} onChange={(schedule) => set(schedule)} />
+                </fieldset>
+              </>
+            )}
 
             {canEdit ? (
               <div className={styles.formActions}>
@@ -441,7 +478,11 @@ function FenceEditor({
                 )}
               </div>
             ) : (
-              <p className={styles.muted}>Seu acesso a esta conta é para acompanhar: as cercas são do titular e dos gestores.</p>
+              <p className={styles.muted}>
+                {central
+                  ? 'As cercas da central são do administrador.'
+                  : 'Seu acesso a esta conta é para acompanhar: as cercas são do titular e dos gestores.'}
+              </p>
             )}
           </div>
         </div>

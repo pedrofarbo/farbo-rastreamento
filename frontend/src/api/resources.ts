@@ -510,12 +510,15 @@ export interface ReportQuery {
   vehicleId?: string;
   /** Só os veículos de um grupo da conta. */
   groupId?: string;
+  /** A central vendo os relatórios de um cliente. */
+  customerId?: string;
 }
 
 function reportPath(kind: string, q: ReportQuery, csv = false): string {
   const params = new URLSearchParams({ de: q.from, ate: q.to });
   if (q.vehicleId) params.set('veiculo', q.vehicleId);
   if (q.groupId) params.set('grupo', q.groupId);
+  if (q.customerId) params.set('cliente', q.customerId);
   if (csv) params.set('formato', 'csv');
   return `/api/reports/${kind}?${params}`;
 }
@@ -593,6 +596,8 @@ export type EquipmentBalance = 'CHARGE' | 'WAIVE';
 export const customersApi = {
   /** A equipe da conta empresa do cliente (só leitura, para a central). */
   team: (id: string) => api.get<AccountMember[]>(`/api/customers/${id}/team`),
+  /** A organização da frota do cliente: grupos e campos personalizados. */
+  fleet: (id: string) => api.get<FleetSettings>(`/api/customers/${id}/fleet`),
   list: () => api.get<CustomerSummary[]>('/api/customers'),
   /** Alertas do cliente: o que ele escolheu e o que foi enviado. */
   alerts: (id: string) => api.get<AlertSettings>(`/api/customers/${id}/alerts`),

@@ -7,6 +7,7 @@ import { ToastProvider } from '@/components/ui/Toast';
 import { RealtimeProvider } from '@/hooks/useRealtime';
 import { InvoicesPage } from '@/pages/customer/InvoicesPage';
 import { MyVehiclesPage } from '@/pages/customer/MyVehiclesPage';
+import { ReportsPage } from '@/pages/customer/ReportsPage';
 import { TheftReportPage } from '@/pages/TheftReportPage';
 import { ContractGate } from '@/components/contract/ContractGate';
 import { AuthProvider, useAuth } from '@/stores/AuthContext';
@@ -89,6 +90,7 @@ export function AppRoot() {
                   <Route path="veiculos/:id" element={<VehicleScreen />} />
                   <Route path="relatorio-roubo/:id" element={<TheftReportPage />} />
                   <Route path="meus-veiculos" element={<MyVehiclesPage />} />
+                  <Route path="relatorios" element={<ReportsPage />} />
                   <Route path="alertas" element={<AlertsScreen />} />
                   <Route path="cercas" element={<FencesScreen />} />
                   <Route path="cercas/nova" element={<FenceScreen />} />

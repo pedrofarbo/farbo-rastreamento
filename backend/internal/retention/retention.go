@@ -1,5 +1,10 @@
 // Package retention decide por quantos dias o histórico (posições e eventos)
-// de cada veículo é guardado — 7, 14 ou 30 — e apaga o que venceu.
+// de cada veículo é guardado — de 7 dias a 1 ano — e apaga o que venceu.
+//
+// Os últimos DetailDays ficam com todos os pontos. Num prazo mais longo, o
+// trajeto mais velho que isso é compactado (andando, um ponto por minuto;
+// parado, um a cada 15 minutos) — o desenho continua, e o banco não cresce
+// com cada posição de um ano inteiro; os eventos ficam todos.
 //
 // A regra herda: o veículo pode ter a própria; senão vale a do cliente dono;
 // senão o padrão da central (HISTORY_RETENTION_DAYS).
@@ -18,7 +23,16 @@ import (
 )
 
 // Options são os prazos aceitos.
-var Options = []int{7, 14, 30}
+var Options = []int{7, 14, 30, 90, 180, 365}
+
+// DetailDays é até quando o histórico guarda todos os pontos; depois, num
+// prazo mais longo, compacta.
+const DetailDays = 30
+
+// compactSlice é a faixa (logo depois de DetailDays) que cada limpeza
+// compacta: refazer é inofensivo, e assim um atraso da limpeza não deixa
+// nada para trás.
+const compactSlice = 3 * 24 * time.Hour
 
 // Valid diz se o prazo é um dos aceitos.
 func Valid(days int) bool {
@@ -30,8 +44,8 @@ func Valid(days int) bool {
 	return false
 }
 
-// ErrInvalid: prazo fora de 7, 14 ou 30.
-var ErrInvalid = errors.New("o histórico pode ser guardado por 7, 14 ou 30 dias")
+// ErrInvalid: prazo fora dos aceitos.
+var ErrInvalid = errors.New("o histórico pode ser guardado por 7, 14, 30 ou 90 dias, 6 meses ou 1 ano")
 
 const (
 	// batchSize limita cada DELETE: transações curtas não travam a ingestão
@@ -145,10 +159,11 @@ func (s *Service) SetVehicle(ctx context.Context, vehicleID uuid.UUID, days *int
 	return nil
 }
 
-// Result é o que uma limpeza apagou.
+// Result é o que uma limpeza apagou (e, nos prazos longos, compactou).
 type Result struct {
 	Positions int64
 	Events    int64
+	Compacted int64
 }
 
 // Cleanup apaga as posições e os eventos mais velhos que o prazo de cada
@@ -189,6 +204,14 @@ func (s *Service) Cleanup(ctx context.Context) (Result, error) {
 		ids := groups[d]
 		for start := 0; start < len(ids); start += deviceChunk {
 			chunk := ids[start:min(start+deviceChunk, len(ids))]
+			if d > DetailDays {
+				detail := s.now().Add(-DetailDays * 24 * time.Hour)
+				n, err := s.compact(ctx, chunk, detail.Add(-compactSlice), detail)
+				res.Compacted += n
+				if err != nil {
+					return res, err
+				}
+			}
 			n, err := s.deleteBatches(ctx, `
 				DELETE FROM positions WHERE id IN (
 					SELECT id FROM positions WHERE device_id = ANY($1) AND gps_timestamp < $2 LIMIT $3)`, chunk, cutoff)
@@ -205,10 +228,41 @@ func (s *Service) Cleanup(ctx context.Context) (Result, error) {
 			}
 		}
 	}
-	if res.Positions > 0 || res.Events > 0 {
-		s.log.Info("histórico vencido apagado", "positions", res.Positions, "events", res.Events)
+	if res.Positions > 0 || res.Events > 0 || res.Compacted > 0 {
+		s.log.Info("histórico vencido apagado", "positions", res.Positions, "events", res.Events, "compacted", res.Compacted)
 	}
 	return res, nil
+}
+
+// compact deixa, nas posições de [from, to), uma por minuto andando e uma a
+// cada 15 minutos parado (a primeira de cada faixa), e apaga as outras. A
+// regra só depende das posições em si: compactar de novo não muda nada.
+func (s *Service) compact(ctx context.Context, devices []uuid.UUID, from, to time.Time) (int64, error) {
+	var total int64
+	for {
+		tag, err := s.db.Exec(ctx, `
+			DELETE FROM positions WHERE id IN (
+				SELECT id FROM (
+					SELECT id, speed_kmh,
+						row_number() OVER (PARTITION BY device_id, date_trunc('minute', gps_timestamp) ORDER BY gps_timestamp, id) AS per_minute,
+						row_number() OVER (PARTITION BY device_id, floor(extract(epoch FROM gps_timestamp) / 900) ORDER BY gps_timestamp, id) AS per_quarter
+					FROM positions WHERE device_id = ANY($1) AND gps_timestamp >= $2 AND gps_timestamp < $3
+				) p
+				WHERE NOT (per_minute = 1 AND (speed_kmh >= 5 OR per_quarter = 1))
+				LIMIT $4)`, devices, from, to, batchSize)
+		if err != nil {
+			return total, database.MapError(err)
+		}
+		total += tag.RowsAffected()
+		if tag.RowsAffected() < batchSize {
+			return total, nil
+		}
+		select {
+		case <-ctx.Done():
+			return total, ctx.Err()
+		case <-time.After(pause):
+		}
+	}
 }
 
 // deleteBatches repete o DELETE em lotes até não sobrar nada vencido.

@@ -86,6 +86,18 @@ export function AccountScreen() {
             </>
           )}
           <li>
+            <Link to="/relatorios" className={styles.listLink}>
+              <span>
+                <strong>Relatórios</strong>
+                <br />
+                <span className={styles.muted}>Km, viagens, tempo parado ligado e excessos de velocidade da frota</span>
+              </span>
+              <span className={styles.chevron}>
+                <ChevronIcon />
+              </span>
+            </Link>
+          </li>
+          <li>
             <Link to="/conta/seguranca" className={styles.listLink}>
               <span>
                 <strong>Segurança</strong>

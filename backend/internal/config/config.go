@@ -971,9 +971,9 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("TCP_MAX_PENDING_PER_IP não pode ser negativo")
 	}
 	switch cfg.Tracking.HistoryRetentionDays {
-	case 7, 14, 30:
+	case 7, 14, 30, 90, 180, 365:
 	default:
-		return nil, fmt.Errorf("HISTORY_RETENTION_DAYS precisa ser 7, 14 ou 30")
+		return nil, fmt.Errorf("HISTORY_RETENTION_DAYS precisa ser 7, 14, 30, 90, 180 ou 365")
 	}
 	if cfg.Tracking.HistoryCleanupInterval < time.Minute || cfg.Tracking.HistoryCleanupInterval > 24*time.Hour {
 		return nil, fmt.Errorf("HISTORY_CLEANUP_INTERVAL fora da faixa aceitável (1m..24h)")

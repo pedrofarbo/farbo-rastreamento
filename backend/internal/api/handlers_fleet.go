@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 )
@@ -25,6 +27,20 @@ func writeFleetError(w http.ResponseWriter, err error, notFound string) {
 
 func (s *Server) handleMyFleet(w http.ResponseWriter, r *http.Request) {
 	owner, _ := customerOf(r)
+	s.writeFleet(w, r, owner)
+}
+
+// handleCustomerFleet: a central vê a organização da frota de um cliente
+// (para os relatórios dele e o Novo veículo pela ficha).
+func (s *Server) handleCustomerFleet(w http.ResponseWriter, r *http.Request) {
+	owner, ok := s.customerFromURL(w, r)
+	if !ok {
+		return
+	}
+	s.writeFleet(w, r, owner)
+}
+
+func (s *Server) writeFleet(w http.ResponseWriter, r *http.Request, owner uuid.UUID) {
 	groups, err := s.Vehicles.Groups(r.Context(), owner)
 	if err != nil {
 		writeFleetError(w, err, "conta não encontrada")

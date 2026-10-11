@@ -42,14 +42,15 @@ const ContractPage = page(() => import('@/pages/legal/ContractPage'), 'ContractP
 const AlertsPage = page(() => import('@/pages/customer/AlertsPage'), 'AlertsPage');
 const InvoicesPage = page(() => import('@/pages/customer/InvoicesPage'), 'InvoicesPage');
 const ReportsPage = page(() => import('@/pages/customer/ReportsPage'), 'ReportsPage');
+const CustomerReportsPage = page(() => import('@/pages/customer/ReportsPage'), 'CustomerReportsPage');
 const MyVehiclesPage = page(() => import('@/pages/customer/MyVehiclesPage'), 'MyVehiclesPage');
 const DashboardPage = page(() => import('@/pages/DashboardPage'), 'DashboardPage');
 const DevicesPage = page(() => import('@/pages/DevicesPage'), 'DevicesPage');
 const DiagnosticsPage = page(() => import('@/pages/DiagnosticsPage'), 'DiagnosticsPage');
 const EventsPage = page(() => import('@/pages/EventsPage'), 'EventsPage');
 const ForgotPasswordPage = page(() => import('@/pages/ForgotPasswordPage'), 'ForgotPasswordPage');
-const GeofencesPage = page(() => import('@/pages/GeofencesPage'), 'GeofencesPage');
 const CustomerFencesPage = page(() => import('@/pages/customer/CustomerFencesPage'), 'CustomerFencesPage');
+const CentralFencesPage = page(() => import('@/pages/customer/CustomerFencesPage'), 'CentralFencesPage');
 const LoginPage = page(() => import('@/pages/LoginPage'), 'LoginPage');
 const ResetPasswordPage = page(() => import('@/pages/ResetPasswordPage'), 'ResetPasswordPage');
 const VehicleDetailsPage = page(() => import('@/pages/VehicleDetailsPage'), 'VehicleDetailsPage');
@@ -133,6 +134,7 @@ export function App() {
                       <Route path="diagnostico" element={<DiagnosticsPage />} />
                       <Route path="clientes" element={<CustomersPage />} />
                       <Route path="clientes/:id" element={<CustomerDetailsPage />} />
+                      <Route path="clientes/:id/relatorios" element={<CustomerReportsPage />} />
                       <Route path="prestadores" element={<InstallersPage />} />
                       <Route path="empresa" element={<CompanyPage />} />
                       <Route path="usuarios" element={<UsersPage />} />
@@ -193,7 +195,7 @@ function RequireStaff() {
 function FencesRoute() {
   const { isCustomer, isStaff } = useAuth();
   if (isCustomer) return <CustomerFencesPage />;
-  if (isStaff) return <GeofencesPage />;
+  if (isStaff) return <CentralFencesPage />;
   return <Navigate to="/dashboard" replace />;
 }
 

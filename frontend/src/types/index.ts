@@ -245,9 +245,17 @@ export interface FleetSettings {
   maxLabelLength: number;
 }
 
-/** Por quantos dias o histórico (trajeto e eventos) é guardado. */
-export type HistoryRetention = 7 | 14 | 30;
-export const HISTORY_RETENTION_OPTIONS: HistoryRetention[] = [7, 14, 30];
+/** Por quantos dias o histórico (trajeto e eventos) é guardado. Além de 30,
+ * os últimos 30 dias ficam com todos os pontos e o resto, compactado. */
+export type HistoryRetention = 7 | 14 | 30 | 90 | 180 | 365;
+export const HISTORY_RETENTION_OPTIONS: HistoryRetention[] = [7, 14, 30, 90, 180, 365];
+
+/** "30 dias", "6 meses", "1 ano". */
+export function retentionLabel(days: number): string {
+  if (days === 365) return '1 ano';
+  if (days === 180) return '6 meses';
+  return `${days} dias`;
+}
 
 /** O que a lista do painel consome: veículo com o estado do rastreador junto. */
 export interface VehicleView extends Vehicle {

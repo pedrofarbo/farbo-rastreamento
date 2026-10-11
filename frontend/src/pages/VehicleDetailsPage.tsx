@@ -20,17 +20,19 @@ import { TelemetryBar } from '@/components/vehicle/TelemetryBar';
 import { TheftPanel } from '@/components/vehicle/TheftPanel';
 import { useVehicle } from '@/hooks/useVehicles';
 import { useAuth } from '@/stores/AuthContext';
-import {
-  formatCoordinates,
-  formatDateTime,
-  formatDeviceStatus,
-  formatHeading,
-  hoursAgo,
-  nowISO,
-} from '@/services/format';
+import { formatCoordinates, formatDateTime, formatDeviceStatus, formatHeading, hoursAgo, nowISO, todayISO } from '@/services/format';
 import type { Position } from '@/types';
+import { retentionLabel } from '@/types';
 
 import styles from './VehicleDetailsPage.module.css';
+
+/** O dia de `days` atrás (AAAA-MM-DD, no fuso do navegador): o mais velho que o histórico guarda. */
+function daysAgoISO(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 const RANGES = [
   { label: '1 h', hours: 1 },
@@ -51,7 +53,10 @@ export function VehicleDetailsPage() {
   const [params] = useSearchParams();
 
   const [rangeHours, setRangeHours] = useState<number | null>(null);
+  // Um dia do histórico (AAAA-MM-DD), em vez de "as últimas N horas".
+  const [day, setDay] = useState('');
   const [frame, setFrame] = useState<Position | null>(null);
+  const showingHistory = rangeHours !== null || day !== '';
   // Veículo de outra pessoa, compartilhado com quem está vendo: só a posição
   // ao vivo (histórico, eventos e comandos continuam só do dono).
   const shared = vehicle?.shared ?? null;
@@ -59,13 +64,18 @@ export function VehicleDetailsPage() {
 
   // O período só é recalculado quando o usuário troca a faixa; sem isso cada
   // render geraria um "from" novo e refaria a consulta.
-  const range = useMemo(
-    () => (rangeHours === null ? null : { from: hoursAgo(rangeHours), to: nowISO() }),
-    [rangeHours],
-  );
+  const range = useMemo(() => {
+    if (day) {
+      const start = new Date(`${day}T00:00:00`);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+      return { from: start.toISOString(), to: end.toISOString() };
+    }
+    return rangeHours === null ? null : { from: hoursAgo(rangeHours), to: nowISO() };
+  }, [rangeHours, day]);
 
   const history = useQuery({
-    queryKey: ['history', id, rangeHours],
+    queryKey: ['history', id, rangeHours, day],
     queryFn: () => vehiclesApi.positions(id as string, { from: range!.from, to: range!.to }),
     enabled: Boolean(id && range && owned),
   });
@@ -142,9 +152,10 @@ export function VehicleDetailsPage() {
             <span className={styles.rangeLabel}>Histórico:</span>
             <button
               type="button"
-              className={`${styles.rangeButton} ${rangeHours === null ? styles.rangeActive : ''}`}
+              className={`${styles.rangeButton} ${!showingHistory ? styles.rangeActive : ''}`}
               onClick={() => {
                 setRangeHours(null);
+                setDay('');
                 setFrame(null);
               }}
             >
@@ -156,16 +167,35 @@ export function VehicleDetailsPage() {
                 key={option.hours}
                 type="button"
                 className={`${styles.rangeButton} ${rangeHours === option.hours ? styles.rangeActive : ''}`}
-                onClick={() => setRangeHours(option.hours)}
+                onClick={() => {
+                  setDay('');
+                  setRangeHours(option.hours);
+                }}
               >
                 {option.label}
               </button>
             ))}
-
-            {rangeHours === null && vehicle.historyDays > 0 && (
-              <span className={styles.sampleNote}>Histórico guardado por {vehicle.historyDays} dias</span>
+            {vehicle.historyDays > 0 && (
+              <input
+                type="date"
+                className={`${styles.rangeButton} ${day ? styles.rangeActive : ''}`}
+                aria-label="Ver um dia do histórico"
+                title="Ver um dia do histórico"
+                value={day}
+                min={daysAgoISO(vehicle.historyDays)}
+                max={todayISO()}
+                onChange={(event) => {
+                  setRangeHours(null);
+                  setFrame(null);
+                  setDay(event.target.value);
+                }}
+              />
             )}
-            {history.data && rangeHours !== null && (
+
+            {!showingHistory && vehicle.historyDays > 0 && (
+              <span className={styles.sampleNote}>Histórico guardado por {retentionLabel(vehicle.historyDays)}</span>
+            )}
+            {history.data && showingHistory && (
               <span className={styles.sampleNote}>
                 {history.data.returned} de {history.data.total} pontos
                 {history.data.sampled ? ` (1 a cada ${history.data.sampleStep})` : ''}
@@ -179,12 +209,12 @@ export function VehicleDetailsPage() {
           <TrackerMap
             vehicles={[vehicle]}
             selectedId={vehicle.id}
-            track={rangeHours === null ? undefined : track}
+            track={showingHistory ? track : undefined}
             highlight={frame}
           />
         </div>
 
-        {rangeHours !== null && track.length > 0 && (
+        {showingHistory && track.length > 0 && (
           <Playback positions={track} onFrame={setFrame} />
         )}
 

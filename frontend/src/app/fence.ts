@@ -72,12 +72,12 @@ export function formFromFence(fence: Geofence): FenceForm {
   };
 }
 
-/** O que impede salvar, ou null. */
-export function fenceProblem(form: FenceForm): string | null {
+/** O que impede salvar, ou null. A cerca da central (central) vale para todos os veículos. */
+export function fenceProblem(form: FenceForm, central = false): string | null {
   if (!form.name.trim()) return 'Dê um nome para a cerca.';
   if (form.name.trim().length > 100) return 'Use um nome com até 100 caracteres.';
   if (form.shape === 'polygon' && (form.polygon?.length ?? 0) < 3) return 'Desenhe a área com pelo menos 3 pontos.';
-  if (form.vehicleIds.length === 0) return 'Escolha ao menos um veículo.';
+  if (!central && form.vehicleIds.length === 0) return 'Escolha ao menos um veículo.';
   if ((form.scheduleStart === null) !== (form.scheduleEnd === null)) return 'Informe o início e o fim do horário.';
   if (form.scheduleStart !== null && form.scheduleStart === form.scheduleEnd) {
     return 'O horário precisa de início e fim diferentes.';

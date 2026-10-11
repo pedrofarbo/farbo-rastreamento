@@ -125,7 +125,7 @@ export function NewVehicleWizard({
 }: {
   open: boolean;
   admin?: WizardAdmin;
-  /** A organização da frota do cliente: ele já escolhe o grupo e preenche os campos personalizados. */
+  /** A organização da frota do cliente: o grupo e os campos personalizados já no cadastro. */
   fleet?: FleetSettings;
   onClose: () => void;
   onDone: (result: TrackerOrderResult) => void;
@@ -417,7 +417,7 @@ export function NewVehicleWizard({
                 <p className={pageStyles.description}>
                   Qual veículo vai receber o rastreador?
                 </p>
-                <VehicleFields value={vehicle} onChange={setVehicle} fleet={isAdmin ? undefined : fleet} autoFocus />
+                <VehicleFields value={vehicle} onChange={setVehicle} fleet={fleet} autoFocus />
               </>
             )}
 

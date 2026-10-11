@@ -27,12 +27,12 @@ func TestEffective(t *testing.T) {
 }
 
 func TestValid(t *testing.T) {
-	for _, d := range []int{7, 14, 30} {
+	for _, d := range []int{7, 14, 30, 90, 180, 365} {
 		if !Valid(d) {
 			t.Errorf("%d devia valer", d)
 		}
 	}
-	for _, d := range []int{0, 1, 15, 31, 60, -7} {
+	for _, d := range []int{0, 1, 15, 31, 60, 366, -7} {
 		if Valid(d) {
 			t.Errorf("%d não devia valer", d)
 		}

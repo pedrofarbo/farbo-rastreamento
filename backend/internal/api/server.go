@@ -614,6 +614,7 @@ func (s *Server) routes() chi.Router {
 							}
 							r.Put("/address", s.handleSaveCustomerAddress)
 							r.Put("/history-retention", s.handleSetCustomerRetention)
+							r.Get("/fleet", s.handleCustomerFleet)
 							r.Get("/alerts", s.handleGetCustomerAlerts)
 							// A equipe da conta empresa do cliente (só leitura).
 							if s.Accounts != nil {

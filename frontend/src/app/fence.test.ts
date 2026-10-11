@@ -34,6 +34,8 @@ describe('cerca do app', () => {
     expect(fenceProblem(form)).toBeNull();
     expect(fenceProblem({ ...form, name: '  ' })).toMatch(/nome/);
     expect(fenceProblem({ ...form, vehicleIds: [] })).toMatch(/veículo/);
+    // A da central vale para todos os veículos.
+    expect(fenceProblem({ ...form, vehicleIds: [] }, true)).toBeNull();
     expect(fenceProblem({ ...form, shape: 'polygon', polygon: [[0, 0], [1, 1]] })).toMatch(/3 pontos/);
     expect(fenceProblem({ ...form, scheduleStart: 480 })).toMatch(/início e o fim/);
     expect(fenceProblem({ ...form, scheduleStart: 480, scheduleEnd: 480 })).toMatch(/diferentes/);

@@ -212,3 +212,8 @@
   z-index: 1;
   background: var(--surface-raised);
 }
+
+.back {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}

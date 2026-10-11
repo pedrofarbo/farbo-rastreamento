@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link, useParams } from 'react-router-dom';
 
-import { reportsApi } from '@/api/resources';
+import { customersApi, reportsApi } from '@/api/resources';
 import type { ReportKind, ReportQuery } from '@/api/resources';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -49,7 +50,7 @@ const SEARCH_FROM = 12;
  * cada veículo, os km de cada dia, as viagens de um veículo e os excessos de
  * velocidade — na tela e na planilha (CSV, que o Excel abre direto).
  */
-export function ReportsPage() {
+export function ReportsPage({ customerId, customerName }: { customerId?: string; customerName?: string } = {}) {
   const today = todayISO();
   const [preset, setPreset] = useState<PeriodPreset | null>('week');
   const [period, setPeriod] = useState(() => presetPeriod('week', today));
@@ -58,9 +59,12 @@ export function ReportsPage() {
   const [vehicleId, setVehicleId] = useState('');
   const [downloading, setDownloading] = useState(false);
   // O grupo escolhido vale para as quatro abas e para a planilha.
-  const { groups } = useFleet();
+  const { groups } = useFleet(customerId);
   const [group, setGroup] = useState('');
-  const scope: ReportQuery = useMemo(() => ({ ...period, groupId: group || undefined }), [period, group]);
+  const scope: ReportQuery = useMemo(
+    () => ({ ...period, groupId: group || undefined, customerId }),
+    [period, group, customerId],
+  );
   const { notify } = useToast();
   const problem = periodProblem(draft.from, draft.to);
 
@@ -97,7 +101,12 @@ export function ReportsPage() {
       <div className={pageStyles.inner}>
         <header className={pageStyles.header}>
           <div>
-            <h1 className={pageStyles.title}>Relatórios</h1>
+            {customerId && (
+              <Link to={`/clientes/${customerId}`} className={styles.back}>
+                ← {customerName || 'Cliente'}
+              </Link>
+            )}
+            <h1 className={pageStyles.title}>{customerId ? `Relatórios de ${customerName || 'cliente'}` : 'Relatórios'}</h1>
             <p className={pageStyles.description}>
               Os números da frota no período: km, tempo andando, parado com a ignição ligada, viagens e excessos de
               velocidade. Atualizados a cada 5 minutos.
@@ -610,4 +619,11 @@ function VehicleName({ name, plate }: { name: string; plate: string }) {
       {plate && <span className={styles.plate}>{plate}</span>}
     </span>
   );
+}
+
+/** Os relatórios de um cliente, para a central (/clientes/:id/relatorios). */
+export function CustomerReportsPage() {
+  const { id = '' } = useParams<{ id: string }>();
+  const customer = useQuery({ queryKey: ['customer', id], queryFn: () => customersApi.get(id), enabled: Boolean(id) });
+  return <ReportsPage customerId={id} customerName={customer.data?.name} />;
 }
