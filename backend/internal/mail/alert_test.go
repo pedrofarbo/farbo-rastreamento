@@ -1,6 +1,7 @@
 package mail
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -54,5 +55,34 @@ func TestAlertEmailForCentralHasNoSettingsLink(t *testing.T) {
 	}
 	if strings.Contains(msg.HTML, "Velocidade") || strings.Contains(msg.HTML, "repetiu") {
 		t.Error("sem velocidade nem repetidos, essas linhas não aparecem")
+	}
+}
+
+// O resumo dos alertas que passaram do teto por hora: quantos, por tipo e
+// por veículo, com "e mais" e os links.
+func TestAlertDigest(t *testing.T) {
+	sender := &captureSender{}
+	err := NewAlertMailer(sender).Digest(context.Background(), AlertDigest{
+		To: "frota@x.test", Name: "Lia Souza", Count: 37, MaxPerHour: 20,
+		Kinds:        []DigestLine{{"Excesso de velocidade", 21}, {"Ignição ligada (qualquer horário)", 16}},
+		Vehicles:     []DigestLine{{"Van 0503", 4}, {"Caminhão 0012", 3}},
+		MoreVehicles: 12,
+		From:         "11/10/2026 às 08:02 (horário de Brasília)", Until: "11/10/2026 às 08:59 (horário de Brasília)",
+		ActionURL: "https://farbo.test/dashboard", SettingsURL: "https://farbo.test/alertas",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := sender.last
+	if m.Subject != "Resumo: 37 alertas da última hora" {
+		t.Errorf("assunto = %q", m.Subject)
+	}
+	for name, part := range map[string]string{"texto": m.Text, "HTML": m.HTML} {
+		for _, want := range []string{"Olá, Lia!", "37 alertas ficaram", "até 20 alertas por hora", "Excesso de velocidade", "21",
+			"Van 0503", "e mais 12 veículos", "08:02", "08:59", "https://farbo.test/dashboard", "https://farbo.test/alertas", "botão de pânico"} {
+			if !strings.Contains(part, want) {
+				t.Errorf("%s sem %q", name, want)
+			}
+		}
 	}
 }

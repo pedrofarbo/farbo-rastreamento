@@ -85,3 +85,12 @@ func TestNormalizeCustomerAndCentralFences(t *testing.T) {
 		t.Errorf("a central aceita raio de 30 m e nenhum veículo: %v", err)
 	}
 }
+
+// O limite de cercas cresce com a frota: 2 por veículo ativo, de 20 a 500.
+func TestLimitGrowsWithTheFleet(t *testing.T) {
+	for vehicles, want := range map[int]int{0: 20, 1: 20, 10: 20, 11: 22, 100: 200, 250: 500, 1000: 500} {
+		if got := LimitFor(vehicles); got != want {
+			t.Errorf("%d veículos: %d cercas, quer %d", vehicles, got, want)
+		}
+	}
+}

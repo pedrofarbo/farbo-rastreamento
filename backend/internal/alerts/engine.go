@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -24,6 +25,8 @@ import (
 // Mailer entrega o e-mail de alerta (mail.AlertMailer).
 type Mailer interface {
 	Alert(ctx context.Context, a mail.Alert) error
+	// Digest manda o resumo dos alertas que passaram do teto por hora.
+	Digest(ctx context.Context, d mail.AlertDigest) error
 }
 
 // Geocoder põe o endereço no e-mail (geocoding.Service). Opcional.
@@ -84,6 +87,10 @@ const (
 	sendTimeout     = 30 * time.Second
 	geocodeTimeout  = 5 * time.Second
 	retryDelay      = 5 * time.Second
+	// digestInterval: de quanto em quanto tempo sai o resumo dos alertas
+	// que passaram do teto por hora; digestVehicles: quantos veículos ele lista.
+	digestInterval = time.Hour
+	digestVehicles = 10
 )
 
 // ignitionOn é o candidato de ignição ligada: vira IGNITION_GUARD ou
@@ -316,6 +323,8 @@ func (e *Engine) Run(ctx context.Context) {
 
 	sweep := time.NewTicker(sweepInterval)
 	defer sweep.Stop()
+	digest := time.NewTicker(digestInterval)
+	defer digest.Stop()
 	lostTick := time.NewTicker(lostSweep)
 	defer lostTick.Stop()
 	lastPrune := time.Time{}
@@ -330,6 +339,8 @@ func (e *Engine) Run(ctx context.Context) {
 			e.process(ctx, c)
 		case <-lostTick.C:
 			e.sweepLost(ctx)
+		case <-digest.C:
+			e.sendDigests(ctx)
 		case <-sweep.C:
 			e.sweepOffline(ctx)
 			if e.now().Sub(lastPrune) > 24*time.Hour {
@@ -652,7 +663,10 @@ func (e *Engine) deliver(ctx context.Context, t *Target, c candidate, r recipien
 		e.log.Error("falha ao consultar o histórico de alertas", "err", err)
 		return
 	}
-	if count >= e.cfg.MaxPerHour {
+	// O teto por hora não segura alerta de segurança (pânico, bateria do
+	// veículo desconectada, reboque): esses saem sempre. Os outros que
+	// passarem dele entram no resumo da hora (sendDigests).
+	if count >= e.cfg.MaxPerHour && !isSecurity(r.kind) {
 		e.suppress(ctx, n, ReasonHourlyCap)
 		return
 	}
@@ -676,6 +690,103 @@ func (e *Engine) deliver(ctx context.Context, t *Target, c candidate, r recipien
 	case e.sends <- d:
 	case <-ctx.Done():
 	}
+}
+
+// sendDigests manda, a cada hora, o resumo dos alertas que passaram do teto
+// por hora: um e-mail por destinatário, com quantos de cada tipo e de quais
+// veículos. Numa frota, dezenas de alertas comuns viram um e-mail só, em vez
+// de se perderem.
+func (e *Engine) sendDigests(ctx context.Context) {
+	items, err := e.store.ClaimDigest(ctx)
+	if err != nil {
+		e.log.Error("falha ao juntar o resumo de alertas", "err", err)
+		return
+	}
+	byRecipient := map[string][]DigestItem{}
+	var order []string
+	for _, it := range items {
+		if _, ok := byRecipient[it.Recipient]; !ok {
+			order = append(order, it.Recipient)
+		}
+		byRecipient[it.Recipient] = append(byRecipient[it.Recipient], it)
+	}
+	for _, to := range order {
+		d := e.digest(byRecipient[to])
+		sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
+		err := e.mailer.Digest(sendCtx, d)
+		cancel()
+		if err != nil {
+			e.log.Warn("resumo de alertas não enviado", "to", maskEmail(to), "err", err)
+			continue
+		}
+		e.log.Info("resumo de alertas enviado", "to", maskEmail(to), "alertas", d.Count)
+	}
+}
+
+// digest monta o resumo de um destinatário: os tipos e os veículos, dos
+// mais frequentes para os menos.
+func (e *Engine) digest(items []DigestItem) mail.AlertDigest {
+	kinds, vehicles := map[string]int{}, map[string]int{}
+	from, until := items[0].OccurredAt, items[0].OccurredAt
+	for _, it := range items {
+		kinds[digestLabel(it.Kind)]++
+		name := it.VehicleName
+		if name == "" {
+			name = "Veículo sem nome"
+		}
+		vehicles[name]++
+		if it.OccurredAt.Before(from) {
+			from = it.OccurredAt
+		}
+		if it.OccurredAt.After(until) {
+			until = it.OccurredAt
+		}
+	}
+	d := mail.AlertDigest{
+		To: items[0].Recipient, Name: items[0].Name, Count: len(items), MaxPerHour: e.cfg.MaxPerHour,
+		Kinds: ranked(kinds, 0), Vehicles: ranked(vehicles, digestVehicles),
+		From: e.formatWhen(from), Until: e.formatWhen(until),
+		ActionURL: e.appURL + "/dashboard", SettingsURL: e.appURL + "/alertas", AppURL: e.appURL,
+	}
+	d.MoreVehicles = len(vehicles) - len(d.Vehicles)
+	return d
+}
+
+// ranked: as contagens da mais alta para a mais baixa (no empate, pelo
+// nome); com limit, só as primeiras.
+func ranked(counts map[string]int, limit int) []mail.DigestLine {
+	out := make([]mail.DigestLine, 0, len(counts))
+	for label, n := range counts {
+		out = append(out, mail.DigestLine{Label: label, Count: n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Label < out[j].Label
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+// digestLabel é o nome do tipo de alerta no resumo.
+func digestLabel(kind string) string {
+	switch {
+	case kind == "ENGINE_BLOCKED":
+		return "Motor bloqueado"
+	case kind == "ENGINE_UNBLOCKED":
+		return "Motor liberado"
+	case strings.HasPrefix(kind, "GEOFENCE_ENTER:"):
+		return "Entrada em cerca"
+	case strings.HasPrefix(kind, "GEOFENCE_EXIT:"):
+		return "Saída de cerca"
+	}
+	if info, ok := Info(kind); ok {
+		return info.Label
+	}
+	return kind
 }
 
 func (e *Engine) suppress(ctx context.Context, n *Notification, reason string) {

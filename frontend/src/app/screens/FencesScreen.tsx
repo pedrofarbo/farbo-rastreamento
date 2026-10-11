@@ -8,7 +8,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useAuth } from '@/stores/AuthContext';
 
-import { formatRadius, MAX_FENCES, notifyLabel } from '../fence';
+import { formatRadius, notifyLabel } from '../fence';
 import { BackIcon, ChevronIcon } from '../icons';
 import fence from './Fence.module.css';
 import styles from './Screen.module.css';
@@ -20,13 +20,16 @@ export function FencesScreen() {
   const { canOperateAccount } = useAuth();
   const navigate = useNavigate();
   const fences = useQuery({ queryKey: fencesKey, queryFn: geofencesApi.list });
+  // O limite cresce com a frota (2 por veículo ativo, de 20 a 500).
+  const limit = useQuery({ queryKey: [...fencesKey, 'limit'], queryFn: geofencesApi.limit });
   const vehicles = useVehicles();
 
   if (isSuspendedError(fences.error)) return <SuspendedNotice message={fences.error?.message} />;
 
   const list = fences.data ?? [];
   const names = new Map((vehicles.data ?? []).map((v) => [v.id, v.name]));
-  const full = list.length >= MAX_FENCES;
+  const max = limit.data?.limit ?? null;
+  const full = max !== null && list.length >= max;
 
   // Aberto direto (link ou recarregar), não há tela anterior no app.
   const goBack = () => {
@@ -87,7 +90,7 @@ export function FencesScreen() {
           <Button variant="primary" onClick={() => navigate('/cercas/nova')} disabled={full || fences.isLoading} block>
             Nova cerca
           </Button>
-          {full && <p className={styles.muted}>Você chegou ao limite de {MAX_FENCES} cercas: apague uma para criar outra.</p>}
+          {full && <p className={styles.muted}>Você chegou ao limite de {max} cercas desta conta: apague uma para criar outra.</p>}
         </>
       ) : (
         <p className={styles.muted}>Seu acesso a esta conta é para acompanhar: as cercas são criadas pelo titular e pelos gestores.</p>

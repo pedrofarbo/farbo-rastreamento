@@ -380,6 +380,7 @@ func (s *Server) routes() chi.Router {
 				r.Use(s.requireContract)
 				r.Use(s.requireActiveCustomer)
 				r.Get("/", s.handleListGeofences)
+				r.Get("/limit", s.handleGeofenceLimit)
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireRole(auth.RoleAdmin, auth.RoleCustomer))
 					r.Use(s.requireAccountOperator)

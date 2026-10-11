@@ -32,6 +32,22 @@ func (s *Server) handleListGeofences(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
+// handleGeofenceLimit: quantas cercas o cliente pode ter (cresce com a
+// frota) e quantas já tem. As da central não têm limite (limit nulo).
+func (s *Server) handleGeofenceLimit(w http.ResponseWriter, r *http.Request) {
+	owner := fenceOwner(r)
+	if owner == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"limit": nil, "used": 0})
+		return
+	}
+	limit, used, err := s.Geofences.Limit(r.Context(), *owner)
+	if err != nil {
+		handleStoreError(w, err, "cercas não encontradas")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"limit": limit, "used": used})
+}
+
 func (s *Server) handleCreateGeofence(w http.ResponseWriter, r *http.Request) {
 	var in geofences.Input
 	if err := decodeJSON(w, r, &in); err != nil {

@@ -466,6 +466,8 @@ export interface GeofenceInput {
 
 export const geofencesApi = {
   list: () => api.get<Geofence[]>('/api/geofences'),
+  /** Quantas cercas a conta pode ter (cresce com a frota) e quantas tem; null: sem limite (a central). */
+  limit: () => api.get<{ limit: number | null; used: number }>('/api/geofences/limit'),
   create: (input: GeofenceInput) => api.post<Geofence>('/api/geofences', input),
   update: (id: string, input: GeofenceInput) => api.patch<Geofence>(`/api/geofences/${id}`, input),
   remove: (id: string) => api.delete<void>(`/api/geofences/${id}`),

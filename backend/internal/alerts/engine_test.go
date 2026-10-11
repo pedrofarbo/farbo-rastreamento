@@ -29,6 +29,8 @@ type memStore struct {
 	offline map[uuid.UUID]bool
 	rows    []*Notification
 	nextID  int64
+	// digested: os segurados pelo teto que já entraram num resumo.
+	digested map[int64]bool
 }
 
 func (m *memStore) Target(_ context.Context, deviceID uuid.UUID) (*Target, error) {
@@ -145,6 +147,30 @@ func (m *memStore) LastTest(_ context.Context, userID uuid.UUID) (time.Time, boo
 	return time.Time{}, false, nil
 }
 
+func (m *memStore) ClaimDigest(context.Context) ([]DigestItem, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.digested == nil {
+		m.digested = map[int64]bool{}
+	}
+	var out []DigestItem
+	for _, r := range m.rows {
+		if r.Status != StatusSuppressed || r.Reason != ReasonHourlyCap || m.digested[r.ID] {
+			continue
+		}
+		m.digested[r.ID] = true
+		it := DigestItem{Recipient: r.Recipient, Kind: r.Kind, OccurredAt: r.OccurredAt}
+		if t := m.targets[*r.DeviceID]; t != nil {
+			it.VehicleName = t.VehicleName
+			if t.Owner != nil && t.Owner.Email == r.Recipient {
+				it.Name = t.Owner.Name
+			}
+		}
+		out = append(out, it)
+	}
+	return out, nil
+}
+
 func (m *memStore) statuses(kind string) []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -158,8 +184,16 @@ func (m *memStore) statuses(kind string) []string {
 }
 
 type memMailer struct {
-	mu   sync.Mutex
-	sent []mail.Alert
+	mu      sync.Mutex
+	sent    []mail.Alert
+	digests []mail.AlertDigest
+}
+
+func (m *memMailer) Digest(_ context.Context, d mail.AlertDigest) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.digests = append(m.digests, d)
+	return nil
 }
 
 func (m *memMailer) Alert(_ context.Context, a mail.Alert) error {
@@ -342,6 +376,40 @@ func TestHourlyCapPerRecipient(t *testing.T) {
 	h.now = h.now.Add(61 * time.Minute)
 	if got := h.event(events.LowBattery, h.now, nil); len(got) != 1 {
 		t.Fatalf("na hora seguinte volta a sair, veio %d", len(got))
+	}
+}
+
+// O teto por hora não segura os alertas de segurança; os comuns que passam
+// dele saem juntos no resumo da hora — uma vez só cada um.
+func TestHourlyCapSparesSecurityAndDigestsTheRest(t *testing.T) {
+	h := newHarness(t, func(c *config.Alerts) { c.MaxPerHour = 1 })
+	if got := h.event(events.LowBattery, h.now, nil); len(got) != 1 {
+		t.Fatalf("o primeiro da hora sai, veio %d", len(got))
+	}
+	// Passou do teto: o comum fica para o resumo; o de segurança sai.
+	if got := h.event(events.IgnitionOn, h.now, nil); len(got) != 0 {
+		t.Fatalf("ignição na vigilância acima do teto devia ir para o resumo, veio %d", len(got))
+	}
+	if got := h.event(events.SOS, h.now, nil); len(got) != 1 {
+		t.Fatalf("o pânico passa do teto, veio %d", len(got))
+	}
+	if got := h.event(events.PowerLoss, h.now, nil); len(got) != 1 {
+		t.Fatalf("a bateria do veículo desconectada passa do teto, veio %d", len(got))
+	}
+
+	h.e.sendDigests(h.ctx)
+	if len(h.mailer.digests) != 1 {
+		t.Fatalf("resumos = %d", len(h.mailer.digests))
+	}
+	d := h.mailer.digests[0]
+	if d.To != "ana@cliente.test" || d.Count != 1 || len(d.Kinds) != 1 || d.Kinds[0].Label != "Ignição ligada no horário de vigilância" ||
+		len(d.Vehicles) != 1 || d.Vehicles[0].Label != "Moto da Ana" || d.MaxPerHour != 1 || d.SettingsURL != "https://painel.farbo.test/alertas" {
+		t.Errorf("resumo = %+v", d)
+	}
+	// O mesmo alerta não entra em dois resumos.
+	h.e.sendDigests(h.ctx)
+	if len(h.mailer.digests) != 1 {
+		t.Errorf("mandou o resumo de novo: %d", len(h.mailer.digests))
 	}
 }
 
@@ -688,6 +756,9 @@ func (m *memPusher) Notify(_ context.Context, userID uuid.UUID, n push.Notificat
 type failingMailer struct{}
 
 func (failingMailer) Alert(context.Context, mail.Alert) error { return errors.New("smtp fora do ar") }
+func (failingMailer) Digest(context.Context, mail.AlertDigest) error {
+	return errors.New("smtp fora do ar")
+}
 
 func TestAlertAlsoGoesToCustomerPhone(t *testing.T) {
 	h := newHarness(t, func(c *config.Alerts) { c.CentralEmails = []string{"central@farbo.test"} })

@@ -55,10 +55,14 @@ type Input struct {
 	NotifyExit   *bool       `json:"notifyExit"`
 }
 
-// Limites das cercas do cliente. O raio mínimo fica acima do erro do GPS:
-// menor que isso, o veículo parado "entraria e sairia" sozinho.
+// Limites das cercas do cliente. Quantas: cresce com a frota (garagens,
+// clientes e filiais), FencesPerVehicle por veículo ativo, de MinPerCustomer
+// a MaxPerCustomer. O raio mínimo fica acima do erro do GPS: menor que isso,
+// o veículo parado "entraria e sairia" sozinho.
 const (
-	MaxPerCustomer     = 20
+	MinPerCustomer     = 20
+	FencesPerVehicle   = 2
+	MaxPerCustomer     = 500
 	CustomerMinRadiusM = 50
 	CustomerMaxRadiusM = 50000
 
@@ -188,6 +192,13 @@ func (r *Repository) ListByOwner(ctx context.Context, owner *uuid.UUID) ([]*Geof
 	return r.list(ctx, `SELECT `+columns+` FROM geofences g WHERE `+ownerMatches+`$1 ORDER BY g.name`, owner)
 }
 
+// ActiveVehicles conta os veículos ativos do cliente (as assinaturas ativas).
+func (r *Repository) ActiveVehicles(ctx context.Context, owner uuid.UUID) (int, error) {
+	var n int
+	err := r.db.QueryRow(ctx, `SELECT count(*) FROM subscriptions WHERE customer_id = $1 AND status = 'ACTIVE'`, owner).Scan(&n)
+	return n, database.MapError(err)
+}
+
 func (r *Repository) CountByOwner(ctx context.Context, owner uuid.UUID) (int, error) {
 	var n int
 	err := r.db.QueryRow(ctx, `SELECT count(*) FROM geofences WHERE owner_id = $1`, owner).Scan(&n)
@@ -276,6 +287,21 @@ func (s *Service) ListByOwner(ctx context.Context, owner *uuid.UUID) ([]*Geofenc
 	return s.repo.ListByOwner(ctx, owner)
 }
 
+// LimitFor é quantas cercas cabem numa conta com tantos veículos ativos.
+func LimitFor(activeVehicles int) int {
+	return min(MaxPerCustomer, max(MinPerCustomer, FencesPerVehicle*activeVehicles))
+}
+
+// Limit é quantas cercas o cliente pode ter, e quantas já tem.
+func (s *Service) Limit(ctx context.Context, owner uuid.UUID) (limit, used int, err error) {
+	vehicles, err := s.repo.ActiveVehicles(ctx, owner)
+	if err != nil {
+		return 0, 0, err
+	}
+	used, err = s.repo.CountByOwner(ctx, owner)
+	return LimitFor(vehicles), used, err
+}
+
 // Create cria a cerca da central (owner nulo) ou de um cliente.
 func (s *Service) Create(ctx context.Context, owner *uuid.UUID, in Input) (*Geofence, error) {
 	in, err := normalize(in, owner)
@@ -283,12 +309,14 @@ func (s *Service) Create(ctx context.Context, owner *uuid.UUID, in Input) (*Geof
 		return nil, err
 	}
 	if owner != nil {
-		count, err := s.repo.CountByOwner(ctx, *owner)
+		limit, used, err := s.Limit(ctx, *owner)
 		if err != nil {
 			return nil, err
 		}
-		if count >= MaxPerCustomer {
-			return nil, ValidationError{Message: fmt.Sprintf("limite de %d cercas por conta: apague uma para criar outra", MaxPerCustomer)}
+		if used >= limit {
+			return nil, ValidationError{Message: fmt.Sprintf(
+				"limite de %d cercas nesta conta (%d por veículo, no mínimo %d): apague uma para criar outra",
+				limit, FencesPerVehicle, MinPerCustomer)}
 		}
 	}
 	g, err := s.repo.Create(ctx, owner, in)

@@ -272,14 +272,38 @@ func TestCustomerGeofencesEndToEnd(t *testing.T) {
 		t.Fatalf("cerca apagada não gera saída, veio %+v", got)
 	}
 
-	// --- Limite por conta ---------------------------------------------------------
-	for i := range geofences.MaxPerCustomer {
+	// --- Limite por conta (com poucos veículos, o mínimo) -------------------------
+	var limit struct {
+		Limit int `json:"limit"`
+		Used  int `json:"used"`
+	}
+	_ = json.Unmarshal(env.must(anaToken, http.MethodGet, "/api/geofences/limit", nil, http.StatusOK), &limit)
+	if limit.Limit != geofences.MinPerCustomer {
+		t.Fatalf("limite da Ana = %+v", limit)
+	}
+	for i := limit.Used; i < limit.Limit; i++ {
 		input["name"] = fmt.Sprintf("Cerca %02d", i)
 		env.must(anaToken, http.MethodPost, "/api/geofences", input, http.StatusCreated)
 	}
 	if status, out := env.do(anaToken, http.MethodPost, "/api/geofences", input); status != http.StatusBadRequest {
-		t.Fatalf("passou do limite de %d cercas: esperava 400, veio %d: %s", geofences.MaxPerCustomer, status, out)
+		t.Fatalf("passou do limite de %d cercas: esperava 400, veio %d: %s", limit.Limit, status, out)
 	}
+	// Uma frota de 15 veículos ativos: 30 cercas.
+	if _, err := env.db.Exec(context.Background(), `
+		INSERT INTO subscriptions (customer_id, plan_name, price_cents, due_day, next_due_date)
+		SELECT $1, 'Plano Frota', 4990, 10, '2026-11-10' FROM generate_series(1, 15)`, ana.ID); err != nil {
+		t.Fatal(err)
+	}
+	var active int
+	if err := env.db.QueryRow(context.Background(), `SELECT count(*) FROM subscriptions WHERE customer_id = $1 AND status = 'ACTIVE'`,
+		ana.ID).Scan(&active); err != nil {
+		t.Fatal(err)
+	}
+	_ = json.Unmarshal(env.must(anaToken, http.MethodGet, "/api/geofences/limit", nil, http.StatusOK), &limit)
+	if active < 15 || limit.Limit != 2*active || limit.Used != geofences.MinPerCustomer {
+		t.Errorf("limite da frota de %d = %+v", active, limit)
+	}
+	env.must(anaToken, http.MethodPost, "/api/geofences", input, http.StatusCreated)
 	// A Bia continua podendo criar as dela.
 	env.must(biaToken, http.MethodPost, "/api/geofences", map[string]any{"name": "Trabalho", "latitude": homeLat,
 		"longitude": homeLon, "radiusMeters": 500, "vehicleIds": []uuid.UUID{carroBia.ID}}, http.StatusCreated)

@@ -94,6 +94,18 @@ type Store interface {
 	Prune(ctx context.Context, before time.Time) (int64, error)
 	// LastTest é o último e-mail de teste do usuário.
 	LastTest(ctx context.Context, userID uuid.UUID) (time.Time, bool, error)
+	// ClaimDigest marca e devolve os alertas segurados pelo teto por hora
+	// que ainda não entraram num resumo (cada um entra num só).
+	ClaimDigest(ctx context.Context) ([]DigestItem, error)
+}
+
+// DigestItem é um alerta segurado pelo teto por hora, para o resumo.
+type DigestItem struct {
+	Recipient   string
+	Name        string
+	Kind        string
+	VehicleName string
+	OccurredAt  time.Time
 }
 
 // SuspendedFunc diz se o cliente está com o acesso suspenso por atraso.
@@ -216,6 +228,30 @@ func (s *DBStore) LastSent(ctx context.Context, recipient string, deviceID uuid.
 		return time.Time{}, false, database.MapError(err)
 	}
 	return at, true, nil
+}
+
+func (s *DBStore) ClaimDigest(ctx context.Context) ([]DigestItem, error) {
+	rows, err := s.db.Query(ctx, `
+		WITH claimed AS (
+			UPDATE alert_notifications SET digested_at = NOW()
+			WHERE status = 'SUPPRESSED' AND reason = $1 AND digested_at IS NULL
+			RETURNING recipient, user_id, vehicle_id, kind, occurred_at)
+		SELECT c.recipient, COALESCE(u.name, ''), c.kind, COALESCE(v.name, ''), c.occurred_at
+		FROM claimed c LEFT JOIN users u ON u.id = c.user_id LEFT JOIN vehicles v ON v.id = c.vehicle_id
+		ORDER BY c.recipient, c.occurred_at`, ReasonHourlyCap)
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	defer rows.Close()
+	var out []DigestItem
+	for rows.Next() {
+		var it DigestItem
+		if err := rows.Scan(&it.Recipient, &it.Name, &it.Kind, &it.VehicleName, &it.OccurredAt); err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
 }
 
 func (s *DBStore) CountSentSince(ctx context.Context, recipient string, since time.Time) (int, error) {

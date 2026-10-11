@@ -215,3 +215,50 @@ func TestDBStore(t *testing.T) {
 		t.Errorf("prune: %d %v", n, err)
 	}
 }
+
+// O resumo: os segurados pelo teto por hora saem com o nome do destinatário
+// e do veículo, e cada um entra num resumo só; os outros segurados, não.
+func TestDBStoreClaimDigest(t *testing.T) {
+	db := storeDB(t)
+	ctx := context.Background()
+	var ownerID, deviceID, vehicleID uuid.UUID
+	for _, q := range []struct {
+		sql  string
+		dest *uuid.UUID
+		args []any
+	}{
+		{`INSERT INTO users (email, name, role, password_hash) VALUES ('frota@x.test', 'Frota Ltda', 'customer', 'x') RETURNING id`, &ownerID, nil},
+		{`INSERT INTO devices (imei) VALUES ('869000000000009') RETURNING id`, &deviceID, nil},
+	} {
+		if err := db.QueryRow(ctx, q.sql, q.args...).Scan(q.dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.QueryRow(ctx, `INSERT INTO vehicles (name, plate, device_id, owner_id) VALUES ('Van 0503', 'FRT0503', $1, $2) RETURNING id`,
+		deviceID, ownerID).Scan(&vehicleID); err != nil {
+		t.Fatal(err)
+	}
+	store := NewDBStore(db, func(context.Context, uuid.UUID) (bool, error) { return false, nil })
+	at := time.Date(2026, 10, 11, 8, 2, 0, 0, time.UTC)
+	for _, n := range []*Notification{
+		{Kind: KindOverspeed, Status: StatusSuppressed, Reason: ReasonHourlyCap},
+		{Kind: KindIgnition, Status: StatusSuppressed, Reason: ReasonHourlyCap},
+		{Kind: KindOverspeed, Status: StatusSuppressed, Reason: ReasonCooldown},
+		{Kind: KindLowBattery, Status: StatusSent},
+	} {
+		n.Recipient, n.UserID, n.VehicleID, n.DeviceID, n.OccurredAt = "frota@x.test", &ownerID, &vehicleID, &deviceID, at
+		if err := store.Insert(ctx, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := store.ClaimDigest(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].Name != "Frota Ltda" || items[0].VehicleName != "Van 0503" || items[0].Recipient != "frota@x.test" {
+		t.Fatalf("resumo = %+v", items)
+	}
+	if again, err := store.ClaimDigest(ctx); err != nil || len(again) != 0 {
+		t.Errorf("o mesmo alerta entrou de novo: %+v %v", again, err)
+	}
+}

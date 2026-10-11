@@ -4,7 +4,6 @@ import type { Geofence } from '@/types';
  * (bairro, cidade). Os limites são os do backend para o cliente. */
 export const RADIUS_STEPS = [50, 100, 150, 200, 300, 500, 750, 1000, 1500, 2000, 3000, 5000, 10000, 20000, 50000];
 export const DEFAULT_RADIUS = 200;
-export const MAX_FENCES = 20;
 
 /** Sugestões de nome (um toque preenche). */
 export const NAME_SUGGESTIONS = ['Casa', 'Trabalho', 'Escola', 'Garagem'];
