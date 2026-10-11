@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"mime"
@@ -126,10 +127,18 @@ func (s *SMTPSender) connect(ctx context.Context) (*smtp.Client, error) {
 	return client, nil
 }
 
-// buildMessage monta o e-mail em MIME multipart/alternative (texto + HTML).
+// buildMessage monta o e-mail em MIME multipart/alternative (texto + HTML);
+// com anexos, num multipart/mixed: o texto e o HTML, depois os arquivos.
 func buildMessage(from, to *netmail.Address, msg Message, now time.Time) ([]byte, error) {
-	var buf bytes.Buffer
-	body := multipart.NewWriter(&buf)
+	body, contentType, err := alternativeBody(msg)
+	if err != nil {
+		return nil, err
+	}
+	if len(msg.Attachments) > 0 {
+		if body, contentType, err = mixedBody(body, contentType, msg.Attachments); err != nil {
+			return nil, err
+		}
+	}
 
 	headers := []struct{ key, value string }{
 		{"From", from.String()},
@@ -138,7 +147,7 @@ func buildMessage(from, to *netmail.Address, msg Message, now time.Time) ([]byte
 		{"Date", now.Format(time.RFC1123Z)},
 		{"Message-ID", messageID(from.Address)},
 		{"MIME-Version", "1.0"},
-		{"Content-Type", `multipart/alternative; boundary="` + body.Boundary() + `"`},
+		{"Content-Type", contentType},
 		// Evita respostas automáticas ("estou de férias") voltando para o remetente.
 		{"Auto-Submitted", "auto-generated"},
 	}
@@ -150,7 +159,13 @@ func buildMessage(from, to *netmail.Address, msg Message, now time.Time) ([]byte
 		head.WriteString(h.key + ": " + h.value + "\r\n")
 	}
 	head.WriteString("\r\n")
+	return append(head.Bytes(), body...), nil
+}
 
+// alternativeBody é o texto e o HTML, em multipart/alternative.
+func alternativeBody(msg Message) ([]byte, string, error) {
+	var buf bytes.Buffer
+	body := multipart.NewWriter(&buf)
 	for _, part := range []struct{ contentType, content string }{
 		{"text/plain; charset=utf-8", msg.Text},
 		{"text/html; charset=utf-8", msg.HTML},
@@ -160,21 +175,62 @@ func buildMessage(from, to *netmail.Address, msg Message, now time.Time) ([]byte
 			"Content-Transfer-Encoding": {"quoted-printable"},
 		})
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		qp := quotedprintable.NewWriter(w)
 		if _, err := qp.Write([]byte(part.content)); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		if err := qp.Close(); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
 	if err := body.Close(); err != nil {
-		return nil, err
+		return nil, "", err
 	}
+	return buf.Bytes(), `multipart/alternative; boundary="` + body.Boundary() + `"`, nil
+}
 
-	return append(head.Bytes(), buf.Bytes()...), nil
+// mixedBody junta ao corpo (texto e HTML) os anexos, em base64.
+func mixedBody(alternative []byte, alternativeType string, attachments []Attachment) ([]byte, string, error) {
+	var buf bytes.Buffer
+	body := multipart.NewWriter(&buf)
+	w, err := body.CreatePart(textproto.MIMEHeader{"Content-Type": {alternativeType}})
+	if err != nil {
+		return nil, "", err
+	}
+	if _, err := w.Write(alternative); err != nil {
+		return nil, "", err
+	}
+	for _, a := range attachments {
+		contentType := a.ContentType
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		w, err := body.CreatePart(textproto.MIMEHeader{
+			"Content-Type":              {mime.FormatMediaType(contentType, map[string]string{"name": a.Name})},
+			"Content-Disposition":       {mime.FormatMediaType("attachment", map[string]string{"filename": a.Name})},
+			"Content-Transfer-Encoding": {"base64"},
+		})
+		if err != nil {
+			return nil, "", err
+		}
+		// Linhas de até 76 caracteres, como pede o MIME.
+		encoded := base64.StdEncoding.EncodeToString(a.Data)
+		for len(encoded) > 76 {
+			if _, err := w.Write([]byte(encoded[:76] + "\r\n")); err != nil {
+				return nil, "", err
+			}
+			encoded = encoded[76:]
+		}
+		if _, err := w.Write([]byte(encoded + "\r\n")); err != nil {
+			return nil, "", err
+		}
+	}
+	if err := body.Close(); err != nil {
+		return nil, "", err
+	}
+	return buf.Bytes(), `multipart/mixed; boundary="` + body.Boundary() + `"`, nil
 }
 
 // messageID gera um Message-ID único no domínio do remetente.

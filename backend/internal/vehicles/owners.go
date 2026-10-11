@@ -16,7 +16,8 @@ import (
 // cliente só o que é dele, então a consulta não pode ir ao banco.
 //
 // Guarda também quem recebeu do dono acesso ao veículo (shares): essas
-// pessoas acompanham a posição dele ao vivo.
+// pessoas acompanham a posição dele ao vivo. E, para a equipe restrita a
+// grupos, o grupo de cada veículo e os grupos de cada pessoa.
 //
 // O índice se recarrega sozinho a cada intervalo (o que cobre alterações
 // feitas em outras instâncias) e na hora quando esta instância altera um
@@ -31,6 +32,11 @@ type OwnerIndex struct {
 	// Quem tem acesso (de terceiro) a cada veículo e rastreador.
 	guestsByVehicle map[uuid.UUID]map[uuid.UUID]bool
 	guestsByDevice  map[uuid.UUID]map[uuid.UUID]bool
+	// O grupo de cada veículo e rastreador (sem grupo: fora do mapa) e os
+	// grupos de quem da equipe está restrito (sem nenhum: mapa vazio).
+	groupByVehicle map[uuid.UUID]uuid.UUID
+	groupByDevice  map[uuid.UUID]uuid.UUID
+	restricted     map[uuid.UUID]map[uuid.UUID]bool
 }
 
 func NewOwnerIndex(db *database.DB, log *slog.Logger) *OwnerIndex {
@@ -41,12 +47,15 @@ func NewOwnerIndex(db *database.DB, log *slog.Logger) *OwnerIndex {
 		byDevice:        map[uuid.UUID]uuid.UUID{},
 		guestsByVehicle: map[uuid.UUID]map[uuid.UUID]bool{},
 		guestsByDevice:  map[uuid.UUID]map[uuid.UUID]bool{},
+		groupByVehicle:  map[uuid.UUID]uuid.UUID{},
+		groupByDevice:   map[uuid.UUID]uuid.UUID{},
+		restricted:      map[uuid.UUID]map[uuid.UUID]bool{},
 	}
 }
 
 // Refresh relê os donos do banco.
 func (o *OwnerIndex) Refresh(ctx context.Context) error {
-	rows, err := o.db.Query(ctx, `SELECT id, device_id, owner_id FROM vehicles WHERE owner_id IS NOT NULL`)
+	rows, err := o.db.Query(ctx, `SELECT id, device_id, owner_id, group_id FROM vehicles WHERE owner_id IS NOT NULL`)
 	if err != nil {
 		return database.MapError(err)
 	}
@@ -54,15 +63,23 @@ func (o *OwnerIndex) Refresh(ctx context.Context) error {
 
 	byVehicle := map[uuid.UUID]uuid.UUID{}
 	byDevice := map[uuid.UUID]uuid.UUID{}
+	groupByVehicle := map[uuid.UUID]uuid.UUID{}
+	groupByDevice := map[uuid.UUID]uuid.UUID{}
 	for rows.Next() {
 		var vehicleID, ownerID uuid.UUID
-		var deviceID *uuid.UUID
-		if err := rows.Scan(&vehicleID, &deviceID, &ownerID); err != nil {
+		var deviceID, groupID *uuid.UUID
+		if err := rows.Scan(&vehicleID, &deviceID, &ownerID, &groupID); err != nil {
 			return err
 		}
 		byVehicle[vehicleID] = ownerID
 		if deviceID != nil {
 			byDevice[*deviceID] = ownerID
+		}
+		if groupID != nil {
+			groupByVehicle[vehicleID] = *groupID
+			if deviceID != nil {
+				groupByDevice[*deviceID] = *groupID
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -102,10 +119,38 @@ func (o *OwnerIndex) Refresh(ctx context.Context) error {
 	if err := guestRows.Err(); err != nil {
 		return err
 	}
+	guestRows.Close()
+
+	memberRows, err := o.db.Query(ctx, `
+		SELECT m.user_id, g.group_id FROM account_members m
+		LEFT JOIN account_member_groups g ON g.user_id = m.user_id
+		WHERE m.restricted`)
+	if err != nil {
+		return database.MapError(err)
+	}
+	defer memberRows.Close()
+	restricted := map[uuid.UUID]map[uuid.UUID]bool{}
+	for memberRows.Next() {
+		var userID uuid.UUID
+		var groupID *uuid.UUID
+		if err := memberRows.Scan(&userID, &groupID); err != nil {
+			return err
+		}
+		if restricted[userID] == nil {
+			restricted[userID] = map[uuid.UUID]bool{}
+		}
+		if groupID != nil {
+			restricted[userID][*groupID] = true
+		}
+	}
+	if err := memberRows.Err(); err != nil {
+		return err
+	}
 
 	o.mu.Lock()
 	o.byVehicle, o.byDevice = byVehicle, byDevice
 	o.guestsByVehicle, o.guestsByDevice = guestsByVehicle, guestsByDevice
+	o.groupByVehicle, o.groupByDevice, o.restricted = groupByVehicle, groupByDevice, restricted
 	o.mu.Unlock()
 	return nil
 }
@@ -140,6 +185,29 @@ func (o *OwnerIndex) Owns(customerID uuid.UUID, vehicleID, deviceID *uuid.UUID) 
 		return ok && owner == customerID
 	}
 	return false
+}
+
+// VisibleTo diz se a mensagem sobre este veículo/rastreador vai para a
+// pessoa que enxerga a conta account: é da conta e, se a pessoa estiver
+// restrita a grupos, de um veículo de um dos grupos dela.
+func (o *OwnerIndex) VisibleTo(person, account uuid.UUID, vehicleID, deviceID *uuid.UUID) bool {
+	if !o.Owns(account, vehicleID, deviceID) {
+		return false
+	}
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	groups, limited := o.restricted[person]
+	if !limited {
+		return true
+	}
+	var group uuid.UUID
+	var ok bool
+	if vehicleID != nil {
+		group, ok = o.groupByVehicle[*vehicleID]
+	} else {
+		group, ok = o.groupByDevice[*deviceID]
+	}
+	return ok && groups[group]
 }
 
 // SharedWith diz se a mensagem sobre este veículo/rastreador é de um veículo

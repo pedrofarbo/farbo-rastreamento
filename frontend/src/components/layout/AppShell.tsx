@@ -73,7 +73,7 @@ function Icon({ name }: { name: string }) {
 }
 
 export function AppShell() {
-  const { user, logout, canManage, canOperate, isCustomer, membership, isAccountOwner, canOperateAccount } = useAuth();
+  const { user, logout, canManage, canOperate, isCustomer, membership, isAccountOwner, canSeeBilling } = useAuth();
 
   // Para o cliente, a conta alimenta o aviso de fatura vencida no menu.
   const account = useQuery({
@@ -130,10 +130,10 @@ export function AppShell() {
     return () => window.removeEventListener('keydown', onKey);
   }, [menuOpen]);
   // O ☰ ganha um ponto quando algum item do menu tem aviso.
-  const pending = (canOperateAccount ? overdue : 0) + (canOperate ? waiting : 0) + (canManage ? newLeads + billsDue : 0);
-  // Conta empresa: quem é da equipe vê de quem é a conta e o papel.
+  const pending = (canSeeBilling ? overdue : 0) + (canOperate ? waiting : 0) + (canManage ? newLeads + billsDue : 0);
+  // Conta empresa: quem é da equipe vê de quem é a conta, o papel e se está restrito a grupos.
   const accountLabel = membership
-    ? `Conta de ${membership.ownerName} · ${membership.role === 'manager' ? 'Gestor' : 'Visualizador'}`
+    ? `Conta de ${membership.ownerName} · ${membership.role === 'manager' ? 'Gestor' : 'Visualizador'}${membership.restricted ? ' · alguns grupos' : ''}`
     : null;
 
   const navClass = ({ isActive }: { isActive: boolean }) =>
@@ -201,7 +201,7 @@ export function AppShell() {
                 <Icon name="car" />
                 Meus veículos
               </NavLink>
-              {canOperateAccount && (
+              {canSeeBilling && (
                 <NavLink to="/faturas" className={navClass}>
                   <Icon name="receipt" />
                   Faturas

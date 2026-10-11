@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -58,6 +59,8 @@ func (s *Server) handleListVehicles(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if isCustomer {
 		list, err = s.Vehicles.ListByOwner(r.Context(), customerID)
+		// Quem da equipe está restrito a grupos vê só os veículos deles.
+		list = slices.DeleteFunc(list, func(v *vehicles.Vehicle) bool { return !seesVehicle(r, v) })
 	} else {
 		list, err = s.Vehicles.List(r.Context())
 	}
@@ -280,6 +283,15 @@ func (s *Server) handleUpdateVehicle(w http.ResponseWriter, r *http.Request) {
 	if _, isCustomer := customerOf(r); isCustomer {
 		in.DeviceID = current.DeviceID
 	}
+	// Quem está restrito a grupos só move o veículo entre os grupos dele:
+	// fora deles, o veículo sumiria da própria tela.
+	if principal := restrictedPrincipal(r); principal != nil && in.GroupID != nil {
+		group, err := uuid.Parse(*in.GroupID)
+		if err != nil || !principal.SeesGroup(&group) {
+			writeCode(w, http.StatusForbidden, "o veículo precisa continuar num dos seus grupos", codeRestrictedAccess)
+			return
+		}
+	}
 
 	vehicle, err := s.Vehicles.Update(r.Context(), current.ID, in)
 	if err != nil {
@@ -368,8 +380,7 @@ func (s *Server) vehicleFromURL(w http.ResponseWriter, r *http.Request, requireD
 		handleStoreError(w, err, "veículo não encontrado")
 		return nil, nil, false
 	}
-	if customerID, isCustomer := customerOf(r); isCustomer &&
-		(vehicle.OwnerID == nil || *vehicle.OwnerID != customerID) {
+	if !seesVehicle(r, vehicle) {
 		writeError(w, http.StatusNotFound, "veículo não encontrado")
 		return nil, nil, false
 	}

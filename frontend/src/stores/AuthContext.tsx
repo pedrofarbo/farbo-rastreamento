@@ -37,6 +37,13 @@ interface AuthContextValue {
   isAccountOwner: boolean;
   /** O titular e o Gestor mexem na conta (comandos, cercas, faturas); o Visualizador só acompanha. */
   canOperateAccount: boolean;
+  /**
+   * O titular e quem da equipe não está restrito a grupos: o que é da conta
+   * inteira (faturas, envios, grupos e campos da frota) fica só com eles.
+   */
+  seesWholeAccount: boolean;
+  /** Faturas, cobranças e envios: o titular e o Gestor com acesso a todos os veículos. */
+  canSeeBilling: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -178,6 +185,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       membership: user?.role === 'customer' ? (user.membership ?? null) : null,
       isAccountOwner: user?.role === 'customer' && !user.membership,
       canOperateAccount: user?.role === 'customer' && user.membership?.role !== 'viewer',
+      seesWholeAccount: user?.role === 'customer' && !user.membership?.restricted,
+      canSeeBilling: user?.role === 'customer' && user.membership?.role !== 'viewer' && !user.membership?.restricted,
     }),
     [user, loading, login, completeLogin, loginWithBiometric, logout, updateUser],
   );

@@ -27,6 +27,10 @@ type Membership struct {
 	// OwnerName é o nome do titular, para a tela ("Conta de Fulano").
 	OwnerName string `json:"ownerName"`
 	Role      string `json:"role"`
+	// Restricted: a pessoa só vê os veículos dos grupos em Groups (sem
+	// grupo nenhum, nenhum veículo); sem restrição, a frota inteira.
+	Restricted bool        `json:"restricted"`
+	Groups     []uuid.UUID `json:"groups"`
 }
 
 // MembershipLookup acha o vínculo de um usuário (nil: não é da equipe de

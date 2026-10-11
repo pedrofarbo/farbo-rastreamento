@@ -52,6 +52,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols/tkstar"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/push"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/realtime"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/reportmail"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/reports"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/shares"
@@ -397,6 +398,9 @@ func run() error {
 	// em segundo plano a partir das posições novas.
 	reportsSvc := reports.NewService(db, cfg.Billing.Timezone)
 	reportsAggregator := reports.NewAggregator(db, cfg.Billing.Timezone, log)
+	// E o relatório por e-mail, toda semana ou todo mês, para quem agendou.
+	reportMailSvc := reportmail.NewService(db, reportsSvc, vehicleSvc, mail.NewReportMailer(mailer, cfg.Mail.AppURL),
+		billingSvc.IsSuspended, log)
 
 	// ---- Servidores ----
 	tcpServer := tcp.NewServer(cfg.TCP, registry, connManager, ingestor, log, metrics)
@@ -405,7 +409,7 @@ func run() error {
 		Config: cfg, Log: log, Metrics: metrics, DB: db,
 		Auth: authSvc, Devices: deviceSvc, Vehicles: vehicleSvc,
 		Geofences: geofenceSvc, Geocoder: geocodingSvc, Events: eventSvc, Commands: commandSvc, Reports: reportsSvc,
-		Audit: auditSvc, Billing: billingSvc, Payments: paymentsSvc, Owners: ownerIndex,
+		Audit: auditSvc, ReportMail: reportMailSvc, Billing: billingSvc, Payments: paymentsSvc, Owners: ownerIndex,
 		Orders:      orders.NewService(db, billingSvc, vehicleSvc, cfg.Catalog, log),
 		Installers:  installerRepo,
 		Addresses:   addresses.NewRepository(db),
@@ -457,6 +461,12 @@ func run() error {
 	go func() {
 		defer wg.Done()
 		reportsAggregator.Run(ctx)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		reportMailSvc.Run(ctx)
 	}()
 
 	wg.Add(1)

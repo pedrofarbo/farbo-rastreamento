@@ -30,9 +30,12 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/events"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geofences"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leakcheck"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols/gt06"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/reportmail"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/reports"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/shares"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
@@ -212,6 +215,8 @@ type credEnvOptions struct {
 	// team liga a conta empresa (a equipe de cada cliente), com os e-mails
 	// neste Notifier.
 	team accounts.Notifier
+	// fleet liga as cercas e os relatórios da frota.
+	fleet bool
 }
 
 func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
@@ -295,7 +300,16 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 		}, log)
 		env.theft.SetSync()
 	}
+	var fences *geofences.Service
+	var reportsSvc *reports.Service
+	var reportMail *reportmail.Service
+	if opts.fleet {
+		fences = geofences.NewService(geofences.NewRepository(db))
+		reportsSvc = reports.NewService(db, "UTC")
+		reportMail = reportmail.NewService(db, reportsSvc, env.vehicles, nil, nil, log)
+	}
 	server := NewServer(Deps{
+		Geofences: fences, Reports: reportsSvc, ReportMail: reportMail,
 		StepUp: stepUpSvc, Shares: sharesSvc, Theft: env.theft, Accounts: accountsSvc,
 		Config: cfg, Log: log, Metrics: metrics, DB: db, Auth: authSvc,
 		Devices: env.devices, Vehicles: env.vehicles, Events: eventSvc, Commands: env.commands,

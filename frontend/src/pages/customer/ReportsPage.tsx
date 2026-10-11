@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 
 import { customersApi, reportsApi } from '@/api/resources';
 import type { ReportKind, ReportQuery } from '@/api/resources';
+import { ReportEmailModal } from '@/components/reports/ReportEmailModal';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -11,6 +12,7 @@ import fieldStyles from '@/components/ui/Field.module.css';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useFleet } from '@/hooks/useFleet';
+import { useAuth } from '@/stores/AuthContext';
 import { formatDateOnly, formatSpeed, todayISO } from '@/services/format';
 import {
   PRESETS,
@@ -58,6 +60,9 @@ export function ReportsPage({ customerId, customerName }: { customerId?: string;
   const [tab, setTab] = useState<Tab>('summary');
   const [vehicleId, setVehicleId] = useState('');
   const [downloading, setDownloading] = useState(false);
+  // O relatório por e-mail é de quem está logado (não da central vendo um cliente).
+  const [emailing, setEmailing] = useState(false);
+  const { membership } = useAuth();
   // O grupo escolhido vale para as quatro abas e para a planilha.
   const { groups } = useFleet(customerId);
   const [group, setGroup] = useState('');
@@ -113,6 +118,11 @@ export function ReportsPage({ customerId, customerName }: { customerId?: string;
             </p>
           </div>
           <div className={pageStyles.actions}>
+            {!customerId && (
+              <Button variant="secondary" onClick={() => setEmailing(true)}>
+                Receber por e-mail
+              </Button>
+            )}
             <Button
               variant="secondary"
               loading={downloading}
@@ -223,6 +233,14 @@ export function ReportsPage({ customerId, customerName }: { customerId?: string;
           <OverspeedTab period={scope} />
         )}
       </div>
+      {!customerId && (
+        <ReportEmailModal
+          open={emailing}
+          onClose={() => setEmailing(false)}
+          groups={groups}
+          restricted={Boolean(membership?.restricted)}
+        />
+      )}
     </div>
   );
 }

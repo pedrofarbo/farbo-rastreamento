@@ -63,10 +63,10 @@ function RequireCustomer() {
   );
 }
 
-/** Conta empresa: operate deixa o Gestor passar; sem ele, só o titular. */
+/** Conta empresa: operate deixa o Gestor (com todos os veículos) passar; sem ele, só o titular. */
 function RequireAccount({ operate = false }: { operate?: boolean }) {
-  const { isAccountOwner, canOperateAccount } = useAuth();
-  if (!(operate ? canOperateAccount : isAccountOwner)) return <Navigate to="/conta" replace />;
+  const { isAccountOwner, canSeeBilling } = useAuth();
+  if (!(operate ? canSeeBilling : isAccountOwner)) return <Navigate to="/conta" replace />;
   return <Outlet />;
 }
 

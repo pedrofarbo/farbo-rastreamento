@@ -168,7 +168,7 @@ func (s *DBStore) Target(ctx context.Context, deviceID uuid.UUID) (*Target, erro
 		}
 	}
 	t.Owner = owner
-	if t.Team, err = s.team(ctx, owner); err != nil {
+	if t.Team, err = s.team(ctx, owner, vehicleID); err != nil {
 		return nil, err
 	}
 	if t.Extra, err = s.ExtraRecipients(ctx, owner.UserID); err != nil {
@@ -238,15 +238,19 @@ func NormalizeEmails(emails []string) ([]string, error) {
 	return out, nil
 }
 
-// team carrega a equipe da conta do dono, com as escolhas de cada um.
-func (s *DBStore) team(ctx context.Context, owner *Owner) ([]*Owner, error) {
+// team carrega a equipe da conta do dono que vê o veículo, com as escolhas
+// de cada um: quem está restrito a grupos só recebe dos veículos deles.
+func (s *DBStore) team(ctx context.Context, owner *Owner, vehicleID uuid.UUID) ([]*Owner, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT u.id, u.email, u.name, u.active, st.kinds, st.guard_start, st.guard_end
 		FROM account_members m
 		JOIN users u ON u.id = m.user_id
 		LEFT JOIN alert_settings st ON st.user_id = m.user_id
 		WHERE m.account_id = $1
-		ORDER BY m.created_at`, owner.UserID)
+		  AND (NOT m.restricted OR EXISTS (
+			SELECT 1 FROM account_member_groups g JOIN vehicles v ON v.group_id = g.group_id
+			WHERE g.user_id = m.user_id AND v.id = $2))
+		ORDER BY m.created_at`, owner.UserID, vehicleID)
 	if err != nil {
 		return nil, database.MapError(err)
 	}

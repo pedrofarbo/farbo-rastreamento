@@ -159,3 +159,69 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Os veículos que a pessoa vê: todos ou só alguns grupos. */
+.access {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.access legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.choiceDisabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.groupList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.groupList label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.groupList input {
+  accent-color: var(--accent);
+}
+
+/* Quem está restrito a grupos: a linha de acesso em destaque. */
+.scoped {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.editAccess {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.editActions {
+  display: flex;
+  gap: var(--space-2);
+}

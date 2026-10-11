@@ -5,6 +5,9 @@ import { api, apiUrl, download, fetchBlob, request } from './client';
 import type {
   AccountMember,
   FleetImportResult,
+  ReportFrequency,
+  ReportSchedule,
+  ReportSchedules,
   MemberRole,
   VehicleKind,
   PriceAdjustmentOverview,
@@ -374,10 +377,14 @@ const withStepUp = (token?: string) => (token ? { 'X-Step-Up-Token': token } : u
 /** A equipe da conta empresa (só o titular). */
 export const teamApi = {
   list: () => api.get<AccountMember[]>('/api/me/team'),
-  /** Põe alguém na equipe: pede a confirmação extra (biometria ou senha). */
-  add: (input: { name: string; email: string; role: MemberRole }, stepUpToken: string) =>
+  /** Quantas pessoas a equipe pode ter (cresce com a frota) e quantas tem. */
+  limit: () => api.get<{ limit: number; used: number }>('/api/me/team/limit'),
+  /** Põe alguém na equipe: pede a confirmação extra (biometria ou senha). Groups vazio: todos os veículos. */
+  add: (input: { name: string; email: string; role: MemberRole; groups: string[] }, stepUpToken: string) =>
     request<AccountMember>('/api/me/team', { method: 'POST', body: input, headers: withStepUp(stepUpToken) }),
   setRole: (userId: string, role: MemberRole) => api.patch<AccountMember>(`/api/me/team/${userId}`, { role }),
+  /** Os veículos que a pessoa vê: com grupos, só os deles; vazio, todos. */
+  setGroups: (userId: string, groups: string[]) => api.patch<AccountMember>(`/api/me/team/${userId}`, { groups }),
   remove: (userId: string) => api.delete<void>(`/api/me/team/${userId}`),
 };
 
@@ -542,6 +549,20 @@ export const reportsApi = {
     ),
   download: (kind: ReportKind, q: ReportQuery) => download(reportPath(kind, q, true)),
 };
+
+/** O relatório da frota por e-mail: os agendamentos de quem está logado. */
+export const reportSchedulesApi = {
+  list: () => api.get<ReportSchedules>('/api/me/report-schedules'),
+  create: (input: ReportScheduleInput) => api.post<ReportSchedule>('/api/me/report-schedules', input),
+  remove: (id: string) => api.delete<void>(`/api/me/report-schedules/${id}`),
+};
+
+export interface ReportScheduleInput {
+  frequency: ReportFrequency;
+  /** Só um grupo da conta (ausente: a conta toda). */
+  groupId?: string | null;
+  extraRecipients: string[];
+}
 
 export const eventsApi = {
   recent: (limit = 100) => api.get<VehicleEvent[]>(`/api/events?limit=${limit}`),

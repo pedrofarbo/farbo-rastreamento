@@ -70,9 +70,9 @@ export function AppLayout() {
   const location = useLocation();
   const navigation = useNavigationType();
   const account = useQuery({ queryKey: ['me', 'account'], queryFn: meApi.account, staleTime: 60_000 });
-  // Conta empresa: o Visualizador não vê faturas (a aba sai).
-  const { canOperateAccount } = useAuth();
-  const tabs = canOperateAccount ? TABS : TABS.filter((tab) => tab.to !== '/faturas');
+  // Conta empresa: o Visualizador e quem está restrito a grupos não veem faturas (a aba sai).
+  const { canSeeBilling } = useAuth();
+  const tabs = canSeeBilling ? TABS : TABS.filter((tab) => tab.to !== '/faturas');
   const overdue = account.data?.overdueInvoices ?? 0;
   const live = online && connected;
   const liveLabel = live ? 'Ao vivo' : online ? 'Conectando…' : 'Offline';
@@ -133,7 +133,7 @@ export function AppLayout() {
           </div>
         )}
         {account.data?.suspended &&
-          (canOperateAccount ? (
+          (canSeeBilling ? (
             <NavLink to="/faturas" className={`${styles.banner} ${styles.bannerDanger}`}>
               Acesso suspenso por fatura vencida. Toque para pagar e voltar a ver o mapa.
             </NavLink>

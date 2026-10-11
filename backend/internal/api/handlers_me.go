@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/addresses"
@@ -58,7 +59,7 @@ func (s *Server) websocketScope(r *http.Request) ws.Filter {
 		if s.Owners == nil {
 			return false
 		}
-		if s.Owners.Owns(customerID, msg.VehicleID, msg.DeviceID) {
+		if s.Owners.VisibleTo(person, customerID, msg.VehicleID, msg.DeviceID) {
 			return true
 		}
 		return sharedMessage[msg.Type] && s.Owners.SharedWith(person, msg.VehicleID, msg.DeviceID)
@@ -107,6 +108,17 @@ func (s *Server) handleMySubscriptions(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleStoreError(w, err, "assinaturas não encontradas")
 		return
+	}
+	// Quem está restrito a grupos vê só as assinaturas dos veículos deles.
+	visible, err := s.visibleVehicles(r)
+	if err != nil {
+		handleStoreError(w, err, "assinaturas não encontradas")
+		return
+	}
+	if visible != nil {
+		list = slices.DeleteFunc(list, func(sub *billing.Subscription) bool {
+			return sub.VehicleID == nil || !visible[*sub.VehicleID]
+		})
 	}
 	writeJSON(w, http.StatusOK, list)
 }

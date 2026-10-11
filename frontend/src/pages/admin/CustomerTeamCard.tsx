@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { customersApi } from '@/api/resources';
-import { ROLES } from '@/components/account/TeamManager';
+import { ROLES, accessLabel } from '@/components/account/TeamManager';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 
@@ -14,6 +14,8 @@ import pageStyles from '../Page.module.css';
  */
 export function CustomerTeamCard({ customerId }: { customerId: string }) {
   const team = useQuery({ queryKey: ['customer', customerId, 'team'], queryFn: () => customersApi.team(customerId) });
+  // Os grupos da conta, para mostrar o que cada pessoa vê.
+  const fleet = useQuery({ queryKey: ['customer', customerId, 'fleet'], queryFn: () => customersApi.fleet(customerId) });
   const list = team.data ?? [];
   if (!team.data || list.length === 0) return null;
   return (
@@ -29,6 +31,8 @@ export function CustomerTeamCard({ customerId }: { customerId: string }) {
               <div className={pageStyles.description} style={{ margin: 0 }}>
                 {member.email}
                 {!member.active && ' · inativo'}
+                {' · '}
+                {accessLabel(member, fleet.data?.groups ?? [])}
               </div>
             </div>
             <Badge tone={member.role === 'manager' ? 'success' : 'neutral'}>{ROLES[member.role].label}</Badge>

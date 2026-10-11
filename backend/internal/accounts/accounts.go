@@ -1,8 +1,10 @@
 // Package accounts é a conta empresa: o cliente titular dá às pessoas da
 // equipe dele, cada uma com o próprio login, o acesso aos veículos da conta.
 // Gestor opera tudo, menos a própria conta (equipe, cadastro, contrato,
-// pedidos); Visualizador só acompanha. Quem é da equipe não tem veículos
-// próprios e é de uma conta só. O que cada papel pode fica nas rotas da API
+// pedidos); Visualizador só acompanha. Cada pessoa pode ficar restrita a
+// alguns grupos da frota: vê, opera e recebe alertas só dos veículos deles,
+// e o que é da conta inteira (faturas, grupos) fica de fora. Quem é da
+// equipe não tem veículos próprios e é de uma conta só. O que cada papel pode fica nas rotas da API
 // (auth.Principal); aqui ficam o cadastro da equipe e a consulta do vínculo.
 package accounts
 
@@ -11,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,8 +25,18 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/mail"
 )
 
-// MaxMembers é o tamanho máximo da equipe de uma conta.
-const MaxMembers = 30
+// O tamanho da equipe cresce com a frota: MinMembers pessoas, ou uma a cada
+// VehiclesPerMember veículos ativos, até MaxMembers.
+const (
+	MinMembers        = 30
+	MaxMembers        = 200
+	VehiclesPerMember = 5
+)
+
+// LimitFor é o tamanho máximo da equipe de uma conta com tantos veículos ativos.
+func LimitFor(activeVehicles int) int {
+	return min(MaxMembers, max(MinMembers, activeVehicles/VehiclesPerMember))
+}
 
 // InputError é um dado recusado; a mensagem vai para a tela.
 type InputError struct{ Message string }
@@ -38,13 +51,18 @@ type Member struct {
 	Role      string    `json:"role"`
 	Active    bool      `json:"active"`
 	CreatedAt time.Time `json:"createdAt"`
+	// Restricted: só os veículos dos grupos em Groups; sem restrição, todos.
+	Restricted bool        `json:"restricted"`
+	Groups     []uuid.UUID `json:"groups"`
 }
 
-// Input é quem entra na equipe.
+// Input é quem entra na equipe. Groups vazio: todos os veículos da conta;
+// com grupos, só os veículos deles.
 type Input struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	Name   string      `json:"name"`
+	Email  string      `json:"email"`
+	Role   string      `json:"role"`
+	Groups []uuid.UUID `json:"groups"`
 }
 
 // Accounts é o que o cadastro da equipe precisa das contas (auth.Service).
@@ -87,8 +105,9 @@ func (s *Service) SetSync() { s.runAsync = func(f func()) { f() } }
 func (s *Service) Lookup(ctx context.Context, userID uuid.UUID) (*auth.Membership, error) {
 	var m auth.Membership
 	err := s.db.QueryRow(ctx, `
-		SELECT m.account_id, o.name, m.role FROM account_members m JOIN users o ON o.id = m.account_id
-		WHERE m.user_id = $1`, userID).Scan(&m.AccountID, &m.OwnerName, &m.Role)
+		SELECT m.account_id, o.name, m.role, m.restricted, `+memberGroups+`
+		FROM account_members m JOIN users o ON o.id = m.account_id
+		WHERE m.user_id = $1`, userID).Scan(&m.AccountID, &m.OwnerName, &m.Role, &m.Restricted, &m.Groups)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -98,11 +117,14 @@ func (s *Service) Lookup(ctx context.Context, userID uuid.UUID) (*auth.Membershi
 	return &m, nil
 }
 
-const memberColumns = `u.id, u.name, u.email, m.role, u.active, m.created_at`
+// memberGroups são os grupos de quem está restrito (m é account_members).
+const memberGroups = `COALESCE((SELECT array_agg(g.group_id ORDER BY g.group_id) FROM account_member_groups g WHERE g.user_id = m.user_id), '{}')`
+
+const memberColumns = `u.id, u.name, u.email, m.role, u.active, m.created_at, m.restricted, ` + memberGroups
 
 func scanMember(row database.Scanner) (*Member, error) {
 	var m Member
-	if err := row.Scan(&m.UserID, &m.Name, &m.Email, &m.Role, &m.Active, &m.CreatedAt); err != nil {
+	if err := row.Scan(&m.UserID, &m.Name, &m.Email, &m.Role, &m.Active, &m.CreatedAt, &m.Restricted, &m.Groups); err != nil {
 		return nil, database.MapError(err)
 	}
 	return &m, nil
@@ -157,21 +179,31 @@ func (s *Service) Add(ctx context.Context, accountID uuid.UUID, in Input) (*Memb
 	if strings.EqualFold(owner.Email, in.Email) {
 		return nil, false, &InputError{"esse é o e-mail da sua conta"}
 	}
-	var count int
-	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM account_members WHERE account_id = $1`, accountID).Scan(&count); err != nil {
-		return nil, false, database.MapError(err)
+	limit, count, err := s.Limit(ctx, accountID)
+	if err != nil {
+		return nil, false, err
 	}
-	if count >= MaxMembers {
-		return nil, false, &InputError{fmt.Sprintf("a equipe pode ter até %d pessoas", MaxMembers)}
+	if count >= limit {
+		return nil, false, &InputError{fmt.Sprintf("a equipe desta conta pode ter até %d pessoas (cresce com a frota)", limit)}
+	}
+	groups, err := s.checkGroups(ctx, accountID, in.Groups)
+	if err != nil {
+		return nil, false, err
 	}
 
 	user, created, err := s.memberAccount(ctx, in)
 	if err != nil {
 		return nil, false, err
 	}
-	if _, err := s.db.Exec(ctx, `
-		INSERT INTO account_members (user_id, account_id, role, invited_by) VALUES ($1, $2, $3, $2)`,
-		user.ID, accountID, in.Role); err != nil {
+	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO account_members (user_id, account_id, role, invited_by, restricted) VALUES ($1, $2, $3, $2, $4)`,
+			user.ID, accountID, in.Role, len(groups) > 0); err != nil {
+			return err
+		}
+		return setGroups(ctx, tx, user.ID, groups)
+	})
+	if err != nil {
 		if errors.Is(database.MapError(err), database.ErrConflict) {
 			return nil, false, &InputError{"essa pessoa já é da equipe de uma conta"}
 		}
@@ -270,6 +302,76 @@ func (s *Service) SetRole(ctx context.Context, accountID, userID uuid.UUID, role
 		return nil, database.ErrNotFound
 	}
 	return s.get(ctx, accountID, userID)
+}
+
+// SetGroups troca os veículos que a pessoa vê: com grupos, só os deles;
+// sem nenhum, todos os da conta. Vale na próxima requisição dela.
+func (s *Service) SetGroups(ctx context.Context, accountID, userID uuid.UUID, groups []uuid.UUID) (*Member, error) {
+	groups, err := s.checkGroups(ctx, accountID, groups)
+	if err != nil {
+		return nil, err
+	}
+	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			UPDATE account_members SET restricted = $3, updated_at = NOW() WHERE account_id = $1 AND user_id = $2`,
+			accountID, userID, len(groups) > 0)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return database.ErrNotFound
+		}
+		return setGroups(ctx, tx, userID, groups)
+	})
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	return s.get(ctx, accountID, userID)
+}
+
+// checkGroups confere que os grupos são da conta e tira os repetidos.
+func (s *Service) checkGroups(ctx context.Context, accountID uuid.UUID, groups []uuid.UUID) ([]uuid.UUID, error) {
+	unique := make([]uuid.UUID, 0, len(groups))
+	for _, g := range groups {
+		if !slices.Contains(unique, g) {
+			unique = append(unique, g)
+		}
+	}
+	if len(unique) == 0 {
+		return unique, nil
+	}
+	var found int
+	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM vehicle_groups WHERE owner_id = $1 AND id = ANY($2)`,
+		accountID, unique).Scan(&found); err != nil {
+		return nil, database.MapError(err)
+	}
+	if found != len(unique) {
+		return nil, &InputError{"um dos grupos escolhidos não existe mais nesta conta"}
+	}
+	return unique, nil
+}
+
+// setGroups grava os grupos da pessoa (os anteriores saem).
+func setGroups(ctx context.Context, tx pgx.Tx, userID uuid.UUID, groups []uuid.UUID) error {
+	if _, err := tx.Exec(ctx, `DELETE FROM account_member_groups WHERE user_id = $1`, userID); err != nil {
+		return err
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `
+		INSERT INTO account_member_groups (user_id, group_id) SELECT $1, g FROM unnest($2::uuid[]) AS g`, userID, groups)
+	return err
+}
+
+// Limit é o tamanho máximo da equipe da conta (cresce com a frota) e
+// quantas pessoas ela tem.
+func (s *Service) Limit(ctx context.Context, accountID uuid.UUID) (limit, used int, err error) {
+	var vehicles int
+	err = s.db.QueryRow(ctx, `
+		SELECT (SELECT count(*) FROM subscriptions WHERE customer_id = $1 AND status = 'ACTIVE'),
+			(SELECT count(*) FROM account_members WHERE account_id = $1)`, accountID).Scan(&vehicles, &used)
+	return LimitFor(vehicles), used, database.MapError(err)
 }
 
 // Remove tira a pessoa da equipe: o acesso acaba na hora (a consulta do

@@ -70,7 +70,7 @@ export function MyVehiclesPage() {
   const [leaving, setLeaving] = useState<string | null>(null);
   // Conta empresa: novo veículo, endereço e acessos são do titular; editar o
   // veículo, também do Gestor; o Visualizador só acompanha.
-  const { isAccountOwner, canOperateAccount } = useAuth();
+  const { isAccountOwner, canOperateAccount, seesWholeAccount, canSeeBilling } = useAuth();
   // Numa frota: a busca, o filtro por situação e quantos cartões aparecem.
   const [search, setSearch] = useState('');
   const [situation, setSituation] = useState<Situation | ''>('');
@@ -85,7 +85,7 @@ export function MyVehiclesPage() {
   const fulfillments = useQuery({
     queryKey: ['me', 'fulfillments'],
     queryFn: meApi.fulfillments,
-    enabled: canOperateAccount,
+    enabled: canSeeBilling,
   });
   const shares = useQuery({ queryKey: sharesKey, queryFn: sharesApi.list });
 
@@ -159,7 +159,7 @@ export function MyVehiclesPage() {
           </div>
           {(isAccountOwner || canOperateAccount) && (
             <div className={styles.actions}>
-              {canOperateAccount && (
+              {canOperateAccount && seesWholeAccount && (
                 <Button variant="secondary" onClick={() => setManaging(true)}>
                   Grupos e campos
                 </Button>

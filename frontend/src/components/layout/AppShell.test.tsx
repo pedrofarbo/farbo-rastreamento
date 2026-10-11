@@ -14,6 +14,7 @@ const staff = {
   membership: null,
   isAccountOwner: false,
   canOperateAccount: false,
+  canSeeBilling: false,
 };
 let auth: Record<string, unknown> = staff;
 vi.mock('@/stores/AuthContext', () => ({ useAuth: () => ({ logout: vi.fn(), ...auth }) }));
@@ -65,6 +66,7 @@ const customer = (over: Record<string, unknown>) => ({
   membership: null,
   isAccountOwner: true,
   canOperateAccount: true,
+  canSeeBilling: true,
   ...over,
 });
 const menuLabels = (host: HTMLElement) =>
@@ -113,6 +115,7 @@ describe('menu do painel', () => {
       membership: { accountId: 'o1', ownerName: 'Frota Ltda', role: 'viewer' },
       isAccountOwner: false,
       canOperateAccount: false,
+      canSeeBilling: false,
     });
     host = await render();
     expect(menuLabels(host)).not.toContain('Faturas');
@@ -129,5 +132,17 @@ describe('menu do painel', () => {
     expect(menuLabels(host)).toContain('Faturas');
     expect(menuLabels(host)).not.toContain('Equipe');
     expect(host.querySelector('#menu-principal')?.textContent).toContain('Conta de Frota Ltda · Gestor');
+    document.body.innerHTML = '';
+
+    // O Gestor restrito a alguns grupos: as faturas são da conta inteira.
+    auth = customer({
+      membership: { accountId: 'o1', ownerName: 'Frota Ltda', role: 'manager', restricted: true, groups: ['g1'] },
+      isAccountOwner: false,
+      canOperateAccount: true,
+      canSeeBilling: false,
+    });
+    host = await render();
+    expect(menuLabels(host)).not.toContain('Faturas');
+    expect(host.querySelector('#menu-principal')?.textContent).toContain('Conta de Frota Ltda · Gestor · alguns grupos');
   });
 });

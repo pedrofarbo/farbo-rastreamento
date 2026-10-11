@@ -5,6 +5,7 @@ package mail
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 )
 
@@ -16,6 +17,16 @@ type Message struct {
 	Subject string
 	Text    string
 	HTML    string
+	// Attachments vão como arquivos anexos (a planilha do relatório, por
+	// exemplo).
+	Attachments []Attachment
+}
+
+// Attachment é um arquivo anexo.
+type Attachment struct {
+	Name        string
+	ContentType string
+	Data        []byte
 }
 
 // Sender entrega uma mensagem.
@@ -43,8 +54,12 @@ func NewLogSender(log *slog.Logger, showBody bool) *LogSender {
 
 func (s *LogSender) Send(ctx context.Context, msg Message) error {
 	if s.showBody {
+		names := make([]string, len(msg.Attachments))
+		for i, a := range msg.Attachments {
+			names[i] = fmt.Sprintf("%s (%d bytes)", a.Name, len(a.Data))
+		}
 		s.log.WarnContext(ctx, "SMTP não configurado: e-mail NÃO enviado; conteúdo abaixo (só em desenvolvimento)",
-			"to", msg.To, "subject", msg.Subject, "text", msg.Text)
+			"to", msg.To, "subject", msg.Subject, "text", msg.Text, "attachments", names)
 		return nil
 	}
 	return ErrNotConfigured

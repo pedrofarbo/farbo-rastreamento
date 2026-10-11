@@ -55,7 +55,7 @@ func (s *Server) vehicleForViewer(w http.ResponseWriter, r *http.Request, requir
 	}
 
 	var share *shares.Share
-	if customerID, isCustomer := customerOf(r); isCustomer && (vehicle.OwnerID == nil || *vehicle.OwnerID != customerID) {
+	if _, isCustomer := customerOf(r); isCustomer && !seesVehicle(r, vehicle) {
 		if s.Shares == nil {
 			writeError(w, http.StatusNotFound, "veículo não encontrado")
 			return nil, nil, nil, false

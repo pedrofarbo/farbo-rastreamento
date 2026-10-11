@@ -105,7 +105,7 @@ func (s *Server) writeAlertSettings(w http.ResponseWriter, r *http.Request, user
 	if id, isCustomer := customerOf(r); isCustomer {
 		account = id
 		if principal, ok := auth.FromContext(r.Context()); ok {
-			resp.CanEditRecipients = principal.CanOperateAccount()
+			resp.CanEditRecipients = principal.CanOperateAccount() && principal.SeesWholeAccount()
 		}
 	}
 	if resp.ExtraRecipients, err = s.AlertStore.ExtraRecipients(r.Context(), account); err != nil {

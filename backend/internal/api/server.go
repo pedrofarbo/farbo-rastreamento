@@ -40,6 +40,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/push"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/reportmail"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/reports"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/shares"
@@ -112,6 +113,8 @@ type Deps struct {
 	// Reports: os relatórios da frota (resumo, km por dia, viagens,
 	// excessos). Nil: as rotas respondem 404.
 	Reports *reports.Service
+	// ReportMail: os relatórios da frota por e-mail. Nil: rotas fora.
+	ReportMail *reportmail.Service
 	// Theft: o modo roubo (o cliente avisa; o rastreador acelera; o link
 	// público mostra a posição à polícia). Nil: rotas respondem 404.
 	Theft *theft.Service
@@ -420,6 +423,8 @@ func (s *Server) routes() chi.Router {
 				r.Get("/subscriptions", s.handleMySubscriptions)
 				r.Group(func(r chi.Router) {
 					r.Use(s.requireAccountOperator)
+					// Da conta inteira: quem está restrito a grupos não vê.
+					r.Use(s.requireWholeAccount)
 					r.Get("/invoices", s.handleMyInvoices)
 					r.Post("/invoices/{id}/pix", s.handleMyInvoicePix)
 					// Várias de uma vez: a fatura do mês da frota, ou as vencidas.
@@ -443,6 +448,7 @@ func (s *Server) routes() chi.Router {
 					// A equipe da conta empresa.
 					if s.Accounts != nil {
 						r.Get("/team", s.handleMyTeam)
+						r.Get("/team/limit", s.handleMyTeamLimit)
 						r.With(s.requireActiveCustomer).Post("/team", s.handleAddTeamMember)
 						r.Patch("/team/{id}", s.handleUpdateTeamMember)
 						r.Delete("/team/{id}", s.handleRemoveTeamMember)
@@ -452,13 +458,23 @@ func (s *Server) routes() chi.Router {
 				r.Get("/alerts", s.handleMyAlerts)
 				r.Put("/alerts", s.handleSaveMyAlerts)
 				r.Post("/alerts/test", s.handleMyAlertsTest)
-				r.With(s.requireAccountOperator).Put("/alerts/recipients", s.handleSaveMyAlertRecipients)
-				// A organização da frota: grupos e campos personalizados.
+				r.With(s.requireAccountOperator, s.requireWholeAccount).Put("/alerts/recipients", s.handleSaveMyAlertRecipients)
+				// A organização da frota: grupos e campos personalizados (quem
+				// está restrito a grupos vê só os dele e não mexe).
 				r.Get("/fleet", s.handleMyFleet)
-				r.With(s.requireAccountOperator).Post("/fleet/groups", s.handleCreateFleetGroup)
-				r.With(s.requireAccountOperator).Patch("/fleet/groups/{id}", s.handleRenameFleetGroup)
-				r.With(s.requireAccountOperator).Delete("/fleet/groups/{id}", s.handleDeleteFleetGroup)
-				r.With(s.requireAccountOperator).Put("/fleet/labels", s.handleSetFleetLabels)
+				r.Group(func(r chi.Router) {
+					r.Use(s.requireAccountOperator, s.requireWholeAccount)
+					r.Post("/fleet/groups", s.handleCreateFleetGroup)
+					r.Patch("/fleet/groups/{id}", s.handleRenameFleetGroup)
+					r.Delete("/fleet/groups/{id}", s.handleDeleteFleetGroup)
+					r.Put("/fleet/labels", s.handleSetFleetLabels)
+				})
+				// Os relatórios da frota por e-mail (semanal ou mensal).
+				if s.ReportMail != nil {
+					r.Get("/report-schedules", s.handleMyReportSchedules)
+					r.Post("/report-schedules", s.handleCreateReportSchedule)
+					r.Delete("/report-schedules/{id}", s.handleDeleteReportSchedule)
+				}
 				// Notificações no celular (app do cliente).
 				r.Get("/push", s.handleMyPush)
 				r.Post("/push/subscriptions", s.handleMyPushSubscribe)

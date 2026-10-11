@@ -1211,6 +1211,13 @@ PUT    /api/customers/:id/history-retention  (admin) {days: 7|14|30|null} prazo 
 PUT    /api/vehicles/:id/history-retention   (admin) {days: 7|14|30|null} exceção do veículo (null segue o cliente)
 
 GET    /api/me/fulfillments              (customer) acompanhamento dos próprios pedidos
+GET    /api/me/team                      (titular) a equipe, cada um com {restricted, groups}
+GET    /api/me/team/limit                (titular) {limit, used}: uma pessoa a cada 5 veículos ativos, de 30 a 200
+POST   /api/me/team                      (titular) {name, email, role, groups}; groups vazio: todos os veículos; confirmação team_member
+PATCH  /api/me/team/:id                  (titular) {role} e/ou {groups}: quem está restrito a grupos vê, opera e recebe alertas só dos veículos deles (sem faturas)
+GET    /api/me/report-schedules          (customer) os relatórios por e-mail da pessoa
+POST   /api/me/report-schedules          (customer) {frequency: weekly|monthly, groupId, extraRecipients}: o resumo e as planilhas por e-mail, às segundas ou no dia 1º às 7h
+DELETE /api/me/report-schedules/:id      (customer)
 GET    /api/fulfillments                 (admin, operator) fila; ?status=all inclui os entregues
 GET    /api/fulfillments/:id             (admin, operator)
 POST   /api/fulfillments/:id/status      (admin, operator) {track: CHIP|TRACKER, status, note?, deviceId?}

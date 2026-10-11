@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { ApiError } from '@/api/client';
 import { Button } from '@/components/ui/Button';
+import { useAuth } from '@/stores/AuthContext';
 
 import styles from './Billing.module.css';
 
@@ -18,6 +19,8 @@ export function isSuspendedError(error: unknown): boolean {
  */
 export function SuspendedNotice({ message }: { message?: string }) {
   const navigate = useNavigate();
+  // Da equipe, quem não vê as faturas (Visualizador, restrito a grupos) fala com o titular.
+  const { canSeeBilling } = useAuth();
   // A API manda "acesso suspenso: há fatura…"; o título já diz a primeira parte.
   const detail = message?.replace(/^acesso suspenso:\s*/i, '').trim();
   return (
@@ -36,9 +39,13 @@ export function SuspendedNotice({ message }: { message?: string }) {
           Seus veículos continuam sendo rastreados normalmente; o acesso volta assim que o
           pagamento for confirmado.
         </p>
-        <Button variant="primary" size="large" onClick={() => navigate('/faturas')}>
-          Ver minhas faturas
-        </Button>
+        {canSeeBilling ? (
+          <Button variant="primary" size="large" onClick={() => navigate('/faturas')}>
+            Ver minhas faturas
+          </Button>
+        ) : (
+          <p className={styles.suspendedText}>Fale com o titular da conta para regularizar.</p>
+        )}
       </div>
     </div>
   );

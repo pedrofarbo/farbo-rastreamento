@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -30,6 +31,15 @@ func (s *Server) handleMyFleet(w http.ResponseWriter, r *http.Request) {
 	s.writeFleet(w, r, owner)
 }
 
+// fleetGroupsFor: quem está restrito a grupos vê só os grupos dele.
+func fleetGroupsFor(r *http.Request, groups []vehicles.Group) []vehicles.Group {
+	principal := restrictedPrincipal(r)
+	if principal == nil {
+		return groups
+	}
+	return slices.DeleteFunc(groups, func(g vehicles.Group) bool { return !principal.SeesGroup(&g.ID) })
+}
+
 // handleCustomerFleet: a central vê a organização da frota de um cliente
 // (para os relatórios dele e o Novo veículo pela ficha).
 func (s *Server) handleCustomerFleet(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +62,7 @@ func (s *Server) writeFleet(w http.ResponseWriter, r *http.Request, owner uuid.U
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"groups": groups, "labels": labels,
+		"groups": fleetGroupsFor(r, groups), "labels": labels,
 		"maxGroups": vehicles.MaxGroups, "maxCustomLength": vehicles.MaxCustomLength, "maxLabelLength": vehicles.MaxLabelLength,
 	})
 }

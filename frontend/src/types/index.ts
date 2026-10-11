@@ -52,6 +52,9 @@ export interface Membership {
   accountId: string;
   ownerName: string;
   role: MemberRole;
+  /** Só os veículos dos grupos em groups (sem grupo nenhum, nenhum veículo); sem restrição, a frota inteira. */
+  restricted?: boolean;
+  groups?: string[] | null;
 }
 
 /** Uma pessoa da equipe da conta (conta empresa). */
@@ -62,6 +65,9 @@ export interface AccountMember {
   role: MemberRole;
   active: boolean;
   createdAt: string;
+  /** Só os veículos dos grupos em groups; sem restrição, todos. */
+  restricted: boolean;
+  groups: string[] | null;
 }
 
 export interface AuthTokens {
@@ -1040,6 +1046,27 @@ export interface TrackerOrderResult {
   setupInvoice: Invoice | null;
   /** O frete cobrado; nulo se o pedido saiu sem frete. */
   shipping: ShippingChoice | null;
+}
+
+/** O relatório da frota por e-mail: toda semana (às segundas) ou todo mês (no dia 1º). */
+export type ReportFrequency = 'weekly' | 'monthly';
+
+export interface ReportSchedule {
+  id: string;
+  frequency: ReportFrequency;
+  /** O grupo do relatório (nulo: a conta toda). */
+  groupId: string | null;
+  extraRecipients: string[];
+  lastSentAt: string | null;
+  createdAt: string;
+}
+
+export interface ReportSchedules {
+  schedules: ReportSchedule[];
+  maxSchedules: number;
+  maxExtraRecipients: number;
+  /** O titular e o Gestor mandam para mais e-mails; o Visualizador, só para si. */
+  canAddRecipients: boolean;
 }
 
 /** O que a importação da frota criou (ou criaria, na conferência). */

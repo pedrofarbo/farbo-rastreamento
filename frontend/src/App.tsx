@@ -206,10 +206,10 @@ function RequireCustomer() {
   return <Outlet />;
 }
 
-/** Conta empresa: o que é do titular e do Gestor (o Visualizador só acompanha). */
+/** Conta empresa: as faturas são do titular e do Gestor com acesso a todos os veículos. */
 function RequireAccountOperator() {
-  const { canOperateAccount } = useAuth();
-  if (!canOperateAccount) return <Navigate to="/dashboard" replace />;
+  const { canSeeBilling } = useAuth();
+  if (!canSeeBilling) return <Navigate to="/dashboard" replace />;
   return <Outlet />;
 }
 

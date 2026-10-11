@@ -97,35 +97,75 @@ func (s *Server) handleAddTeamMember(w http.ResponseWriter, r *http.Request) {
 	if !writeTeamError(w, err, "conta não encontrada") {
 		return
 	}
+	s.teamChanged(r)
 	s.recordBillingAudit(r, audit.ActionAccountMemberAdded, map[string]any{
 		"customerId": accountID, "memberId": member.UserID, "role": member.Role, "invited": created,
+		"groups": member.Groups,
 	})
 	writeJSON(w, http.StatusCreated, member)
 }
 
-type teamRoleRequest struct {
-	Role string `json:"role"`
+// handleMyTeamLimit: quantas pessoas a equipe pode ter (cresce com a frota)
+// e quantas tem.
+func (s *Server) handleMyTeamLimit(w http.ResponseWriter, r *http.Request) {
+	accountID, _ := customerOf(r)
+	limit, used, err := s.Accounts.Limit(r.Context(), accountID)
+	if !writeTeamError(w, err, "conta não encontrada") {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"limit": limit, "used": used})
 }
 
-// handleUpdateTeamMember troca o papel de alguém da equipe.
+// teamChanged recarrega o que o tempo real sabe da equipe (quem está
+// restrito a quais grupos).
+func (s *Server) teamChanged(r *http.Request) {
+	if s.Owners != nil {
+		if err := s.Owners.Refresh(r.Context()); err != nil {
+			s.Log.Warn("falha ao recarregar a equipe no tempo real", "err", err)
+		}
+	}
+}
+
+// teamUpdateRequest troca o papel e/ou os veículos que a pessoa vê (grupos
+// vazio: todos; ausente: mantém).
+type teamUpdateRequest struct {
+	Role   *string      `json:"role"`
+	Groups *[]uuid.UUID `json:"groups"`
+}
+
+// handleUpdateTeamMember troca o papel ou os grupos de alguém da equipe.
 func (s *Server) handleUpdateTeamMember(w http.ResponseWriter, r *http.Request) {
 	userID, err := urlUUID(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "id inválido")
 		return
 	}
-	var req teamRoleRequest
+	var req teamUpdateRequest
 	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "corpo inválido")
 		return
 	}
-	accountID, _ := customerOf(r)
-	member, err := s.Accounts.SetRole(r.Context(), accountID, userID, req.Role)
-	if !writeTeamError(w, err, "pessoa não encontrada na equipe") {
+	if req.Role == nil && req.Groups == nil {
+		writeError(w, http.StatusBadRequest, "informe o papel ou os grupos")
 		return
 	}
+	accountID, _ := customerOf(r)
+	var member *accounts.Member
+	if req.Role != nil {
+		member, err = s.Accounts.SetRole(r.Context(), accountID, userID, *req.Role)
+		if !writeTeamError(w, err, "pessoa não encontrada na equipe") {
+			return
+		}
+	}
+	if req.Groups != nil {
+		member, err = s.Accounts.SetGroups(r.Context(), accountID, userID, *req.Groups)
+		if !writeTeamError(w, err, "pessoa não encontrada na equipe") {
+			return
+		}
+		s.teamChanged(r)
+	}
 	s.recordBillingAudit(r, audit.ActionAccountMemberUpdated, map[string]any{
-		"customerId": accountID, "memberId": member.UserID, "role": member.Role,
+		"customerId": accountID, "memberId": member.UserID, "role": member.Role, "groups": member.Groups,
 	})
 	writeJSON(w, http.StatusOK, member)
 }
@@ -142,6 +182,7 @@ func (s *Server) handleRemoveTeamMember(w http.ResponseWriter, r *http.Request) 
 	if !writeTeamError(w, err, "pessoa não encontrada na equipe") {
 		return
 	}
+	s.teamChanged(r)
 	s.recordBillingAudit(r, audit.ActionAccountMemberRemoved, map[string]any{
 		"customerId": accountID, "memberId": member.UserID, "email": member.Email,
 	})

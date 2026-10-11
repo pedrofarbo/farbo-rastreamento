@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -52,6 +53,23 @@ func (p *Principal) IsAccountOwner() bool { return p.IsCustomer() && p.Membershi
 // faturas); o Visualizador só acompanha.
 func (p *Principal) CanOperateAccount() bool {
 	return p.IsCustomer() && (p.Membership == nil || p.Membership.Role == MemberManager)
+}
+
+// SeesWholeAccount: o titular e quem da equipe não está restrito a grupos.
+// O que é da conta inteira — faturas, envios, os grupos e os campos da
+// frota, os e-mails a mais dos alertas — fica só com eles.
+func (p *Principal) SeesWholeAccount() bool {
+	return p.IsCustomer() && (p.Membership == nil || !p.Membership.Restricted)
+}
+
+// SeesGroup diz se a pessoa vê os veículos do grupo (nil: sem grupo). Só
+// quem da equipe está restrito a grupos deixa de ver algum; a conta em si
+// quem confere é quem chama (Account).
+func (p *Principal) SeesGroup(group *uuid.UUID) bool {
+	if p.Membership == nil || !p.Membership.Restricted {
+		return true
+	}
+	return group != nil && slices.Contains(p.Membership.Groups, *group)
 }
 
 // CanSendCommands: quem só visualiza não aciona o veículo. Vale para a

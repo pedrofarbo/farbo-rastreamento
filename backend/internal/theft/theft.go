@@ -556,8 +556,9 @@ type person struct {
 
 func (s *Service) people(ctx context.Context, vehicleID uuid.UUID) ([]person, error) {
 	// O acesso de terceiro só vale enquanto quem deu for o dono do veículo.
-	// A equipe da conta do dono (conta empresa) também é avisada; o Gestor,
-	// que pode desligar o modo, recebe o lembrete como o dono.
+	// A equipe da conta do dono (conta empresa) também é avisada — quem está
+	// restrito a grupos, só se o veículo for de um deles; o Gestor, que pode
+	// desligar o modo, recebe o lembrete como o dono.
 	rows, err := s.db.Query(ctx, `
 		SELECT u.id, u.name, u.email, TRUE FROM vehicles v JOIN users u ON u.id = v.owner_id
 		WHERE v.id = $1 AND u.active
@@ -566,6 +567,8 @@ func (s *Service) people(ctx context.Context, vehicleID uuid.UUID) ([]person, er
 		JOIN account_members m ON m.account_id = v.owner_id
 		JOIN users u ON u.id = m.user_id
 		WHERE v.id = $1 AND u.active
+		  AND (NOT m.restricted OR EXISTS (
+			SELECT 1 FROM account_member_groups g WHERE g.user_id = m.user_id AND g.group_id = v.group_id))
 		UNION ALL
 		SELECT u.id, u.name, u.email, FALSE FROM vehicle_shares sh
 		JOIN vehicles v ON v.id = sh.vehicle_id AND v.owner_id = sh.owner_id

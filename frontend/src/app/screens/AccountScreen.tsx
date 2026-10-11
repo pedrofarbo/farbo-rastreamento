@@ -51,6 +51,7 @@ export function AccountScreen() {
         {membership && (
           <p className={styles.muted}>
             Conta de <strong>{membership.ownerName}</strong> · {membership.role === 'manager' ? 'Gestor' : 'Visualizador'}
+            {membership.restricted && ' · alguns grupos'}
           </p>
         )}
       </div>

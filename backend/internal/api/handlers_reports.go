@@ -1,18 +1,15 @@
 package api
 
 import (
-	"encoding/csv"
 	"fmt"
 	"net/http"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/reports"
-	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 )
 
 // Os relatórios da frota: o resumo de cada veículo no período, os km de cada
@@ -27,38 +24,9 @@ type reportQuery struct {
 	vehicles []reports.Vehicle
 	from, to time.Time // dias (meia-noite no fuso da central)
 	csv      bool
-	// Os nomes dos grupos e dos campos personalizados da conta (as colunas
-	// da planilha).
-	groups map[uuid.UUID]string
-	labels vehicles.FieldLabels
-}
-
-// extraHeader e extraCells: o grupo e os campos personalizados que a conta
-// nomeou, nas planilhas.
-func (q reportQuery) extraHeader() []string {
-	out := []string{"Grupo"}
-	if q.labels.Label1 != "" {
-		out = append(out, q.labels.Label1)
-	}
-	if q.labels.Label2 != "" {
-		out = append(out, q.labels.Label2)
-	}
-	return out
-}
-
-func (q reportQuery) extraCells(v reports.Vehicle) []string {
-	group := ""
-	if v.GroupID != nil {
-		group = q.groups[*v.GroupID]
-	}
-	out := []string{group}
-	if q.labels.Label1 != "" {
-		out = append(out, v.Custom1)
-	}
-	if q.labels.Label2 != "" {
-		out = append(out, v.Custom2)
-	}
-	return out
+	// sheet monta as planilhas: o fuso, os nomes dos grupos e dos campos
+	// personalizados da conta (as colunas a mais).
+	sheet reports.Sheet
 }
 
 // reportScope lê a conta, o período e o veículo (?veiculo=, opcional) do pedido.
@@ -109,6 +77,10 @@ func (s *Server) reportScope(w http.ResponseWriter, r *http.Request) (reportQuer
 		handleStoreError(w, err, "veículos não encontrados")
 		return reportQuery{}, false
 	}
+	// Quem da equipe está restrito a grupos vê só os veículos deles.
+	if principal := restrictedPrincipal(r); principal != nil {
+		list = slices.DeleteFunc(list, func(v reports.Vehicle) bool { return !principal.SeesGroup(v.GroupID) })
+	}
 	// ?grupo=: só os veículos de um grupo da conta.
 	if raw := r.URL.Query().Get("grupo"); raw != "" {
 		id, err := uuid.Parse(raw)
@@ -137,7 +109,8 @@ func (s *Server) reportScope(w http.ResponseWriter, r *http.Request) (reportQuer
 		}
 		list = list[i : i+1]
 	}
-	q := reportQuery{vehicles: list, from: from, to: to, csv: r.URL.Query().Get("formato") == "csv", groups: map[uuid.UUID]string{}}
+	q := reportQuery{vehicles: list, from: from, to: to, csv: r.URL.Query().Get("formato") == "csv",
+		sheet: reports.Sheet{Loc: loc, Groups: map[uuid.UUID]string{}}}
 	if q.csv {
 		groups, err := s.Vehicles.Groups(r.Context(), owner)
 		if err != nil {
@@ -145,24 +118,16 @@ func (s *Server) reportScope(w http.ResponseWriter, r *http.Request) (reportQuer
 			return reportQuery{}, false
 		}
 		for _, g := range groups {
-			q.groups[g.ID] = g.Name
+			q.sheet.Groups[g.ID] = g.Name
 		}
-		if q.labels, err = s.Vehicles.Labels(r.Context(), owner); err != nil {
+		labels, err := s.Vehicles.Labels(r.Context(), owner)
+		if err != nil {
 			handleStoreError(w, err, "veículos não encontrados")
 			return reportQuery{}, false
 		}
+		q.sheet.Label1, q.sheet.Label2 = labels.Label1, labels.Label2
 	}
 	return q, true
-}
-
-// vehicleOf é o veículo do relatório pelo id.
-func (q reportQuery) vehicleOf(id uuid.UUID) reports.Vehicle {
-	for _, v := range q.vehicles {
-		if v.ID == id {
-			return v
-		}
-	}
-	return reports.Vehicle{}
 }
 
 func (s *Server) handleReportSummary(w http.ResponseWriter, r *http.Request) {
@@ -176,15 +141,7 @@ func (s *Server) handleReportSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if q.csv {
-		out := [][]string{append(append([]string{"Veículo", "Placa"}, q.extraHeader()...), "Km", "Tempo andando", "Parado ligado",
-			"Viagens", "Velocidade máxima (km/h)", "Excessos de velocidade", "Dias com movimento", "Primeira saída", "Última chegada")}
-		for _, row := range rows {
-			out = append(out, append(append([]string{row.Name, row.Plate}, q.extraCells(q.vehicleOf(row.VehicleID))...),
-				decimal(row.DistanceKm, 1), hours(row.MovingSeconds), hours(row.IdleSeconds), strconv.Itoa(row.Trips),
-				decimal(row.MaxSpeedKmh, 0), strconv.Itoa(row.Overspeeds), strconv.Itoa(row.ActiveDays),
-				s.when(row.FirstMoveAt), s.when(row.LastMoveAt)))
-		}
-		writeCSV(w, "resumo", q, out)
+		writeCSV(w, "resumo", q, q.sheet.Summary(rows, q.vehicles))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"from": day(q.from), "to": day(q.to), "rows": rows})
@@ -205,14 +162,15 @@ func (s *Server) handleReportDaily(w http.ResponseWriter, r *http.Request) {
 		for _, v := range q.vehicles {
 			names[v.ID] = v
 		}
-		out := [][]string{append(append([]string{"Veículo", "Placa"}, q.extraHeader()...), "Dia", "Km", "Tempo andando",
+		out := [][]string{append(append([]string{"Veículo", "Placa"}, q.sheet.ExtraHeader()...), "Dia", "Km", "Tempo andando",
 			"Parado ligado", "Viagens", "Velocidade máxima (km/h)", "Excessos de velocidade", "Primeira saída", "Última chegada")}
 		for _, row := range rows {
 			v := names[row.VehicleID]
 			d, _ := time.Parse(time.DateOnly, row.Day)
-			out = append(out, append(append([]string{v.Name, v.Plate}, q.extraCells(v)...), d.Format("02/01/2006"),
-				decimal(row.DistanceKm, 1), hours(row.MovingSeconds), hours(row.IdleSeconds), strconv.Itoa(row.Trips),
-				decimal(row.MaxSpeedKmh, 0), strconv.Itoa(row.Overspeeds), s.clock(row.FirstMoveAt), s.clock(row.LastMoveAt)))
+			out = append(out, append(append([]string{v.Name, v.Plate}, q.sheet.ExtraCells(v)...), d.Format("02/01/2006"),
+				reports.Decimal(row.DistanceKm, 1), reports.Hours(row.MovingSeconds), reports.Hours(row.IdleSeconds),
+				strconv.Itoa(row.Trips), reports.Decimal(row.MaxSpeedKmh, 0), strconv.Itoa(row.Overspeeds),
+				q.sheet.Clock(row.FirstMoveAt), q.sheet.Clock(row.LastMoveAt)))
 		}
 		writeCSV(w, "km-por-dia", q, out)
 		return
@@ -247,12 +205,13 @@ func (s *Server) handleReportTrips(w http.ResponseWriter, r *http.Request) {
 		out := [][]string{{"Veículo", "Placa", "Saída", "Chegada", "Duração", "Km", "Velocidade máxima (km/h)",
 			"Saída (lat, lon)", "Chegada (lat, lon)"}}
 		for _, t := range trips {
-			arrival := s.when(&t.End)
+			arrival := q.sheet.When(&t.End)
 			if t.Ongoing {
 				arrival = "andando"
 			}
-			out = append(out, []string{v.Name, v.Plate, s.when(&t.Start), arrival, hours(t.Seconds()),
-				decimal(t.DistanceM/1000, 1), decimal(t.MaxSpeed, 0), coords(t.StartLat, t.StartLon), coords(t.EndLat, t.EndLon)})
+			out = append(out, []string{v.Name, v.Plate, q.sheet.When(&t.Start), arrival, reports.Hours(t.Seconds()),
+				reports.Decimal(t.DistanceM/1000, 1), reports.Decimal(t.MaxSpeed, 0),
+				reports.Coords(t.StartLat, t.StartLon), reports.Coords(t.EndLat, t.EndLon)})
 		}
 		writeCSV(w, "viagens", q, out)
 		return
@@ -275,26 +234,7 @@ func (s *Server) handleReportOverspeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if q.csv {
-		names := map[uuid.UUID]reports.Vehicle{}
-		for _, v := range q.vehicles {
-			names[v.ID] = v
-		}
-		out := [][]string{{"Veículo", "Placa", "Início", "Fim", "Duração", "Velocidade máxima (km/h)", "Limite (km/h)", "Local (lat, lon)"}}
-		for _, o := range rows {
-			v := names[o.VehicleID]
-			duration, limit, where := "", "", ""
-			if o.End != nil {
-				duration = minutesSeconds(o.End.Sub(o.Start))
-			}
-			if o.LimitKmh != nil {
-				limit = decimal(*o.LimitKmh, 0)
-			}
-			if o.Latitude != nil && o.Longitude != nil {
-				where = coords(*o.Latitude, *o.Longitude)
-			}
-			out = append(out, []string{v.Name, v.Plate, s.when(&o.Start), s.when(o.End), duration,
-				decimal(o.MaxSpeedKmh, 0), limit, where})
-		}
+		out := q.sheet.Overspeeds(rows, q.vehicles)
 		writeCSV(w, "excessos-de-velocidade", q, out)
 		return
 	}
@@ -312,64 +252,7 @@ func writeCSV(w http.ResponseWriter, name string, q reportQuery, rows [][]string
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte{0xEF, 0xBB, 0xBF}) // BOM: o Excel reconhece o UTF-8
-	out := csv.NewWriter(w)
-	out.Comma = ';'
-	for _, row := range rows {
-		_ = out.Write(safeCells(row))
-	}
-	out.Flush()
-}
-
-// safeCells evita que um nome de veículo vire fórmula na planilha
-// ("=HYPERLINK(...)"): começando por = + - @, ganha um apóstrofo.
-func safeCells(row []string) []string {
-	out := make([]string, len(row))
-	for i, cell := range row {
-		if cell != "" && strings.ContainsRune("=+-@\t\r", rune(cell[0])) && !isNumber(cell) {
-			cell = "'" + cell
-		}
-		out[i] = cell
-	}
-	return out
-}
-
-func isNumber(s string) bool {
-	_, err := strconv.ParseFloat(strings.Replace(s, ",", ".", 1), 64)
-	return err == nil
+	_ = reports.WriteCSV(w, rows)
 }
 
 func day(t time.Time) string { return t.Format(time.DateOnly) }
-
-func decimal(v float64, places int) string {
-	return strings.Replace(strconv.FormatFloat(v, 'f', places, 64), ".", ",", 1)
-}
-
-// hours: 3725 s → "1:02" (horas:minutos).
-func hours(seconds int) string {
-	m := seconds / 60
-	return fmt.Sprintf("%d:%02d", m/60, m%60)
-}
-
-// minutesSeconds: 95 s → "1:35" (minutos:segundos).
-func minutesSeconds(d time.Duration) string {
-	s := int(d.Seconds())
-	return fmt.Sprintf("%d:%02d", s/60, s%60)
-}
-
-func coords(lat, lon float64) string { return fmt.Sprintf("%.5f, %.5f", lat, lon) }
-
-// when: data e hora no fuso da central; clock, só a hora.
-func (s *Server) when(t *time.Time) string {
-	if t == nil {
-		return ""
-	}
-	return t.In(s.Reports.Location()).Format("02/01/2006 15:04")
-}
-
-func (s *Server) clock(t *time.Time) string {
-	if t == nil {
-		return ""
-	}
-	return t.In(s.Reports.Location()).Format("15:04")
-}
