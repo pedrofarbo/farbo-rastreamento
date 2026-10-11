@@ -462,6 +462,12 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		stateStore.Run(ctx, log)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, theftSvc, dunningSvc, adjustmentSvc, contractSvc, log)
 	}()
 

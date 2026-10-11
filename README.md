@@ -976,32 +976,69 @@ Roteiro para ver a trava de segurança funcionando:
 `cmd/loadgen` simula muitos rastreadores GT06 (o protocolo dos J16) ao mesmo
 tempo — login, posição no intervalo configurado e heartbeat — e, se pedido,
 painéis abertos recebendo tudo pelo WebSocket. Serve para dimensionar e
-validar o servidor (rode na própria VPS antes de ligar os clientes).
+validar o servidor.
 
-Os IMEIs são `prefixo + sequência` e precisam estar cadastrados. Para 5000
-aparelhos de teste com o prefixo `86912`:
-
-```sql
-WITH d AS (
-    INSERT INTO devices (imei, model, protocol)
-    SELECT '86912' || lpad(i::text, 10, '0'), 'J16', 'GT06' FROM generate_series(1, 5000) AS i
-    RETURNING id, imei)
-INSERT INTO vehicles (name, plate, device_id)
-SELECT 'Carga ' || right(imei, 5), 'LD' || right(imei, 5), id FROM d;
-```
+Rode contra um banco de teste, nunca o de produção: o `-setup` grava
+milhões de posições. O jeito mais simples é uma segunda instância do servidor
+num schema separado, em outras portas e sem Redis (senão o tempo real das
+duas instâncias se mistura):
 
 ```bash
 cd backend
-go run ./cmd/loadgen -host 127.0.0.1 -port 5000 -devices 5000 -imei-prefix 86912 \
-  -interval 10s -ramp 60s -duration 10m \
-  -api http://127.0.0.1:8080 -ws 2 -email admin@... -password ...
+# o schema precisa existir: CREATE SCHEMA carga;
+PGOPTIONS="-c search_path=carga" HTTP_PORT=8090 TCP_PORT=5100 REDIS_ENABLED=false \
+  go run ./cmd/server
 ```
 
-A cada 10 s ele imprime uma linha JSON com conectados, envios por segundo,
-erros, reconexões e mensagens recebidas pelos painéis. Acompanhe junto o
-`/metrics`, o uso de CPU/memória e o atraso das posições no banco
-(`received_at - gps_timestamp`). Apague os aparelhos de teste depois
-(`DELETE FROM devices WHERE imei LIKE '86912%'`).
+Os IMEIs são `prefixo + sequência`. O `-setup` cadastra os rastreadores
+(um veículo cada, do cliente `-owner` ou da central) e, com
+`-history-days`, gera o histórico que uma frota acumula — no ritmo do J16,
+uma posição a cada 30 s andando (7h–10h e 14h–17h) e uma por hora parado, com
+ignição, excessos e o resumo diário dos relatórios:
+
+```bash
+DSN="postgres://...?options=-c%20search_path%3Dcarga"
+go run ./cmd/loadgen -db "$DSN" -setup -devices 1000 -imei-prefix 86912 -owner <id do cliente> -history-days 35
+go run ./cmd/loadgen -host 127.0.0.1 -port 5100 -devices 1000 -imei-prefix 86912 \
+  -interval 10s -ramp 30s -duration 6m \
+  -api http://127.0.0.1:8090 -ws 2 -email <cliente> -password ... -db "$DSN"
+go run ./cmd/loadgen -db "$DSN" -teardown -imei-prefix 86912
+```
+
+A cada 10 s ele imprime uma linha JSON: conectados, envios por segundo,
+erros e reconexões; com `-ws`, as mensagens dos painéis e o **atraso de ponta
+a ponta** (do envio da posição à chegada no painel: `e2eP50ms`, `e2eP99ms`);
+com `-api`, a CPU e a memória do servidor e o tempo de cada posição lá dentro
+(`ingestP50ms`, da métrica `tracker_position_ingest_seconds` do `/metrics`);
+com `-db`, commits, linhas gravadas e leituras do disco por segundo. A CPU
+da máquina inteira (`hostCores`) vem do `/proc/stat`. A última linha
+(`"final": true`) resume o teste todo.
+
+Medido em 11/10/2026 (4 núcleos, Postgres 16 local), com 1000 veículos de um
+cliente, 35 dias de histórico (25,8 milhões de posições, 5,6 GB) e 2 painéis
+abertos, 1000 rastreadores a cada 10 s (100 posições/s):
+
+| | antes | depois |
+|---|---|---|
+| atraso até o painel, p99 | 15 ms | 1 ms |
+| CPU da máquina, média / pico | 1,0 / 2,9 núcleos | 0,45 / 0,9 núcleo |
+| commits no banco por segundo | 468 | 198 |
+| leitura do disco, média | ~340 MB/s (70 s de cada 6 min) | ~0 |
+| cálculo dos relatórios por rodada | 7.806 dias refeitos | 1.000 |
+
+O que mudou: o cálculo dos relatórios procurava a última posição assentada
+pela hora de recebimento (sem índice: 4,2 s lendo 3,3 GB) e, com posições
+chegando sem parar, repetia isso até o fim dos 2 minutos da rodada; agora vai
+pelo índice do id (0,05 ms) e fixa o alvo na largada. O estado de cada
+rastreador era gravado até três vezes por posição; agora vai em lote, uma vez
+por segundo. Com 500 posições/s (5000 rastreadores a cada 10 s), o servidor
+usou 12% de um núcleo e o atraso p99 seguiu em 1 ms.
+
+Com 1000 veículos no ritmo do J16: ~740 mil posições por dia (~160 MB). A
+limpeza diária apaga um dia em ~20 s; a compactação do histórico longo
+(prazo de 90 dias a 1 ano) leva ~35 s para 3 dias de frota; recalcular o dia
+cheio dos 1000 veículos, ~4,5 s a cada 5 min. Guardar 30 dias ocupa ~5 GB;
+1 ano com compactação, ~30 GB.
 
 ---
 
@@ -1168,6 +1205,7 @@ GET    /api/catalog                      preços de um rastreador novo (para o c
 PUT    /api/me/address                   (customer) endereço de entrega (obrigatório para contratar)
 POST   /api/me/trackers                  (customer) Novo veículo {vehicle}: preços do catálogo; 409 ADDRESS_REQUIRED sem endereço
 POST   /api/customers/:id/trackers       (admin) Novo veículo {vehicle, equipmentCents, setupDueDate, plan}
+POST   /api/customers/:id/trackers/import (admin) a frota por planilha {rows: [{vehicle, group, imei}], equipmentCents, setupDueDate, plan, dryRun}: até 1000 veículos numa transação, uma fatura só do equipamento; 422 IMPORT_PROBLEMS com {problems: [{line, message}]}
 PUT    /api/customers/:id/address        (admin) endereço de entrega do cliente
 PUT    /api/customers/:id/history-retention  (admin) {days: 7|14|30|null} prazo do histórico do cliente
 PUT    /api/vehicles/:id/history-retention   (admin) {days: 7|14|30|null} exceção do veículo (null segue o cliente)

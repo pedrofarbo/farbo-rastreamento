@@ -624,6 +624,7 @@ func (s *Server) routes() chi.Router {
 							r.Post("/invite", s.handleInviteCustomer)
 							r.Post("/invoices", s.handleCreateInvoice)
 							r.Post("/trackers", s.handleAdminOrderTracker)
+							r.Post("/trackers/import", s.handleAdminImportFleet)
 							r.Get("/shipping-quote", s.handleCustomerShippingQuote)
 							r.Get("/launch-promo", s.handleCustomerLaunchPromo)
 							r.Post("/launch-promo/grant", s.handleGrantLaunchPromo)

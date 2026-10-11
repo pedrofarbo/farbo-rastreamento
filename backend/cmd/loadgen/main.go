@@ -3,9 +3,15 @@
 // painéis abertos no WebSocket recebendo tudo em tempo real.
 //
 // Os IMEIs são prefixo + número sequencial (000001, 000002, ...) e precisam
-// estar cadastrados no servidor, senão a conexão é recusada.
+// estar cadastrados no servidor, senão a conexão é recusada. Com -db, o
+// -setup cadastra (e gera o histórico de -history-days) e o -teardown apaga.
 //
+//	go run ./cmd/loadgen -db "$DSN" -setup -devices 1000 -history-days 35
 //	go run ./cmd/loadgen -host 127.0.0.1 -port 5000 -devices 5000 -interval 10s -duration 10m
+//
+// Com -api e -ws, mede também o atraso de ponta a ponta: do envio da posição
+// à chegada no painel. Com -api, a CPU e a memória do servidor e o tempo de
+// cada posição lá dentro (/metrics); com -db, o ritmo do banco.
 package main
 
 import (
@@ -30,6 +36,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols/gt06"
 )
@@ -45,6 +52,14 @@ type counters struct {
 	wsMessages   atomic.Int64
 	wsClients    atomic.Int64
 	loginLatency latencies
+
+	// sentAt é o último envio de posição de cada IMEI; deviceIMEI liga o id
+	// do rastreador (no tempo real) ao IMEI. e2e é o atraso até o painel: a
+	// janela do relatório e o total.
+	sentAt     sync.Map
+	deviceIMEI map[string]string
+	e2eWindow  latencies
+	e2eAll     latencies
 }
 
 // latencies guarda amostras para percentis.
@@ -57,6 +72,22 @@ func (l *latencies) add(d time.Duration) {
 	l.mu.Lock()
 	l.samples = append(l.samples, d)
 	l.mu.Unlock()
+}
+
+// drain devolve os percentis da janela e a esvazia.
+func (l *latencies) drain() (p50, p99, worst time.Duration, n int) {
+	l.mu.Lock()
+	samples := l.samples
+	l.samples = nil
+	l.mu.Unlock()
+	if len(samples) == 0 {
+		return 0, 0, 0, 0
+	}
+	sort.Slice(samples, func(i, j int) bool { return samples[i] < samples[j] })
+	at := func(p float64) time.Duration {
+		return samples[int(math.Min(float64(len(samples)-1), p*float64(len(samples))))]
+	}
+	return at(0.5), at(0.99), samples[len(samples)-1], len(samples)
 }
 
 func (l *latencies) percentile(p float64) time.Duration {
@@ -84,10 +115,43 @@ func main() {
 	email := flag.String("email", "", "login de quem abre o painel")
 	password := flag.String("password", "", "senha de quem abre o painel")
 	origin := flag.String("origin", "http://localhost:5173", "Origin aceito pelo WebSocket")
+	dsn := flag.String("db", "", "banco do servidor (postgres://...): -setup/-teardown e o ritmo do banco no relatório")
+	doSetup := flag.Bool("setup", false, "cadastra os rastreadores de teste (um veículo cada) e sai")
+	historyDays := flag.Int("history-days", 0, "com -setup, dias de histórico gerados (ritmo do J16: 30 s andando, 1 h parado)")
+	owner := flag.String("owner", "", "com -setup, id do cliente dono dos veículos (vazio: da central)")
+	doTeardown := flag.Bool("teardown", false, "apaga os rastreadores de teste, os veículos e o histórico deles, e sai")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	var db *pgxpool.Pool
+	if *dsn != "" {
+		var err error
+		if db, err = pgxpool.New(ctx, *dsn); err != nil {
+			fmt.Fprintln(os.Stderr, "banco:", err)
+			os.Exit(1)
+		}
+		defer db.Close()
+	}
+	if *doSetup || *doTeardown {
+		if db == nil {
+			fmt.Fprintln(os.Stderr, "-setup e -teardown precisam de -db")
+			os.Exit(2)
+		}
+		var err error
+		if *doSetup {
+			err = setup(ctx, db, *prefix, *devices, *owner, *historyDays)
+		} else {
+			err = teardown(ctx, db, *prefix)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	ctx, stop := context.WithTimeout(ctx, *duration)
 	defer stop()
 
@@ -95,10 +159,19 @@ func main() {
 	start := time.Now()
 	var wg sync.WaitGroup
 
+	probe := &prober{db: db, client: &http.Client{Timeout: 5 * time.Second}}
+	if *apiURL != "" {
+		probe.metricsURL = strings.TrimRight(*apiURL, "/") + "/metrics"
+	}
+
 	if *wsClients > 0 {
 		token, err := login(*apiURL, *email, *password)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "login do painel:", err)
+			os.Exit(1)
+		}
+		if c.deviceIMEI, err = deviceIMEIs(ctx, db, *prefix, *apiURL, token); err != nil {
+			fmt.Fprintln(os.Stderr, "rastreadores do painel:", err)
 			os.Exit(1)
 		}
 		for i := 0; i < *wsClients; i++ {
@@ -134,6 +207,8 @@ func main() {
 	defer ticker.Stop()
 	var lastSent, lastWS int64
 	lastAt := time.Now()
+	first := probe.take(ctx)
+	lastProbe := first
 	report := func(final bool) {
 		now := time.Now()
 		sent, ws := c.sent.Load(), c.wsMessages.Load()
@@ -147,9 +222,24 @@ func main() {
 			"loginP50ms":  c.loginLatency.percentile(0.5).Milliseconds(),
 			"loginP99ms":  c.loginLatency.percentile(0.99).Milliseconds(),
 		}
+		cur := probe.take(context.Background())
 		if final {
+			// O resumo do teste inteiro: a média de cada medida e o atraso
+			// de todas as posições.
 			line["final"] = true
+			diff(first, cur, line)
+			if c.e2eAll.count() > 0 {
+				line["e2eP50ms"] = c.e2eAll.percentile(0.5).Milliseconds()
+				line["e2eP99ms"] = c.e2eAll.percentile(0.99).Milliseconds()
+				line["e2eSamples"] = c.e2eAll.count()
+			}
+		} else {
+			diff(lastProbe, cur, line)
+			if p50, p99, worst, n := c.e2eWindow.drain(); n > 0 {
+				line["e2eP50ms"], line["e2eP99ms"], line["e2eMaxMs"] = p50.Milliseconds(), p99.Milliseconds(), worst.Milliseconds()
+			}
 		}
+		lastProbe = cur
 		out, _ := json.Marshal(line)
 		fmt.Println(string(out))
 		lastSent, lastWS, lastAt = sent, ws, now
@@ -263,6 +353,7 @@ func session(ctx context.Context, addr, imei string, interval, heartbeat time.Du
 			lon += step * math.Sin(course*math.Pi/180)
 			fix := gt06.Fix{Time: time.Now(), Latitude: lat, Longitude: lon, SpeedKmh: speed,
 				CourseDeg: course, Satellites: 9, Valid: true}
+			c.sentAt.Store(imei, time.Now())
 			if err := write(gt06.BuildPositionFrame(fix, status, next())); err != nil {
 				c.sendErrors.Add(1)
 				return err
@@ -307,12 +398,85 @@ func runPanel(ctx context.Context, api, token, origin string, c *counters) {
 			conn.Close()
 		}()
 		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
+			_, payload, err := conn.ReadMessage()
+			if err != nil {
 				break
 			}
 			c.wsMessages.Add(1)
+			c.observe(payload)
 		}
 		c.wsClients.Add(-1)
 		conn.Close()
 	}
+}
+
+func (l *latencies) count() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.samples)
+}
+
+// observe mede o atraso de uma posição que chegou ao painel: do último envio
+// daquele rastreador até agora.
+func (c *counters) observe(payload []byte) {
+	var msg struct {
+		Type     string `json:"type"`
+		DeviceID string `json:"deviceId"`
+	}
+	if json.Unmarshal(payload, &msg) != nil || msg.Type != "position.updated" {
+		return
+	}
+	imei, ok := c.deviceIMEI[msg.DeviceID]
+	if !ok {
+		return
+	}
+	if at, ok := c.sentAt.Load(imei); ok {
+		d := time.Since(at.(time.Time))
+		c.e2eWindow.add(d)
+		c.e2eAll.add(d)
+	}
+}
+
+// deviceIMEIs liga o id de cada rastreador ao IMEI (o tempo real fala em id):
+// pelo banco, com -db; senão, pela lista da equipe (o painel de um cliente
+// não vê os IMEIs).
+func deviceIMEIs(ctx context.Context, db *pgxpool.Pool, prefix, api, token string) (map[string]string, error) {
+	if db != nil {
+		rows, err := db.Query(ctx, testDevices, prefix)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		out := map[string]string{}
+		for rows.Next() {
+			var id, imei string
+			if err := rows.Scan(&id, &imei); err != nil {
+				return nil, err
+			}
+			out[id] = imei
+		}
+		return out, rows.Err()
+	}
+	req, _ := http.NewRequest(http.MethodGet, strings.TrimRight(api, "/")+"/api/devices", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("lista recusada (%d)", resp.StatusCode)
+	}
+	var list []struct {
+		ID   string `json:"id"`
+		IMEI string `json:"imei"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(list))
+	for _, d := range list {
+		out[d.ID] = d.IMEI
+	}
+	return out, nil
 }

@@ -1,8 +1,10 @@
+import type { FleetImportRow } from '@/services/fleetImport';
 import type { TeamRole } from '@/services/roles';
 
 import { api, apiUrl, download, fetchBlob, request } from './client';
 import type {
   AccountMember,
+  FleetImportResult,
   MemberRole,
   VehicleKind,
   PriceAdjustmentOverview,
@@ -663,6 +665,9 @@ export const customersApi = {
   /** Novo veículo: veículo → rastreador (fatura do equipamento) → assinatura. */
   orderTracker: (customerId: string, input: AdminTrackerOrder) =>
     api.post<TrackerOrderResult>(`/api/customers/${customerId}/trackers`, input),
+  /** A frota por planilha: cada linha vira um veículo com a assinatura; o equipamento, uma fatura só. */
+  importFleet: (customerId: string, input: FleetImportRequest) =>
+    api.post<FleetImportResult>(`/api/customers/${customerId}/trackers/import`, input),
   /** As formas de entrega até o endereço do cliente (pedido pela central). */
   shippingQuote: (customerId: string) => api.get<ShippingQuoteView>(`/api/customers/${customerId}/shipping-quote`),
   /** Se o cliente pode contratar com a promoção de pré-lançamento. */
@@ -691,6 +696,16 @@ export interface AdminTrackerOrder {
   shippingServiceId?: number;
   /** O equipamento parcelado sem juros (ausente ou 1: à vista). */
   installments?: number;
+}
+
+export interface FleetImportRequest {
+  rows: FleetImportRow[];
+  /** O valor de cada aparelho; zero não cobra. */
+  equipmentCents: number;
+  setupDueDate?: DateOnly | null;
+  plan: SubscriptionInput;
+  /** Só confere: nada é gravado. */
+  dryRun?: boolean;
 }
 
 export interface InstallerInput {

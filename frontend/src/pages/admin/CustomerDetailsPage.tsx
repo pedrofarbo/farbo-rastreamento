@@ -11,6 +11,7 @@ import { InvoiceDayRows } from '@/components/billing/InvoiceDayRows';
 import { CustomerStatus, InvoiceStatus } from '@/components/billing/InvoiceStatus';
 import { MonthlyPrice } from '@/components/billing/MonthlyPrice';
 import { installmentProgress } from '@/components/billing/installments';
+import { FleetImportModal } from '@/components/billing/FleetImportModal';
 import { NewVehicleWizard } from '@/components/billing/NewVehicleWizard';
 import { FulfillmentAdminModal } from '@/components/fulfillment/FulfillmentAdminModal';
 import { PixPaymentModal } from '@/components/billing/PixPaymentModal';
@@ -93,6 +94,7 @@ export function CustomerDetailsPage() {
   const [pix, setPix] = useState<Invoice | null>(null);
   const [refund, setRefund] = useState<{ payment: PixPayment; reason: string } | null>(null);
   const [ordering, setOrdering] = useState(false);
+  const [importing, setImporting] = useState(false);
   // Assinatura antiga sem veículo: a central informa qual é.
   const [attach, setAttach] = useState<{ subscription: Subscription; input: VehicleInput } | null>(null);
   const [following, setFollowing] = useState<string | null>(null);
@@ -345,11 +347,16 @@ export function CustomerDetailsPage() {
 
         <Card
           title="Veículos"
-          subtitle="Cada veículo tem o seu rastreador e a sua assinatura. Tudo entra por Novo veículo."
+          subtitle="Cada veículo tem o seu rastreador e a sua assinatura. Tudo entra por Novo veículo (ou, a frota de uma vez, pela planilha)."
           actions={
-            <Button size="small" variant="primary" onClick={() => setOrdering(true)}>
-              Novo veículo
-            </Button>
+            <>
+              <Button size="small" variant="secondary" onClick={() => setImporting(true)}>
+                Importar planilha
+              </Button>
+              <Button size="small" variant="primary" onClick={() => setOrdering(true)}>
+                Novo veículo
+              </Button>
+            </>
           }
           flush
         >
@@ -851,6 +858,33 @@ export function CustomerDetailsPage() {
             description: result.setupInvoice
               ? `${result.vehicle.name}: assinatura iniciada e fatura do equipamento de ${formatMoney(result.setupInvoice.amountCents)} lançada.`
               : `${result.vehicle.name}: assinatura iniciada, sem cobrança de equipamento.`,
+          });
+        }}
+      />
+
+      {/* A frota de uma vez: uma linha da planilha por veículo */}
+      <FleetImportModal
+        open={importing}
+        fleet={fleet}
+        admin={{
+          customerId: id,
+          devices: [],
+          deliveryAddress: data.deliveryAddress,
+          currentPlan: data.subscriptions.find((s) => s.status === 'ACTIVE') ?? null,
+          accountPlan: data.plan,
+          accountDueDay: accountDueDay(data.subscriptions),
+        }}
+        onClose={() => setImporting(false)}
+        onDone={(result) => {
+          setImporting(false);
+          refresh();
+          notify({
+            tone: 'success',
+            title: `${result.vehicles} ${result.vehicles === 1 ? 'veículo importado' : 'veículos importados'}`,
+            description: [
+              `${result.installed} com o rastreador já vinculado, ${result.vehicles - result.installed} no envio`,
+              result.setupInvoice ? `fatura do equipamento de ${formatMoney(result.setupInvoice.amountCents)} lançada` : 'sem cobrança de equipamento',
+            ].join('; ') + '.',
           });
         }}
       />

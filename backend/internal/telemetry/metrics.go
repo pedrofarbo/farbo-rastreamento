@@ -16,6 +16,7 @@ type Metrics struct {
 	PacketsReceived  *prometheus.CounterVec
 	PacketsInvalid   *prometheus.CounterVec
 	PositionsStored  *prometheus.CounterVec
+	PositionIngest   prometheus.Histogram
 	CommandsSent     *prometheus.CounterVec
 	CommandsFailed   *prometheus.CounterVec
 	CommandLatency   *prometheus.HistogramVec
@@ -51,6 +52,11 @@ func NewMetrics() *Metrics {
 			Name: "tracker_positions_received_total",
 			Help: "Posições persistidas, por protocolo.",
 		}, []string{"protocol"}),
+		PositionIngest: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "tracker_position_ingest_seconds",
+			Help:    "Tempo de uma posição dentro do servidor: do pacote decodificado à publicação no tempo real.",
+			Buckets: []float64{0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
+		}),
 		CommandsSent: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "tracker_commands_sent_total",
 			Help: "Comandos escritos na conexão do rastreador, por tipo.",
@@ -81,7 +87,7 @@ func NewMetrics() *Metrics {
 
 	reg.MustRegister(
 		m.Connections, m.OnlineDevices, m.PacketsReceived, m.PacketsInvalid,
-		m.PositionsStored, m.CommandsSent, m.CommandsFailed, m.CommandLatency,
+		m.PositionsStored, m.PositionIngest, m.CommandsSent, m.CommandsFailed, m.CommandLatency,
 		m.WebsocketClients, m.HTTPRequests, m.HTTPDuration,
 	)
 	return m

@@ -164,6 +164,16 @@ func TestFleetReports(t *testing.T) {
 	if n, err := reports.NewAggregator(env.db, "America/Sao_Paulo", log).Round(ctx); err != nil || n != 0 {
 		t.Errorf("segunda rodada: %d dias, %v", n, err)
 	}
+
+	// Um buraco na numeração maior que um lote (posições apagadas pela
+	// limpeza do histórico) não trava o cálculo.
+	if _, err := env.db.Exec(ctx, `SELECT setval(pg_get_serial_sequence('positions', 'id'), (SELECT max(id) FROM positions) + 500000)`); err != nil {
+		t.Fatal(err)
+	}
+	point(day2.Add(20*time.Hour), 0, 0, false)
+	if n, err := reports.NewAggregator(env.db, "America/Sao_Paulo", log).Round(ctx); err != nil || n != 1 {
+		t.Errorf("depois do buraco: %d dias, %v", n, err)
+	}
 }
 
 // Os e-mails a mais dos alertas pela API: salvar, conferir e mostrar.

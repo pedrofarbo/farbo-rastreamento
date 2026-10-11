@@ -141,6 +141,60 @@ func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusCreated, result)
 }
 
+// adminFleetImportRequest é a frota de uma vez pela central: as linhas da
+// planilha e, para todas, o valor do equipamento (numa fatura só) e o plano.
+// DryRun só confere.
+type adminFleetImportRequest struct {
+	Rows           []orders.ImportRow        `json:"rows"`
+	EquipmentCents int                       `json:"equipmentCents"`
+	SetupDueDate   *billing.Date             `json:"setupDueDate"`
+	Plan           billing.SubscriptionInput `json:"plan"`
+	DryRun         bool                      `json:"dryRun"`
+}
+
+// codeImportProblems: a planilha foi recusada; problems traz cada linha.
+const codeImportProblems = "IMPORT_PROBLEMS"
+
+func (s *Server) handleAdminImportFleet(w http.ResponseWriter, r *http.Request) {
+	customerID, ok := s.customerFromURL(w, r)
+	if !ok {
+		return
+	}
+	var req adminFleetImportRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido (a planilha passa do tamanho aceito?)")
+		return
+	}
+	result, err := s.Orders.ImportFleet(r.Context(), customerID, orders.Import{
+		Rows: req.Rows, EquipmentCents: req.EquipmentCents, SetupDueDate: req.SetupDueDate, Plan: req.Plan, DryRun: req.DryRun,
+	})
+	var problems orders.ImportProblems
+	if errors.As(err, &problems) {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"error": problems.Error(), "code": codeImportProblems, "problems": problems,
+		})
+		return
+	}
+	if err != nil {
+		writeOrderError(w, r, err, "cliente não encontrado")
+		return
+	}
+	if result.DryRun {
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
+	s.vehiclesChanged(r)
+	meta := map[string]any{
+		"customerId": customerID.String(), "vehicles": result.Vehicles, "installed": result.Installed,
+		"newGroups": result.NewGroups, "plan": req.Plan.PlanName, "priceCents": req.Plan.PriceCents,
+	}
+	if result.SetupInvoice != nil {
+		meta["setupInvoiceId"], meta["setupCents"] = result.SetupInvoice.ID, result.SetupInvoice.AmountCents
+	}
+	s.recordAudit(r, audit.ActionFleetImported, nil, nil, meta)
+	writeJSON(w, http.StatusCreated, result)
+}
+
 // customerTrackerOrderRequest é o fluxo Novo veículo pelo cliente: ele informa
 // só o veículo; equipamento e plano vêm do catálogo e da conta dele.
 type customerTrackerOrderRequest struct {

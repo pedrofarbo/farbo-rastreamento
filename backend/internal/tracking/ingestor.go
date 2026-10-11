@@ -101,6 +101,7 @@ func NewIngestor(
 
 // HandleMessage é chamado pela sessão TCP para cada mensagem decodificada.
 func (i *Ingestor) HandleMessage(ctx context.Context, conn *tcp.DeviceConnection, msg protocols.TrackerMessage) error {
+	began := time.Now()
 	if msg.IMEI == "" {
 		return fmt.Errorf("mensagem sem IMEI (protocolo %s, tipo %s)", msg.Protocol, msg.Kind)
 	}
@@ -136,6 +137,9 @@ func (i *Ingestor) HandleMessage(ctx context.Context, conn *tcp.DeviceConnection
 	}
 
 	i.processTelemetry(ctx, dev, msg)
+	if msg.HasLocation {
+		i.metrics.PositionIngest.Observe(time.Since(began).Seconds())
+	}
 	return nil
 }
 

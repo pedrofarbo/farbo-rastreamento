@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 )
@@ -53,6 +54,9 @@ const (
 	batchSize = 5000
 	// deviceChunk limita quantos aparelhos entram em cada consulta.
 	deviceChunk = 500
+	// compactChunk limita quantos aparelhos cada compactação lê de uma vez:
+	// 100 a cada 10 s por 3 dias são até ~2 milhões de ids a apagar.
+	compactChunk = 100
 	// pause entre lotes, para a limpeza dividir o banco com a ingestão.
 	pause = 50 * time.Millisecond
 )
@@ -67,6 +71,9 @@ type Service struct {
 func NewService(db *database.DB, defaultDays int, log *slog.Logger) *Service {
 	return &Service{db: db, defaultDays: defaultDays, log: log.With("component", "retention"), now: time.Now}
 }
+
+// SetClock troca o relógio (testes e medições).
+func (s *Service) SetClock(now func() time.Time) { s.now = now }
 
 // Default é o padrão da central.
 func (s *Service) Default() int { return s.defaultDays }
@@ -237,32 +244,54 @@ func (s *Service) Cleanup(ctx context.Context) (Result, error) {
 // compact deixa, nas posições de [from, to), uma por minuto andando e uma a
 // cada 15 minutos parado (a primeira de cada faixa), e apaga as outras. A
 // regra só depende das posições em si: compactar de novo não muda nada.
+//
+// Quais saem é decidido numa leitura só; a remoção vai em lotes pelo id.
+// Refazer a contagem por minuto a cada lote relia a faixa inteira centenas
+// de vezes (3 min 33 s para compactar 3 dias de 1000 rastreadores).
 func (s *Service) compact(ctx context.Context, devices []uuid.UUID, from, to time.Time) (int64, error) {
 	var total int64
-	for {
-		tag, err := s.db.Exec(ctx, `
-			DELETE FROM positions WHERE id IN (
-				SELECT id FROM (
-					SELECT id, speed_kmh,
-						row_number() OVER (PARTITION BY device_id, date_trunc('minute', gps_timestamp) ORDER BY gps_timestamp, id) AS per_minute,
-						row_number() OVER (PARTITION BY device_id, floor(extract(epoch FROM gps_timestamp) / 900) ORDER BY gps_timestamp, id) AS per_quarter
-					FROM positions WHERE device_id = ANY($1) AND gps_timestamp >= $2 AND gps_timestamp < $3
-				) p
-				WHERE NOT (per_minute = 1 AND (speed_kmh >= 5 OR per_quarter = 1))
-				LIMIT $4)`, devices, from, to, batchSize)
+	for start := 0; start < len(devices); start += compactChunk {
+		n, err := s.compactDevices(ctx, devices[start:min(start+compactChunk, len(devices))], from, to)
+		total += n
+		if err != nil {
+			return total, err
+		}
+	}
+	return total, nil
+}
+
+// compactDevices compacta uns poucos rastreadores (compactChunk): a lista do
+// que sai fica na memória.
+func (s *Service) compactDevices(ctx context.Context, devices []uuid.UUID, from, to time.Time) (int64, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT id FROM (
+			SELECT id, speed_kmh,
+				row_number() OVER (PARTITION BY device_id, date_trunc('minute', gps_timestamp) ORDER BY gps_timestamp, id) AS per_minute,
+				row_number() OVER (PARTITION BY device_id, floor(extract(epoch FROM gps_timestamp) / 900) ORDER BY gps_timestamp, id) AS per_quarter
+			FROM positions WHERE device_id = ANY($1) AND gps_timestamp >= $2 AND gps_timestamp < $3
+		) p
+		WHERE NOT (per_minute = 1 AND (speed_kmh >= 5 OR per_quarter = 1))`, devices, from, to)
+	if err != nil {
+		return 0, database.MapError(err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil {
+		return 0, database.MapError(err)
+	}
+	var total int64
+	for start := 0; start < len(ids); start += batchSize {
+		tag, err := s.db.Exec(ctx, `DELETE FROM positions WHERE id = ANY($1)`, ids[start:min(start+batchSize, len(ids))])
 		if err != nil {
 			return total, database.MapError(err)
 		}
 		total += tag.RowsAffected()
-		if tag.RowsAffected() < batchSize {
-			return total, nil
-		}
 		select {
 		case <-ctx.Done():
 			return total, ctx.Err()
 		case <-time.After(pause):
 		}
 	}
+	return total, nil
 }
 
 // deleteBatches repete o DELETE em lotes até não sobrar nada vencido.

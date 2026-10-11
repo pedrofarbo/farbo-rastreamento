@@ -1042,6 +1042,25 @@ export interface TrackerOrderResult {
   shipping: ShippingChoice | null;
 }
 
+/** O que a importação da frota criou (ou criaria, na conferência). */
+export interface FleetImportResult {
+  vehicles: number;
+  /** Os que já saem com o rastreador vinculado; os outros entram no envio. */
+  installed: number;
+  /** Os grupos que a planilha cria na conta. */
+  newGroups: string[] | null;
+  /** O total da fatura do equipamento. */
+  equipmentCents: number;
+  setupInvoice: Invoice | null;
+  dryRun: boolean;
+}
+
+/** Uma linha recusada na importação (1 é o primeiro veículo; 0, a planilha inteira). */
+export interface ImportProblem {
+  line: number;
+  message: string;
+}
+
 /** Resumo da conta que o cliente vê. */
 export interface CustomerAccount {
   activeSubscriptions: number;

@@ -54,7 +54,7 @@ interface AdminDraft {
   promo: boolean;
 }
 
-function addDays(iso: string, days: number): string {
+export function addDays(iso: string, days: number): string {
   const [y, m, d] = iso.split('-').map(Number);
   const date = new Date(y, m - 1, d + days);
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -66,14 +66,17 @@ function optionalMoney(text: string): number | null {
   return text.trim() === '' ? 0 : parseMoney(text);
 }
 
-function adminDraftFrom(
+/**
+ * O plano sugerido para um veículo novo do cliente: o definido para ele; sem
+ * ele, o que ele já paga; no primeiro veículo, o padrão. Sempre no vencimento
+ * da conta, se ela tiver um.
+ */
+export function suggestedPlan(
   c: Catalog,
   subscription: Subscription | null,
   account: AccountPlan | null = null,
   accountDueDay: number | null = null,
-): AdminDraft {
-  // Sugere o plano definido para o cliente; sem ele, o que ele já paga; no
-  // primeiro veículo, o padrão.
+): SubscriptionDraft {
   const current = account ?? subscription;
   const preset = current
     ? PLAN_PRESETS.find((p) => p.planName === current.planName && p.priceCents === current.priceCents)
@@ -88,6 +91,16 @@ function adminDraftFrom(
     : { ...DEFAULT_SUBSCRIPTION, dueDay: c.defaultDueDay };
   // A conta vence num dia só: o veículo novo entra no dela.
   if (accountDueDay) plan.dueDay = accountDueDay;
+  return plan;
+}
+
+function adminDraftFrom(
+  c: Catalog,
+  subscription: Subscription | null,
+  account: AccountPlan | null = null,
+  accountDueDay: number | null = null,
+): AdminDraft {
+  const plan = suggestedPlan(c, subscription, account, accountDueDay);
   return {
     deviceId: '',
     equipment: centsToInput(c.equipmentPriceCents),

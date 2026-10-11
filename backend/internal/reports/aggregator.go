@@ -64,26 +64,35 @@ func (a *Aggregator) Run(ctx context.Context) {
 	}
 }
 
-// Round processa as posições novas e devolve quantos dias refez.
+// Round processa as posições novas e devolve quantos dias refez. O alvo é
+// fixado na largada (a mais nova assentada naquele instante): com posições
+// chegando sem parar, perseguir as que assentam durante a rodada refazia os
+// mesmos dias de novo até o fim do roundBudget.
 func (a *Aggregator) Round(ctx context.Context) (int, error) {
 	deadline := a.now().Add(roundBudget)
+	target, err := a.settled(ctx)
+	if err != nil {
+		return 0, err
+	}
 	done := 0
 	for ctx.Err() == nil {
-		var last, newest int64
+		var last int64
 		if err := a.db.QueryRow(ctx, `SELECT last_position_id FROM report_progress WHERE name = $1`, progressName).Scan(&last); err != nil {
 			return done, database.MapError(err)
 		}
-		// Só as recebidas há mais de settleAfter: uma gravação ainda em curso
-		// (com id menor) não fica para trás do marcador.
-		if err := a.db.QueryRow(ctx, `
-			SELECT COALESCE((SELECT id FROM positions WHERE received_at < $1 ORDER BY received_at DESC LIMIT 1), 0)`,
-			a.now().Add(-settleAfter)).Scan(&newest); err != nil {
-			return done, database.MapError(err)
-		}
-		if newest <= last {
+		if last >= target {
 			return done, nil
 		}
-		upto := min(newest, last+batchPositions)
+		// Os lotes contam a partir da primeira posição depois do marcador:
+		// um buraco na numeração (posições apagadas) é pulado de uma vez.
+		var first *int64
+		if err := a.db.QueryRow(ctx, `SELECT min(id) FROM positions WHERE id > $1 AND id <= $2`, last, target).Scan(&first); err != nil {
+			return done, database.MapError(err)
+		}
+		upto := target
+		if first != nil {
+			upto = min(target, *first-1+batchPositions)
+		}
 		days, err := a.touched(ctx, last, upto)
 		if err != nil {
 			return done, err
@@ -106,6 +115,21 @@ func (a *Aggregator) Round(ctx context.Context) (int, error) {
 		}
 	}
 	return done, ctx.Err()
+}
+
+// settled é o id da posição mais nova recebida há mais de settleAfter (uma
+// gravação ainda em curso, com id menor, não fica para trás do marcador).
+// Pelo índice do id, de trás para frente: só passa pelas posições dos
+// últimos settleAfter. A procura pela hora de recebimento lia a tabela
+// inteira — 4 s com 26 milhões de posições, a cada volta da rodada.
+func (a *Aggregator) settled(ctx context.Context) (int64, error) {
+	var id int64
+	err := a.db.QueryRow(ctx, `SELECT id FROM positions WHERE received_at < $1 ORDER BY id DESC LIMIT 1`,
+		a.now().Add(-settleAfter)).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	return id, database.MapError(err)
 }
 
 type deviceDay struct {
