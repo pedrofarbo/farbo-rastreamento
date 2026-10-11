@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { Circle, MapContainer, Marker, Polyline, Popup, useMap } from 'react-leaflet';
+import { Circle, MapContainer, Marker, Polygon, Polyline, Popup, useMap } from 'react-leaflet';
 import type { LatLngExpression, LatLngTuple } from 'leaflet';
 import L from 'leaflet';
 
@@ -46,6 +46,8 @@ interface TrackerMapProps {
   onFollowingChange?: (following: boolean) => void;
   /** Trocar o valor centraliza de novo: no veículo ou no trajeto inteiro. */
   recenterKey?: number;
+  /** Enquadrar estes pontos ao abrir (ex.: as cercas), em vez de seguir um veículo. */
+  frame?: LatLngTuple[];
 }
 
 export function TrackerMap({
@@ -59,6 +61,7 @@ export function TrackerMap({
   following: followingProp,
   onFollowingChange,
   recenterKey,
+  frame,
 }: TrackerMapProps) {
   const [ownFollowing, setOwnFollowing] = useState(true);
   const following = followingProp ?? ownFollowing;
@@ -81,13 +84,15 @@ export function TrackerMap({
   const showAll = fleet && !selected && !track;
   const overview = useMemo<LatLngTuple[] | null>(
     () =>
-      showAll
-        ? located.map((vehicle) => {
-            const { latitude, longitude } = vehicle.lastPosition as Position;
-            return [latitude, longitude];
-          })
-        : null,
-    [showAll, located],
+      frame && frame.length > 0 && !selected && !track
+        ? frame
+        : showAll
+          ? located.map((vehicle) => {
+              const { latitude, longitude } = vehicle.lastPosition as Position;
+              return [latitude, longitude];
+            })
+          : null,
+    [frame, selected, track, showAll, located],
   );
 
   const center: LatLngTuple = selected?.lastPosition
@@ -139,24 +144,31 @@ export function TrackerMap({
         {showFences &&
           geofences
             .filter((fence) => fence.active)
-            .map((fence) => (
-              <Circle
-                key={fence.id}
-                center={[fence.latitude, fence.longitude]}
-                radius={fence.radiusMeters}
-                pathOptions={{ color: BRAND_GREEN, fillOpacity: 0.08, weight: 1.5, dashArray: '4 4' }}
-              >
+            .map((fence) => {
+              const style = { color: BRAND_GREEN, fillOpacity: 0.08, weight: 1.5, dashArray: '4 4' };
+              const popup = (
                 <Popup>
                   <div className={styles.popup}>
                     <span className={styles.popupTitle}>{fence.name}</span>
                     <div className={styles.popupRow}>
-                      <span>Raio</span>
-                      <span className={styles.popupValue}>{formatDistance(fence.radiusMeters)}</span>
+                      <span>{fence.shape === 'polygon' ? 'Área' : 'Raio'}</span>
+                      <span className={styles.popupValue}>
+                        {fence.shape === 'polygon' ? 'desenhada' : formatDistance(fence.radiusMeters)}
+                      </span>
                     </div>
                   </div>
                 </Popup>
-              </Circle>
-            ))}
+              );
+              return fence.shape === 'polygon' && fence.polygon ? (
+                <Polygon key={fence.id} positions={fence.polygon} pathOptions={style}>
+                  {popup}
+                </Polygon>
+              ) : (
+                <Circle key={fence.id} center={[fence.latitude, fence.longitude]} radius={fence.radiusMeters} pathOptions={style}>
+                  {popup}
+                </Circle>
+              );
+            })}
 
         {/* Contorno escuro por baixo do trajeto, para o verde continuar
             legível também sobre o mapa claro. */}

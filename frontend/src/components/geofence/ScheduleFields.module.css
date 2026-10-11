@@ -1,0 +1,88 @@
+.schedule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.on,
+.off,
+.dayOn,
+.dayOff {
+  font: inherit;
+  font-size: var(--text-sm);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.on,
+.off {
+  padding: 10px 12px;
+}
+
+.on,
+.dayOn {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  font-weight: 600;
+}
+
+.off,
+.dayOff {
+  color: var(--text-secondary);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+}
+
+.days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.dayOn,
+.dayOff {
+  padding: 8px 0;
+}
+
+.allDay {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: var(--text-sm);
+}
+
+.hours {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.hours label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.hours input {
+  padding: 8px 10px;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}

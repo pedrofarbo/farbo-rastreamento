@@ -104,6 +104,11 @@ import type {
   SystemLogPage,
   SmsUsage,
   AccountPlan,
+  ReportDailyRow,
+  ReportOverspeed,
+  ReportSummaryRow,
+  ReportTrip,
+  ReportVehicle,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -454,9 +459,14 @@ export const devicesApi = {
 
 export interface GeofenceInput {
   name: string;
+  shape?: 'circle' | 'polygon';
   latitude: number;
   longitude: number;
   radiusMeters: number;
+  polygon?: [number, number][] | null;
+  scheduleDays?: number[];
+  scheduleStart?: number | null;
+  scheduleEnd?: number | null;
   active?: boolean;
   /** Cerca do cliente: os veículos dele que ela vigia (ao menos um). */
   vehicleIds?: string[];
@@ -471,6 +481,38 @@ export const geofencesApi = {
   create: (input: GeofenceInput) => api.post<Geofence>('/api/geofences', input),
   update: (id: string, input: GeofenceInput) => api.patch<Geofence>(`/api/geofences/${id}`, input),
   remove: (id: string) => api.delete<void>(`/api/geofences/${id}`),
+};
+
+/** O período e o veículo de um relatório (dias AAAA-MM-DD). */
+export interface ReportQuery {
+  from: string;
+  to: string;
+  vehicleId?: string;
+}
+
+function reportPath(kind: string, q: ReportQuery, csv = false): string {
+  const params = new URLSearchParams({ de: q.from, ate: q.to });
+  if (q.vehicleId) params.set('veiculo', q.vehicleId);
+  if (csv) params.set('formato', 'csv');
+  return `/api/reports/${kind}?${params}`;
+}
+
+export type ReportKind = 'summary' | 'daily' | 'trips' | 'overspeed';
+
+/** Os relatórios da frota da conta; download baixa a planilha (CSV). */
+export const reportsApi = {
+  summary: (q: ReportQuery) => api.get<{ from: string; to: string; rows: ReportSummaryRow[] }>(reportPath('summary', q)),
+  daily: (q: ReportQuery) =>
+    api.get<{ from: string; to: string; vehicles: ReportVehicle[]; rows: ReportDailyRow[] }>(reportPath('daily', q)),
+  trips: (q: ReportQuery) =>
+    api.get<{ from: string; to: string; vehicle: ReportVehicle; trips: ReportTrip[]; availableFrom: string }>(
+      reportPath('trips', q),
+    ),
+  overspeed: (q: ReportQuery) =>
+    api.get<{ from: string; to: string; vehicles: ReportVehicle[]; rows: ReportOverspeed[]; truncated: boolean }>(
+      reportPath('overspeed', q),
+    ),
+  download: (kind: ReportKind, q: ReportQuery) => download(reportPath(kind, q, true)),
 };
 
 export const eventsApi = {
@@ -843,6 +885,8 @@ export const meApi = {
   /** Alertas por e-mail: escolhas, horário de vigilância e histórico. */
   alerts: () => api.get<AlertSettings>('/api/me/alerts'),
   saveAlerts: (input: AlertSettingsInput) => api.put<AlertSettings>('/api/me/alerts', input),
+  /** Os e-mails a mais dos alertas da conta. */
+  saveAlertRecipients: (emails: string[]) => api.put<AlertSettings>('/api/me/alerts/recipients', { emails }),
   /** Envia um e-mail de teste para o próprio cliente (um por minuto). */
   testAlerts: () => api.post<AlertSettings>('/api/me/alerts/test'),
   /** Notificações no celular (app): chave pública e aparelhos inscritos. */

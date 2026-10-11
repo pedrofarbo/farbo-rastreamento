@@ -3,9 +3,14 @@ package alerts
 import (
 	"context"
 	"errors"
+	"fmt"
+	"regexp"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 )
@@ -34,6 +39,9 @@ type Target struct {
 	// alertas pelas próprias escolhas, e nada enquanto o dono estiver
 	// suspenso.
 	Team []*Owner
+	// Extra são os e-mails a mais da conta: recebem os mesmos alertas que o
+	// dono escolheu, só por e-mail.
+	Extra []string
 }
 
 // Owner é o cliente dono do veículo.
@@ -163,7 +171,71 @@ func (s *DBStore) Target(ctx context.Context, deviceID uuid.UUID) (*Target, erro
 	if t.Team, err = s.team(ctx, owner); err != nil {
 		return nil, err
 	}
+	if t.Extra, err = s.ExtraRecipients(ctx, owner.UserID); err != nil {
+		return nil, err
+	}
 	return &t, nil
+}
+
+// MaxExtraRecipients é quantos e-mails a mais uma conta pode ter.
+const MaxExtraRecipients = 5
+
+// ExtraRecipients são os e-mails a mais dos alertas da conta.
+func (s *DBStore) ExtraRecipients(ctx context.Context, customerID uuid.UUID) ([]string, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT email FROM alert_extra_recipients WHERE customer_id = $1 ORDER BY created_at, email`, customerID)
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		out = append(out, email)
+	}
+	return out, rows.Err()
+}
+
+// SetExtraRecipients troca a lista de e-mails a mais (já conferida por
+// NormalizeEmails).
+func (s *DBStore) SetExtraRecipients(ctx context.Context, customerID uuid.UUID, emails []string) error {
+	return database.MapError(pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `DELETE FROM alert_extra_recipients WHERE customer_id = $1 AND email <> ALL($2)`,
+			customerID, emails); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `
+			INSERT INTO alert_extra_recipients (customer_id, email)
+			SELECT $1, e FROM unnest($2::text[]) AS e ON CONFLICT DO NOTHING`, customerID, emails)
+		return err
+	}))
+}
+
+var emailPattern = regexp.MustCompile(`^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$`)
+
+// NormalizeEmails confere os e-mails a mais: válidos, sem repetir (em
+// minúsculas) e no máximo MaxExtraRecipients.
+func NormalizeEmails(emails []string) ([]string, error) {
+	out := []string{}
+	for _, raw := range emails {
+		email := strings.ToLower(strings.TrimSpace(raw))
+		if email == "" {
+			continue
+		}
+		if len(email) > 254 || !emailPattern.MatchString(email) {
+			return nil, fmt.Errorf("e-mail inválido: %s", raw)
+		}
+		if !slices.Contains(out, email) {
+			out = append(out, email)
+		}
+	}
+	if len(out) > MaxExtraRecipients {
+		return nil, fmt.Errorf("até %d e-mails a mais por conta", MaxExtraRecipients)
+	}
+	return out, nil
 }
 
 // team carrega a equipe da conta do dono, com as escolhas de cada um.

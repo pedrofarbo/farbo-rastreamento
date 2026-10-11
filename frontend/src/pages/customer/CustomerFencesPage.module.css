@@ -1,0 +1,256 @@
+.muted {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--danger);
+}
+
+/* A lista e o mapa lado a lado (no celular, um embaixo do outro). */
+.split {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.mapBox {
+  position: sticky;
+  top: var(--space-4);
+  height: 70vh;
+  min-height: 360px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.fenceCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+}
+
+.fenceCard:hover {
+  border-color: var(--border-strong);
+}
+
+.fenceTop {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ring,
+.area {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--accent);
+  background: var(--accent-soft);
+}
+
+.ring {
+  border-radius: 50%;
+}
+
+.area {
+  border-radius: 3px;
+  transform: rotate(12deg);
+}
+
+.fenceName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.off {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.fenceMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* O editor: o mapa grande à esquerda, o formulário à direita. */
+.editor {
+  display: grid;
+  grid-template-columns: 1fr minmax(300px, 420px);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.editorMap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  position: sticky;
+  top: var(--space-4);
+}
+
+.mapFrame {
+  position: relative;
+  height: 60vh;
+  min-height: 360px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.mapFrame > div {
+  height: 100%;
+  max-height: none;
+}
+
+.shapes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.shapeOn,
+.shapeOff {
+  padding: 10px 12px;
+  font: inherit;
+  font-size: var(--text-sm);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.shapeOn {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  font-weight: 600;
+}
+
+.shapeOff {
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+}
+
+.drawActions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.group legend {
+  padding: 0 var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.vehicleTools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.vehicleTools input {
+  flex: 1 1 100%;
+}
+
+.vehicles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 280px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.vehicles label,
+.check {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.plate {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.formActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+@media (max-width: 900px) {
+  .split,
+  .editor {
+    grid-template-columns: 1fr;
+  }
+
+  .mapBox,
+  .editorMap {
+    position: static;
+  }
+
+  .mapBox {
+    height: 50vh;
+  }
+
+  .mapFrame {
+    height: 55vh;
+  }
+}

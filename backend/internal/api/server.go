@@ -40,6 +40,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/push"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/reports"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/shares"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smssetup"
@@ -108,6 +109,9 @@ type Deps struct {
 	// Dunning: a régua de cobrança (lembretes de fatura e o link de
 	// pagamento sem login). Nil: rotas respondem 404.
 	Dunning *dunning.Service
+	// Reports: os relatórios da frota (resumo, km por dia, viagens,
+	// excessos). Nil: as rotas respondem 404.
+	Reports *reports.Service
 	// Theft: o modo roubo (o cliente avisa; o rastreador acelera; o link
 	// público mostra a posição à polícia). Nil: rotas respondem 404.
 	Theft *theft.Service
@@ -390,6 +394,17 @@ func (s *Server) routes() chi.Router {
 				})
 			})
 
+			// Relatórios da frota: o cliente (titular e equipe) vê os da conta;
+			// a central, os de um cliente (?cliente=).
+			r.Route("/reports", func(r chi.Router) {
+				r.Use(s.requireContract)
+				r.Use(s.requireActiveCustomer)
+				r.Get("/summary", s.handleReportSummary)
+				r.Get("/daily", s.handleReportDaily)
+				r.Get("/trips", s.handleReportTrips)
+				r.Get("/overspeed", s.handleReportOverspeed)
+			})
+
 			// Área do cliente: conta e faturas continuam acessíveis mesmo com
 			// o acesso suspenso — é por aqui que ele vê o que pagar.
 			r.Route("/me", func(r chi.Router) {
@@ -437,6 +452,7 @@ func (s *Server) routes() chi.Router {
 				r.Get("/alerts", s.handleMyAlerts)
 				r.Put("/alerts", s.handleSaveMyAlerts)
 				r.Post("/alerts/test", s.handleMyAlertsTest)
+				r.With(s.requireAccountOperator).Put("/alerts/recipients", s.handleSaveMyAlertRecipients)
 				// Notificações no celular (app do cliente).
 				r.Get("/push", s.handleMyPush)
 				r.Post("/push/subscriptions", s.handleMyPushSubscribe)

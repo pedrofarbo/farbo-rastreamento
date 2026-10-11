@@ -52,6 +52,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols/tkstar"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/push"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/realtime"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/reports"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/shares"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smsdev"
@@ -225,6 +226,10 @@ func run() error {
 	paymentsSvc := payments.NewService(payments.NewRepository(db), billingSvc,
 		newPaymentGateway(cfg, log), auditSvc, cfg.Payments, log)
 	geofenceSvc := geofences.NewService(geofenceRepo)
+	// O horário dos avisos das cercas é no fuso da central.
+	if loc, err := time.LoadLocation(cfg.Billing.Timezone); err == nil {
+		geofenceSvc.SetLocation(loc)
+	}
 	if err := geofenceSvc.Refresh(ctx); err != nil {
 		return fmt.Errorf("carregando cercas: %w", err)
 	}
@@ -388,13 +393,18 @@ func run() error {
 		theftSvc.SetPusher(pushSvc)
 	}
 
+	// Relatórios da frota: o resumo de cada dia de cada rastreador, calculado
+	// em segundo plano a partir das posições novas.
+	reportsSvc := reports.NewService(db, cfg.Billing.Timezone)
+	reportsAggregator := reports.NewAggregator(db, cfg.Billing.Timezone, log)
+
 	// ---- Servidores ----
 	tcpServer := tcp.NewServer(cfg.TCP, registry, connManager, ingestor, log, metrics)
 
 	apiServer := api.NewServer(api.Deps{
 		Config: cfg, Log: log, Metrics: metrics, DB: db,
 		Auth: authSvc, Devices: deviceSvc, Vehicles: vehicleSvc,
-		Geofences: geofenceSvc, Geocoder: geocodingSvc, Events: eventSvc, Commands: commandSvc,
+		Geofences: geofenceSvc, Geocoder: geocodingSvc, Events: eventSvc, Commands: commandSvc, Reports: reportsSvc,
 		Audit: auditSvc, Billing: billingSvc, Payments: paymentsSvc, Owners: ownerIndex,
 		Orders:      orders.NewService(db, billingSvc, vehicleSvc, cfg.Catalog, log),
 		Installers:  installerRepo,
@@ -442,6 +452,12 @@ func run() error {
 			alertEngine.Run(ctx)
 		}()
 	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		reportsAggregator.Run(ctx)
+	}()
 
 	wg.Add(1)
 	go func() {

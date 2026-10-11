@@ -9,6 +9,7 @@ import (
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/alerts"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 )
 
 // historyLimit é quantos alertas a tela mostra.
@@ -35,6 +36,11 @@ type alertSettingsResponse struct {
 	Timezone        string                 `json:"timezone"`
 	Catalog         []alerts.KindInfo      `json:"catalog"`
 	History         []*alerts.Notification `json:"history"`
+	// ExtraRecipients: os e-mails a mais da conta (recebem o que o titular
+	// escolheu); CanEditRecipients: quem vê pode mudar (titular e Gestor).
+	ExtraRecipients    []string `json:"extraRecipients"`
+	MaxExtraRecipients int      `json:"maxExtraRecipients"`
+	CanEditRecipients  bool     `json:"canEditRecipients"`
 }
 
 func (s *Server) alertSettings(ctx context.Context, userID uuid.UUID) (*alertSettingsResponse, error) {
@@ -93,7 +99,47 @@ func (s *Server) writeAlertSettings(w http.ResponseWriter, r *http.Request, user
 		handleStoreError(w, err, "usuário não encontrado")
 		return
 	}
+	// Os e-mails a mais são da conta: a do cliente logado (titular ou equipe)
+	// ou, na central, a do cliente aberto.
+	account := userID
+	if id, isCustomer := customerOf(r); isCustomer {
+		account = id
+		if principal, ok := auth.FromContext(r.Context()); ok {
+			resp.CanEditRecipients = principal.CanOperateAccount()
+		}
+	}
+	if resp.ExtraRecipients, err = s.AlertStore.ExtraRecipients(r.Context(), account); err != nil {
+		handleStoreError(w, err, "usuário não encontrado")
+		return
+	}
+	resp.MaxExtraRecipients = alerts.MaxExtraRecipients
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleSaveMyAlertRecipients troca os e-mails a mais dos alertas da conta
+// (titular e Gestor).
+func (s *Server) handleSaveMyAlertRecipients(w http.ResponseWriter, r *http.Request) {
+	account, _ := customerOf(r)
+	var req struct {
+		Emails []string `json:"emails"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	emails, err := alerts.NormalizeEmails(req.Emails)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.AlertStore.SetExtraRecipients(r.Context(), account, emails); err != nil {
+		handleStoreError(w, err, "conta não encontrada")
+		return
+	}
+	s.recordAudit(r, audit.ActionAlertSettingsChanged, nil, nil, map[string]any{
+		"customerId": account, "extraRecipients": len(emails),
+	})
+	s.writeAlertSettings(w, r, personOf(r))
 }
 
 // --- Cliente -----------------------------------------------------------------

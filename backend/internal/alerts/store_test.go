@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -260,5 +261,42 @@ func TestDBStoreClaimDigest(t *testing.T) {
 	}
 	if again, err := store.ClaimDigest(ctx); err != nil || len(again) != 0 {
 		t.Errorf("o mesmo alerta entrou de novo: %+v %v", again, err)
+	}
+}
+
+// Os e-mails a mais da conta: trocar a lista e carregar junto com o veículo.
+func TestDBStoreExtraRecipients(t *testing.T) {
+	db := storeDB(t)
+	ctx := context.Background()
+	var ownerID, deviceID uuid.UUID
+	if err := db.QueryRow(ctx, `INSERT INTO users (email, name, role, password_hash) VALUES ('dono@x.test', 'Dono', 'customer', 'x') RETURNING id`).Scan(&ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(ctx, `INSERT INTO devices (imei) VALUES ('869000000000077') RETURNING id`).Scan(&deviceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(ctx, `INSERT INTO vehicles (name, plate, device_id, owner_id) VALUES ('Van', 'EXT1A11', $1, $2)`, deviceID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	store := NewDBStore(db, func(context.Context, uuid.UUID) (bool, error) { return false, nil })
+	if err := store.SetExtraRecipients(ctx, ownerID, []string{"socio@x.test", "ops@x.test"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetExtraRecipients(ctx, ownerID, []string{"ops@x.test", "novo@x.test"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.ExtraRecipients(ctx, ownerID)
+	if err != nil || len(got) != 2 || !slices.Contains(got, "ops@x.test") || !slices.Contains(got, "novo@x.test") {
+		t.Fatalf("lista = %v %v", got, err)
+	}
+	target, err := store.Target(ctx, deviceID)
+	if err != nil || target == nil || len(target.Extra) != 2 {
+		t.Fatalf("o veículo leva os e-mails a mais: %+v %v", target, err)
+	}
+	if err := store.SetExtraRecipients(ctx, ownerID, []string{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := store.ExtraRecipients(ctx, ownerID); len(got) != 0 {
+		t.Errorf("lista vazia = %v", got)
 	}
 }

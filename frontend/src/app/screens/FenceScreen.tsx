@@ -14,7 +14,9 @@ import { useVehicles } from '@/hooks/useVehicles';
 import { useAuth } from '@/stores/AuthContext';
 import type { Geofence, VehicleView } from '@/types';
 
-import { DEFAULT_RADIUS, fenceProblem, formatRadius, NAME_SUGGESTIONS, RADIUS_STEPS, radiusStep } from '../fence';
+import { ScheduleFields } from '@/components/geofence/ScheduleFields';
+
+import { DEFAULT_RADIUS, fenceProblem, formatRadius, formFromFence, NAME_SUGGESTIONS, RADIUS_STEPS, radiusStep } from '../fence';
 import type { FenceForm } from '../fence';
 import { FenceMap } from '../FenceMap';
 import type { FenceFocus } from '../FenceMap';
@@ -53,28 +55,23 @@ export function FenceScreen() {
 }
 
 function initialForm(existing: Geofence | undefined, vehicles: VehicleView[], preselect: string | null): FenceForm {
-  if (existing) {
-    return {
-      name: existing.name,
-      latitude: existing.latitude,
-      longitude: existing.longitude,
-      radiusMeters: existing.radiusMeters,
-      vehicleIds: existing.vehicleIds,
-      notifyEnter: existing.notifyEnter,
-      notifyExit: existing.notifyExit,
-    };
-  }
+  if (existing) return formFromFence(existing);
   // Nova: começa onde o veículo escolhido (ou o primeiro com sinal) está.
   const chosen = vehicles.find((vehicle) => vehicle.id === preselect);
   const anchor = (chosen ?? vehicles.find((vehicle) => vehicle.lastPosition))?.lastPosition;
   return {
     name: '',
+    shape: 'circle',
     latitude: anchor?.latitude ?? DEFAULT_CENTER.lat,
     longitude: anchor?.longitude ?? DEFAULT_CENTER.lon,
     radiusMeters: DEFAULT_RADIUS,
+    polygon: null,
     vehicleIds: chosen ? [chosen.id] : vehicles.map((vehicle) => vehicle.id),
     notifyEnter: true,
     notifyExit: true,
+    scheduleDays: [],
+    scheduleStart: null,
+    scheduleEnd: null,
   };
 }
 
@@ -177,34 +174,44 @@ function FenceEditor({
         </div>
       </div>
 
-      <div className={fence.where}>
-        <FenceMap
-          focus={focus}
-          radius={form.radiusMeters}
-          vehicles={vehicles}
-          onCenter={(latitude, longitude) => set({ latitude, longitude })}
-        />
-        <Address lat={form.latitude} lon={form.longitude} className={fence.address} />
-        {(located.length > 0 || 'geolocation' in navigator) && (
-          <div className={styles.chips} role="group" aria-label="Levar o centro da cerca até">
-            {'geolocation' in navigator && (
-              <button type="button" className={styles.chip} onClick={locate} disabled={locating}>
-                {locating ? 'Localizando…' : 'Onde estou'}
-              </button>
-            )}
-            {located.map((vehicle) => (
-              <button
-                key={vehicle.id}
-                type="button"
-                className={styles.chip}
-                onClick={() => goTo(vehicle.lastPosition!.latitude, vehicle.lastPosition!.longitude)}
-              >
-                {vehicle.name}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      {form.shape === 'polygon' ? (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Área desenhada</h2>
+          <p className={styles.muted}>
+            Esta cerca é uma área desenhada no painel. Para mudar o desenho, use o painel no computador, em Cercas; aqui dá
+            para mudar o nome, os veículos e os avisos.
+          </p>
+        </section>
+      ) : (
+        <div className={fence.where}>
+          <FenceMap
+            focus={focus}
+            radius={form.radiusMeters}
+            vehicles={vehicles}
+            onCenter={(latitude, longitude) => set({ latitude, longitude })}
+          />
+          <Address lat={form.latitude} lon={form.longitude} className={fence.address} />
+          {(located.length > 0 || 'geolocation' in navigator) && (
+            <div className={styles.chips} role="group" aria-label="Levar o centro da cerca até">
+              {'geolocation' in navigator && (
+                <button type="button" className={styles.chip} onClick={locate} disabled={locating}>
+                  {locating ? 'Localizando…' : 'Onde estou'}
+                </button>
+              )}
+              {located.map((vehicle) => (
+                <button
+                  key={vehicle.id}
+                  type="button"
+                  className={styles.chip}
+                  onClick={() => goTo(vehicle.lastPosition!.latitude, vehicle.lastPosition!.longitude)}
+                >
+                  {vehicle.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <section className={styles.section}>
         <TextField
@@ -231,31 +238,33 @@ function FenceEditor({
         </div>
       </section>
 
-      <section className={styles.section}>
-        <div className={fence.radiusHead}>
-          <h2 className={styles.sectionTitle}>Tamanho</h2>
-          <span className={fence.radiusValue}>{formatRadius(form.radiusMeters)}</span>
-        </div>
-        <input
-          type="range"
-          className={fence.slider}
-          min={0}
-          max={RADIUS_STEPS.length - 1}
-          step={1}
-          value={radiusStep(form.radiusMeters)}
-          onChange={(event) => set({ radiusMeters: RADIUS_STEPS[Number(event.target.value)] })}
-          aria-label="Raio da cerca"
-          aria-valuetext={formatRadius(form.radiusMeters)}
-        />
-        <div className={fence.scale} aria-hidden="true">
-          <span>{formatRadius(RADIUS_STEPS[0])}</span>
-          <span>{formatRadius(RADIUS_STEPS[RADIUS_STEPS.length - 1])}</span>
-        </div>
-        <p className={styles.muted}>
-          A cerca é o círculo verde. Para casa ou trabalho, 200 m costumam bastar: o GPS varia alguns metros, e uma cerca
-          muito justa pode avisar à toa.
-        </p>
-      </section>
+      {form.shape !== 'polygon' && (
+        <section className={styles.section}>
+          <div className={fence.radiusHead}>
+            <h2 className={styles.sectionTitle}>Tamanho</h2>
+            <span className={fence.radiusValue}>{formatRadius(form.radiusMeters)}</span>
+          </div>
+          <input
+            type="range"
+            className={fence.slider}
+            min={0}
+            max={RADIUS_STEPS.length - 1}
+            step={1}
+            value={radiusStep(form.radiusMeters)}
+            onChange={(event) => set({ radiusMeters: RADIUS_STEPS[Number(event.target.value)] })}
+            aria-label="Raio da cerca"
+            aria-valuetext={formatRadius(form.radiusMeters)}
+          />
+          <div className={fence.scale} aria-hidden="true">
+            <span>{formatRadius(RADIUS_STEPS[0])}</span>
+            <span>{formatRadius(RADIUS_STEPS[RADIUS_STEPS.length - 1])}</span>
+          </div>
+          <p className={styles.muted}>
+            A cerca é o círculo verde. Para casa ou trabalho, 200 m costumam bastar: o GPS varia alguns metros, e uma cerca
+            muito justa pode avisar à toa.
+          </p>
+        </section>
+      )}
 
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Veículos</h2>
@@ -320,6 +329,11 @@ function FenceEditor({
           O aviso chega por e-mail e, com as notificações ligadas, neste celular. Entradas e saídas ficam no histórico do
           veículo mesmo com o aviso desligado.
         </p>
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>Quando avisar</h2>
+        <ScheduleFields value={form} onChange={(schedule) => set(schedule)} />
       </section>
 
       {/* Conta empresa: o Visualizador só vê a cerca. */}

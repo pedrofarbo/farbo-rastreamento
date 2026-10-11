@@ -33,6 +33,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols/gt06"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/reports"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/telemetry"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
@@ -118,6 +119,7 @@ func newLeadsEnv(t *testing.T, tweak ...func(*Deps)) (*credEnv, *recordingLeadNo
 		Addresses:   addresses.NewRepository(db),
 		Fulfillment: fulfillment.NewService(db, fulfillment.NewRepository(db), nil, nil, cfg.Shipping, "", log),
 		Retention:   retention.NewService(db, cfg.Tracking.HistoryRetentionDays, log),
+		Reports:     reports.NewService(db, "America/Sao_Paulo"),
 		Leads:       leads.NewService(leads.NewRepository(db), notifier, log),
 		Finance:     finance.NewService(db, &fakeFinanceMailer{}, log),
 		Affiliates:  affiliates.NewService(db, log),

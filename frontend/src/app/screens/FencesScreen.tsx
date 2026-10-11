@@ -8,7 +8,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useAuth } from '@/stores/AuthContext';
 
-import { formatRadius, notifyLabel } from '../fence';
+import { formatRadius, notifyLabel, scheduleLabel } from '../fence';
 import { BackIcon, ChevronIcon } from '../icons';
 import fence from './Fence.module.css';
 import styles from './Screen.module.css';
@@ -74,7 +74,8 @@ export function FencesScreen() {
                   </span>
                 </span>
                 <span className={fence.fenceMeta}>
-                  <span>Raio de {formatRadius(item.radiusMeters)}</span>
+                  <span>{item.shape === 'polygon' ? 'Área desenhada' : `Raio de ${formatRadius(item.radiusMeters)}`}</span>
+                  {scheduleLabel(item) !== 'Avisa sempre' && <span>{scheduleLabel(item)}</span>}
                   {vehicleNames.length > 0 && <span>{vehicleNames.join(', ')}</span>}
                 </span>
                 <span className={styles.muted}>{notifyLabel(item)}</span>

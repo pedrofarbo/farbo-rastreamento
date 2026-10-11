@@ -136,6 +136,9 @@ type recipient struct {
 	kind     string
 	settings Settings
 	central  bool
+	// forwardedFrom: um e-mail a mais da conta (sem login), com o nome do
+	// titular que o incluiu.
+	forwardedFrom string
 }
 
 type delivery struct {
@@ -578,11 +581,16 @@ func (e *Engine) recipients(t *Target, c candidate) []recipient {
 			return nil
 		}
 		out := []recipient{}
+		account := map[string]bool{}
 		for _, p := range append([]*Owner{o}, t.Team...) {
+			account[strings.ToLower(p.Email)] = true
 			if p.Active && !p.Suspended {
 				id := p.UserID
 				out = append(out, recipient{email: p.Email, name: p.Name, userID: &id, kind: KindGeofence, settings: p.Settings})
 			}
+		}
+		if o.Active && !o.Suspended {
+			out = append(out, extraRecipients(t, KindGeofence, account)...)
 		}
 		return out
 	}
@@ -601,6 +609,12 @@ func (e *Engine) recipients(t *Target, c candidate) []recipient {
 				out = append(out, recipient{email: p.Email, name: p.Name, userID: &id, kind: kind, settings: p.Settings})
 			}
 		}
+		// Os e-mails a mais recebem o que o titular escolheu.
+		if o.Active && !o.Suspended {
+			if kind := e.resolveKind(c, o.Settings); kind != "" {
+				out = append(out, extraRecipients(t, kind, account)...)
+			}
+		}
 	}
 	if len(e.cfg.CentralEmails) == 0 {
 		return out
@@ -617,6 +631,21 @@ func (e *Engine) recipients(t *Target, c candidate) []recipient {
 			continue
 		}
 		out = append(out, recipient{email: email, kind: kind, settings: defaults, central: true})
+	}
+	return out
+}
+
+// extraRecipients são os e-mails a mais da conta (fora os que já recebem
+// como dono ou equipe), com as escolhas do dono.
+func extraRecipients(t *Target, kind string, account map[string]bool) []recipient {
+	var out []recipient
+	for _, email := range t.Extra {
+		key := strings.ToLower(email)
+		if account[key] {
+			continue
+		}
+		account[key] = true
+		out = append(out, recipient{email: email, kind: kind, settings: t.Owner.Settings, forwardedFrom: t.Owner.Name})
 	}
 	return out
 }

@@ -50,6 +50,9 @@ type Alert struct {
 	ActionURL   string
 	SettingsURL string
 	AppURL      string
+	// ForwardedFrom: o e-mail é um destinatário a mais da conta (sem login);
+	// o nome do titular que o incluiu.
+	ForwardedFrom string
 }
 
 type alertData struct {
@@ -121,6 +124,7 @@ const alertHTML = `{{define "content"}}
 {{template "button" (button .ActionURL "Ver no painel")}}
 {{if .MapURL}}<p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#475569;"><a href="{{.MapURL}}" style="color:#15803d;">Abrir o local no mapa</a></p>{{end}}
 {{if .SettingsURL}}<p style="margin:0;font-size:12px;line-height:1.6;color:#64748b;">Você escolhe quais alertas recebe e o horário de vigilância em <a href="{{.SettingsURL}}" style="color:#15803d;">Alertas</a>, no painel.</p>{{end}}
+{{if .ForwardedFrom}}<p style="margin:0;font-size:12px;line-height:1.6;color:#64748b;">Você recebe estes alertas porque {{.ForwardedFrom}} incluiu este e-mail nos alertas da conta na Farbo Rastreadores. Para não receber mais, peça para tirar.</p>{{end}}
 {{end}}`
 
 const alertText = `Olá{{with .FirstName}}, {{.}}{{end}}!
@@ -145,6 +149,8 @@ Este alerta se repetiu mais {{.Suppressed}} {{if eq .Suppressed 1}}vez{{else}}ve
 Ver no painel: {{.ActionURL}}
 {{with .SettingsURL}}
 Escolha quais alertas receber em: {{.}}
+{{end}}{{with .ForwardedFrom}}
+Você recebe estes alertas porque {{.}} incluiu este e-mail nos alertas da conta na Farbo Rastreadores. Para não receber mais, peça para tirar.
 {{end}}
 — Farbo Rastreadores
 `

@@ -24,7 +24,7 @@ import {
   formatSpeed,
 } from '@/services/format';
 
-import { fencesOf, formatRadius, notifyLabel } from '../fence';
+import { fencesOf, notifyLabel, shapeLabel } from '../fence';
 import { BackIcon, ChevronIcon, ExpandIcon } from '../icons';
 import { isIos } from '../pwa';
 import { directionsUrl, summarizeTrip, tripWindow } from '../trip';
@@ -244,7 +244,7 @@ export function VehicleScreen() {
                         <strong>{fence.name}</strong>
                         <span className={styles.muted}>
                           {' '}
-                          · {formatRadius(fence.radiusMeters)} · {notifyLabel(fence).toLowerCase()}
+                          · {shapeLabel(fence)} · {notifyLabel(fence).toLowerCase()}
                         </span>
                       </span>
                       <span className={styles.chevron}>

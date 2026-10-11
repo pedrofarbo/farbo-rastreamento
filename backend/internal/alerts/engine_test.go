@@ -895,3 +895,60 @@ func TestPowerCutAlertPointsToTheftMode(t *testing.T) {
 		t.Errorf("push = %+v", n)
 	}
 }
+
+// Os e-mails a mais da conta recebem o que o dono escolheu, só por e-mail,
+// com a explicação de quem os incluiu; o que já é do dono não recebe em dobro;
+// conta suspensa, nada.
+func TestExtraRecipientsGetTheOwnersAlerts(t *testing.T) {
+	h := newHarness(t, nil)
+	p := &memPusher{}
+	h.e.SetPusher(p)
+	h.store.targets[deviceID].Extra = []string{"socio@frota.test", "ANA@cliente.test"}
+
+	got := h.event(events.SOS, h.now, nil)
+	if len(got) != 2 {
+		t.Fatalf("SOS: dono e sócio, veio %d", len(got))
+	}
+	var socio *mail.Alert
+	for i := range got {
+		if got[i].To == "socio@frota.test" {
+			socio = &got[i]
+		}
+	}
+	if socio == nil || socio.ForwardedFrom != "Ana Souza" || socio.SettingsURL != "" || socio.Name != "" {
+		t.Fatalf("e-mail do sócio = %+v", socio)
+	}
+	if len(p.sent) != 1 {
+		t.Errorf("o sócio não tem app: só o dono no celular, veio %d", len(p.sent))
+	}
+
+	// O que o dono desligou, o sócio também não recebe.
+	delete(h.owner().Settings.Kinds, KindLowBattery)
+	if got := h.event(events.LowBattery, h.now, nil); len(got) != 0 {
+		t.Errorf("bateria fraca desligada pelo dono chegou: %+v", got)
+	}
+
+	// Conta suspensa: nem o dono nem o sócio.
+	h.owner().Suspended = true
+	h.now = h.now.Add(time.Hour)
+	if got := h.event(events.PowerLoss, h.now, nil); len(got) != 0 {
+		t.Errorf("conta suspensa, mas chegou: %+v", got)
+	}
+}
+
+func TestNormalizeEmails(t *testing.T) {
+	got, err := NormalizeEmails([]string{" Socio@Frota.test ", "", "socio@frota.test", "ops@frota.test"})
+	if err != nil || len(got) != 2 || got[0] != "socio@frota.test" || got[1] != "ops@frota.test" {
+		t.Errorf("normalizados = %v, %v", got, err)
+	}
+	for _, bad := range [][]string{
+		{"sem-arroba"},
+		{"a@b"},
+		{`x"@y.com`},
+		{"a@x.com", "b@x.com", "c@x.com", "d@x.com", "e@x.com", "f@x.com"},
+	} {
+		if _, err := NormalizeEmails(bad); err == nil {
+			t.Errorf("aceitou %v", bad)
+		}
+	}
+}

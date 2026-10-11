@@ -308,3 +308,64 @@ func TestCustomerGeofencesEndToEnd(t *testing.T) {
 	env.must(biaToken, http.MethodPost, "/api/geofences", map[string]any{"name": "Trabalho", "latitude": homeLat,
 		"longitude": homeLon, "radiusMeters": 500, "vehicleIds": []uuid.UUID{carroBia.ID}}, http.StatusCreated)
 }
+
+// A área desenhada e o horário dos avisos, de ponta a ponta: o polígono
+// vigia só a área (o canto vazio do "L" não conta) e, fora do horário, a
+// entrada fica no histórico sem aviso. Precisa de FARBO_TEST_DATABASE_URL.
+func TestPolygonAndScheduledFences(t *testing.T) {
+	env := newFenceEnv(t)
+	ctx := context.Background()
+	authSvc := auth.NewService(auth.NewRepository(env.db), config.Auth{BcryptCost: bcrypt.MinCost}, nil,
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ana, err := authSvc.CreateUser(ctx, "ana@area.test", "Ana", auth.RoleCustomer, userPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := env.login("ana@area.test")
+	dev, err := env.devices.Create(ctx, devices.Input{IMEI: "869247061239101", Protocol: "gt06"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	carro, err := env.vehicles.Create(ctx, vehicles.Input{Name: "Van", DeviceID: &dev.ID, OwnerID: &ana.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := env.owners.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	env.at(dev, -23.5600, -46.6300) // longe, antes da cerca
+
+	// O pátio em "L"; avisa só fora do horário de agora (amanhã o dia todo).
+	tomorrow := (int(time.Now().In(time.FixedZone("BRT", -3*60*60)).Weekday()) + 1) % 7
+	patio := decodeFence(t, env.must(token, http.MethodPost, "/api/geofences", map[string]any{
+		"name": "Pátio", "shape": "polygon", "vehicleIds": []uuid.UUID{carro.ID}, "scheduleDays": []int{tomorrow},
+		"polygon": [][2]float64{{-23.5500, -46.6300}, {-23.5500, -46.6260}, {-23.5520, -46.6260}, {-23.5520, -46.6280},
+			{-23.5540, -46.6280}, {-23.5540, -46.6300}},
+	}, http.StatusCreated))
+	if patio.Shape != "polygon" || len(patio.Polygon) != 6 || patio.RadiusMeters < 200 || !slices.Equal(patio.ScheduleDays, []int{tomorrow}) {
+		t.Fatalf("pátio = %+v", patio)
+	}
+	if got := env.at(dev, -23.5530, -46.6270); len(got) != 0 {
+		t.Fatalf("o canto vazio do L não é o pátio: %+v", got)
+	}
+	got := env.at(dev, -23.5530, -46.6290)
+	if len(got) != 1 || got[0].Type != events.GeofenceEnter || got[0].Metadata["notify"] != false {
+		t.Fatalf("entrou no pátio fora do horário: no histórico, sem aviso: %+v", got)
+	}
+
+	// Sem horário: avisa. O app, ao editar só o nome, manda o desenho de volta.
+	patio = decodeFence(t, env.must(token, http.MethodPatch, "/api/geofences/"+patio.ID.String(), map[string]any{
+		"name": "Pátio da empresa", "shape": "polygon", "polygon": patio.Polygon, "vehicleIds": []uuid.UUID{carro.ID},
+		"latitude": patio.Latitude, "longitude": patio.Longitude, "radiusMeters": patio.RadiusMeters,
+	}, http.StatusOK))
+	if patio.Shape != "polygon" || len(patio.ScheduleDays) != 0 || patio.ScheduleStart != nil {
+		t.Fatalf("pátio sem horário = %+v", patio)
+	}
+	if got := env.at(dev, -23.5600, -46.6300); len(got) != 1 || got[0].Type != events.GeofenceExit || got[0].Metadata["notify"] != true {
+		t.Fatalf("saiu do pátio, com aviso: %+v", got)
+	}
+	// Desenho inválido: recusado.
+	env.must(token, http.MethodPost, "/api/geofences", map[string]any{
+		"name": "X", "shape": "polygon", "vehicleIds": []uuid.UUID{carro.ID}, "polygon": [][2]float64{{-23.55, -46.63}, {-23.56, -46.63}},
+	}, http.StatusBadRequest)
+}

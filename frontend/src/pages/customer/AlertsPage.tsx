@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { meApi } from '@/api/resources';
 import { AlertSettingsPanel } from '@/components/alerts/AlertSettingsPanel';
+import { ExtraRecipients } from '@/components/alerts/ExtraRecipients';
+import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
@@ -62,6 +64,11 @@ export function AlertsPage() {
           />
         ) : (
           <EmptyState title="Não foi possível carregar os alertas" description={settings.error?.message} />
+        )}
+        {settings.data && (settings.data.canEditRecipients || settings.data.extraRecipients.length > 0) && (
+          <Card title="Também avisar">
+            <ExtraRecipients settings={settings.data} queryKey={alertsKey} />
+          </Card>
         )}
       </div>
     </div>

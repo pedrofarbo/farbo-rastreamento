@@ -481,8 +481,10 @@ func (i *Ingestor) evaluateGeofences(ctx context.Context, dev *devices.Device, v
 		// Cerca do cliente: o aviso vai para o dono, se ele quis esse lado.
 		if fence.OwnerID != nil {
 			metadata["geofenceOwnerId"] = fence.OwnerID.String()
-			metadata["notify"] = (eventType == events.GeofenceEnter && fence.NotifyEnter) ||
-				(eventType == events.GeofenceExit && fence.NotifyExit)
+			// O horário da cerca decide o aviso; a entrada e a saída ficam no
+			// histórico a qualquer hora.
+			metadata["notify"] = ((eventType == events.GeofenceEnter && fence.NotifyEnter) ||
+				(eventType == events.GeofenceExit && fence.NotifyExit)) && i.geofences.Notifies(fence, pos.GPSTimestamp)
 		}
 		i.events.Record(ctx, &events.Event{
 			DeviceID:  dev.ID,

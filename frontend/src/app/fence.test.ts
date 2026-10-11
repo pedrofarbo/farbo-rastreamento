@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { Geofence } from '@/types';
 
-import { fenceProblem, fencesOf, formatRadius, notifyLabel, RADIUS_STEPS, radiusStep, zoomForRadius } from './fence';
+import { clockToMinutes, daysLabel, fenceProblem, fencesOf, formatRadius, notifyLabel, RADIUS_STEPS, radiusStep, scheduleLabel, shapeLabel, zoomForRadius } from './fence';
+import type { FenceForm } from './fence';
 
-const form = { name: 'Casa', latitude: -23.55, longitude: -46.63, radiusMeters: 200, vehicleIds: ['v1'], notifyEnter: true, notifyExit: true };
+const form: FenceForm = { name: 'Casa', shape: 'circle', latitude: -23.55, longitude: -46.63, radiusMeters: 200, polygon: null,
+  vehicleIds: ['v1'], notifyEnter: true, notifyExit: true, scheduleDays: [], scheduleStart: null, scheduleEnd: null };
 
 describe('cerca do app', () => {
   it('raio: o passo mais próximo e o texto em português', () => {
@@ -32,6 +34,21 @@ describe('cerca do app', () => {
     expect(fenceProblem(form)).toBeNull();
     expect(fenceProblem({ ...form, name: '  ' })).toMatch(/nome/);
     expect(fenceProblem({ ...form, vehicleIds: [] })).toMatch(/veículo/);
+    expect(fenceProblem({ ...form, shape: 'polygon', polygon: [[0, 0], [1, 1]] })).toMatch(/3 pontos/);
+    expect(fenceProblem({ ...form, scheduleStart: 480 })).toMatch(/início e o fim/);
+    expect(fenceProblem({ ...form, scheduleStart: 480, scheduleEnd: 480 })).toMatch(/diferentes/);
+  });
+
+  it('o horário e o tamanho em palavras', () => {
+    expect(scheduleLabel({ scheduleDays: [], scheduleStart: null, scheduleEnd: null })).toBe('Avisa sempre');
+    expect(scheduleLabel({ scheduleDays: [1, 2, 3, 4, 5], scheduleStart: 480, scheduleEnd: 1080 })).toBe('Seg a sex, das 08:00 às 18:00');
+    expect(scheduleLabel({ scheduleDays: [5], scheduleStart: 1320, scheduleEnd: 360 })).toBe('Sex, das 22:00 às 06:00');
+    expect(scheduleLabel({ scheduleDays: [0, 6], scheduleStart: null, scheduleEnd: null })).toBe('Sáb e dom, o dia todo');
+    expect(daysLabel([1, 3, 5])).toBe('Seg, qua e sex');
+    expect(clockToMinutes('07:30')).toBe(450);
+    expect(clockToMinutes('24:00')).toBeNull();
+    expect(shapeLabel({ shape: 'polygon', radiusMeters: 300 })).toBe('Área desenhada');
+    expect(shapeLabel({ shape: 'circle', radiusMeters: 1500 })).toBe('1,5 km');
   });
 
   it('avisos e cercas de um veículo', () => {

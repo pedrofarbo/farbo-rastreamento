@@ -32,6 +32,7 @@ const ICONS: Record<string, ReactNode> = {
     </>
   ),
   activity: <path d="M22 12h-4l-3 9L9 3l-3 9H2" />,
+  chart: <path d="M3 21h18M7 17v-5m5 5V7m5 10v-8" />,
   fence: <path d="M12 2 3 7v10l9 5 9-5V7l-9-5Z" />,
   package: <path d="M21 8 12 3 3 8v8l9 5 9-5V8ZM3 8l9 5 9-5m-9 5v8" />,
   chat: <path d="M21 12a8 8 0 0 1-11.6 7.1L4 21l1.9-5.4A8 8 0 1 1 21 12Z" />,
@@ -214,6 +215,14 @@ export function AppShell() {
               <NavLink to="/alertas" className={navClass}>
                 <Icon name="bell" />
                 Alertas
+              </NavLink>
+              <NavLink to="/cercas" className={navClass}>
+                <Icon name="fence" />
+                Cercas
+              </NavLink>
+              <NavLink to="/relatorios" className={navClass}>
+                <Icon name="chart" />
+                Relatórios
               </NavLink>
               {/* Conta empresa: quem da empresa acessa a conta (só o titular). */}
               {isAccountOwner && (

@@ -367,10 +367,20 @@ export interface EngineCutCheck {
 export interface Geofence {
   id: string;
   name: string;
+  /** Círculo (centro e raio) ou área desenhada (polygon, [[lat, lon], ...]).
+   * Na área, o centro e o raio são os que a cobrem. */
+  shape: 'circle' | 'polygon';
   latitude: number;
   longitude: number;
   radiusMeters: number;
+  polygon: [number, number][] | null;
   active: boolean;
+  /** Horário dos avisos: dias (0 = domingo) e das/até em minutos do dia.
+   * Vazio/nulo: avisa sempre. A entrada e a saída ficam no histórico a
+   * qualquer hora. */
+  scheduleDays: number[];
+  scheduleStart: number | null;
+  scheduleEnd: number | null;
   /** Cliente dono; nulo é cerca da central (vale para todos os veículos). */
   ownerId: string | null;
   /** Veículos do cliente vigiados pela cerca (vazio nas da central). */
@@ -1082,6 +1092,11 @@ export interface AlertSettings {
   timezone: string;
   catalog: AlertKindInfo[];
   history: AlertNotification[];
+  /** E-mails a mais da conta (sem login): recebem o que o titular escolheu. */
+  extraRecipients: string[];
+  maxExtraRecipients: number;
+  /** Quem vê pode mudar a lista (titular e Gestor). */
+  canEditRecipients: boolean;
 }
 
 export interface AlertSettingsInput {
@@ -1826,4 +1841,69 @@ export interface SmsSetupView {
   plan: SmsPlan;
   /** A última configuração deste rastreador. */
   session: SmsSession | null;
+}
+
+// ---------------------------------------------------------------------------
+// Relatórios da frota
+// ---------------------------------------------------------------------------
+
+export interface ReportVehicle {
+  id: string;
+  name: string;
+  plate: string;
+}
+
+/** O resumo de um veículo no período. */
+export interface ReportSummaryRow {
+  vehicleId: string;
+  name: string;
+  plate: string;
+  distanceKm: number;
+  movingSeconds: number;
+  /** Parado com a ignição ligada (ocioso). */
+  idleSeconds: number;
+  trips: number;
+  maxSpeedKmh: number;
+  overspeeds: number;
+  activeDays: number;
+  firstMoveAt: string | null;
+  lastMoveAt: string | null;
+}
+
+/** Um dia de um veículo (só os dias com posições). */
+export interface ReportDailyRow {
+  vehicleId: string;
+  /** AAAA-MM-DD, no fuso da central. */
+  day: string;
+  distanceKm: number;
+  movingSeconds: number;
+  idleSeconds: number;
+  trips: number;
+  maxSpeedKmh: number;
+  overspeeds: number;
+  firstMoveAt: string | null;
+  lastMoveAt: string | null;
+}
+
+export interface ReportTrip {
+  start: string;
+  end: string;
+  startLat: number;
+  startLon: number;
+  endLat: number;
+  endLon: number;
+  distanceMeters: number;
+  maxSpeedKmh: number;
+  /** Ainda andando na última posição do período. */
+  ongoing: boolean;
+}
+
+export interface ReportOverspeed {
+  vehicleId: string;
+  start: string;
+  end: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  maxSpeedKmh: number;
+  limitKmh: number | null;
 }

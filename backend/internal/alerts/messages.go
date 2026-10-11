@@ -26,8 +26,12 @@ func (e *Engine) compose(t *Target, c candidate, r recipient, suppressed int) ma
 	if t.VehicleID != nil {
 		a.ActionURL = e.appURL + "/veiculos/" + t.VehicleID.String() + theftQuery(r.kind)
 	}
-	// A central não tem tela de preferências: recebe pelo ALERTS_CENTRAL_EMAILS.
-	if !r.central {
+	// A central não tem tela de preferências (recebe pelo
+	// ALERTS_CENTRAL_EMAILS), nem o e-mail a mais da conta (não tem login).
+	switch {
+	case r.forwardedFrom != "":
+		a.ForwardedFrom = r.forwardedFrom
+	case !r.central:
 		a.SettingsURL = e.appURL + "/alertas"
 	}
 	switch r.kind {

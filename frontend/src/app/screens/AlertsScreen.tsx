@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { geofencesApi, meApi } from '@/api/resources';
 import { AlertSettingsPanel } from '@/components/alerts/AlertSettingsPanel';
+import { ExtraRecipients } from '@/components/alerts/ExtraRecipients';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
@@ -204,6 +205,12 @@ export function AlertsScreen() {
           testing={testEmail.isPending}
         />
       ) : null}
+      {settings.data && (settings.data.canEditRecipients || settings.data.extraRecipients.length > 0) && (
+        <section className={styles.section} aria-label="Também avisar">
+          <h2 className={styles.sectionTitle}>Também avisar</h2>
+          <ExtraRecipients settings={settings.data} queryKey={alertsKey} />
+        </section>
+      )}
     </div>
   );
 }

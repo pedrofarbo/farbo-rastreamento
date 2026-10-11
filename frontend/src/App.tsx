@@ -41,6 +41,7 @@ const PublicPayPage = page(() => import('@/pages/PublicPayPage'), 'PublicPayPage
 const ContractPage = page(() => import('@/pages/legal/ContractPage'), 'ContractPage');
 const AlertsPage = page(() => import('@/pages/customer/AlertsPage'), 'AlertsPage');
 const InvoicesPage = page(() => import('@/pages/customer/InvoicesPage'), 'InvoicesPage');
+const ReportsPage = page(() => import('@/pages/customer/ReportsPage'), 'ReportsPage');
 const MyVehiclesPage = page(() => import('@/pages/customer/MyVehiclesPage'), 'MyVehiclesPage');
 const DashboardPage = page(() => import('@/pages/DashboardPage'), 'DashboardPage');
 const DevicesPage = page(() => import('@/pages/DevicesPage'), 'DevicesPage');
@@ -48,6 +49,7 @@ const DiagnosticsPage = page(() => import('@/pages/DiagnosticsPage'), 'Diagnosti
 const EventsPage = page(() => import('@/pages/EventsPage'), 'EventsPage');
 const ForgotPasswordPage = page(() => import('@/pages/ForgotPasswordPage'), 'ForgotPasswordPage');
 const GeofencesPage = page(() => import('@/pages/GeofencesPage'), 'GeofencesPage');
+const CustomerFencesPage = page(() => import('@/pages/customer/CustomerFencesPage'), 'CustomerFencesPage');
 const LoginPage = page(() => import('@/pages/LoginPage'), 'LoginPage');
 const ResetPasswordPage = page(() => import('@/pages/ResetPasswordPage'), 'ResetPasswordPage');
 const VehicleDetailsPage = page(() => import('@/pages/VehicleDetailsPage'), 'VehicleDetailsPage');
@@ -105,6 +107,7 @@ export function App() {
                     <Route element={<RequireCustomer />}>
                       <Route path="meus-veiculos" element={<MyVehiclesPage />} />
                       <Route path="alertas" element={<AlertsPage />} />
+                      <Route path="relatorios" element={<ReportsPage />} />
                       {/* Conta empresa: faturas do titular e do Gestor; a equipe, só do titular. */}
                       <Route element={<RequireAccountOperator />}>
                         <Route path="faturas" element={<InvoicesPage />} />
@@ -116,8 +119,9 @@ export function App() {
 
                     <Route element={<RequireStaff />}>
                       <Route path="eventos" element={<EventsPage />} />
-                      <Route path="cercas" element={<GeofencesPage />} />
                     </Route>
+                    {/* Cercas: as do cliente (dele, para os veículos dele) ou as da central. */}
+                    <Route path="cercas" element={<FencesRoute />} />
 
                     <Route element={<RequireOperator />}>
                       <Route path="pedidos" element={<OrdersPage />} />
@@ -183,6 +187,14 @@ function RequireStaff() {
   const { isStaff } = useAuth();
   if (!isStaff) return <Navigate to="/dashboard" replace />;
   return <Outlet />;
+}
+
+/** As cercas no mesmo endereço: o cliente vê as dele; a central, as da central. */
+function FencesRoute() {
+  const { isCustomer, isStaff } = useAuth();
+  if (isCustomer) return <CustomerFencesPage />;
+  if (isStaff) return <GeofencesPage />;
+  return <Navigate to="/dashboard" replace />;
 }
 
 /** Área do cliente: veículos próprios e faturas. */
