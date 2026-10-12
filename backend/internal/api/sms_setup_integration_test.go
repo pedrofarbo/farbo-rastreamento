@@ -388,6 +388,27 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	if bulkResp.Results[1].Success || !strings.Contains(bulkResp.Results[1].Error, "número do chip") {
 		t.Errorf("bulk item 2 devia ter falhado: %+v", bulkResp.Results[1])
 	}
+	// O lote só grava as sessões: nenhum SMS sai na requisição (com dezenas
+	// de rastreadores, esperar o SMSDev de cada um passaria do tempo dela); o
+	// primeiro sai na volta seguinte da rotina.
+	fake.mu.Lock()
+	beforeWork := len(fake.sent)
+	fake.mu.Unlock()
+	sms.Work(ctx)
+	fake.mu.Lock()
+	afterWork := fake.sent[beforeWork:]
+	fake.mu.Unlock()
+	if len(afterWork) != 1 || afterWork[0].to != "+5511944440000" {
+		t.Errorf("depois do lote e da rotina, saiu %+v", afterWork)
+	}
+	// Cada rastreador do lote fica na auditoria (o que começou e o recusado).
+	var audited int
+	_ = db.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE action = 'SMS_SETUP' AND metadata->>'bulk' = 'true'`).Scan(&audited)
+	if audited != 2 {
+		t.Errorf("auditoria do lote: %d registros", audited)
+	}
+	// O contador passa a contar o SMS do lote.
+	_ = db.QueryRow(ctx, `SELECT count(*) FROM sms_messages WHERE direction = 'OUT' AND status <> 'failed'`).Scan(&sent)
 
 	// Sem o SMSDev configurado, nada sai (e o contador diz que está desligado).
 	off := smssetup.NewService(db, devicesSvc, nil, fulfillmentSvc, defaults, "", log)

@@ -134,6 +134,10 @@ type BulkSMSSetupResponse struct {
 }
 
 // handleStartSMSSetupBulk inicia a configuração por SMS de múltiplos rastreadores de uma vez.
+// As sessões só são gravadas aqui (Queue): o primeiro SMS de cada uma sai pela
+// rotina do SMSDev, em até 10 s — esperar a resposta do SMSDev de cada
+// rastreador, um atrás do outro, passaria do tempo da requisição. Cada
+// rastreador vai para a auditoria, como no envio de um só.
 func (s *Server) handleStartSMSSetupBulk(w http.ResponseWriter, r *http.Request) {
 	if s.SMSSetup == nil || !s.SMSSetup.Enabled() {
 		writeError(w, http.StatusBadRequest, "O envio de SMS não está habilitado.")
@@ -174,7 +178,7 @@ func (s *Server) handleStartSMSSetupBulk(w http.ResponseWriter, r *http.Request)
 			continue
 		}
 
-		session, err := s.SMSSetup.Start(r.Context(), id, nil, opts, act)
+		session, err := s.SMSSetup.Queue(r.Context(), id, opts, act)
 		if err != nil {
 			item.Success = false
 			var v smssetup.ValidationError
@@ -184,21 +188,20 @@ func (s *Server) handleStartSMSSetupBulk(w http.ResponseWriter, r *http.Request)
 				item.Error = err.Error()
 			}
 			failed++
+			s.recordAudit(r, audit.ActionSMSSetup, nil, nil, map[string]any{
+				"device": id, "bulk": true, "result": "erro", "error": item.Error,
+			})
 		} else {
 			item.Success = true
 			item.SessionID = &session.ID
 			item.Status = session.Status
 			started++
+			s.recordAudit(r, audit.ActionSMSSetup, nil, nil, map[string]any{
+				"device": id, "bulk": true, "session": session.ID, "steps": len(session.Steps), "status": session.Status,
+			})
 		}
 		results = append(results, item)
 	}
-
-	s.recordAudit(r, audit.ActionSMSSetup, nil, nil, map[string]any{
-		"bulk":    true,
-		"total":   len(req.DeviceIDs),
-		"started": started,
-		"failed":  failed,
-	})
 
 	writeJSON(w, http.StatusOK, BulkSMSSetupResponse{
 		Total:   len(req.DeviceIDs),
@@ -207,4 +210,3 @@ func (s *Server) handleStartSMSSetupBulk(w http.ResponseWriter, r *http.Request)
 		Results: results,
 	})
 }
-

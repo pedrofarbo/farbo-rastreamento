@@ -189,32 +189,59 @@ func (s *Service) Plan(ctx context.Context, deviceID uuid.UUID) (*Plan, error) {
 // Start começa a configuração: grava os passos e manda o primeiro SMS na hora
 // (uma recusa do SMSDev — número inválido, conta sem saldo — aparece já).
 func (s *Service) Start(ctx context.Context, deviceID uuid.UUID, fulfillmentID *uuid.UUID, opts Options, by *uuid.UUID) (*Session, error) {
-	if !s.Enabled() {
-		return nil, ErrDisabled
-	}
-	dev, err := s.devices.Get(ctx, deviceID)
+	id, err := s.create(ctx, deviceID, fulfillmentID, opts, by)
 	if err != nil {
 		return nil, err
 	}
+	// O primeiro SMS sai agora; os outros, pelo Work.
+	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if err := s.advance(callCtx, id, false); err != nil {
+		return nil, err
+	}
+	return s.Session(callCtx, id)
+}
+
+// Queue grava a configuração sem mandar nada: o primeiro SMS sai pelo Work,
+// em até 10 s. É o caminho do lote — esperar a resposta do SMSDev de cada
+// rastreador, um atrás do outro, passaria do tempo da requisição.
+func (s *Service) Queue(ctx context.Context, deviceID uuid.UUID, opts Options, by *uuid.UUID) (*Session, error) {
+	id, err := s.create(ctx, deviceID, nil, opts, by)
+	if err != nil {
+		return nil, err
+	}
+	return s.Session(ctx, id)
+}
+
+// create confere o rastreador (e o pedido) e grava a sessão com os passos,
+// ainda sem nenhum SMS.
+func (s *Service) create(ctx context.Context, deviceID uuid.UUID, fulfillmentID *uuid.UUID, opts Options, by *uuid.UUID) (uuid.UUID, error) {
+	if !s.Enabled() {
+		return uuid.Nil, ErrDisabled
+	}
+	dev, err := s.devices.Get(ctx, deviceID)
+	if err != nil {
+		return uuid.Nil, err
+	}
 	phone := E164(dev.PhoneNumber)
 	if phone == "" {
-		return nil, invalid("Cadastre o número do chip (com DDD) no rastreador.")
+		return uuid.Nil, invalid("Cadastre o número do chip (com DDD) no rastreador.")
 	}
 	steps, problems := buildSteps(dev, s.defaults, opts)
 	if len(problems) > 0 {
-		return nil, invalid("%s", strings.Join(problems, " "))
+		return uuid.Nil, invalid("%s", strings.Join(problems, " "))
 	}
 	if fulfillmentID != nil {
 		var tracker string
 		err := s.db.QueryRow(ctx, `SELECT tracker_status FROM fulfillments WHERE id = $1`, *fulfillmentID).Scan(&tracker)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, invalid("Pedido não encontrado.")
+			return uuid.Nil, invalid("Pedido não encontrado.")
 		}
 		if err != nil {
-			return nil, database.MapError(err)
+			return uuid.Nil, database.MapError(err)
 		}
 		if tracker != "CONFIGURING" {
-			return nil, invalid("O pedido precisa estar em \"Rastreador em configuração\".")
+			return uuid.Nil, invalid("O pedido precisa estar em \"Rastreador em configuração\".")
 		}
 	}
 	shown := make([]Step, len(steps))
@@ -227,19 +254,13 @@ func (s *Service) Start(ctx context.Context, deviceID uuid.UUID, fulfillmentID *
 		INSERT INTO sms_setup_sessions (device_id, fulfillment_id, phone, steps, started_by)
 		VALUES ($1, $2, $3, $4, $5) RETURNING id`, deviceID, fulfillmentID, phone, raw, by).Scan(&id)
 	if errors.Is(database.MapError(err), database.ErrConflict) {
-		return nil, invalid("Este rastreador já está sendo configurado por SMS.")
+		return uuid.Nil, invalid("Este rastreador já está sendo configurado por SMS.")
 	}
 	if err != nil {
-		return nil, database.MapError(err)
+		return uuid.Nil, database.MapError(err)
 	}
 	s.log.Info("configuração por SMS iniciada", "session", id, "device", deviceID, "steps", len(steps))
-	// O primeiro SMS sai agora; os outros, pelo Work.
-	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-	defer cancel()
-	if err := s.advance(callCtx, id, false); err != nil {
-		return nil, err
-	}
-	return s.Session(callCtx, id)
+	return id, nil
 }
 
 // Cancel interrompe a configuração (os SMS já enviados não voltam).
