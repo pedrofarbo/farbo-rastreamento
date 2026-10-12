@@ -1,19 +1,21 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 
-import { deviceInputFrom, devicesApi, diagnosticsApi, vehiclesApi } from '@/api/resources';
+import { customersApi, deviceInputFrom, devicesApi, diagnosticsApi, vehiclesApi } from '@/api/resources';
 import type { DeviceInput, VehicleInput } from '@/api/resources';
 import billing from '@/components/billing/Billing.module.css';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { DeviceBulkModal } from '@/components/devices/DeviceBulkModal';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { fieldStyles, SelectField, TextField } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { SmsCounter } from '@/components/fulfillment/SmsCounter';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { formatDeviceStatus, formatRelative } from '@/services/format';
+import { formatDeviceStatus, formatPhoneInput, formatRelative } from '@/services/format';
 import { useAuth } from '@/stores/AuthContext';
 import type { Device } from '@/types';
 
@@ -90,9 +92,11 @@ export function DevicesPage() {
   const editingId = editing?.id ?? null;
   const [provisioningFor, setProvisioningFor] = useState<Device | null>(null);
   const [vehicleForm, setVehicleForm] = useState<VehicleInput | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const devices = useQuery({ queryKey: ['devices'], queryFn: devicesApi.list });
   const vehicles = useQuery({ queryKey: ['vehicles'], queryFn: vehiclesApi.list });
+  const customers = useQuery({ queryKey: ['customers'], queryFn: customersApi.list });
   const protocols = useQuery({ queryKey: ['protocols'], queryFn: diagnosticsApi.protocols });
 
   const provisioning = useQuery({
@@ -131,6 +135,10 @@ export function DevicesPage() {
       .map((vehicle) => [vehicle.deviceId as string, vehicle]),
   );
 
+  const customerById = new Map(
+    (customers.data ?? []).map((customer) => [customer.id, customer]),
+  );
+
   return (
     <div className={styles.page}>
       <div className={styles.inner}>
@@ -142,8 +150,9 @@ export function DevicesPage() {
               desconhecido é recusado. O protocolo é preenchido sozinho no primeiro pacote.
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
             <Button onClick={() => setVehicleForm({ name: '' })}>Veículo da central</Button>
+            <Button onClick={() => setBulkOpen(true)}>Importar em massa</Button>
             <Button
               variant="primary"
               onClick={() => {
@@ -174,6 +183,9 @@ export function DevicesPage() {
                   <tr>
                     <th>IMEI</th>
                     <th>Veículo</th>
+                    <th>Placa</th>
+                    <th>Cliente</th>
+                    <th>Número</th>
                     <th>Protocolo</th>
                     <th>Situação</th>
                     <th>Último contato</th>
@@ -181,18 +193,61 @@ export function DevicesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(devices.data ?? []).map((device) => (
-                    <tr key={device.id}>
-                      <td className={styles.mono} style={{ whiteSpace: 'nowrap' }}>
-                        {device.imei}
-                        {device.iccid && (
-                          <div className={billing.muted} title="ICCID do chip">
-                            chip {device.iccid}
-                          </div>
-                        )}
-                      </td>
-                      <td>{vehicleByDevice.get(device.id)?.name ?? '— sem vínculo —'}</td>
-                      <td className={styles.mono}>{device.protocol || 'aguardando'}</td>
+                  {(devices.data ?? []).map((device) => {
+                    const vehicle = vehicleByDevice.get(device.id);
+                    const customer = vehicle?.ownerId ? customerById.get(vehicle.ownerId) : null;
+                    return (
+                      <tr key={device.id}>
+                        <td className={styles.mono} style={{ whiteSpace: 'nowrap' }}>
+                          {device.imei}
+                          {device.iccid && (
+                            <div className={billing.muted} title="ICCID do chip">
+                              chip {device.iccid}
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          {vehicle ? (
+                            <Link
+                              to={`/veiculos/${vehicle.id}`}
+                              style={{ color: 'var(--text-primary)', textDecoration: 'none', fontWeight: 500 }}
+                            >
+                              {vehicle.name}
+                            </Link>
+                          ) : (
+                            <span className={billing.muted}>— sem vínculo —</span>
+                          )}
+                        </td>
+                        <td className={styles.mono} style={{ whiteSpace: 'nowrap' }}>
+                          {vehicle?.plate ? (
+                            vehicle.plate
+                          ) : (
+                            <span className={billing.muted}>—</span>
+                          )}
+                        </td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {customer ? (
+                            <Link
+                              to={`/clientes/${customer.id}`}
+                              style={{ color: 'var(--accent)', textDecoration: 'none' }}
+                              title={`Ver cliente ${customer.name}`}
+                            >
+                              {customer.name}
+                            </Link>
+                          ) : vehicle ? (
+                            <span className={billing.muted}>Central</span>
+                          ) : (
+                            <span className={billing.muted}>—</span>
+                          )}
+                        </td>
+                        <td className={styles.mono} style={{ whiteSpace: 'nowrap' }}>
+                          {device.phoneNumber ? (
+                            formatPhoneInput(device.phoneNumber)
+                          ) : (
+                            <span className={billing.muted}>—</span>
+                          )}
+                        </td>
+                        <td className={styles.mono}>{device.protocol || 'aguardando'}</td>
                       <td>
                         <Badge
                           tone={
@@ -230,7 +285,8 @@ export function DevicesPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  );
+                })}
                 </tbody>
               </table>
             </div>
@@ -299,7 +355,10 @@ export function DevicesPage() {
                 hint="O número de telefone do chip, com DDD: é para ele que vai a configuração por SMS."
                 value={deviceForm.phoneNumber ?? ''}
                 onChange={(event) =>
-                  setDeviceForm({ ...deviceForm, phoneNumber: event.target.value })
+                  setDeviceForm({
+                    ...deviceForm,
+                    phoneNumber: formatPhoneInput(event.target.value, deviceForm.phoneNumber ?? ''),
+                  })
                 }
               />
               <TextField
@@ -497,6 +556,12 @@ export function DevicesPage() {
           </div>
         )}
       </Modal>
+
+      <DeviceBulkModal
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        existingDevices={devices.data ?? []}
+      />
     </div>
   );
 }

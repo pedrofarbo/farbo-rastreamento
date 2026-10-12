@@ -519,6 +519,7 @@ func (s *Server) routes() chi.Router {
 				r.Route("/devices", func(r chi.Router) {
 					r.Get("/", s.handleListDevices)
 					r.With(auth.RequireRole(auth.RoleAdmin)).Post("/", s.handleCreateDevice)
+					r.With(auth.RequireRole(auth.RoleAdmin)).Post("/bulk", s.handleCreateDevicesBulk)
 
 					r.Route("/{id}", func(r chi.Router) {
 						r.Get("/", s.handleGetDevice)

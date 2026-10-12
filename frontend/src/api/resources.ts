@@ -463,10 +463,25 @@ export function deviceInputFrom(device: Device): DeviceInput {
   };
 }
 
+export interface DeviceBulkError {
+  index: number;
+  imei: string;
+  error: string;
+}
+
+export interface DeviceBulkResult {
+  total: number;
+  created: number;
+  devices: Device[];
+  errors: DeviceBulkError[];
+}
+
 export const devicesApi = {
   list: () => api.get<Device[]>('/api/devices'),
   get: (id: string) => api.get<Device>(`/api/devices/${id}`),
   create: (input: DeviceInput) => api.post<Device>('/api/devices', input),
+  createBulk: (devices: DeviceInput[]) =>
+    api.post<DeviceBulkResult>('/api/devices/bulk', { devices }),
   update: (id: string, input: DeviceInput) => api.patch<Device>(`/api/devices/${id}`, input),
   remove: (id: string) => api.delete<void>(`/api/devices/${id}`),
   status: (id: string) =>

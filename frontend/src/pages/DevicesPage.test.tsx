@@ -1,0 +1,168 @@
+// @vitest-environment jsdom
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import type { CustomerSummary, Device, Vehicle } from '@/types';
+
+const MOCK_DEVICE: Device = {
+  id: 'dev-1',
+  imei: '869247061230011',
+  model: 'TK910',
+  manufacturer: 'TKSTAR',
+  protocol: 'gt06',
+  firmware: '1.0',
+  phoneNumber: '34999990011',
+  iccid: '89553202100093795330',
+  status: 'ONLINE',
+  lastSeenAt: '2026-10-10T12:00:00Z',
+  apn: '',
+  apnUser: '',
+  serverHost: '',
+  serverPort: null,
+  reportIntervalSeconds: 30,
+  heartbeatIntervalSeconds: 60,
+  commandOverrides: {},
+  notes: '',
+  createdAt: '2026-09-01T12:00:00Z',
+  updatedAt: '2026-10-10T12:00:00Z',
+};
+
+const MOCK_VEHICLE: Vehicle = {
+  id: 'veh-1',
+  name: 'Caminhão 01',
+  kind: 'CAR',
+  plate: 'ABC1D23',
+  brand: 'Volvo',
+  model: 'FH 540',
+  year: 2022,
+  color: 'Branco',
+  speedLimitKmh: 90,
+  deviceId: 'dev-1',
+  ownerId: 'cust-1',
+  historyRetentionDays: null,
+  groupId: null,
+  custom1: '',
+  custom2: '',
+  createdAt: '2026-09-01T12:00:00Z',
+  updatedAt: '2026-09-01T12:00:00Z',
+};
+
+const MOCK_CUSTOMER: CustomerSummary = {
+  id: 'cust-1',
+  name: 'Transportadora Silva',
+  email: 'silva@transporte.test',
+  phone: '34988887777',
+  document: '12345678000199',
+  active: true,
+  createdAt: '2026-08-01T12:00:00Z',
+  activeSubscriptions: 1,
+  vehicleCount: 1,
+  sharedVehicles: 0,
+  openInvoices: 0,
+  overdueInvoices: 0,
+  openAmountCents: 0,
+  suspended: false,
+};
+
+vi.mock('@/api/resources', () => ({
+  devicesApi: {
+    list: async () => [MOCK_DEVICE],
+    create: async () => MOCK_DEVICE,
+    update: async () => MOCK_DEVICE,
+    provisioning: async () => ({ device: MOCK_DEVICE, commands: [], warning: '' }),
+  },
+  vehiclesApi: {
+    list: async () => [MOCK_VEHICLE],
+    create: async () => MOCK_VEHICLE,
+  },
+  customersApi: {
+    list: async () => [MOCK_CUSTOMER],
+  },
+  diagnosticsApi: {
+    protocols: async () => [],
+  },
+  smsSetupApi: {
+    usage: async () => ({ currentMonth: 0, limit: 100 }),
+  },
+  deviceInputFrom: () => ({ imei: '' }),
+}));
+
+vi.mock('@/stores/AuthContext', () => ({
+  useAuth: () => ({ canOperate: true, canManage: true }),
+}));
+
+vi.mock('@/components/ui/Toast', () => ({
+  useToast: () => ({ notify: () => {} }),
+}));
+
+import { DevicesPage } from './DevicesPage';
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const flush = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+
+async function render() {
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  await act(async () =>
+    createRoot(host).render(
+      <QueryClientProvider client={client}>
+        <BrowserRouter>
+          <DevicesPage />
+        </BrowserRouter>
+      </QueryClientProvider>,
+    ),
+  );
+  await flush();
+  return host;
+}
+
+afterEach(() => {
+  document.body.innerHTML = '';
+});
+
+describe('DevicesPage', () => {
+  it('exibe colunas de Placa, Cliente e Número na listagem de rastreadores', async () => {
+    const host = await render();
+
+    const headers = Array.from(host.querySelectorAll('th')).map((th) => th.textContent?.trim());
+    expect(headers).toContain('IMEI');
+    expect(headers).toContain('Veículo');
+    expect(headers).toContain('Placa');
+    expect(headers).toContain('Cliente');
+    expect(headers).toContain('Número');
+    expect(headers).toContain('Protocolo');
+    expect(headers).toContain('Situação');
+
+    // Confere os dados do rastreador na linha
+    const row = host.querySelector('tbody tr');
+    expect(row).not.toBeNull();
+    expect(row?.textContent).toContain('869247061230011');
+    expect(row?.textContent).toContain('Caminhão 01');
+    expect(row?.textContent).toContain('ABC1D23');
+    expect(row?.textContent).toContain('Transportadora Silva');
+    expect(row?.textContent).toContain('(34) 9-9999-0011');
+  });
+
+  it('exibe botão "Importar em massa" e abre o modal ao clicar', async () => {
+    const host = await render();
+
+    const bulkButton = Array.from(host.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Importar em massa',
+    );
+    expect(bulkButton).toBeDefined();
+
+    act(() => {
+      bulkButton?.click();
+    });
+    await flush();
+
+    // Modal de importação em massa aberto
+    expect(document.body.textContent).toContain('Adicionar rastreadores em massa');
+    expect(document.body.textContent).toContain('Baixar modelo CSV');
+  });
+});

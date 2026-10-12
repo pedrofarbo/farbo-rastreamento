@@ -7,6 +7,7 @@ import (
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
 )
 
@@ -130,6 +131,82 @@ func (s *Server) handleCreateDevice(w http.ResponseWriter, r *http.Request) {
 		map[string]any{"imei": device.IMEI, "protocol": device.Protocol,
 			"credentials": credentialChanges(nil, device)})
 	writeJSON(w, http.StatusCreated, device.View(devices.AudienceAdmin))
+}
+
+type bulkDevicesRequest struct {
+	Devices []devices.Input `json:"devices"`
+}
+
+type bulkDeviceError struct {
+	Index int    `json:"index"`
+	IMEI  string `json:"imei"`
+	Error string `json:"error"`
+}
+
+type bulkDevicesResponse struct {
+	Total   int               `json:"total"`
+	Created int               `json:"created"`
+	Devices []*devices.View   `json:"devices"`
+	Errors  []bulkDeviceError `json:"errors"`
+}
+
+func (s *Server) handleCreateDevicesBulk(w http.ResponseWriter, r *http.Request) {
+	var req bulkDevicesRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+
+	if len(req.Devices) == 0 {
+		writeError(w, http.StatusBadRequest, "nenhum rastreador informado")
+		return
+	}
+	if len(req.Devices) > 1000 {
+		writeError(w, http.StatusBadRequest, "máximo de 1000 rastreadores por envio")
+		return
+	}
+
+	res := bulkDevicesResponse{
+		Total:   len(req.Devices),
+		Devices: make([]*devices.View, 0, len(req.Devices)),
+		Errors:  make([]bulkDeviceError, 0),
+	}
+
+	for i, in := range req.Devices {
+		dev, err := s.Devices.Create(r.Context(), in)
+		if err != nil {
+			msg := "erro ao cadastrar"
+			var validation devices.ValidationError
+			if errors.As(err, &validation) {
+				msg = validation.Message
+			} else if errors.Is(err, database.ErrConflict) {
+				msg = "já existe um rastreador com este IMEI ou dados cadastrados"
+			}
+			res.Errors = append(res.Errors, bulkDeviceError{
+				Index: i,
+				IMEI:  in.IMEI,
+				Error: msg,
+			})
+			continue
+		}
+
+		s.Ingestor.InvalidateDevice(dev.IMEI)
+		s.recordAudit(r, audit.ActionDeviceCreated, nil, &dev.ID,
+			map[string]any{
+				"imei":        dev.IMEI,
+				"protocol":    dev.Protocol,
+				"bulk":        true,
+				"credentials": credentialChanges(nil, dev),
+			})
+		res.Created++
+		res.Devices = append(res.Devices, dev.View(devices.AudienceAdmin))
+	}
+
+	status := http.StatusCreated
+	if res.Created == 0 {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, res)
 }
 
 func (s *Server) handleUpdateDevice(w http.ResponseWriter, r *http.Request) {
