@@ -8,6 +8,8 @@ import billing from '@/components/billing/Billing.module.css';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { DeviceActivationModal } from '@/components/devices/DeviceActivationModal';
+import { DeviceBulkActivationModal } from '@/components/devices/DeviceBulkActivationModal';
 import { DeviceBulkModal } from '@/components/devices/DeviceBulkModal';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { fieldStyles, SelectField, TextField } from '@/components/ui/Field';
@@ -93,6 +95,9 @@ export function DevicesPage() {
   const [provisioningFor, setProvisioningFor] = useState<Device | null>(null);
   const [vehicleForm, setVehicleForm] = useState<VehicleInput | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [activatingDevice, setActivatingDevice] = useState<Device | null>(null);
+  const [bulkActivationOpen, setBulkActivationOpen] = useState(false);
+  const [selectedDeviceIds, setSelectedDeviceIds] = useState<Set<string>>(new Set());
 
   const devices = useQuery({ queryKey: ['devices'], queryFn: devicesApi.list });
   const vehicles = useQuery({ queryKey: ['vehicles'], queryFn: vehiclesApi.list });
@@ -153,6 +158,7 @@ export function DevicesPage() {
           <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
             <Button onClick={() => setVehicleForm({ name: '' })}>Veículo da central</Button>
             <Button onClick={() => setBulkOpen(true)}>Importar em massa</Button>
+            <Button onClick={() => setBulkActivationOpen(true)}>Ativação em massa</Button>
             <Button
               variant="primary"
               onClick={() => {
@@ -166,6 +172,42 @@ export function DevicesPage() {
         </header>
 
         {canOperate && <SmsCounter />}
+
+        {selectedDeviceIds.size > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 'var(--space-3)',
+              padding: 'var(--space-2) var(--space-4)',
+              background: 'var(--surface-sunken)',
+              border: '1px solid var(--accent)',
+              borderRadius: 'var(--radius-md)',
+              marginBottom: 'var(--space-3)',
+            }}
+          >
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+              <strong>{selectedDeviceIds.size}</strong> rastreador(es) selecionado(s)
+            </div>
+            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+              <Button
+                size="small"
+                variant="primary"
+                onClick={() => setBulkActivationOpen(true)}
+              >
+                Ativar selecionados ({selectedDeviceIds.size})
+              </Button>
+              <Button
+                size="small"
+                variant="ghost"
+                onClick={() => setSelectedDeviceIds(new Set())}
+              >
+                Limpar seleção
+              </Button>
+            </div>
+          </div>
+        )}
 
         <Card flush>
           {devices.isLoading ? (
@@ -181,6 +223,23 @@ export function DevicesPage() {
               <table className={styles.table}>
                 <thead>
                   <tr>
+                    <th style={{ width: 36, textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        aria-label="Selecionar todos os rastreadores"
+                        checked={
+                          (devices.data ?? []).length > 0 &&
+                          (devices.data ?? []).every((d) => selectedDeviceIds.has(d.id))
+                        }
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedDeviceIds(new Set((devices.data ?? []).map((d) => d.id)));
+                          } else {
+                            setSelectedDeviceIds(new Set());
+                          }
+                        }}
+                      />
+                    </th>
                     <th>IMEI</th>
                     <th>Veículo</th>
                     <th>Placa</th>
@@ -198,6 +257,21 @@ export function DevicesPage() {
                     const customer = vehicle?.ownerId ? customerById.get(vehicle.ownerId) : null;
                     return (
                       <tr key={device.id}>
+                        <td style={{ textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Selecionar ${device.imei}`}
+                            checked={selectedDeviceIds.has(device.id)}
+                            onChange={() => {
+                              setSelectedDeviceIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(device.id)) next.delete(device.id);
+                                else next.add(device.id);
+                                return next;
+                              });
+                            }}
+                          />
+                        </td>
                         <td className={styles.mono} style={{ whiteSpace: 'nowrap' }}>
                           {device.imei}
                           {device.iccid && (
@@ -265,6 +339,14 @@ export function DevicesPage() {
                       <td>{formatRelative(device.lastSeenAt)}</td>
                       <td>
                         <div className={styles.actions}>
+                          <Button
+                            size="small"
+                            variant="ghost"
+                            onClick={() => setActivatingDevice(device)}
+                            title="Ativar rastreador via comandos SMS"
+                          >
+                            Ativar
+                          </Button>
                           <Button
                             size="small"
                             variant="ghost"
@@ -561,6 +643,29 @@ export function DevicesPage() {
         open={bulkOpen}
         onClose={() => setBulkOpen(false)}
         existingDevices={devices.data ?? []}
+      />
+
+      {activatingDevice && (
+        <DeviceActivationModal
+          device={activatingDevice}
+          vehicle={vehicleByDevice.get(activatingDevice.id)}
+          onClose={() => setActivatingDevice(null)}
+          onEditDevice={() => {
+            setEditing(activatingDevice);
+            setDeviceForm(deviceInputFrom(activatingDevice));
+          }}
+        />
+      )}
+
+      <DeviceBulkActivationModal
+        open={bulkActivationOpen}
+        onClose={() => setBulkActivationOpen(false)}
+        devices={devices.data ?? []}
+        vehicles={vehicles.data ?? []}
+        initialSelectedIds={Array.from(selectedDeviceIds)}
+        onSuccess={() => {
+          setSelectedDeviceIds(new Set());
+        }}
       />
     </div>
   );

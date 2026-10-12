@@ -520,6 +520,9 @@ func (s *Server) routes() chi.Router {
 					r.Get("/", s.handleListDevices)
 					r.With(auth.RequireRole(auth.RoleAdmin)).Post("/", s.handleCreateDevice)
 					r.With(auth.RequireRole(auth.RoleAdmin)).Post("/bulk", s.handleCreateDevicesBulk)
+					if s.SMSSetup != nil {
+						r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator)).Post("/bulk/sms-setup", s.handleStartSMSSetupBulk)
+					}
 
 					r.Route("/{id}", func(r chi.Router) {
 						r.Get("/", s.handleGetDevice)

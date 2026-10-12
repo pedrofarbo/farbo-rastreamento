@@ -46,7 +46,17 @@ const LIVE: SmsSession['status'][] = ['SENDING', 'WAITING'];
  * número do chip, um por vez, pelo SMSDev. Quando o rastreador conecta no
  * servidor, o pedido passa sozinho para "Configurado".
  */
-export function SmsSetupPanel({ deviceId, fulfillmentId }: { deviceId: string; fulfillmentId: string }) {
+export function SmsSetupPanel({
+  deviceId,
+  fulfillmentId,
+  onEditDevice,
+  buttonLabel,
+}: {
+  deviceId: string;
+  fulfillmentId?: string | null;
+  onEditDevice?: () => void;
+  buttonLabel?: string;
+}) {
   const { notify } = useToast();
   const queryClient = useQueryClient();
   const [unlock, setUnlock] = useState(false);
@@ -69,8 +79,11 @@ export function SmsSetupPanel({ deviceId, fulfillmentId }: { deviceId: string; f
     previous.current = status;
     if (status !== 'DONE' || !was || !LIVE.includes(was)) return;
     notify({ tone: 'success', title: 'Rastreador conectado', description: session?.note || 'A configuração por SMS pegou.' });
-    queryClient.invalidateQueries({ queryKey: ['fulfillment', fulfillmentId] });
-    queryClient.invalidateQueries({ queryKey: ['fulfillments'] });
+    if (fulfillmentId) {
+      queryClient.invalidateQueries({ queryKey: ['fulfillment', fulfillmentId] });
+      queryClient.invalidateQueries({ queryKey: ['fulfillments'] });
+    }
+    queryClient.invalidateQueries({ queryKey: ['devices'] });
     queryClient.invalidateQueries({ queryKey: ['vehicles'] });
   }, [status, session?.note, fulfillmentId, notify, queryClient]);
 
@@ -79,7 +92,7 @@ export function SmsSetupPanel({ deviceId, fulfillmentId }: { deviceId: string; f
     void view.refetch();
   };
   const start = useMutation({
-    mutationFn: () => smsSetupApi.start(deviceId, { fulfillmentId, unlock, query: ask }),
+    mutationFn: () => smsSetupApi.start(deviceId, { fulfillmentId: fulfillmentId ?? null, unlock, query: ask }),
     onSuccess: (s) => {
       setError('');
       refresh(s);
@@ -98,6 +111,10 @@ export function SmsSetupPanel({ deviceId, fulfillmentId }: { deviceId: string; f
   if (!view.data) return null;
   const { plan, enabled } = view.data;
   const blocked = !enabled || plan.problems.length > 0;
+  const actionText =
+    session && session.status !== 'DONE'
+      ? 'Mandar de novo'
+      : (buttonLabel ?? 'Configurar por SMS');
 
   return (
     <section className={styles.panel} aria-label="Configurar por SMS">
@@ -118,9 +135,20 @@ export function SmsSetupPanel({ deviceId, fulfillmentId }: { deviceId: string; f
           {plan.problems.map((p) => (
             <p key={p} className={styles.warn}>
               {p}{' '}
-              <Link to="/dispositivos" className={styles.link}>
-                Abrir o cadastro
-              </Link>
+              {onEditDevice ? (
+                <button
+                  type="button"
+                  onClick={onEditDevice}
+                  className={styles.link}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' }}
+                >
+                  Editar cadastro
+                </button>
+              ) : (
+                <Link to="/dispositivos" className={styles.link}>
+                  Abrir o cadastro
+                </Link>
+              )}
             </p>
           ))}
           {plan.steps.length > 0 && (
@@ -164,10 +192,12 @@ export function SmsSetupPanel({ deviceId, fulfillmentId }: { deviceId: string; f
           )}
           <div className={styles.actions}>
             <Button size="small" variant="primary" disabled={blocked} loading={start.isPending} onClick={() => start.mutate()}>
-              {session && session.status !== 'DONE' ? 'Mandar de novo' : 'Configurar por SMS'}
+              {actionText}
             </Button>
             <span className={styles.muted}>
-              Um SMS por vez; quando o rastreador conectar no servidor, o pedido passa para "Configurado".
+              {fulfillmentId
+                ? 'Um SMS por vez; quando o rastreador conectar no servidor, o pedido passa para "Configurado".'
+                : 'Um SMS por vez; quando o rastreador conectar no servidor, a ativação é concluída.'}
             </span>
           </div>
         </>

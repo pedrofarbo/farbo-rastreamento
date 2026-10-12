@@ -86,6 +86,23 @@ vi.mock('@/api/resources', () => ({
   },
   smsSetupApi: {
     usage: async () => ({ currentMonth: 0, limit: 100 }),
+    get: async () => ({
+      enabled: true,
+      from: 'SMSDev',
+      plan: {
+        phone: '+5534999990011',
+        steps: [
+          { kind: 'APN', label: 'APN do chip', text: 'APN,zap.vivo.com.br,vivo,***#' },
+        ],
+        problems: [],
+        unlock: { kind: 'UNLOCK', label: 'Destravar', text: 'CMDLOCK#' },
+        query: { kind: 'PARAM', label: 'Pedir config', text: 'PARAM#' },
+      },
+      session: null,
+    }),
+    start: async () => ({ id: 'sess-1', status: 'SENDING' }),
+    startBulk: async () => ({ total: 1, started: 1, failed: 0, results: [] }),
+    cancel: async () => ({ id: 'sess-1', status: 'CANCELED' }),
   },
   deviceInputFrom: () => ({ imei: '' }),
 }));
@@ -164,5 +181,57 @@ describe('DevicesPage', () => {
     // Modal de importação em massa aberto
     expect(document.body.textContent).toContain('Adicionar rastreadores em massa');
     expect(document.body.textContent).toContain('Baixar modelo CSV');
+  });
+
+  it('exibe botão "Ativar" na listagem e abre o modal de ativação do rastreador', async () => {
+    const host = await render();
+
+    const row = host.querySelector('tbody tr');
+    expect(row).not.toBeNull();
+
+    const activateBtn = Array.from(row!.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Ativar',
+    );
+    expect(activateBtn).toBeDefined();
+
+    act(() => {
+      activateBtn?.click();
+    });
+    await flush();
+
+    expect(document.body.textContent).toContain('Ativar rastreador 869247061230011');
+    expect(document.body.textContent).toContain('Configurar por SMS');
+  });
+
+  it('exibe botão "Ativação em massa" no header e abre o modal de ativação em massa', async () => {
+    const host = await render();
+
+    const bulkActivateBtn = Array.from(host.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Ativação em massa',
+    );
+    expect(bulkActivateBtn).toBeDefined();
+
+    act(() => {
+      bulkActivateBtn?.click();
+    });
+    await flush();
+
+    expect(document.body.textContent).toContain('Ativação de rastreadores em massa');
+    expect(document.body.textContent).toContain('869247061230011');
+  });
+
+  it('permite selecionar rastreadores por checkbox e exibe barra de ações em lote', async () => {
+    const host = await render();
+
+    const rowCheckbox = host.querySelector('tbody tr input[type="checkbox"]') as HTMLInputElement;
+    expect(rowCheckbox).not.toBeNull();
+
+    act(() => {
+      rowCheckbox.click();
+    });
+    await flush();
+
+    expect(host.textContent).toContain('1 rastreador(es) selecionado(s)');
+    expect(host.textContent).toContain('Ativar selecionados');
   });
 });

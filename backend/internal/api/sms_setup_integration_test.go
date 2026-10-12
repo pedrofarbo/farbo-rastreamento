@@ -366,6 +366,29 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	}
 	env.must(env.login(auth.RoleViewer+"@sms.test"), http.MethodGet, "/api/sms/usage", nil, http.StatusForbidden)
 
+	// Teste de ativação em massa:
+	env.must(env.login(auth.RoleViewer+"@sms.test"), http.MethodPost, "/api/devices/bulk/sms-setup",
+		map[string]any{"deviceIds": []string{j16.ID.String()}}, http.StatusForbidden)
+	env.must(operator, http.MethodPost, "/api/devices/bulk/sms-setup",
+		map[string]any{"deviceIds": []string{}}, http.StatusBadRequest)
+
+	bulkDevice1 := newDevice("869999000000010", "(11) 94444-0000")
+	bulkDevice2 := newDevice("869999000000011", "") // sem chip
+
+	var bulkResp BulkSMSSetupResponse
+	call(http.MethodPost, "/api/devices/bulk/sms-setup",
+		map[string]any{"deviceIds": []string{bulkDevice1.ID.String(), bulkDevice2.ID.String()}},
+		http.StatusOK, &bulkResp)
+	if bulkResp.Total != 2 || bulkResp.Started != 1 || bulkResp.Failed != 1 || len(bulkResp.Results) != 2 {
+		t.Fatalf("bulkResp inesperado: %+v", bulkResp)
+	}
+	if !bulkResp.Results[0].Success || bulkResp.Results[0].SessionID == nil || bulkResp.Results[0].Status != smssetup.StatusSending {
+		t.Errorf("bulk item 1 falhou: %+v", bulkResp.Results[0])
+	}
+	if bulkResp.Results[1].Success || !strings.Contains(bulkResp.Results[1].Error, "número do chip") {
+		t.Errorf("bulk item 2 devia ter falhado: %+v", bulkResp.Results[1])
+	}
+
 	// Sem o SMSDev configurado, nada sai (e o contador diz que está desligado).
 	off := smssetup.NewService(db, devicesSvc, nil, fulfillmentSvc, defaults, "", log)
 	if _, err := off.Start(ctx, mudo.ID, nil, smssetup.Options{}, nil); !errors.Is(err, smssetup.ErrDisabled) {

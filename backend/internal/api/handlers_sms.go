@@ -95,3 +95,90 @@ func (s *Server) handleCancelSMSSetup(w http.ResponseWriter, r *http.Request) {
 	s.recordAudit(r, audit.ActionSMSSetup, nil, nil, map[string]any{"session": id, "result": "cancelada"})
 	writeJSON(w, http.StatusOK, session)
 }
+
+type bulkSMSSetupRequest struct {
+	DeviceIDs []uuid.UUID `json:"deviceIds"`
+	Unlock    bool        `json:"unlock"`
+	Query     bool        `json:"query"`
+}
+
+type BulkSMSSetupItemResult struct {
+	DeviceID  uuid.UUID  `json:"deviceId"`
+	IMEI      string     `json:"imei,omitempty"`
+	Success   bool       `json:"success"`
+	SessionID *uuid.UUID `json:"sessionId,omitempty"`
+	Status    string     `json:"status,omitempty"`
+	Error     string     `json:"error,omitempty"`
+}
+
+type BulkSMSSetupResponse struct {
+	Total   int                      `json:"total"`
+	Started int                      `json:"started"`
+	Failed  int                      `json:"failed"`
+	Results []BulkSMSSetupItemResult `json:"results"`
+}
+
+// handleStartSMSSetupBulk inicia a configuração por SMS de múltiplos rastreadores de uma vez.
+func (s *Server) handleStartSMSSetupBulk(w http.ResponseWriter, r *http.Request) {
+	if s.SMSSetup == nil || !s.SMSSetup.Enabled() {
+		writeError(w, http.StatusBadRequest, "O envio de SMS não está habilitado.")
+		return
+	}
+	var req bulkSMSSetupRequest
+	if !decodeOr400(w, r, &req) {
+		return
+	}
+	if len(req.DeviceIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "Selecione ao menos um rastreador.")
+		return
+	}
+	if len(req.DeviceIDs) > 100 {
+		writeError(w, http.StatusBadRequest, "Limite de no máximo 100 rastreadores por lote.")
+		return
+	}
+
+	results := make([]BulkSMSSetupItemResult, 0, len(req.DeviceIDs))
+	started := 0
+	failed := 0
+	opts := smssetup.Options{Unlock: req.Unlock, Query: req.Query}
+	act := actor(r)
+
+	for _, id := range req.DeviceIDs {
+		item := BulkSMSSetupItemResult{DeviceID: id}
+		if dev, err := s.Devices.Get(r.Context(), id); err == nil && dev != nil {
+			item.IMEI = dev.IMEI
+		}
+		session, err := s.SMSSetup.Start(r.Context(), id, nil, opts, act)
+		if err != nil {
+			item.Success = false
+			var v smssetup.ValidationError
+			if errors.As(err, &v) {
+				item.Error = v.Message
+			} else {
+				item.Error = err.Error()
+			}
+			failed++
+		} else {
+			item.Success = true
+			item.SessionID = &session.ID
+			item.Status = session.Status
+			started++
+		}
+		results = append(results, item)
+	}
+
+	s.recordAudit(r, audit.ActionSMSSetup, nil, nil, map[string]any{
+		"bulk":    true,
+		"total":   len(req.DeviceIDs),
+		"started": started,
+		"failed":  failed,
+	})
+
+	writeJSON(w, http.StatusOK, BulkSMSSetupResponse{
+		Total:   len(req.DeviceIDs),
+		Started: started,
+		Failed:  failed,
+		Results: results,
+	})
+}
+

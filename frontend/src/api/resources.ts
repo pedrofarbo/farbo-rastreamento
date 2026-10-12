@@ -886,11 +886,37 @@ export const publicApi = {
     apiUrl(`/api/public/partner/${encodeURIComponent(token)}/qr?format=${format}${download ? '&download=1' : ''}`),
 };
 
+export interface BulkSmsSetupResult {
+  deviceId: string;
+  imei?: string;
+  success: boolean;
+  sessionId?: string;
+  status?: string;
+  error?: string;
+}
+
+export interface BulkSmsSetupResponse {
+  total: number;
+  started: number;
+  failed: number;
+  results: BulkSmsSetupResult[];
+}
+
 /** Configuração do rastreador por SMS (SMSDev) na ativação. */
 export const smsSetupApi = {
   get: (deviceId: string) => api.get<SmsSetupView>(`/api/devices/${deviceId}/sms-setup`),
-  start: (deviceId: string, input: { fulfillmentId: string | null; unlock: boolean; query: boolean }) =>
-    api.post<SmsSession>(`/api/devices/${deviceId}/sms-setup`, input),
+  start: (deviceId: string, input: { fulfillmentId?: string | null; unlock?: boolean; query?: boolean }) =>
+    api.post<SmsSession>(`/api/devices/${deviceId}/sms-setup`, {
+      fulfillmentId: input.fulfillmentId ?? null,
+      unlock: Boolean(input.unlock),
+      query: Boolean(input.query),
+    }),
+  startBulk: (input: { deviceIds: string[]; unlock?: boolean; query?: boolean }) =>
+    api.post<BulkSmsSetupResponse>('/api/devices/bulk/sms-setup', {
+      deviceIds: input.deviceIds,
+      unlock: Boolean(input.unlock),
+      query: Boolean(input.query),
+    }),
   cancel: (sessionId: string) => api.post<SmsSession>(`/api/sms-setup/${sessionId}/cancel`),
   /** O saldo no SMSDev e quantas ativações ele paga (o contador da página de rastreadores). */
   usage: () => api.get<SmsUsage>('/api/sms/usage'),
