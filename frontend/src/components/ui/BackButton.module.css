@@ -1,0 +1,34 @@
+/* O mesmo voltar das telas do app (Screen.module.css): 44px, o mínimo da
+   Apple para o dedo, encostado à esquerda do título. */
+.back {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-left: calc(-1 * var(--space-2));
+  color: var(--text-primary);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 140ms ease;
+}
+
+.back:hover,
+.back:active {
+  background: var(--surface-hover);
+}
+
+.back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .back {
+    transition: none;
+  }
+}

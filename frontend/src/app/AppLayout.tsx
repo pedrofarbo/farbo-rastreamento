@@ -7,6 +7,7 @@ import { useRealtime } from '@/hooks/useRealtime';
 import { useAuth } from '@/stores/AuthContext';
 
 import { BellIcon, CarIcon, MapIcon, ReceiptIcon, UserIcon } from './icons';
+import { InstallButton } from './InstallButton';
 import { applyUpdate, usePwa } from './pwa';
 import { PULL_THRESHOLD, usePullToRefresh } from './usePullToRefresh';
 import styles from './AppLayout.module.css';
@@ -56,8 +57,9 @@ function transitionFor(path: string, previous: string | null, navigation: string
   return 'fade';
 }
 
-/** As cercas moram dentro da aba Alertas. */
-const tabOf = (path: string) => (path.startsWith('/cercas') ? '/alertas' : path);
+/** As cercas moram dentro da aba Alertas; manutenção e relatórios, na Conta. */
+const tabOf = (path: string) =>
+  path.startsWith('/cercas') ? '/alertas' : path === '/manutencao' || path === '/relatorios' ? '/conta' : path;
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -116,6 +118,8 @@ export function AppLayout() {
     <div ref={rootRef} className={styles.app}>
       <header ref={headerRef} className={styles.header}>
         <div className={styles.topbar}>
+          {/* À esquerda, o atalho de instalar (some com o app instalado). */}
+          <InstallButton className={styles.installSlot} />
           {/* A logo completa, centralizada; o ícone só entra quando a tela é
               estreita demais para ela. */}
           <picture className={styles.logo}>

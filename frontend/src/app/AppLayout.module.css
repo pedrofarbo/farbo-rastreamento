@@ -53,6 +53,13 @@
   display: flex;
 }
 
+/* O atalho de instalar fica na coluna da esquerda, sem empurrar a logo. */
+.installSlot {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: start;
+}
+
 .logo img {
   display: block;
   height: 28px;

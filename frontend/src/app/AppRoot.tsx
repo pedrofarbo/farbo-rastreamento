@@ -91,8 +91,9 @@ export function AppRoot() {
                   <Route path="veiculos/:id" element={<VehicleScreen />} />
                   <Route path="relatorio-roubo/:id" element={<TheftReportPage />} />
                   <Route path="meus-veiculos" element={<MyVehiclesPage />} />
-                  <Route path="relatorios" element={<ReportsPage />} />
-                  <Route path="manutencao" element={<MaintenancePage />} />
+                  {/* Manutenção e Relatórios abrem pela Conta: o voltar leva a ela. */}
+                  <Route path="relatorios" element={<ReportsPage backTo="/conta" />} />
+                  <Route path="manutencao" element={<MaintenancePage backTo="/conta" />} />
                   <Route path="alertas" element={<AlertsScreen />} />
                   <Route path="cercas" element={<FencesScreen />} />
                   <Route path="cercas/nova" element={<FenceScreen />} />

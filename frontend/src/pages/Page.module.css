@@ -26,6 +26,14 @@
   font-size: var(--text-xl);
 }
 
+/* O título com o voltar à esquerda (as páginas abertas pela Conta no app). */
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
 .description {
   margin-top: var(--space-1);
   font-size: var(--text-sm);

@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router-dom';
 import { customersApi, reportsApi } from '@/api/resources';
 import type { ReportKind, ReportQuery } from '@/api/resources';
 import { ReportEmailModal } from '@/components/reports/ReportEmailModal';
+import { BackButton } from '@/components/ui/BackButton';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -50,9 +51,14 @@ const SEARCH_FROM = 12;
 /**
  * Os relatórios da frota: no período escolhido (até 31 dias), o resumo de
  * cada veículo, os km de cada dia, as viagens de um veículo e os excessos de
- * velocidade — na tela e na planilha (CSV, que o Excel abre direto).
+ * velocidade — na tela e na planilha (CSV, que o Excel abre direto). No app,
+ * aberta pela Conta, ganha o voltar (backTo).
  */
-export function ReportsPage({ customerId, customerName }: { customerId?: string; customerName?: string } = {}) {
+export function ReportsPage({
+  customerId,
+  customerName,
+  backTo,
+}: { customerId?: string; customerName?: string; backTo?: string } = {}) {
   const today = todayISO();
   const [preset, setPreset] = useState<PeriodPreset | null>('week');
   const [period, setPeriod] = useState(() => presetPeriod('week', today));
@@ -111,7 +117,10 @@ export function ReportsPage({ customerId, customerName }: { customerId?: string;
                 ← {customerName || 'Cliente'}
               </Link>
             )}
-            <h1 className={pageStyles.title}>{customerId ? `Relatórios de ${customerName || 'cliente'}` : 'Relatórios'}</h1>
+            <div className={pageStyles.titleRow}>
+              {backTo && <BackButton to={backTo} />}
+              <h1 className={pageStyles.title}>{customerId ? `Relatórios de ${customerName || 'cliente'}` : 'Relatórios'}</h1>
+            </div>
             <p className={pageStyles.description}>
               Os números da frota no período: km, tempo andando, parado com a ignição ligada, viagens e excessos de
               velocidade. Atualizados a cada 5 minutos.

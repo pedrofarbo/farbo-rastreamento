@@ -6,6 +6,7 @@ import { maintenanceApi, vehiclesApi } from '@/api/resources';
 import { DoneModal, MaintenanceFormModal } from '@/components/maintenance/MaintenanceModals';
 import { STATUS_TONE } from '@/components/maintenance/VehicleMaintenance';
 import { Badge } from '@/components/ui/Badge';
+import { BackButton } from '@/components/ui/BackButton';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -36,9 +37,10 @@ const FILTERS: { id: MaintenanceStatus | 'all'; label: string }[] = [
 /**
  * A manutenção da frota: o que venceu, o que está perto e o resto, das mais
  * urgentes às em dia. Quem mexe na conta cria a manutenção em vários
- * veículos de uma vez e registra várias feitas de uma vez.
+ * veículos de uma vez e registra várias feitas de uma vez. No app, aberta
+ * pela Conta, ganha o voltar (backTo).
  */
-export function MaintenancePage() {
+export function MaintenancePage({ backTo }: { backTo?: string } = {}) {
   const queryClient = useQueryClient();
   const { notify } = useToast();
   const { canOperateAccount } = useAuth();
@@ -77,7 +79,10 @@ export function MaintenancePage() {
       <div className={pageStyles.inner}>
         <header className={pageStyles.header}>
           <div>
-            <h1 className={pageStyles.title}>Manutenção</h1>
+            <div className={pageStyles.titleRow}>
+              {backTo && <BackButton to={backTo} />}
+              <h1 className={pageStyles.title}>Manutenção</h1>
+            </div>
             <p className={pageStyles.description}>
               O que vence em cada veículo, por km ou por data. Os km vêm do hodômetro informado mais o que o GPS mediu
               depois; quem cuida da conta recebe um e-mail quando algo fica perto ou vence.

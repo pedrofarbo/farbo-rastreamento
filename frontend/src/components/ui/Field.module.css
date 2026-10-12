@@ -2,6 +2,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  /* Numa linha em grade (.row, formRow), o campo encolhe até a coluna. */
+  min-width: 0;
 }
 
 .label {
@@ -39,6 +41,25 @@
   .input,
   .select {
     min-height: 44px;
+  }
+}
+
+/* Data no iPhone: o campo do Safari tem largura mínima própria e, numa linha
+   de duas colunas (o modal no celular), invade o campo do lado. Sem a
+   aparência nativa, ele respeita a largura da coluna. */
+.input[type='date'] {
+  min-width: 0;
+  max-width: 100%;
+}
+
+@supports (-webkit-touch-callout: none) {
+  .input[type='date'] {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .input[type='date']::-webkit-date-and-time-value {
+    text-align: left;
   }
 }
 

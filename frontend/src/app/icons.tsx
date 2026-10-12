@@ -63,6 +63,30 @@ export const CloseIcon = () => (
   </svg>
 );
 
+/** Instalar o app: a seta descendo para o celular. */
+export const InstallIcon = ({ size = 18 }: { size?: number }) => (
+  <svg {...base} width={size} height={size}>
+    <rect x="6" y="2.5" width="12" height="19" rx="2.5" />
+    <path d="M12 7v7M9 11.5l3 3 3-3M10.5 18.5h3" />
+  </svg>
+);
+
+/** O "Compartilhar" do iPhone: o quadrado com a seta para cima. */
+export const ShareIcon = ({ size = 22 }: { size?: number }) => (
+  <svg {...base} width={size} height={size}>
+    <path d="M12 3v12M8 7l4-4 4 4" />
+    <path d="M8 10H6.5A1.5 1.5 0 0 0 5 11.5v8A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5v-8a1.5 1.5 0 0 0-1.5-1.5H16" />
+  </svg>
+);
+
+/** "Adicionar à Tela de Início": o quadrado com o mais. */
+export const AddSquareIcon = ({ size = 22 }: { size?: number }) => (
+  <svg {...base} width={size} height={size}>
+    <rect x="4" y="4" width="16" height="16" rx="3.5" />
+    <path d="M12 8.5v7M8.5 12h7" />
+  </svg>
+);
+
 /** Mira de "centralizar no veículo"; cheia enquanto o mapa segue o veículo. */
 export const LocateIcon = ({ active = false }: { active?: boolean }) => (
   <svg {...base} width={22} height={22}>
