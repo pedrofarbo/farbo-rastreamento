@@ -12,6 +12,7 @@ import {
   priceParts,
 } from '@/config/landing';
 
+import { FleetFeatures } from './FleetFeatures';
 import { WhatsAppIcon } from './WhatsAppFloat';
 import styles from './PricingSection.module.css';
 
@@ -258,29 +259,32 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
             <ul className={styles.checkList}>
               <li>
                 <span className={styles.checkIcon}>✓</span>
-                Todos os veículos no mesmo mapa
+                Toda a frota no mesmo mapa, por grupos
               </li>
               <li>
                 <span className={styles.checkIcon}>✓</span>
-                Mensalidade especial por volume
+                Relatórios em planilha e no seu e-mail
               </li>
               <li>
                 <span className={styles.checkIcon}>✓</span>
-                Cercas virtuais e alertas por veículo
+                Manutenção preventiva por km ou data
               </li>
               <li>
                 <span className={styles.checkIcon}>✓</span>
-                Histórico de rotas de cada veículo
+                Equipe com acesso por região
               </li>
               <li>
                 <span className={styles.checkIcon}>✓</span>
-                Acesso compartilhado com a equipe
+                Uma fatura e um Pix para a frota toda
               </li>
               <li>
                 <span className={styles.checkIcon}>✓</span>
-                Atendimento dedicado
+                Mensalidade por volume e atendimento dedicado
               </li>
             </ul>
+            <a className={styles.fleetMore} href="#frotas" data-analytics="frotas-ver-tudo">
+              Ver tudo o que a frota ganha ↓
+            </a>
 
             <div className={styles.fleetSize} role="group" aria-label="Quantos veículos tem a sua frota?">
               <span className={styles.fleetSizeLabel}>Quantos veículos?</span>
@@ -395,6 +399,9 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
             </ul>
           </div>
         </div>
+
+        {/* Para frotas: as funcionalidades da gestão de frota, com o orçamento. */}
+        <FleetFeatures onOpenModal={onOpenModal} />
       </div>
     </section>
   );

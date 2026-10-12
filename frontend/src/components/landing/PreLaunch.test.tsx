@@ -11,6 +11,7 @@ import { LAUNCH_ANCHOR, PRE_LAUNCH, priceParts } from '@/config/landing';
 import { Footer } from './Footer';
 import { HeroSection } from './HeroSection';
 import { Navbar } from './Navbar';
+import { FLEET_FEATURES, FLEET_FEATURES_MESSAGE } from './FleetFeatures';
 import { PricingSection, fleetMessage } from './PricingSection';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -102,7 +103,7 @@ describe.runIf(PRE_LAUNCH)('landing em pré-lançamento', () => {
 describe('frotas', () => {
   it('no lugar do rastreador, o preço especial para frotas, com o WhatsApp e a mensagem pronta', () => {
     const host = render(<PricingSection onOpenModal={() => {}} />);
-    const cards = Array.from(host.querySelectorAll('h3')).map((h) => h.textContent);
+    const cards = Array.from(host.querySelectorAll('h3[class*="cardTitle"]')).map((h) => h.textContent);
     // Os três planos lado a lado; o rastreador, largo, embaixo deles.
     expect(cards).toEqual(['PLANO MENSAL', 'FROTAS', 'EQUIPAMENTO']);
     const text = host.textContent ?? '';
@@ -120,6 +121,19 @@ describe('frotas', () => {
     expect(links(host, 'Pedir orçamento no WhatsApp')[0].getAttribute('href')).toBe(whatsappUrl(fleetMessage('6 a 10')));
     act(() => chip.click());
     expect(links(host, 'Pedir orçamento no WhatsApp')[0].getAttribute('href')).toBe(whatsappUrl(fleetMessage()));
+  });
+
+  it('embaixo dos planos, o que a frota ganha, com o atalho do cartão e o orçamento', () => {
+    const host = render(<PricingSection onOpenModal={() => {}} />);
+    const block = host.querySelector('#frotas');
+    expect(block).not.toBeNull();
+    const titles = Array.from(block!.querySelectorAll('h3')).map((h) => h.textContent);
+    expect(titles).toHaveLength(FLEET_FEATURES.length);
+    expect(titles).toEqual(expect.arrayContaining(['Relatórios da frota', 'Manutenção preventiva', 'Equipe com acesso sob controle']));
+    expect(links(host, 'Ver tudo o que a frota ganha ↓')[0].getAttribute('href')).toBe('#frotas');
+    const [cta] = links(host, 'Quero um orçamento para a minha frota');
+    expect(cta?.getAttribute('href')).toBe(whatsappUrl(FLEET_FEATURES_MESSAGE));
+    expect(cta?.dataset.analytics).toBe('frotas-funcionalidades');
   });
 
   it('a mensagem do WhatsApp', () => {

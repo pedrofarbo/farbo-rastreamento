@@ -354,6 +354,20 @@
   margin-bottom: 0.5rem;
 }
 
+/* O atalho para o bloco das funcionalidades da frota. */
+.fleetMore {
+  align-self: flex-start;
+  margin: -0.5rem 0 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--color-neon-green);
+  text-decoration: none;
+}
+
+.fleetMore:hover {
+  text-decoration: underline;
+}
+
 /* O tamanho da frota e o botão ficam juntos no pé do cartão. */
 .fleetSize {
   margin-top: auto;

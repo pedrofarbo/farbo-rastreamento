@@ -72,6 +72,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenModal }) => {
         <nav id="menu-principal" className={`${styles.nav} ${mobileMenuOpen ? styles.navOpen : ''}`}>
           <a href="#beneficios" onClick={closeMenu}>Benefícios</a>
           <a href="#planos" onClick={closeMenu}>Planos</a>
+          <a href="#frotas" onClick={closeMenu}>Frotas</a>
           <a href="#como-funciona" onClick={closeMenu}>Como funciona</a>
           {/* No pré-lançamento o botão do menu já leva à seção da lista. */}
           {!PRE_LAUNCH && (

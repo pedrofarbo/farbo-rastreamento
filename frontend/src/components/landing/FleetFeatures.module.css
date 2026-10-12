@@ -1,0 +1,225 @@
+/* Para frotas: o que a empresa ganha, embaixo dos planos e do rastreador. */
+.fleet {
+  margin-top: 3.5rem;
+  padding: 3rem 2.5rem 2.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(59, 229, 88, 0.12) 0%, transparent 45%),
+    radial-gradient(circle at 100% 100%, rgba(255, 255, 255, 0.05) 0%, transparent 40%),
+    #0a0f0b;
+  scroll-margin-top: 90px;
+}
+
+.head {
+  max-width: 760px;
+  margin: 0 auto 2.5rem;
+  text-align: center;
+}
+
+.kicker {
+  display: inline-block;
+  margin-bottom: 0.75rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #060907;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0 0 0.75rem;
+  font-size: clamp(1.6rem, 3.2vw, 2.4rem);
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: -0.5px;
+  color: #ffffff;
+}
+
+.lead {
+  margin: 0;
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  color: #94a3b8;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  background: #0d130e;
+  transition: border-color 0.25s ease, transform 0.25s ease;
+}
+
+.item:hover {
+  border-color: rgba(59, 229, 88, 0.45);
+  transform: translateY(-2px);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 0.25rem;
+  border-radius: 12px;
+  background: rgba(59, 229, 88, 0.12);
+  color: var(--color-neon-green);
+}
+
+.itemTitle {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.itemText {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: #94a3b8;
+}
+
+/* O pedido de orçamento, no pé do bloco. */
+.cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-top: 2rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid rgba(37, 211, 102, 0.35);
+  border-radius: 18px;
+  background: rgba(37, 211, 102, 0.06);
+}
+
+.ctaText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+  color: #94a3b8;
+}
+
+.ctaText strong {
+  font-size: 1.0625rem;
+  color: #ffffff;
+}
+
+.ctaBtn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.9375rem 1.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: #25d366;
+  color: #04150a;
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 0 20px rgba(37, 211, 102, 0.35);
+  transition: all 0.2s ease;
+}
+
+.ctaBtn:hover {
+  text-decoration: none;
+  background: #1ebe5a;
+  transform: translateY(-1px);
+}
+
+@media (max-width: 1024px) {
+  .fleet {
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 2.5rem 1.75rem 2rem;
+  }
+
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .fleet {
+    margin-top: 2.5rem;
+    padding: 2rem 1.25rem 1.5rem;
+    border-radius: 22px;
+  }
+
+  .head {
+    margin-bottom: 1.75rem;
+  }
+
+  .lead {
+    font-size: 0.975rem;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Cada item numa linha só: o ícone à esquerda do título e do texto. */
+  .item {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
+    column-gap: 0.875rem;
+    row-gap: 0.2rem;
+    padding: 1rem;
+  }
+
+  .icon {
+    grid-row: span 2;
+    width: 36px;
+    height: 36px;
+    margin: 0;
+    border-radius: 10px;
+  }
+
+  .icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .itemTitle {
+    font-size: 1rem;
+  }
+
+  .itemText {
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .cta {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+
+  .ctaBtn {
+    white-space: normal;
+  }
+}
