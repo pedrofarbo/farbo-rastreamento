@@ -6,6 +6,7 @@ import { Address } from '@/components/ui/Address';
 
 import { vehiclesApi } from '@/api/resources';
 import { SuspendedNotice, isSuspendedError } from '@/components/billing/SuspendedNotice';
+import { VehicleMaintenance } from '@/components/maintenance/VehicleMaintenance';
 import { TrackerMap } from '@/components/map/TrackerMap';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -47,7 +48,7 @@ const RANGES = [
 export function VehicleDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const { data: vehicle, isLoading, error } = useVehicle(id);
-  const { isCustomer } = useAuth();
+  const { isCustomer, canOperateAccount, canManage } = useAuth();
   const backTo = isCustomer ? '/meus-veiculos' : '/dashboard';
   // Aberto pelo alerta de bateria desconectada ou de movimento sem ignição.
   const [params] = useSearchParams();
@@ -279,6 +280,14 @@ export function VehicleDetailsPage() {
             <EmptyState icon="📍" title="Sem posição registrada" />
           )}
         </Card>
+
+        {owned && (
+          <VehicleMaintenance
+            vehicle={vehicle}
+            canEdit={isCustomer && canOperateAccount}
+            canEditOdometer={(isCustomer && canOperateAccount) || canManage}
+          />
+        )}
 
         {device && !shared && (
           <Card title="Rastreador" subtitle={device.model || device.manufacturer || undefined}>

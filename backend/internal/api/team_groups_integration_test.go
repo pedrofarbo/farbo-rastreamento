@@ -195,6 +195,53 @@ func TestTeamRestrictedToGroups(t *testing.T) {
 		"vehicleIds": []string{vanSul.ID.String()},
 	}, http.StatusForbidden, "RESTRICTED_ACCESS")
 
+	// A manutenção: a titular cria em dois veículos; a supervisora vê e mexe
+	// só na do Norte.
+	expect("hodômetro", owner, http.MethodPut, path(vanNorte)+"/odometer", map[string]any{"km": 48000}, http.StatusOK, "")
+	expect("manutenção da titular", owner, http.MethodPost, "/api/me/maintenance", map[string]any{
+		"vehicleIds": []string{vanNorte.ID.String(), vanSul.ID.String()}, "name": "Troca de óleo", "everyKm": 10000, "everyMonths": 6,
+	}, http.StatusCreated, "")
+	var maint struct {
+		Items []struct {
+			ID        string   `json:"id"`
+			VehicleID string   `json:"vehicleId"`
+			LastKm    *float64 `json:"lastKm"`
+			Status    string   `json:"status"`
+		} `json:"items"`
+	}
+	_ = json.Unmarshal(expect("manutenção da titular", owner, http.MethodGet, "/api/me/maintenance", nil, http.StatusOK, ""), &maint)
+	var sulItem string
+	for _, it := range maint.Items {
+		if it.VehicleID == vanSul.ID.String() {
+			sulItem = it.ID
+		}
+	}
+	if len(maint.Items) != 2 || sulItem == "" {
+		t.Fatalf("manutenção da titular = %+v", maint)
+	}
+	_ = json.Unmarshal(expect("manutenção da supervisora", supervisor, http.MethodGet, "/api/me/maintenance", nil, http.StatusOK, ""), &maint)
+	if len(maint.Items) != 1 || maint.Items[0].VehicleID != vanNorte.ID.String() || maint.Items[0].LastKm == nil || *maint.Items[0].LastKm != 48000 {
+		t.Fatalf("manutenção da supervisora = %+v", maint)
+	}
+	expect("manutenção no sul", supervisor, http.MethodPost, "/api/me/maintenance",
+		map[string]any{"vehicleIds": []string{vanSul.ID.String()}, "name": "Pneus", "everyKm": 40000}, http.StatusNotFound, "")
+	expect("apagar a do sul", supervisor, http.MethodDelete, "/api/me/maintenance/"+sulItem, nil, http.StatusNotFound, "")
+	expect("registrar a do sul", supervisor, http.MethodPost, "/api/me/maintenance/done",
+		map[string]any{"itemIds": []string{maint.Items[0].ID, sulItem}}, http.StatusNotFound, "")
+	expect("registrar a do norte", supervisor, http.MethodPost, "/api/me/maintenance/done",
+		map[string]any{"itemIds": []string{maint.Items[0].ID}, "notes": "óleo 5W30"}, http.StatusOK, "")
+	expect("hodômetro do sul", supervisor, http.MethodPut, path(vanSul)+"/odometer", map[string]any{"km": 1}, http.StatusNotFound, "")
+	var detail struct {
+		Odometer struct {
+			Km *float64 `json:"km"`
+		} `json:"odometer"`
+		Records []map[string]any `json:"records"`
+	}
+	_ = json.Unmarshal(expect("manutenção do veículo", supervisor, http.MethodGet, path(vanNorte)+"/maintenance", nil, http.StatusOK, ""), &detail)
+	if detail.Odometer.Km == nil || *detail.Odometer.Km != 48000 || len(detail.Records) != 1 || detail.Records[0]["notes"] != "óleo 5W30" {
+		t.Errorf("manutenção do veículo = %+v", detail)
+	}
+
 	// O relatório por e-mail: só de um grupo dela.
 	expect("relatório da conta toda", supervisor, http.MethodPost, "/api/me/report-schedules",
 		map[string]any{"frequency": "weekly"}, http.StatusBadRequest, "")

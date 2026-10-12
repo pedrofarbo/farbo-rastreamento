@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 
 import { geofencesApi, vehiclesApi } from '@/api/resources';
 import { isSuspendedError, SuspendedNotice } from '@/components/billing/SuspendedNotice';
+import { VehicleMaintenance } from '@/components/maintenance/VehicleMaintenance';
 import { TrackerMap } from '@/components/map/TrackerMap';
 import { Address } from '@/components/ui/Address';
 import { Badge } from '@/components/ui/Badge';
@@ -14,6 +15,7 @@ import { useToast } from '@/components/ui/Toast';
 import { CommandPanel } from '@/components/vehicle/CommandPanel';
 import { TheftPanel } from '@/components/vehicle/TheftPanel';
 import { useVehicle } from '@/hooks/useVehicles';
+import { useAuth } from '@/stores/AuthContext';
 import {
   eventSeverity,
   formatDateTime,
@@ -49,6 +51,7 @@ export function VehicleScreen() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { notify } = useToast();
+  const { canOperateAccount } = useAuth();
   const query = useVehicle(id);
   const [range, setRange] = useState<TripRange | null>(null);
   const location = useLocation();
@@ -298,6 +301,8 @@ export function VehicleScreen() {
               )
             )}
           </section>
+
+          <VehicleMaintenance vehicle={vehicle} canEdit={canOperateAccount} />
 
           <section className={styles.section}>
             <h2 className={styles.sectionTitle}>Últimos eventos</h2>

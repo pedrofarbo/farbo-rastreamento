@@ -32,6 +32,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/events"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geofences"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leakcheck"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/maintenance"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols/gt06"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/reportmail"
@@ -303,13 +304,15 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 	var fences *geofences.Service
 	var reportsSvc *reports.Service
 	var reportMail *reportmail.Service
+	var maintenanceSvc *maintenance.Service
 	if opts.fleet {
+		maintenanceSvc = maintenance.NewService(db, "UTC")
 		fences = geofences.NewService(geofences.NewRepository(db))
 		reportsSvc = reports.NewService(db, "UTC")
 		reportMail = reportmail.NewService(db, reportsSvc, env.vehicles, nil, nil, log)
 	}
 	server := NewServer(Deps{
-		Geofences: fences, Reports: reportsSvc, ReportMail: reportMail,
+		Geofences: fences, Reports: reportsSvc, ReportMail: reportMail, Maintenance: maintenanceSvc,
 		StepUp: stepUpSvc, Shares: sharesSvc, Theft: env.theft, Accounts: accountsSvc,
 		Config: cfg, Log: log, Metrics: metrics, DB: db, Auth: authSvc,
 		Devices: env.devices, Vehicles: env.vehicles, Events: eventSvc, Commands: env.commands,

@@ -224,6 +224,10 @@ export function AppShell() {
                 <Icon name="chart" />
                 Relatórios
               </NavLink>
+              <NavLink to="/manutencao" className={navClass}>
+                <Icon name="wrench" />
+                Manutenção
+              </NavLink>
               {/* Conta empresa: quem da empresa acessa a conta (só o titular). */}
               {isAccountOwner && (
                 <NavLink to="/equipe" className={navClass}>

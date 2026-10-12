@@ -42,6 +42,7 @@ const ContractPage = page(() => import('@/pages/legal/ContractPage'), 'ContractP
 const AlertsPage = page(() => import('@/pages/customer/AlertsPage'), 'AlertsPage');
 const InvoicesPage = page(() => import('@/pages/customer/InvoicesPage'), 'InvoicesPage');
 const ReportsPage = page(() => import('@/pages/customer/ReportsPage'), 'ReportsPage');
+const MaintenancePage = page(() => import('@/pages/customer/MaintenancePage'), 'MaintenancePage');
 const CustomerReportsPage = page(() => import('@/pages/customer/ReportsPage'), 'CustomerReportsPage');
 const MyVehiclesPage = page(() => import('@/pages/customer/MyVehiclesPage'), 'MyVehiclesPage');
 const DashboardPage = page(() => import('@/pages/DashboardPage'), 'DashboardPage');
@@ -109,6 +110,7 @@ export function App() {
                       <Route path="meus-veiculos" element={<MyVehiclesPage />} />
                       <Route path="alertas" element={<AlertsPage />} />
                       <Route path="relatorios" element={<ReportsPage />} />
+                      <Route path="manutencao" element={<MaintenancePage />} />
                       {/* Conta empresa: faturas do titular e do Gestor; a equipe, só do titular. */}
                       <Route element={<RequireAccountOperator />}>
                         <Route path="faturas" element={<InvoicesPage />} />

@@ -87,6 +87,18 @@ export function AccountScreen() {
             </>
           )}
           <li>
+            <Link to="/manutencao" className={styles.listLink}>
+              <span>
+                <strong>Manutenção</strong>
+                <br />
+                <span className={styles.muted}>Hodômetro e o que vence em cada veículo, por km ou por data</span>
+              </span>
+              <span className={styles.chevron}>
+                <ChevronIcon />
+              </span>
+            </Link>
+          </li>
+          <li>
             <Link to="/relatorios" className={styles.listLink}>
               <span>
                 <strong>Relatórios</strong>

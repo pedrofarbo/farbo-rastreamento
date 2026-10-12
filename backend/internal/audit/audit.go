@@ -77,6 +77,7 @@ const (
 	ActionContractAccepted     = "CONTRACT_ACCEPTED"
 	ActionTrackerOrdered       = "TRACKER_ORDERED"
 	ActionFleetImported        = "FLEET_IMPORTED" // a frota do cliente por planilha
+	ActionMaintenanceChanged   = "MAINTENANCE_CHANGED"
 	ActionInstallerChanged     = "INSTALLER_CHANGED"
 	ActionFinanceChanged       = "FINANCE_CHANGED"
 	// ActionSMSSetup: configuração do rastreador por SMS (SMSDev) na ativação.

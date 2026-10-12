@@ -42,6 +42,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/installers"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/mail"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/maintenance"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/melhorenvio"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
@@ -401,6 +402,10 @@ func run() error {
 	// E o relatório por e-mail, toda semana ou todo mês, para quem agendou.
 	reportMailSvc := reportmail.NewService(db, reportsSvc, vehicleSvc, mail.NewReportMailer(mailer, cfg.Mail.AppURL),
 		billingSvc.IsSuspended, log)
+	// O hodômetro e a manutenção (o hodômetro soma os km do resumo diário).
+	maintenanceSvc := maintenance.NewService(db, cfg.Billing.Timezone)
+	maintenanceNotifier := maintenance.NewNotifier(maintenanceSvc, mail.NewMaintenanceMailer(mailer, cfg.Mail.AppURL),
+		billingSvc.IsSuspended, log)
 
 	// ---- Servidores ----
 	tcpServer := tcp.NewServer(cfg.TCP, registry, connManager, ingestor, log, metrics)
@@ -409,7 +414,7 @@ func run() error {
 		Config: cfg, Log: log, Metrics: metrics, DB: db,
 		Auth: authSvc, Devices: deviceSvc, Vehicles: vehicleSvc,
 		Geofences: geofenceSvc, Geocoder: geocodingSvc, Events: eventSvc, Commands: commandSvc, Reports: reportsSvc,
-		Audit: auditSvc, ReportMail: reportMailSvc, Billing: billingSvc, Payments: paymentsSvc, Owners: ownerIndex,
+		Audit: auditSvc, ReportMail: reportMailSvc, Maintenance: maintenanceSvc, Billing: billingSvc, Payments: paymentsSvc, Owners: ownerIndex,
 		Orders:      orders.NewService(db, billingSvc, vehicleSvc, cfg.Catalog, log),
 		Installers:  installerRepo,
 		Addresses:   addresses.NewRepository(db),
@@ -467,6 +472,12 @@ func run() error {
 	go func() {
 		defer wg.Done()
 		reportMailSvc.Run(ctx)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		maintenanceNotifier.Run(ctx)
 	}()
 
 	wg.Add(1)

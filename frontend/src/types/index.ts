@@ -1048,6 +1048,49 @@ export interface TrackerOrderResult {
   shipping: ShippingChoice | null;
 }
 
+/** A situação de uma manutenção: em dia, perto, vencida ou sem hodômetro (vence só por km). */
+export type MaintenanceStatus = 'ok' | 'soon' | 'due' | 'unknown';
+
+/** O hodômetro: a leitura informada mais os km do GPS. */
+export interface Odometer {
+  vehicleId: string;
+  /** Os km medidos pelo GPS desde a instalação. */
+  trackedKm: number;
+  /** Nulo enquanto ninguém informou a leitura. */
+  km: number | null;
+  setAt: string | null;
+}
+
+export interface MaintenanceItem {
+  id: string;
+  vehicleId: string;
+  vehicleName: string;
+  plate: string;
+  groupId: string | null;
+  name: string;
+  everyKm: number | null;
+  everyMonths: number | null;
+  lastKm: number | null;
+  lastDate: string;
+  nextKm: number | null;
+  nextDate: string | null;
+  /** Negativo: passou. */
+  remainingKm: number | null;
+  remainingDays: number | null;
+  status: MaintenanceStatus;
+}
+
+export interface MaintenanceRecord {
+  id: string;
+  vehicleId: string;
+  itemId: string | null;
+  name: string;
+  doneDate: string;
+  km: number | null;
+  notes: string;
+  createdAt: string;
+}
+
 /** O relatório da frota por e-mail: toda semana (às segundas) ou todo mês (no dia 1º). */
 export type ReportFrequency = 'weekly' | 'monthly';
 

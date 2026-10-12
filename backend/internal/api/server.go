@@ -35,6 +35,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/infra"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/installers"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/maintenance"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/melhorenvio"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
@@ -115,6 +116,8 @@ type Deps struct {
 	Reports *reports.Service
 	// ReportMail: os relatórios da frota por e-mail. Nil: rotas fora.
 	ReportMail *reportmail.Service
+	// Maintenance: o hodômetro e a manutenção dos veículos. Nil: rotas fora.
+	Maintenance *maintenance.Service
 	// Theft: o modo roubo (o cliente avisa; o rastreador acelera; o link
 	// público mostra a posição à polícia). Nil: rotas respondem 404.
 	Theft *theft.Service
@@ -355,6 +358,11 @@ func (s *Server) routes() chi.Router {
 					r.Get("/positions", s.handleVehiclePositions)
 					r.Get("/events", s.handleVehicleEvents)
 					r.Get("/commands", s.handleVehicleCommands)
+					// O hodômetro e a manutenção: a leitura, quem mexe na conta.
+					if s.Maintenance != nil {
+						r.Get("/maintenance", s.handleVehicleMaintenance)
+						r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleCustomer), s.requireAccountOperator).Put("/odometer", s.handleSetOdometer)
+					}
 
 					// Bloqueio, desbloqueio e pedidos de posição/status: equipe
 					// operacional e o próprio dono do veículo, com a mesma
@@ -469,6 +477,17 @@ func (s *Server) routes() chi.Router {
 					r.Delete("/fleet/groups/{id}", s.handleDeleteFleetGroup)
 					r.Put("/fleet/labels", s.handleSetFleetLabels)
 				})
+				// A manutenção da frota: o que vence, por km ou por data.
+				if s.Maintenance != nil {
+					r.Get("/maintenance", s.handleMyMaintenance)
+					r.Group(func(r chi.Router) {
+						r.Use(s.requireAccountOperator)
+						r.Post("/maintenance", s.handleCreateMaintenance)
+						r.Post("/maintenance/done", s.handleMaintenanceDone)
+						r.Patch("/maintenance/{id}", s.handleUpdateMaintenance)
+						r.Delete("/maintenance/{id}", s.handleDeleteMaintenance)
+					})
+				}
 				// Os relatórios da frota por e-mail (semanal ou mensal).
 				if s.ReportMail != nil {
 					r.Get("/report-schedules", s.handleMyReportSchedules)

@@ -6,6 +6,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { ToastProvider } from '@/components/ui/Toast';
 import { RealtimeProvider } from '@/hooks/useRealtime';
 import { InvoicesPage } from '@/pages/customer/InvoicesPage';
+import { MaintenancePage } from '@/pages/customer/MaintenancePage';
 import { MyVehiclesPage } from '@/pages/customer/MyVehiclesPage';
 import { ReportsPage } from '@/pages/customer/ReportsPage';
 import { TheftReportPage } from '@/pages/TheftReportPage';
@@ -91,6 +92,7 @@ export function AppRoot() {
                   <Route path="relatorio-roubo/:id" element={<TheftReportPage />} />
                   <Route path="meus-veiculos" element={<MyVehiclesPage />} />
                   <Route path="relatorios" element={<ReportsPage />} />
+                  <Route path="manutencao" element={<MaintenancePage />} />
                   <Route path="alertas" element={<AlertsScreen />} />
                   <Route path="cercas" element={<FencesScreen />} />
                   <Route path="cercas/nova" element={<FenceScreen />} />

@@ -1218,6 +1218,13 @@ PATCH  /api/me/team/:id                  (titular) {role} e/ou {groups}: quem es
 GET    /api/me/report-schedules          (customer) os relatórios por e-mail da pessoa
 POST   /api/me/report-schedules          (customer) {frequency: weekly|monthly, groupId, extraRecipients}: o resumo e as planilhas por e-mail, às segundas ou no dia 1º às 7h
 DELETE /api/me/report-schedules/:id      (customer)
+GET    /api/me/maintenance               (customer) as manutenções dos veículos que a pessoa vê, das mais urgentes {items, counts}
+POST   /api/me/maintenance               (titular/Gestor) {vehicleIds, name, everyKm, everyMonths, lastDate, lastKm}: em vários veículos de uma vez
+PATCH  /api/me/maintenance/:id           (titular/Gestor)
+DELETE /api/me/maintenance/:id           (titular/Gestor) o histórico fica
+POST   /api/me/maintenance/done          (titular/Gestor) {itemIds, date, km, notes}: registra feitas (várias: o hodômetro de cada veículo)
+GET    /api/vehicles/:id/maintenance     o hodômetro, as manutenções e o histórico do veículo
+PUT    /api/vehicles/:id/odometer        (admin, titular/Gestor) {km}: a leitura do painel; daí em diante somam-se os km do GPS
 GET    /api/fulfillments                 (admin, operator) fila; ?status=all inclui os entregues
 GET    /api/fulfillments/:id             (admin, operator)
 POST   /api/fulfillments/:id/status      (admin, operator) {track: CHIP|TRACKER, status, note?, deviceId?}
