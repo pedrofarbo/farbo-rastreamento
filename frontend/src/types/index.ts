@@ -623,9 +623,9 @@ export interface Invoice {
   overdue: boolean;
   daysOverdue: number;
   paidAt: string | null;
-  /** Como foi quitada: MANUAL (baixa da central) ou PIX (confirmado no provedor). */
-  paidVia: '' | 'MANUAL' | 'PIX';
-  /** Pix que quitou a fatura, quando paidVia = PIX. */
+  /** Como foi quitada: MANUAL (baixa da central), PIX ou BOLETO (confirmados no provedor). */
+  paidVia: '' | 'MANUAL' | 'PIX' | 'BOLETO';
+  /** A cobrança (Pix ou boleto) que quitou a fatura, quando paga pelo provedor. */
   paidChargeId: string | null;
   paymentUrl: string;
   pixCode: string;
@@ -633,19 +633,27 @@ export interface Invoice {
   updatedAt: string;
 }
 
-/** Pix gerado para pagar uma fatura (AbacatePay, checkout transparente). */
+/** A forma de pagamento online de uma fatura: Pix ou boleto (que traz um Pix junto). */
+export type ChargeMethod = 'PIX' | 'BOLETO';
+
+/** Pix ou boleto gerado para pagar uma fatura (AbacatePay, checkout transparente). */
 export interface PixCharge {
   id: string;
   invoiceId: string;
   provider: string;
+  method: ChargeMethod;
   providerChargeId: string;
   amountCents: number;
   /** Status do provedor: PENDING, PAID, EXPIRED, CANCELLED, REFUNDED, UNDER_DISPUTE… */
   status: string;
-  /** Pix copia-e-cola. */
+  /** Pix copia-e-cola (no boleto, o Pix que vem junto). */
   brCode: string;
   /** Imagem do QR Code (data:image/png;base64,…). */
   qrCodeImage: string;
+  /** O boleto: a linha digitável (47 dígitos), o código de barras e o link para ver e imprimir. */
+  boletoLine: string;
+  boletoBarcode: string;
+  boletoUrl: string;
   /** Cobrança do ambiente de testes: dá para simular o pagamento. */
   devMode: boolean;
   expiresAt: string | null;
@@ -660,7 +668,7 @@ export interface PixCharge {
   refundReason: string;
 }
 
-/** Pix que movimentou dinheiro (pago, estornado, em disputa), na ficha do cliente. */
+/** Pix ou boleto que movimentou dinheiro (pago, estornado, em disputa), na ficha do cliente. */
 export interface PixPayment extends PixCharge {
   invoiceDescription: string;
   /** Foi este Pix que quitou a fatura? Estorná-lo reabre a fatura. */

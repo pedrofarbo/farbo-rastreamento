@@ -1,6 +1,6 @@
-// Package abacatepay fala com a API v2 da AbacatePay: Pix por checkout
-// transparente (criar, consultar, simular em testes) e verificação dos
-// webhooks.
+// Package abacatepay fala com a API v2 da AbacatePay: Pix e boleto por
+// checkout transparente (criar, consultar, simular o Pix em testes) e
+// verificação dos webhooks.
 package abacatepay
 
 import (

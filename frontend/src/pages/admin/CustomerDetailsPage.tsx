@@ -636,13 +636,18 @@ export function CustomerDetailsPage() {
         </Card>
 
         {data.payments.length > 0 && (
-          <Card title="Pagamentos Pix" subtitle="Pagamentos recebidos pela AbacatePay. O estorno devolve o valor integral ao cliente." flush>
+          <Card
+            title="Pagamentos online"
+            subtitle="Pix e boletos recebidos pela AbacatePay. O estorno do Pix devolve o valor integral ao cliente; o boleto não tem estorno pela AbacatePay."
+            flush
+          >
             <div className={styles.tableWrap}>
               <table className={styles.table}>
                 <thead>
                   <tr>
                     <th>Pago em</th>
                     <th>Fatura</th>
+                    <th>Forma</th>
                     <th>Valor</th>
                     <th>Situação</th>
                     <th />
@@ -659,12 +664,13 @@ export function CustomerDetailsPage() {
                         )}
                         {payment.refundReason && <div className={billing.muted}>estorno: {payment.refundReason}</div>}
                       </td>
+                      <td>{payment.method === 'BOLETO' ? 'Boleto' : 'Pix'}</td>
                       <td className={billing.amount}>{formatMoney(payment.amountCents)}</td>
                       <td>
                         <PaymentStatus payment={payment} />
                       </td>
                       <td>
-                        {payment.status === 'PAID' && !payment.refundRequestedAt && (
+                        {payment.method !== 'BOLETO' && payment.status === 'PAID' && !payment.refundRequestedAt && (
                           <div className={styles.actions}>
                             <Button
                               size="small"
@@ -764,7 +770,7 @@ export function CustomerDetailsPage() {
                                 </Button>
                                 {data.onlinePayment && (
                                   <Button size="small" variant="secondary" onClick={() => setPix(invoice)}>
-                                    Gerar Pix
+                                    Gerar Pix ou boleto
                                   </Button>
                                 )}
                                 {data.paymentLinks?.[invoice.id] && (
@@ -1258,11 +1264,12 @@ export function CustomerDetailsPage() {
         )}
       </Modal>
 
-      {/* Pix online (AbacatePay) gerado pela central */}
+      {/* Pix ou boleto online (AbacatePay) gerado pela central */}
       <PixPaymentModal
         invoice={pix}
         api={{
           invoicePix: customersApi.invoicePix,
+          invoiceBoleto: customersApi.invoiceBoleto,
           charge: customersApi.charge,
           simulateCharge: customersApi.simulateCharge,
         }}
@@ -1360,7 +1367,7 @@ export function CustomerDetailsPage() {
   );
 }
 
-/** Situação de um pagamento Pix na visão da central. */
+/** Situação de um pagamento online na visão da central. */
 function PaymentStatus({ payment }: { payment: PixPayment }) {
   if (payment.status === 'REFUNDED') return <Badge tone="neutral">Estornado</Badge>;
   if (payment.status === 'UNDER_DISPUTE') {

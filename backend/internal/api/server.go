@@ -280,6 +280,8 @@ func (s *Server) routes() chi.Router {
 				r.Get("/", s.handlePublicInvoice)
 				r.Post("/pix", s.handlePublicInvoicePix)
 				r.Post("/pix-group", s.handlePublicInvoiceGroupPix)
+				r.Post("/boleto", s.handlePublicInvoiceBoleto)
+				r.Post("/boleto-group", s.handlePublicInvoiceGroupBoleto)
 				r.Get("/charges/{chargeId}", s.handlePublicCharge)
 				r.Post("/charges/{chargeId}/simulate", s.handlePublicChargeSimulate)
 			})
@@ -436,8 +438,10 @@ func (s *Server) routes() chi.Router {
 					r.Use(s.requireWholeAccount)
 					r.Get("/invoices", s.handleMyInvoices)
 					r.Post("/invoices/{id}/pix", s.handleMyInvoicePix)
+					r.Post("/invoices/{id}/boleto", s.handleMyInvoiceBoleto)
 					// Várias de uma vez: a fatura do mês da frota, ou as vencidas.
 					r.Post("/invoices/pix", s.handleMyInvoicesPix)
+					r.Post("/invoices/boleto", s.handleMyInvoicesBoleto)
 					r.Get("/charges/{id}", s.handleMyCharge)
 					r.Post("/charges/{id}/simulate", s.handleMyChargeSimulate)
 					// Acompanhamento do chip e do rastreador até a casa dele.
@@ -701,6 +705,7 @@ func (s *Server) routes() chi.Router {
 					r.Post("/invoices/{id}/pay", s.handlePayInvoice)
 					r.Post("/invoices/{id}/cancel", s.handleCancelInvoice)
 					r.Post("/invoices/{id}/pix", s.handleAdminInvoicePix)
+					r.Post("/invoices/{id}/boleto", s.handleAdminInvoiceBoleto)
 					r.Post("/invoices/{id}/remind", s.handleRemindInvoice)
 					r.Get("/charges/{id}", s.handleAdminCharge)
 					r.Post("/charges/{id}/simulate", s.handleAdminChargeSimulate)

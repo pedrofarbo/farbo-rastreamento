@@ -63,10 +63,13 @@ func ParseEvent(body []byte) (*Event, error) {
 	return &ev, nil
 }
 
-// ChargeIDs devolve os ids de Pix citados no evento, onde quer que estejam no
-// payload. O conteúdo do webhook não é usado para decidir nada: ele só diz
-// quais cobranças consultar de novo na API, que é a fonte da verdade.
-func (e *Event) ChargeIDs() []string { return e.idsWithPrefix("pix_char_") }
+// ChargeIDs devolve os ids de Pix e de boleto citados no evento, onde quer
+// que estejam no payload. O conteúdo do webhook não é usado para decidir
+// nada: ele só diz quais cobranças consultar de novo na API, que é a fonte
+// da verdade.
+func (e *Event) ChargeIDs() []string {
+	return append(e.idsWithPrefix("pix_char_"), e.idsWithPrefix("bole_")...)
+}
 
 // idsWithPrefix devolve, sem repetir, os textos do payload que começam com o
 // prefixo.

@@ -36,13 +36,17 @@ import styles from '../Page.module.css';
 export function InvoicesPage() {
   const queryClient = useQueryClient();
   const [paying, setPaying] = useState<Pick<Invoice, 'id' | 'description'> | null>(null);
-  // A janela de Pix serve a uma fatura ou a um grupo (a chave "grupo:<ids>").
+  // A janela de pagamento serve a uma fatura ou a um grupo (a chave "grupo:<ids>").
   const pixApi = useMemo<PixApi>(
     () => ({
       ...meApi,
       invoicePix: (key: string) => {
         const ids = groupIds(key);
         return ids ? meApi.invoicesPix(ids) : meApi.invoicePix(key);
+      },
+      invoiceBoleto: (key: string) => {
+        const ids = groupIds(key);
+        return ids ? meApi.invoicesBoleto(ids) : meApi.invoiceBoleto(key);
       },
     }),
     [],
@@ -114,7 +118,7 @@ export function InvoicesPage() {
             <h1 className={styles.title}>Faturas</h1>
             <p className={styles.description}>
               {onlinePayment
-                ? 'As faturas saem alguns dias antes do vencimento. Pague com Pix aqui mesmo: a confirmação é automática e leva só alguns segundos.'
+                ? 'As faturas saem alguns dias antes do vencimento. Pague aqui mesmo, com Pix ou boleto: a baixa é automática (no Pix, em segundos; no boleto, quando o banco compensar).'
                 : 'As faturas saem alguns dias antes do vencimento. Pague pelo link ou pelo Pix copia-e-cola; a baixa é feita pela nossa equipe assim que o pagamento é confirmado.'}{' '}
               {/* Link comum: no app (em /app), a página do contrato fica fora das rotas dele. */}
               <a href="/contrato">Ver o contrato de prestação de serviços</a>.
@@ -193,7 +197,7 @@ export function InvoicesPage() {
               <strong>
                 {late.invoices.length} faturas vencidas · {formatMoney(late.amountCents)}.
               </strong>{' '}
-              Pague todas de uma vez, com um Pix só.
+              Pague todas de uma vez, num pagamento só.
             </span>
             <Button size="small" variant="primary" onClick={() => payGroup(late, `${late.invoices.length} faturas vencidas`)}>
               Pagar as vencidas
@@ -205,14 +209,14 @@ export function InvoicesPage() {
           <Card
             key={g.key}
             title={`Fatura de ${formatDateOnly(g.dueDate)}`}
-            subtitle={`${g.invoices.length} faturas no mesmo vencimento — pague todas com um Pix só.`}
+            subtitle={`${g.invoices.length} faturas no mesmo vencimento — pague todas num pagamento só.`}
             actions={
               <Button
                 size="small"
                 variant="primary"
                 onClick={() => payGroup(g, `${g.invoices.length} faturas · vencimento ${formatDateOnly(g.dueDate)}`)}
               >
-                Pagar {formatMoney(g.amountCents)} com Pix
+                Pagar {formatMoney(g.amountCents)}
               </Button>
             }
           >
@@ -398,7 +402,7 @@ function DayRows({
               variant="primary"
               onClick={() => (day.open.length === 1 ? onPay(day.open[0]) : onPayDay(day))}
             >
-              {day.open.length === 1 ? 'Pagar com Pix' : `Pagar ${formatMoney(openCents)} com Pix`}
+              {day.open.length === 1 ? 'Pagar' : `Pagar ${formatMoney(openCents)}`}
             </Button>
           </div>
         )
@@ -425,7 +429,7 @@ function PayActions({
     return (
       <div className={styles.actions}>
         <Button size="small" variant="primary" onClick={onPayPix}>
-          Pagar com Pix
+          Pagar
         </Button>
         {invoice.paymentUrl && (
           <Button

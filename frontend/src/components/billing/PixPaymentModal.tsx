@@ -17,15 +17,16 @@ interface PixPaymentModalProps {
 }
 
 /**
- * Pagamento de uma fatura por Pix: QR Code, copia-e-cola e a confirmação,
- * que aparece sozinha — a janela consulta o status enquanto está aberta.
+ * Pagamento de uma fatura por Pix ou boleto (com Pix junto): QR Code,
+ * copia-e-cola, linha digitável e a confirmação, que aparece sozinha — a
+ * janela consulta o status enquanto está aberta.
  */
 export function PixPaymentModal({ invoice, api, audience, onClose, onPaid }: PixPaymentModalProps) {
   const state = usePixCheckout(invoice?.id ?? null, api, onPaid);
   return (
     <Modal
       open={invoice !== null}
-      title={state.paid ? 'Pagamento confirmado' : 'Pagar com Pix'}
+      title={state.paid ? 'Pagamento confirmado' : 'Pagar fatura'}
       onClose={onClose}
       footer={
         <Button variant={state.paid ? 'primary' : 'secondary'} onClick={onClose}>

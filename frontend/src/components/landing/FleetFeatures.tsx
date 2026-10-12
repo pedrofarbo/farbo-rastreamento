@@ -91,8 +91,8 @@ export const FLEET_FEATURES: { title: string; text: string; icon: React.ReactNod
     ),
   },
   {
-    title: 'Uma fatura, um Pix',
-    text: 'Todos os veículos vencem no mesmo dia, e a frota inteira se paga com um Pix só. Sem conferir boleto por boleto.',
+    title: 'Uma fatura, um pagamento',
+    text: 'Todos os veículos vencem no mesmo dia, e a frota inteira se paga com um Pix ou um boleto só. Sem conferir veículo por veículo.',
     icon: (
       <>
         <rect x="5" y="3" width="14" height="18" rx="2" />

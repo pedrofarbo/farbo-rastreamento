@@ -19,6 +19,14 @@ const charge = (status: string): PixCharge =>
     invoiceStatus: status === 'PAID' ? 'PAID' : 'OPEN',
   }) as unknown as PixCharge;
 
+let boletoError = '';
+const boleto = (status: string): PixCharge =>
+  ({
+    ...charge(status), id: 'b1', method: 'BOLETO', devMode: true, expiresAt: '2026-10-20T23:59:59.715Z',
+    boletoLine: '00190000090275928800021932978170187890000005000', boletoBarcode: '00191878900000050000000002759288002193297817',
+    boletoUrl: 'https://app.abacatepay.com/pay/bole_1/boleto', brCode: '00020101-pix-do-boleto',
+  }) as PixCharge;
+
 vi.mock('@/api/resources', () => ({
   GROUP_SUFFIX: ':todas',
   payLinkApi: {
@@ -31,7 +39,12 @@ vi.mock('@/api/resources', () => ({
         calls.push('pix ' + key);
         return charge('PENDING');
       },
-      charge: async () => charge(chargeStatus),
+      invoiceBoleto: async (key: string) => {
+        calls.push('boleto ' + key);
+        if (boletoError) throw new Error(boletoError);
+        return boleto('PENDING');
+      },
+      charge: async (id: string) => (id === 'b1' ? boleto(chargeStatus) : charge(chargeStatus)),
       simulateCharge: async () => charge('PAID'),
     }),
   },
@@ -72,7 +85,11 @@ afterEach(() => {
   document.body.innerHTML = '';
   calls.length = 0;
   chargeStatus = 'PENDING';
+  boletoError = '';
 });
+
+const radio = (label: string) =>
+  Array.from(document.querySelectorAll('[role="radio"]')).find((b) => b.textContent?.startsWith(label)) as HTMLButtonElement;
 
 describe('link de pagamento da fatura', () => {
   it('abre o Pix sem login e mostra quando cai', async () => {
@@ -92,6 +109,47 @@ describe('link de pagamento da fatura', () => {
     await flush();
     expect(text()).toContain('Pagamento recebido. Obrigado!');
   }, 10_000);
+
+  it('o boleto, com a linha digitável, o link para imprimir e o Pix junto; pago, agradece', async () => {
+    invoice = async () => open();
+    await render();
+    await act(async () => radio('Boleto').click());
+    await flush();
+    expect(calls).toEqual(['fatura tok123', 'pix tok123', 'boleto tok123']);
+    expect(radio('Boleto').getAttribute('aria-checked')).toBe('true');
+    expect(text()).toContain('Boleto com vencimento em 20/10/2026');
+    expect(text()).toContain('00190.00009 02759.288000 21932.978170 1 87890000005000');
+    const link = Array.from(document.querySelectorAll('a')).find((a) => a.textContent === 'Ver e imprimir o boleto');
+    expect(link?.getAttribute('href')).toBe('https://app.abacatepay.com/pay/bole_1/boleto');
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect((document.querySelector('input[aria-label="Pix copia e cola"]') as HTMLInputElement).value).toBe('00020101-pix-do-boleto');
+    expect(text()).toContain('até 3 dias úteis');
+    // O sandbox não simula boleto: sem o botão.
+    expect(text()).toContain('não simula o pagamento de boleto');
+    expect(Array.from(document.querySelectorAll('button')).some((b) => b.textContent === 'Simular pagamento')).toBe(false);
+    // Voltar ao Pix não gera outro; o boleto pago (pelo banco ou pelo Pix dele) agradece.
+    await act(async () => radio('Pix').click());
+    await act(async () => radio('Boleto').click());
+    expect(calls).toHaveLength(3);
+    chargeStatus = 'PAID';
+    invoice = async () => open({ status: 'PAID', paidAt: '2026-10-12T13:00:00Z' });
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 4200)));
+    await flush();
+    expect(text()).toContain('Pagamento recebido. Obrigado!');
+  }, 10_000);
+
+  it('sem CPF/CNPJ no cadastro, o boleto não sai: oferece o Pix', async () => {
+    boletoError = 'para gerar o boleto, o cadastro precisa do nome e de um CPF ou CNPJ válido';
+    invoice = async () => open();
+    await render();
+    await act(async () => radio('Boleto').click());
+    await flush();
+    expect(text()).toContain('CPF ou CNPJ válido');
+    const pix = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Pagar com Pix') as HTMLButtonElement;
+    await act(async () => pix.click());
+    expect(radio('Pix').getAttribute('aria-checked')).toBe('true');
+    expect((document.querySelector('input[aria-label="Pix copia e cola"]') as HTMLInputElement).value).toBe('00020101-copia-e-cola');
+  });
 
   it('vencida: mostra há quantos dias', async () => {
     invoice = async () => open({ overdue: true, daysOverdue: 3 });
@@ -127,7 +185,7 @@ describe('link de pagamento da fatura', () => {
     await render();
     expect(text()).toContain('3 faturas vencem neste dia · R$ 139,70');
     expect(text()).toContain('Plano Frota — outubro/2026 (Moto 03)R$ 39,90');
-    expect(text()).toContain('3 faturas num Pix só');
+    expect(text()).toContain('3 faturas num pagamento só');
     expect(calls).toEqual(['fatura tok123', 'pix tok123:todas']);
     const onlyThis = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Só esta (R$ 49,90)') as HTMLButtonElement;
     await act(async () => onlyThis.click());

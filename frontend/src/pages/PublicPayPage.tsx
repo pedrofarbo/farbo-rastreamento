@@ -17,10 +17,11 @@ const money = (cents: number) => formatMoney(cents).replace(/\u00a0/g, ' ');
 
 /**
  * O link de pagamento da fatura (/pagar/<link secreto>), que vai nos
- * lembretes: abre o Pix daquela fatura sem login — o primeiro nome, o que é,
- * o valor e o vencimento, nada além. Quando o pagamento cai, mostra "pago".
- * Com outras faturas no mesmo vencimento (a do mês de uma frota, uma por
- * veículo), oferece pagar todas com um Pix só — o padrão — ou só esta.
+ * lembretes: abre o Pix daquela fatura sem login (ou o boleto, se a pessoa
+ * escolher) — o primeiro nome, o que é, o valor e o vencimento, nada além.
+ * Quando o pagamento cai, mostra "pago". Com outras faturas no mesmo
+ * vencimento (a do mês de uma frota, uma por veículo), oferece pagar todas
+ * num pagamento só — o padrão — ou só esta.
  */
 export function PublicPayPage() {
   const { token = '' } = useParams();
@@ -164,7 +165,7 @@ export function PublicPayPage() {
             <section className={styles.card}>
               <PixCheckout
                 state={checkout}
-                description={whole && group ? `${group.items.length} faturas num Pix só` : undefined}
+                description={whole && group ? `${group.items.length} faturas num pagamento só` : undefined}
                 paidText="Pagamento recebido. Obrigado!"
               />
             </section>
@@ -195,7 +196,7 @@ export function PublicPayPage() {
           )}
 
           <p className={styles.muted}>
-            Pagamento por Pix processado pela AbacatePay. A baixa é automática: não precisa mandar comprovante.
+            Pagamento por Pix ou boleto processado pela AbacatePay. A baixa é automática: não precisa mandar comprovante.
           </p>
         </>
       )}

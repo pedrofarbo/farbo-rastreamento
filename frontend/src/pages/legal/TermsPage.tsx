@@ -161,7 +161,7 @@ const SECTIONS: LegalSection[] = [
     title: 'Pagamento e atraso',
     body: (
       <ul>
-        <li>As faturas ficam disponíveis na plataforma antes do vencimento e podem ser pagas por Pix.</li>
+        <li>As faturas ficam disponíveis na plataforma antes do vencimento e podem ser pagas por Pix ou boleto.</li>
         <li>
           Com fatura vencida há mais de {LEGAL_FACTS.suspendAfterDays} dias, o acesso do Cliente à plataforma
           fica suspenso até o pagamento. O rastreador continua registrando as posições, que voltam a aparecer

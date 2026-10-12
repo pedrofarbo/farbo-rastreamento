@@ -275,7 +275,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
               </li>
               <li>
                 <span className={styles.checkIcon}>✓</span>
-                Uma fatura e um Pix para a frota toda
+                Uma fatura e um pagamento (Pix ou boleto) para a frota toda
               </li>
               <li>
                 <span className={styles.checkIcon}>✓</span>

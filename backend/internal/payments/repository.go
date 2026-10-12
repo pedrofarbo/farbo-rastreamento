@@ -12,21 +12,28 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 )
 
-// Charge é um Pix gerado para uma fatura.
+// Charge é um Pix ou um boleto gerado para uma fatura.
 type Charge struct {
-	ID               uuid.UUID  `json:"id"`
-	InvoiceID        uuid.UUID  `json:"invoiceId"`
-	Provider         string     `json:"provider"`
-	ProviderChargeID string     `json:"providerChargeId"`
-	AmountCents      int        `json:"amountCents"`
-	Status           string     `json:"status"`
-	BrCode           string     `json:"brCode"`
-	QRCodeImage      string     `json:"qrCodeImage"`
-	DevMode          bool       `json:"devMode"`
-	ExpiresAt        *time.Time `json:"expiresAt"`
-	PaidAt           *time.Time `json:"paidAt"`
-	CheckedAt        *time.Time `json:"-"`
-	CreatedAt        time.Time  `json:"createdAt"`
+	ID        uuid.UUID `json:"id"`
+	InvoiceID uuid.UUID `json:"invoiceId"`
+	Provider  string    `json:"provider"`
+	// Method: PIX ou BOLETO (que traz um Pix junto, em BrCode).
+	Method           string `json:"method"`
+	ProviderChargeID string `json:"providerChargeId"`
+	AmountCents      int    `json:"amountCents"`
+	Status           string `json:"status"`
+	BrCode           string `json:"brCode"`
+	QRCodeImage      string `json:"qrCodeImage"`
+	// O boleto: a linha digitável, o código de barras e o link para ver e
+	// imprimir.
+	BoletoLine    string     `json:"boletoLine"`
+	BoletoBarcode string     `json:"boletoBarcode"`
+	BoletoURL     string     `json:"boletoUrl"`
+	DevMode       bool       `json:"devMode"`
+	ExpiresAt     *time.Time `json:"expiresAt"`
+	PaidAt        *time.Time `json:"paidAt"`
+	CheckedAt     *time.Time `json:"-"`
+	CreatedAt     time.Time  `json:"createdAt"`
 	// PlatformFeeCents é a tarifa que a AbacatePay informou ao gerar o Pix
 	// (o financeiro a lança como despesa quando o Pix é pago).
 	PlatformFeeCents int `json:"-"`
@@ -51,19 +58,21 @@ type ChargeInvoice struct {
 	AmountCents int
 }
 
-const chargeColumns = `id, invoice_id, provider, provider_charge_id, amount_cents, status, br_code,
-	qr_code_image, dev_mode, expires_at, paid_at, checked_at, created_at,
+const chargeColumns = `id, invoice_id, provider, method, provider_charge_id, amount_cents, status, br_code,
+	qr_code_image, boleto_line, boleto_barcode, boleto_url, dev_mode, expires_at, paid_at, checked_at, created_at,
 	refund_requested_at, refund_id, refund_reason`
 
 type Repository struct{ db *database.DB }
 
 func NewRepository(db *database.DB) *Repository { return &Repository{db: db} }
 
-func scanCharge(row database.Scanner) (*Charge, error) {
+// scanCharge lê as colunas de chargeColumns e, depois delas, as extras.
+func scanCharge(row database.Scanner, extra ...any) (*Charge, error) {
 	var c Charge
-	if err := row.Scan(&c.ID, &c.InvoiceID, &c.Provider, &c.ProviderChargeID, &c.AmountCents,
-		&c.Status, &c.BrCode, &c.QRCodeImage, &c.DevMode, &c.ExpiresAt, &c.PaidAt, &c.CheckedAt,
-		&c.CreatedAt, &c.RefundRequestedAt, &c.RefundID, &c.RefundReason); err != nil {
+	dest := append([]any{&c.ID, &c.InvoiceID, &c.Provider, &c.Method, &c.ProviderChargeID, &c.AmountCents,
+		&c.Status, &c.BrCode, &c.QRCodeImage, &c.BoletoLine, &c.BoletoBarcode, &c.BoletoURL, &c.DevMode,
+		&c.ExpiresAt, &c.PaidAt, &c.CheckedAt, &c.CreatedAt, &c.RefundRequestedAt, &c.RefundID, &c.RefundReason}, extra...)
+	if err := row.Scan(dest...); err != nil {
 		return nil, database.MapError(err)
 	}
 	return &c, nil
@@ -86,28 +95,30 @@ func (r *Repository) listCharges(ctx context.Context, query string, args ...any)
 	return out, rows.Err()
 }
 
-func (r *Repository) Insert(ctx context.Context, c *Charge) error {
-	return database.MapError(r.db.QueryRow(ctx, `
-		INSERT INTO payment_charges (id, invoice_id, provider, provider_charge_id, amount_cents,
-			status, br_code, qr_code_image, dev_mode, expires_at, platform_fee_cents, checked_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
-		RETURNING created_at`,
-		c.ID, c.InvoiceID, c.Provider, c.ProviderChargeID, c.AmountCents, c.Status, c.BrCode,
-		c.QRCodeImage, c.DevMode, c.ExpiresAt, max(c.PlatformFeeCents, 0),
-	).Scan(&c.CreatedAt))
+const insertCharge = `
+	INSERT INTO payment_charges (id, invoice_id, provider, method, provider_charge_id, amount_cents,
+		status, br_code, qr_code_image, boleto_line, boleto_barcode, boleto_url, dev_mode, expires_at,
+		platform_fee_cents, checked_at)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+	RETURNING created_at`
+
+func (c *Charge) insertArgs() []any {
+	method := c.Method
+	if method == "" {
+		method = MethodPix
+	}
+	return []any{c.ID, c.InvoiceID, c.Provider, method, c.ProviderChargeID, c.AmountCents, c.Status, c.BrCode,
+		c.QRCodeImage, c.BoletoLine, c.BoletoBarcode, c.BoletoURL, c.DevMode, c.ExpiresAt, max(c.PlatformFeeCents, 0)}
 }
 
-// InsertGroup grava o Pix de várias faturas e as faturas dele.
+func (r *Repository) Insert(ctx context.Context, c *Charge) error {
+	return database.MapError(r.db.QueryRow(ctx, insertCharge, c.insertArgs()...).Scan(&c.CreatedAt))
+}
+
+// InsertGroup grava a cobrança de várias faturas e as faturas dela.
 func (r *Repository) InsertGroup(ctx context.Context, c *Charge, items []ChargeInvoice) error {
 	return database.MapError(pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `
-			INSERT INTO payment_charges (id, invoice_id, provider, provider_charge_id, amount_cents,
-				status, br_code, qr_code_image, dev_mode, expires_at, platform_fee_cents, checked_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
-			RETURNING created_at`,
-			c.ID, c.InvoiceID, c.Provider, c.ProviderChargeID, c.AmountCents, c.Status, c.BrCode,
-			c.QRCodeImage, c.DevMode, c.ExpiresAt, max(c.PlatformFeeCents, 0),
-		).Scan(&c.CreatedAt); err != nil {
+		if err := tx.QueryRow(ctx, insertCharge, c.insertArgs()...).Scan(&c.CreatedAt); err != nil {
 			return err
 		}
 		// As faturas num comando só (numa frota, centenas).
@@ -144,15 +155,15 @@ func (r *Repository) ChargeInvoices(ctx context.Context, chargeID uuid.UUID) ([]
 	return out, rows.Err()
 }
 
-// ReusableGroup é o Pix de várias, pendente e ainda valendo, que paga
-// exatamente estas faturas pelo total de agora.
-func (r *Repository) ReusableGroup(ctx context.Context, invoiceIDs []uuid.UUID, totalCents int, validUntil time.Time) (*Charge, error) {
+// ReusableGroup é a cobrança de várias (do método pedido), pendente e ainda
+// valendo, que paga exatamente estas faturas pelo total de agora.
+func (r *Repository) ReusableGroup(ctx context.Context, invoiceIDs []uuid.UUID, method string, totalCents int, validUntil time.Time) (*Charge, error) {
 	return scanCharge(r.db.QueryRow(ctx, `
 		SELECT `+chargeColumns+` FROM payment_charges c
-		WHERE c.status = 'PENDING' AND c.expires_at > $2 AND c.amount_cents = $3 AND c.invoice_id = ANY($1)
+		WHERE c.status = 'PENDING' AND c.method = $4 AND c.expires_at > $2 AND c.amount_cents = $3 AND c.invoice_id = ANY($1)
 			AND (SELECT array_agg(pci.invoice_id ORDER BY pci.invoice_id) FROM payment_charge_invoices pci
 				WHERE pci.charge_id = c.id) = (SELECT array_agg(x ORDER BY x) FROM unnest($1::uuid[]) AS x)
-		ORDER BY c.created_at DESC LIMIT 1`, invoiceIDs, validUntil, totalCents))
+		ORDER BY c.created_at DESC LIMIT 1`, invoiceIDs, validUntil, totalCents, method))
 }
 
 func (r *Repository) Get(ctx context.Context, id uuid.UUID) (*Charge, error) {
@@ -167,15 +178,16 @@ func (r *Repository) ByProviderIDs(ctx context.Context, ids []string) ([]*Charge
 		WHERE provider_charge_id = ANY($1)`, ids)
 }
 
-// Reusable devolve o Pix pendente mais recente da fatura que ainda vale até
-// `validUntil`, para não gerar um novo a cada clique.
-// Reusable é o Pix pendente da fatura que ainda vale e tem o valor dela: se
-// a central mudou o valor da fatura, o Pix antigo não serve mais.
-func (r *Repository) Reusable(ctx context.Context, invoiceID uuid.UUID, amountCents int, validUntil time.Time) (*Charge, error) {
+// Reusable é a cobrança pendente mais recente da fatura (do método pedido)
+// que ainda vale até `validUntil` e tem o valor dela, para não gerar uma
+// nova a cada clique. Se a central mudou o valor da fatura, a antiga não
+// serve mais. A cobrança de várias faturas não entra (ReusableGroup).
+func (r *Repository) Reusable(ctx context.Context, invoiceID uuid.UUID, method string, amountCents int, validUntil time.Time) (*Charge, error) {
 	return scanCharge(r.db.QueryRow(ctx, `
-		SELECT `+chargeColumns+` FROM payment_charges
-		WHERE invoice_id = $1 AND status = 'PENDING' AND expires_at > $2 AND amount_cents = $3
-		ORDER BY created_at DESC LIMIT 1`, invoiceID, validUntil, amountCents))
+		SELECT `+chargeColumns+` FROM payment_charges c
+		WHERE invoice_id = $1 AND method = $4 AND status = 'PENDING' AND expires_at > $2 AND amount_cents = $3
+			AND NOT EXISTS (SELECT 1 FROM payment_charge_invoices pci WHERE pci.charge_id = c.id)
+		ORDER BY created_at DESC LIMIT 1`, invoiceID, validUntil, amountCents, method))
 }
 
 // SetStatus grava o status vindo do provedor; paid_at só é preenchido uma vez.
@@ -194,18 +206,25 @@ func (r *Repository) TouchChecked(ctx context.Context, id uuid.UUID) error {
 	return database.MapError(err)
 }
 
-// DuePending lista o que ainda pode mudar no provedor e não é consultado há
-// `idle`: Pix pendentes da última semana (depois disso já expiraram) e
-// estornos pedidos que ainda não concluíram (em produção são assíncronos).
-func (r *Repository) DuePending(ctx context.Context, idle time.Duration, limit int) ([]*Charge, error) {
+// DuePending lista o que ainda pode mudar no provedor: Pix pendentes da
+// última semana (depois disso já expiraram) e estornos pedidos que ainda não
+// concluíram (em produção são assíncronos), não consultados há `idle`; e
+// boletos pendentes ou vencidos há até boletoClearing (o pago no último dia
+// ainda compensa), não consultados há `boletoIdle` — o boleto vale dias, e o
+// webhook avisa antes.
+func (r *Repository) DuePending(ctx context.Context, idle, boletoIdle time.Duration, limit int) ([]*Charge, error) {
 	return r.listCharges(ctx, `
 		SELECT `+chargeColumns+` FROM payment_charges
-		WHERE ((status = 'PENDING' AND created_at > NOW() - INTERVAL '7 days')
-		    OR (refund_requested_at IS NOT NULL AND status <> 'REFUNDED'
-		        AND refund_requested_at > NOW() - INTERVAL '30 days'))
-		  AND (checked_at IS NULL OR checked_at < NOW() - make_interval(secs => $1))
+		WHERE (method = 'PIX'
+			AND ((status = 'PENDING' AND created_at > NOW() - INTERVAL '7 days')
+			    OR (refund_requested_at IS NOT NULL AND status <> 'REFUNDED'
+			        AND refund_requested_at > NOW() - INTERVAL '30 days'))
+			AND (checked_at IS NULL OR checked_at < NOW() - make_interval(secs => $1)))
+		   OR (method = 'BOLETO' AND status IN ('PENDING', 'EXPIRED')
+			AND expires_at > NOW() - make_interval(secs => $4)
+			AND (checked_at IS NULL OR checked_at < NOW() - make_interval(secs => $2)))
 		ORDER BY checked_at NULLS FIRST
-		LIMIT $2`, idle.Seconds(), limit)
+		LIMIT $3`, idle.Seconds(), boletoIdle.Seconds(), limit, boletoClearing.Seconds())
 }
 
 // MarkRefundRequested registra o pedido de estorno aceito pelo provedor.
@@ -217,8 +236,8 @@ func (r *Repository) MarkRefundRequested(ctx context.Context, id uuid.UUID, refu
 	return database.MapError(err)
 }
 
-// Payment é um Pix que chegou a ser pago, com a fatura a que pertence — a
-// lista de pagamentos da ficha do cliente.
+// Payment é um Pix ou boleto que chegou a ser pago, com a fatura a que
+// pertence — a lista de pagamentos da ficha do cliente.
 type Payment struct {
 	*Charge
 	InvoiceDescription string `json:"invoiceDescription"`
@@ -246,12 +265,9 @@ func (r *Repository) PaymentsForCustomer(ctx context.Context, customerID uuid.UU
 	out := []*Payment{}
 	for rows.Next() {
 		var p Payment
-		var c Charge
 		var grouped int
-		if err := rows.Scan(&c.ID, &c.InvoiceID, &c.Provider, &c.ProviderChargeID, &c.AmountCents,
-			&c.Status, &c.BrCode, &c.QRCodeImage, &c.DevMode, &c.ExpiresAt, &c.PaidAt, &c.CheckedAt,
-			&c.CreatedAt, &c.RefundRequestedAt, &c.RefundID, &c.RefundReason,
-			&p.InvoiceDescription, &p.SettledInvoice, &grouped); err != nil {
+		c, err := scanCharge(rows, &p.InvoiceDescription, &p.SettledInvoice, &grouped)
+		if err != nil {
 			return nil, err
 		}
 		if grouped > 1 {
@@ -259,7 +275,7 @@ func (r *Repository) PaymentsForCustomer(ctx context.Context, customerID uuid.UU
 		}
 		// A lista não precisa da imagem do QR Code (alguns KB por linha).
 		c.QRCodeImage, c.BrCode = "", ""
-		p.Charge = &c
+		p.Charge = c
 		out = append(out, &p)
 	}
 	return out, rows.Err()

@@ -14,6 +14,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/dunning"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
 )
 
 // publicInvoiceView é a fatura no link de pagamento (sem login): o primeiro
@@ -124,9 +125,18 @@ func (s *Server) handlePublicInvoice(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, view)
 }
 
-// handlePublicInvoiceGroupPix gera (ou reaproveita) um Pix só para todas as
-// faturas em aberto do cliente que vencem no mesmo dia que a do link.
+// handlePublicInvoiceGroupPix e handlePublicInvoiceGroupBoleto geram (ou
+// reaproveitam) um Pix ou um boleto só para todas as faturas em aberto do
+// cliente que vencem no mesmo dia que a do link.
 func (s *Server) handlePublicInvoiceGroupPix(w http.ResponseWriter, r *http.Request) {
+	s.linkGroupCharge(w, r, payments.MethodPix)
+}
+
+func (s *Server) handlePublicInvoiceGroupBoleto(w http.ResponseWriter, r *http.Request) {
+	s.linkGroupCharge(w, r, payments.MethodBoleto)
+}
+
+func (s *Server) linkGroupCharge(w http.ResponseWriter, r *http.Request, method string) {
 	inv, ok := s.linkInvoice(w, r)
 	if !ok {
 		return
@@ -137,27 +147,36 @@ func (s *Server) handlePublicInvoiceGroupPix(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if group == nil {
-		// Só esta (ou já não está em aberto): o Pix dela.
-		s.createPix(w, r, inv)
+		// Só esta (ou já não está em aberto): a cobrança dela.
+		s.createCharge(w, r, inv, method)
 		return
 	}
 	ids := make([]uuid.UUID, len(group))
 	for i, g := range group {
 		ids[i] = g.ID
 	}
-	s.createGroupPix(w, r, inv.CustomerID, ids)
+	s.createGroupCharge(w, r, inv.CustomerID, ids, method)
 }
 
-// handlePublicInvoicePix gera (ou reaproveita) o Pix da fatura do link.
+// handlePublicInvoicePix e handlePublicInvoiceBoleto geram (ou reaproveitam)
+// o Pix ou o boleto da fatura do link.
 func (s *Server) handlePublicInvoicePix(w http.ResponseWriter, r *http.Request) {
+	s.linkInvoiceCharge(w, r, payments.MethodPix)
+}
+
+func (s *Server) handlePublicInvoiceBoleto(w http.ResponseWriter, r *http.Request) {
+	s.linkInvoiceCharge(w, r, payments.MethodBoleto)
+}
+
+func (s *Server) linkInvoiceCharge(w http.ResponseWriter, r *http.Request, method string) {
 	inv, ok := s.linkInvoice(w, r)
 	if !ok {
 		return
 	}
-	s.createPix(w, r, inv)
+	s.createCharge(w, r, inv, method)
 }
 
-// linkCharge confere que o Pix da rota é da fatura do link.
+// linkCharge confere que a cobrança da rota é da fatura do link.
 func (s *Server) linkCharge(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	inv, ok := s.linkInvoice(w, r)
 	if !ok {
@@ -176,7 +195,7 @@ func (s *Server) linkCharge(w http.ResponseWriter, r *http.Request) (uuid.UUID, 
 	return id, true
 }
 
-// handlePublicCharge: o status do Pix (a página pergunta a cada poucos segundos).
+// handlePublicCharge: o status da cobrança (a página pergunta a cada poucos segundos).
 func (s *Server) handlePublicCharge(w http.ResponseWriter, r *http.Request) {
 	if id, ok := s.linkCharge(w, r); ok {
 		s.refreshCharge(w, r, id)

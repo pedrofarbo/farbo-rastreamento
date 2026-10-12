@@ -1191,12 +1191,15 @@ PATCH  /api/invoices/:id                 (admin) link de pagamento e Pix
 POST   /api/invoices/:id/pay             (admin) baixa manual
 POST   /api/invoices/:id/cancel          (admin)
 POST   /api/invoices/:id/pix             (admin) gera o Pix da fatura (AbacatePay)
-GET    /api/charges/:id                  (admin) status do Pix, consultado na AbacatePay
-POST   /api/charges/:id/simulate         (admin) só com chave de testes
-POST   /api/charges/:id/refund           (admin) {reason} estorno integral do Pix pago
+POST   /api/invoices/:id/boleto          (admin) gera o boleto da fatura, com Pix junto (exige CPF/CNPJ no cadastro)
+GET    /api/charges/:id                  (admin) status do Pix ou boleto, consultado na AbacatePay
+POST   /api/charges/:id/simulate         (admin) só com chave de testes (só Pix: o sandbox não simula boleto)
+POST   /api/charges/:id/refund           (admin) {reason} estorno integral do Pix pago (boleto não tem estorno pela AbacatePay)
 
 POST   /api/me/invoices/:id/pix          (customer) gera ou reaproveita o Pix da própria fatura
-GET    /api/me/charges/:id               (customer) status do Pix
+POST   /api/me/invoices/:id/boleto       (customer) gera ou reaproveita o boleto (vence com a fatura; vencida, 3 dias úteis)
+POST   /api/me/invoices/pix|boleto       (customer) {invoiceIds} um Pix ou um boleto só para várias faturas
+GET    /api/me/charges/:id               (customer) status do Pix ou boleto
 POST   /api/me/charges/:id/simulate      (customer) só com chave de testes
 
 POST   /api/payments/abacatepay/webhook  (público; segredo + assinatura HMAC)

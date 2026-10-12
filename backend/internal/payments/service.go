@@ -1,5 +1,6 @@
-// Package payments cobra as faturas por Pix e dá baixa sozinho quando o
-// pagamento é confirmado pelo provedor (hoje, a AbacatePay).
+// Package payments cobra as faturas por Pix ou boleto (que traz um Pix junto)
+// e dá baixa sozinho quando o pagamento é confirmado pelo provedor (hoje, a
+// AbacatePay).
 package payments
 
 import (
@@ -22,8 +23,18 @@ import (
 
 const providerAbacatePay = "abacatepay"
 
-// PaidViaPix marca a fatura quitada por Pix confirmado no provedor.
-const PaidViaPix = "PIX"
+// Os métodos de cobrança.
+const (
+	MethodPix    = "PIX"
+	MethodBoleto = "BOLETO"
+)
+
+// Como a fatura foi quitada: por Pix ou por boleto (pelo código de barras ou
+// pelo Pix que vem nele), confirmados no provedor.
+const (
+	PaidViaPix    = "PIX"
+	PaidViaBoleto = "BOLETO"
+)
 
 var (
 	// ErrDisabled: nenhuma chave de provedor configurada.
@@ -38,6 +49,14 @@ var (
 	ErrRefundPending = errors.New("o estorno deste pagamento já foi pedido e está em andamento")
 	// ErrNoInvoices: o Pix de várias faturas precisa de pelo menos uma.
 	ErrNoInvoices = errors.New("escolha as faturas para pagar")
+	// ErrPayerIncomplete: o boleto exige o nome e o CPF/CNPJ do pagador.
+	ErrPayerIncomplete = errors.New("para gerar o boleto, o cadastro precisa do nome e de um CPF ou CNPJ válido")
+	// ErrBoletoNoRefund: a AbacatePay não estorna boleto pela API.
+	ErrBoletoNoRefund = errors.New("a AbacatePay não estorna boleto: devolva o valor ao cliente por fora (por exemplo, por Pix)")
+	// ErrBoletoNoSimulation: o sandbox da AbacatePay só simula o pagamento de Pix.
+	ErrBoletoNoSimulation = errors.New("o ambiente de testes da AbacatePay não simula o pagamento de boleto")
+	// ErrUnknownMethod: só Pix ou boleto.
+	ErrUnknownMethod = errors.New("forma de pagamento desconhecida")
 )
 
 // MaxGroupInvoices limita o Pix de várias faturas: folga para a fatura do mês
@@ -46,17 +65,24 @@ const MaxGroupInvoices = 5000
 
 const (
 	// reuseMargin: um Pix que expira em menos que isso não é reaproveitado —
-	// o cliente não teria tempo de pagar.
-	reuseMargin = 5 * time.Minute
+	// o cliente não teria tempo de pagar. O boleto pede mais folga: vence no
+	// fim do dia e o banco precisa estar aberto.
+	reuseMargin       = 5 * time.Minute
+	boletoReuseMargin = 6 * time.Hour
 	// minCheckInterval limita as consultas do mesmo Pix quando a tela fica
 	// perguntando o status.
 	minCheckInterval = 3 * time.Second
-	// syncIdle: a varredura periódica reconsulta um Pix pendente depois disso.
-	syncIdle = 45 * time.Second
+	// syncIdle: a varredura periódica reconsulta um Pix pendente depois disso;
+	// boletoSyncIdle, um boleto (vale dias, e o webhook avisa antes).
+	syncIdle       = 45 * time.Second
+	boletoSyncIdle = 10 * time.Minute
 	// webhookRechecks e webhookRecheckDelay: quanto o webhook espera a API
 	// confirmar um pagamento anunciado (bem abaixo dos 30 s de limite dela).
 	webhookRechecks     = 3
 	webhookRecheckDelay = time.Second
+	// boletoClearing: o boleto pago no último dia compensa em até 3 dias
+	// úteis; até lá, o vencido ainda é consultado.
+	boletoClearing = 6 * 24 * time.Hour
 )
 
 // Gateway é o que o serviço usa do provedor. *abacatepay.Client implementa.
@@ -65,6 +91,8 @@ type Gateway interface {
 	CheckPix(ctx context.Context, id string) (*abacatepay.PixStatus, error)
 	SimulatePayment(ctx context.Context, id string) (*abacatepay.Pix, error)
 	RefundPix(ctx context.Context, id, reason string) (*abacatepay.Refund, error)
+	CreateBoleto(ctx context.Context, req abacatepay.BoletoRequest) (*abacatepay.Boleto, error)
+	GetCharge(ctx context.Context, id string) (*abacatepay.PixStatus, error)
 }
 
 // Invoices é o que o serviço usa da cobrança. *billing.Service implementa.
@@ -74,6 +102,7 @@ type Invoices interface {
 	SettleInvoice(ctx context.Context, id uuid.UUID, via string, chargeID uuid.UUID) (*billing.Invoice, error)
 	SettleInvoices(ctx context.Context, ids []uuid.UUID, via string, chargeID uuid.UUID) ([]uuid.UUID, error)
 	ReopenInvoice(ctx context.Context, id uuid.UUID) (*billing.Invoice, error)
+	Today() billing.Date
 }
 
 // Auditor grava a trilha. *audit.Service implementa.
@@ -81,8 +110,9 @@ type Auditor interface {
 	Record(ctx context.Context, e *audit.Entry)
 }
 
-// Payer são os dados do pagador. Só vão para o provedor se o CPF/CNPJ for
-// válido e houver celular: a AbacatePay exige todos os campos juntos.
+// Payer são os dados do pagador. No Pix, só vão para o provedor se o CPF/CNPJ
+// for válido e houver celular (a AbacatePay exige todos os campos juntos); o
+// boleto exige o nome e o CPF/CNPJ.
 type Payer struct {
 	Name     string
 	Email    string
@@ -109,11 +139,24 @@ func NewService(repo *Repository, invoices Invoices, gateway Gateway, auditor Au
 // Enabled diz se há provedor configurado.
 func (s *Service) Enabled() bool { return s != nil && s.gateway != nil && s.cfg.Enabled() }
 
-// PixForInvoice devolve um Pix para pagar a fatura: reaproveita o pendente
-// que ainda vale ou gera um novo no provedor.
+// PixForInvoice devolve um Pix para pagar a fatura (ChargeForInvoice).
 func (s *Service) PixForInvoice(ctx context.Context, invoiceID uuid.UUID, payer *Payer) (*Charge, error) {
+	return s.ChargeForInvoice(ctx, invoiceID, MethodPix, payer)
+}
+
+// PixForInvoices devolve um Pix só para várias faturas (ChargeForInvoices).
+func (s *Service) PixForInvoices(ctx context.Context, customerID uuid.UUID, invoiceIDs []uuid.UUID, payer *Payer) (*Charge, error) {
+	return s.ChargeForInvoices(ctx, customerID, invoiceIDs, MethodPix, payer)
+}
+
+// ChargeForInvoice devolve o Pix ou o boleto para pagar a fatura: reaproveita
+// o pendente que ainda vale ou gera um novo no provedor.
+func (s *Service) ChargeForInvoice(ctx context.Context, invoiceID uuid.UUID, method string, payer *Payer) (*Charge, error) {
 	if !s.Enabled() {
 		return nil, ErrDisabled
+	}
+	if method != MethodPix && method != MethodBoleto {
+		return nil, ErrUnknownMethod
 	}
 	inv, err := s.invoices.GetInvoice(ctx, invoiceID)
 	if err != nil {
@@ -123,48 +166,44 @@ func (s *Service) PixForInvoice(ctx context.Context, invoiceID uuid.UUID, payer 
 		return nil, ErrInvoiceNotOpen
 	}
 
-	if existing, err := s.repo.Reusable(ctx, invoiceID, inv.AmountCents, time.Now().Add(reuseMargin)); err == nil {
+	if existing, err := s.repo.Reusable(ctx, invoiceID, method, inv.AmountCents, time.Now().Add(reuseMarginFor(method))); err == nil {
 		existing.InvoiceStatus = inv.Status
 		return existing, nil
 	}
 
-	chargeID := uuid.New()
-	pix, err := s.gateway.CreatePix(ctx, abacatepay.PixRequest{
+	charge, err := s.create(ctx, method, chargeRequest{
 		AmountCents: inv.AmountCents,
 		Description: "Farbo Rastreadores — " + inv.Description,
-		ExpiresIn:   s.cfg.PixExpiresIn,
-		ExternalID:  chargeID.String(),
-		Customer:    customerFor(payer),
+		DueDate:     inv.DueDate,
+		Payer:       payer,
 		Metadata: map[string]string{
 			"invoiceId":  inv.ID.String(),
 			"customerId": inv.CustomerID.String(),
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("gerando Pix: %w", err)
+		return nil, err
 	}
-
-	charge := &Charge{
-		ID: chargeID, InvoiceID: inv.ID, Provider: providerAbacatePay,
-		ProviderChargeID: pix.ID, AmountCents: pix.Amount, Status: pix.Status,
-		BrCode: pix.BrCode, QRCodeImage: pix.BrCodeBase64, DevMode: pix.DevMode,
-		ExpiresAt: pix.ExpiresAt, InvoiceStatus: inv.Status, PlatformFeeCents: pix.PlatformFee,
-	}
+	charge.InvoiceID, charge.InvoiceStatus = inv.ID, inv.Status
 	if err := s.repo.Insert(ctx, charge); err != nil {
 		return nil, err
 	}
-	s.log.Info("Pix gerado", "invoice", inv.ID, "charge", charge.ID, "provider_charge", pix.ID,
-		"amount_cents", pix.Amount, "dev_mode", pix.DevMode)
+	s.log.Info("cobrança gerada", "method", method, "invoice", inv.ID, "charge", charge.ID,
+		"provider_charge", charge.ProviderChargeID, "amount_cents", charge.AmountCents, "dev_mode", charge.DevMode)
 	return charge, nil
 }
 
-// PixForInvoices devolve um Pix só para pagar várias faturas do mesmo
-// cliente de uma vez — a fatura do mês de uma frota, uma por veículo, ou
-// tudo o que está vencido. Reaproveita o pendente que paga exatamente as
-// mesmas pelo total de agora; com uma fatura, é o PixForInvoice.
-func (s *Service) PixForInvoices(ctx context.Context, customerID uuid.UUID, invoiceIDs []uuid.UUID, payer *Payer) (*Charge, error) {
+// ChargeForInvoices devolve um Pix ou um boleto só para pagar várias faturas
+// do mesmo cliente de uma vez — a fatura do mês de uma frota, uma por
+// veículo, ou tudo o que está vencido. Reaproveita o pendente que paga
+// exatamente as mesmas pelo total de agora; com uma fatura, é o
+// ChargeForInvoice.
+func (s *Service) ChargeForInvoices(ctx context.Context, customerID uuid.UUID, invoiceIDs []uuid.UUID, method string, payer *Payer) (*Charge, error) {
 	if !s.Enabled() {
 		return nil, ErrDisabled
+	}
+	if method != MethodPix && method != MethodBoleto {
+		return nil, ErrUnknownMethod
 	}
 	seen := map[uuid.UUID]bool{}
 	unique := make([]uuid.UUID, 0, len(invoiceIDs))
@@ -198,7 +237,7 @@ func (s *Service) PixForInvoices(ctx context.Context, customerID uuid.UUID, invo
 		total += inv.AmountCents
 	}
 	if len(invoices) == 1 {
-		return s.PixForInvoice(ctx, invoices[0].ID, payer)
+		return s.ChargeForInvoice(ctx, invoices[0].ID, method, payer)
 	}
 	// A primeira a vencer é a principal (a que a lista de pagamentos mostra).
 	sort.Slice(invoices, func(i, j int) bool {
@@ -214,7 +253,7 @@ func (s *Service) PixForInvoices(ctx context.Context, customerID uuid.UUID, invo
 		items[i] = ChargeInvoice{InvoiceID: inv.ID, AmountCents: inv.AmountCents}
 	}
 
-	if existing, err := s.repo.ReusableGroup(ctx, ids, total, time.Now().Add(reuseMargin)); err == nil {
+	if existing, err := s.repo.ReusableGroup(ctx, ids, method, total, time.Now().Add(reuseMarginFor(method))); err == nil {
 		existing.InvoiceStatus, existing.InvoiceIDs = billing.InvoiceOpen, ids
 		return existing, nil
 	}
@@ -223,13 +262,11 @@ func (s *Service) PixForInvoices(ctx context.Context, customerID uuid.UUID, invo
 	if first, last := invoices[0].DueDate, invoices[len(invoices)-1].DueDate; first.Equal(last.Time) {
 		description += ", vencimento " + first.Format("02/01/2006")
 	}
-	chargeID := uuid.New()
-	pix, err := s.gateway.CreatePix(ctx, abacatepay.PixRequest{
+	charge, err := s.create(ctx, method, chargeRequest{
 		AmountCents: total,
 		Description: description,
-		ExpiresIn:   s.cfg.PixExpiresIn,
-		ExternalID:  chargeID.String(),
-		Customer:    customerFor(payer),
+		DueDate:     invoices[0].DueDate,
+		Payer:       payer,
 		Metadata: map[string]string{
 			"invoiceId":  ids[0].String(),
 			"invoices":   fmt.Sprint(len(ids)),
@@ -237,21 +274,90 @@ func (s *Service) PixForInvoices(ctx context.Context, customerID uuid.UUID, invo
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("gerando Pix: %w", err)
+		return nil, err
 	}
-	charge := &Charge{
-		ID: chargeID, InvoiceID: ids[0], Provider: providerAbacatePay,
-		ProviderChargeID: pix.ID, AmountCents: pix.Amount, Status: pix.Status,
-		BrCode: pix.BrCode, QRCodeImage: pix.BrCodeBase64, DevMode: pix.DevMode,
-		ExpiresAt: pix.ExpiresAt, InvoiceStatus: billing.InvoiceOpen, PlatformFeeCents: pix.PlatformFee,
-		InvoiceIDs: ids,
-	}
+	charge.InvoiceID, charge.InvoiceStatus, charge.InvoiceIDs = ids[0], billing.InvoiceOpen, ids
 	if err := s.repo.InsertGroup(ctx, charge, items); err != nil {
 		return nil, err
 	}
-	s.log.Info("Pix de várias faturas gerado", "customer", customerID, "invoices", len(ids), "charge", charge.ID,
-		"provider_charge", pix.ID, "amount_cents", pix.Amount, "dev_mode", pix.DevMode)
+	s.log.Info("cobrança de várias faturas gerada", "method", method, "customer", customerID, "invoices", len(ids),
+		"charge", charge.ID, "provider_charge", charge.ProviderChargeID, "amount_cents", charge.AmountCents,
+		"dev_mode", charge.DevMode)
 	return charge, nil
+}
+
+// chargeRequest é a cobrança a gerar no provedor. DueDate é o vencimento (da
+// primeira fatura a vencer), para o boleto.
+type chargeRequest struct {
+	AmountCents int
+	Description string
+	DueDate     billing.Date
+	Payer       *Payer
+	Metadata    map[string]string
+}
+
+// create gera o Pix ou o boleto no provedor. O id da cobrança vai como
+// externalId.
+func (s *Service) create(ctx context.Context, method string, req chargeRequest) (*Charge, error) {
+	id := uuid.New()
+	if method == MethodBoleto {
+		customer, ok := boletoCustomerFor(req.Payer)
+		if !ok {
+			return nil, ErrPayerIncomplete
+		}
+		boleto, err := s.gateway.CreateBoleto(ctx, abacatepay.BoletoRequest{
+			AmountCents: req.AmountCents,
+			Description: req.Description,
+			DueDate:     s.boletoDueDate(req.DueDate),
+			ExternalID:  id.String(),
+			Customer:    customer,
+			Metadata:    req.Metadata,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("gerando boleto: %w", err)
+		}
+		return &Charge{
+			ID: id, Provider: providerAbacatePay, Method: MethodBoleto,
+			ProviderChargeID: boleto.ID, AmountCents: boleto.Amount, Status: boleto.Status,
+			BrCode: boleto.BrCode, QRCodeImage: boleto.BrCodeBase64, DevMode: boleto.DevMode,
+			ExpiresAt: boleto.ExpiresAt, PlatformFeeCents: boleto.PlatformFee,
+			BoletoLine: boleto.Line, BoletoBarcode: boleto.BarCode, BoletoURL: boleto.URL,
+		}, nil
+	}
+	pix, err := s.gateway.CreatePix(ctx, abacatepay.PixRequest{
+		AmountCents: req.AmountCents,
+		Description: req.Description,
+		ExpiresIn:   s.cfg.PixExpiresIn,
+		ExternalID:  id.String(),
+		Customer:    customerFor(req.Payer),
+		Metadata:    req.Metadata,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gerando Pix: %w", err)
+	}
+	return &Charge{
+		ID: id, Provider: providerAbacatePay, Method: MethodPix,
+		ProviderChargeID: pix.ID, AmountCents: pix.Amount, Status: pix.Status,
+		BrCode: pix.BrCode, QRCodeImage: pix.BrCodeBase64, DevMode: pix.DevMode,
+		ExpiresAt: pix.ExpiresAt, PlatformFeeCents: pix.PlatformFee,
+	}, nil
+}
+
+// boletoDueDate: o vencimento da fatura, se ainda vem pela frente; vencida
+// (ou vencendo hoje, quando o boleto já poderia nascer vencido à noite),
+// vazio — a AbacatePay dá 3 dias úteis.
+func (s *Service) boletoDueDate(due billing.Date) string {
+	if due.IsZero() || !s.invoices.Today().Before(due) {
+		return ""
+	}
+	return due.Format(time.DateOnly)
+}
+
+func reuseMarginFor(method string) time.Duration {
+	if method == MethodBoleto {
+		return boletoReuseMargin
+	}
+	return reuseMargin
 }
 
 // Charge devolve a cobrança com o status atual da fatura.
@@ -282,9 +388,15 @@ func (s *Service) Refresh(ctx context.Context, id uuid.UUID, force bool) (*Charg
 		}
 	}
 
-	status, err := s.gateway.CheckPix(ctx, charge.ProviderChargeID)
+	// O /transparents/check é só para Pix; o boleto se consulta pelo get.
+	var status *abacatepay.PixStatus
+	if charge.Method == MethodBoleto {
+		status, err = s.gateway.GetCharge(ctx, charge.ProviderChargeID)
+	} else {
+		status, err = s.gateway.CheckPix(ctx, charge.ProviderChargeID)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("consultando Pix: %w", err)
+		return nil, fmt.Errorf("consultando a cobrança: %w", err)
 	}
 	if err := s.apply(ctx, charge, status.Status); err != nil {
 		return nil, err
@@ -302,6 +414,9 @@ func (s *Service) Simulate(ctx context.Context, id uuid.UUID) (*Charge, error) {
 	if !charge.DevMode {
 		return nil, ErrNotDevMode
 	}
+	if charge.Method == MethodBoleto {
+		return nil, ErrBoletoNoSimulation
+	}
 	if _, err := s.gateway.SimulatePayment(ctx, charge.ProviderChargeID); err != nil {
 		return nil, fmt.Errorf("simulando pagamento: %w", err)
 	}
@@ -315,6 +430,11 @@ func (s *Service) Simulate(ctx context.Context, id uuid.UUID) (*Charge, error) {
 func (s *Service) RefundCharge(ctx context.Context, id uuid.UUID, reason string) (*Charge, error) {
 	if !s.Enabled() {
 		return nil, ErrDisabled
+	}
+	if current, err := s.repo.Get(ctx, id); err != nil {
+		return nil, err
+	} else if current.Method == MethodBoleto {
+		return nil, ErrBoletoNoRefund
 	}
 	// Confere o status atual no provedor antes de decidir.
 	charge, err := s.Refresh(ctx, id, true)
@@ -373,7 +493,7 @@ func (s *Service) SyncPending(ctx context.Context) {
 	if !s.Enabled() {
 		return
 	}
-	pending, err := s.repo.DuePending(ctx, syncIdle, 100)
+	pending, err := s.repo.DuePending(ctx, syncIdle, boletoSyncIdle, 100)
 	if err != nil {
 		s.log.Warn("falha ao listar Pix pendentes", "err", err)
 		return
@@ -414,7 +534,7 @@ func (s *Service) HandleWebhook(ctx context.Context, ev *abacatepay.Event) error
 		case err != nil:
 			failures = append(failures, err.Error())
 		case expectsPaid && updated.Status == abacatepay.StatusPending:
-			failures = append(failures, "Pix "+charge.ProviderChargeID+" ainda pendente na API")
+			failures = append(failures, "cobrança "+charge.ProviderChargeID+" ainda pendente na API")
 		}
 	}
 	if len(failures) > 0 {
@@ -440,12 +560,12 @@ func (s *Service) apply(ctx context.Context, charge *Charge, status string) erro
 	if err := s.repo.SetStatus(ctx, charge.ID, status, status == abacatepay.StatusPaid); err != nil {
 		return err
 	}
-	s.log.Info("status do Pix mudou", "charge", charge.ID, "from", charge.Status, "to", status)
+	s.log.Info("status da cobrança mudou", "method", charge.Method, "charge", charge.ID, "from", charge.Status, "to", status)
 
 	meta := map[string]any{
 		"invoiceId": charge.InvoiceID, "chargeId": charge.ID,
 		"providerChargeId": charge.ProviderChargeID, "amountCents": charge.AmountCents,
-		"devMode": charge.DevMode,
+		"devMode": charge.DevMode, "method": charge.Method,
 	}
 
 	group, err := s.repo.ChargeInvoices(ctx, charge.ID)
@@ -470,10 +590,10 @@ func (s *Service) apply(ctx context.Context, charge *Charge, status string) erro
 			s.record(ctx, audit.ActionPaymentUnmatched, "REVIEW", meta)
 			return nil
 		}
-		inv, err := s.invoices.SettleInvoice(ctx, charge.InvoiceID, PaidViaPix, charge.ID)
+		inv, err := s.invoices.SettleInvoice(ctx, charge.InvoiceID, paidVia(charge), charge.ID)
 		switch {
 		case err == nil:
-			s.record(ctx, audit.ActionInvoicePaid, "OK", withVia(meta, inv))
+			s.record(ctx, audit.ActionInvoicePaid, "OK", withVia(meta, charge, inv))
 		case errors.Is(err, billing.ErrNotOpen):
 			// Pagou uma fatura que a central já tinha quitado ou cancelado:
 			// o dinheiro entrou, e alguém precisa decidir o que fazer com ele.
@@ -530,7 +650,7 @@ func (s *Service) applyGroup(ctx context.Context, charge *Charge, status string,
 			return nil
 		}
 		// Todas num comando só: um Pix de centenas não fica pago pela metade.
-		settled, err := s.invoices.SettleInvoices(ctx, ids, PaidViaPix, charge.ID)
+		settled, err := s.invoices.SettleInvoices(ctx, ids, paidVia(charge), charge.ID)
 		if err != nil {
 			return err
 		}
@@ -552,7 +672,7 @@ func (s *Service) applyGroup(ctx context.Context, charge *Charge, status string,
 				map[string]any{"chargeId": charge.ID, "invoiceIds": outside, "reason": "quitadas por fora"})
 		}
 		meta["settled"], meta["customerId"] = len(settled), invoices[0].CustomerID
-		meta["via"] = PaidViaPix
+		meta["via"] = paidVia(charge)
 		s.record(ctx, audit.ActionInvoicePaid, "OK", meta)
 
 	case abacatepay.StatusRefunded:
@@ -574,8 +694,16 @@ func (s *Service) applyGroup(ctx context.Context, charge *Charge, status string,
 	return nil
 }
 
-func withVia(meta map[string]any, inv *billing.Invoice) map[string]any {
-	meta["via"] = PaidViaPix
+// paidVia é como a cobrança quita a fatura.
+func paidVia(charge *Charge) string {
+	if charge.Method == MethodBoleto {
+		return PaidViaBoleto
+	}
+	return PaidViaPix
+}
+
+func withVia(meta map[string]any, charge *Charge, inv *billing.Invoice) map[string]any {
+	meta["via"] = paidVia(charge)
 	if inv != nil {
 		meta["customerId"] = inv.CustomerID
 	}
@@ -609,6 +737,22 @@ func (s *Service) withInvoiceStatus(ctx context.Context, charge *Charge) *Charge
 		charge.InvoiceStatus = inv.Status
 	}
 	return charge
+}
+
+// boletoCustomerFor é o pagador do boleto: nome e CPF/CNPJ válido
+// obrigatórios; o e-mail e o celular vão quando servem.
+func boletoCustomerFor(p *Payer) (abacatepay.BoletoCustomer, bool) {
+	if p == nil || strings.TrimSpace(p.Name) == "" || !validTaxID(p.Document) {
+		return abacatepay.BoletoCustomer{}, false
+	}
+	c := abacatepay.BoletoCustomer{Name: strings.TrimSpace(p.Name), TaxID: onlyDigits(p.Document)}
+	if strings.Contains(p.Email, "@") {
+		c.Email = strings.TrimSpace(p.Email)
+	}
+	if phone := onlyDigits(p.Phone); len(phone) >= 10 && len(phone) <= 13 {
+		c.Cellphone = phone
+	}
+	return c, true
 }
 
 // customerFor manda o pagador ao provedor só quando todos os dados que ele

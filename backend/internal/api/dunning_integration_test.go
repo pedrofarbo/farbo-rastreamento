@@ -27,9 +27,10 @@ import (
 
 // fakePixGateway é a AbacatePay de mentira: cria o Pix e paga na simulação.
 type fakePixGateway struct {
-	mu   sync.Mutex
-	paid map[string]bool
-	n    int
+	mu         sync.Mutex
+	paid       map[string]bool
+	n          int
+	lastBoleto abacatepay.BoletoRequest
 }
 
 func (g *fakePixGateway) CreatePix(_ context.Context, req abacatepay.PixRequest) (*abacatepay.Pix, error) {
@@ -62,6 +63,35 @@ func (g *fakePixGateway) SimulatePayment(_ context.Context, id string) (*abacate
 
 func (g *fakePixGateway) RefundPix(context.Context, string, string) (*abacatepay.Refund, error) {
 	return nil, nil
+}
+
+// CreateBoleto gera o boleto (com o Pix junto); last guarda o pedido.
+func (g *fakePixGateway) CreateBoleto(_ context.Context, req abacatepay.BoletoRequest) (*abacatepay.Boleto, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.n++
+	g.lastBoleto = req
+	exp := time.Now().Add(72 * time.Hour)
+	id := "bole_" + strings.Repeat("y", g.n)
+	return &abacatepay.Boleto{ID: id, Amount: req.AmountCents, Status: abacatepay.StatusPending, DevMode: true,
+		BarCode: "00191878900000050000000002759288002193297817", Line: "00190000090275928800021932978170187890000005000",
+		URL: "https://app.abacatepay.com/pay/" + id + "/boleto", BrCode: "00020101021226-pix-do-boleto",
+		BrCodeBase64: "data:image/png;base64,BBBB", PlatformFee: 250, ExpiresAt: &exp}, nil
+}
+
+// GetCharge é a consulta do boleto (pago quando o teste chama pay).
+func (g *fakePixGateway) GetCharge(ctx context.Context, id string) (*abacatepay.PixStatus, error) {
+	return g.CheckPix(ctx, id)
+}
+
+// pay marca a cobrança como paga no provedor (o boleto não tem simulação).
+func (g *fakePixGateway) pay(id string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.paid == nil {
+		g.paid = map[string]bool{}
+	}
+	g.paid[id] = true
 }
 
 // recordingInvoiceMailer guarda os lembretes ("etapa → para quem: faturas").

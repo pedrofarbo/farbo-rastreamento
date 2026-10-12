@@ -293,7 +293,7 @@ const invoiceHTML = `{{define "content"}}
 </table>
 </td></tr></table>{{end}}{{end}}
 {{if .HiddenInvoices}}<p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#334155;">E mais {{.HiddenInvoices}} {{if eq .HiddenInvoices 1}}fatura{{else}}faturas{{end}} em outros vencimentos: <a href="{{.AppURL}}/app/faturas" style="color:#15803d;font-weight:700;">veja e pague todas no app</a>.</p>{{end}}
-<p style="margin:16px 0 0;font-size:13px;line-height:1.6;color:#64748b;">O botão abre o QR Code e o Pix copia-e-cola, sem precisar entrar no painel. Já pagou? Pode desconsiderar: a baixa é automática.</p>
+<p style="margin:16px 0 0;font-size:13px;line-height:1.6;color:#64748b;">O botão abre o QR Code e o Pix copia-e-cola, sem precisar entrar no painel; se preferir, lá mesmo dá para gerar o boleto. Já pagou? Pode desconsiderar: a baixa é automática.</p>
 {{end}}`
 
 const invoiceText = `Olá{{with .Name}}, {{.}}{{end}}!

@@ -24,11 +24,14 @@ func (s *Server) writePaymentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusServiceUnavailable, "o pagamento online não está disponível no momento")
 	case errors.Is(err, payments.ErrInvoiceNotOpen):
 		writeError(w, http.StatusConflict, "esta fatura não está mais em aberto")
-	case errors.Is(err, payments.ErrNoInvoices):
+	case errors.Is(err, payments.ErrNoInvoices), errors.Is(err, payments.ErrUnknownMethod):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, payments.ErrNotDevMode),
 		errors.Is(err, payments.ErrNotRefundable),
-		errors.Is(err, payments.ErrRefundPending):
+		errors.Is(err, payments.ErrRefundPending),
+		errors.Is(err, payments.ErrPayerIncomplete),
+		errors.Is(err, payments.ErrBoletoNoRefund),
+		errors.Is(err, payments.ErrBoletoNoSimulation):
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, database.ErrNotFound):
 		writeError(w, http.StatusNotFound, "cobrança não encontrada")
@@ -110,36 +113,55 @@ func (s *Server) myCharge(w http.ResponseWriter, r *http.Request) (uuid.UUID, bo
 	return id, true
 }
 
-// handleMyInvoicePix gera (ou reaproveita) o Pix para o cliente pagar a
-// fatura. Continua disponível com o acesso suspenso: é assim que ele volta.
+// handleMyInvoicePix e handleMyInvoiceBoleto geram (ou reaproveitam) o Pix
+// ou o boleto para o cliente pagar a fatura. Continuam disponíveis com o
+// acesso suspenso: é assim que ele volta.
 func (s *Server) handleMyInvoicePix(w http.ResponseWriter, r *http.Request) {
+	s.myInvoiceCharge(w, r, payments.MethodPix)
+}
+
+func (s *Server) handleMyInvoiceBoleto(w http.ResponseWriter, r *http.Request) {
+	s.myInvoiceCharge(w, r, payments.MethodBoleto)
+}
+
+func (s *Server) myInvoiceCharge(w http.ResponseWriter, r *http.Request, method string) {
 	inv, ok := s.myInvoice(w, r)
 	if !ok {
 		return
 	}
-	s.createPix(w, r, inv)
+	s.createCharge(w, r, inv, method)
 }
 
 type invoicesPixRequest struct {
 	InvoiceIDs []uuid.UUID `json:"invoiceIds"`
 }
 
-// handleMyInvoicesPix gera (ou reaproveita) um Pix só para várias faturas do
-// cliente — a fatura do mês da frota (uma por veículo) ou tudo o que está
-// vencido. Também com o acesso suspenso: é assim que ele volta.
+// handleMyInvoicesPix e handleMyInvoicesBoleto geram (ou reaproveitam) um
+// Pix ou um boleto só para várias faturas do cliente — a fatura do mês da
+// frota (uma por veículo) ou tudo o que está vencido. Também com o acesso
+// suspenso: é assim que ele volta.
 func (s *Server) handleMyInvoicesPix(w http.ResponseWriter, r *http.Request) {
+	s.myInvoicesCharge(w, r, payments.MethodPix)
+}
+
+func (s *Server) handleMyInvoicesBoleto(w http.ResponseWriter, r *http.Request) {
+	s.myInvoicesCharge(w, r, payments.MethodBoleto)
+}
+
+func (s *Server) myInvoicesCharge(w http.ResponseWriter, r *http.Request, method string) {
 	var req invoicesPixRequest
 	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "corpo inválido")
 		return
 	}
 	customerID, _ := customerOf(r)
-	s.createGroupPix(w, r, customerID, req.InvoiceIDs)
+	s.createGroupCharge(w, r, customerID, req.InvoiceIDs, method)
 }
 
-// createGroupPix gera o Pix de várias faturas do cliente e registra.
-func (s *Server) createGroupPix(w http.ResponseWriter, r *http.Request, customerID uuid.UUID, ids []uuid.UUID) {
-	charge, err := s.Payments.PixForInvoices(r.Context(), customerID, ids, s.payerFor(r, customerID))
+// createGroupCharge gera o Pix ou o boleto de várias faturas do cliente e
+// registra.
+func (s *Server) createGroupCharge(w http.ResponseWriter, r *http.Request, customerID uuid.UUID, ids []uuid.UUID, method string) {
+	charge, err := s.Payments.ChargeForInvoices(r.Context(), customerID, ids, method, s.payerFor(r, customerID))
 	if err != nil {
 		if errors.Is(err, database.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "fatura não encontrada")
@@ -148,11 +170,19 @@ func (s *Server) createGroupPix(w http.ResponseWriter, r *http.Request, customer
 		s.writePaymentError(w, err)
 		return
 	}
-	s.recordBillingAudit(r, audit.ActionPaymentPixCreated, map[string]any{
+	s.recordBillingAudit(r, chargeCreatedAction(method), map[string]any{
 		"customerId": customerID, "invoiceIds": charge.InvoiceIDs, "invoiceId": charge.InvoiceID,
 		"chargeId": charge.ID, "amountCents": charge.AmountCents, "devMode": charge.DevMode,
 	})
 	writeJSON(w, http.StatusOK, charge)
+}
+
+// chargeCreatedAction é a ação da trilha para o Pix ou o boleto gerado.
+func chargeCreatedAction(method string) string {
+	if method == payments.MethodBoleto {
+		return audit.ActionPaymentBoletoCreated
+	}
+	return audit.ActionPaymentPixCreated
 }
 
 // handleMyCharge devolve o status do Pix, consultando o provedor. A tela
@@ -177,9 +207,17 @@ func (s *Server) handleMyChargeSimulate(w http.ResponseWriter, r *http.Request) 
 // Central
 // ---------------------------------------------------------------------------
 
-// handleAdminInvoicePix gera o Pix pela central — para mandar ao cliente por
-// outro canal, por exemplo.
+// handleAdminInvoicePix e handleAdminInvoiceBoleto geram o Pix ou o boleto
+// pela central — para mandar ao cliente por outro canal, por exemplo.
 func (s *Server) handleAdminInvoicePix(w http.ResponseWriter, r *http.Request) {
+	s.adminInvoiceCharge(w, r, payments.MethodPix)
+}
+
+func (s *Server) handleAdminInvoiceBoleto(w http.ResponseWriter, r *http.Request) {
+	s.adminInvoiceCharge(w, r, payments.MethodBoleto)
+}
+
+func (s *Server) adminInvoiceCharge(w http.ResponseWriter, r *http.Request, method string) {
 	id, err := urlUUID(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "id inválido")
@@ -190,7 +228,7 @@ func (s *Server) handleAdminInvoicePix(w http.ResponseWriter, r *http.Request) {
 		handleStoreError(w, err, "fatura não encontrada")
 		return
 	}
-	s.createPix(w, r, inv)
+	s.createCharge(w, r, inv, method)
 }
 
 func (s *Server) handleAdminCharge(w http.ResponseWriter, r *http.Request) {
@@ -252,13 +290,14 @@ func (s *Server) handleAdminChargeRefund(w http.ResponseWriter, r *http.Request)
 // Comum
 // ---------------------------------------------------------------------------
 
-func (s *Server) createPix(w http.ResponseWriter, r *http.Request, inv *billing.Invoice) {
-	charge, err := s.Payments.PixForInvoice(r.Context(), inv.ID, s.payerFor(r, inv.CustomerID))
+// createCharge gera (ou reaproveita) o Pix ou o boleto da fatura e registra.
+func (s *Server) createCharge(w http.ResponseWriter, r *http.Request, inv *billing.Invoice, method string) {
+	charge, err := s.Payments.ChargeForInvoice(r.Context(), inv.ID, method, s.payerFor(r, inv.CustomerID))
 	if err != nil {
 		s.writePaymentError(w, err)
 		return
 	}
-	s.recordBillingAudit(r, audit.ActionPaymentPixCreated, map[string]any{
+	s.recordBillingAudit(r, chargeCreatedAction(method), map[string]any{
 		"customerId": inv.CustomerID, "invoiceId": inv.ID, "chargeId": charge.ID,
 		"amountCents": charge.AmountCents, "devMode": charge.DevMode,
 	})

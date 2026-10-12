@@ -31,6 +31,14 @@ vi.mock('@/api/resources', () => ({
       calls.push(['várias', ids]);
       return charge;
     },
+    invoiceBoleto: async (id: string) => {
+      calls.push(['boleto de uma', id]);
+      return { ...charge, id: 'b1', method: 'BOLETO' };
+    },
+    invoicesBoleto: async (ids: string[]) => {
+      calls.push(['boleto de várias', ids]);
+      return { ...charge, id: 'b1', method: 'BOLETO' };
+    },
     charge: async () => charge,
     simulateCharge: async () => charge,
   },
@@ -84,17 +92,21 @@ describe('faturas do cliente', () => {
     expect(text()).toContain('Fatura de 13/11/2026');
     expect(text()).toContain('2 faturas no mesmo vencimento');
     expect(text()).toContain('2 faturas vencidas · R$ 99,80.');
-    await act(async () => button('Pagar R$ 99,80 com Pix').click());
+    await act(async () => button('Pagar R$ 99,80').click());
     await flush();
     expect(calls).toEqual([['várias', ['van', 'carro']]]);
     expect(text()).toContain('2 faturas · vencimento 13/11/2026');
+    // O boleto do mesmo grupo, um só para as duas.
+    await act(async () => (document.querySelector('[role="radio"][aria-checked="false"]') as HTMLButtonElement).click());
+    await flush();
+    expect(calls).toEqual([['várias', ['van', 'carro']], ['boleto de várias', ['van', 'carro']]]);
   });
 
   it('com uma fatura por vencimento, nada muda: o Pix de cada uma', async () => {
     invoices = [inv('van', '2026-11-13', 4990), inv('frete', '2026-11-20', 2240)];
     await render();
     expect(text()).not.toContain('Fatura de ');
-    const buttons = Array.from(document.querySelectorAll('button')).filter((b) => b.textContent === 'Pagar com Pix');
+    const buttons = Array.from(document.querySelectorAll('button')).filter((b) => b.textContent === 'Pagar');
     expect(buttons).toHaveLength(2);
     const van = buttons.find((b) => b.closest('tr')?.textContent?.includes('van'));
     await act(async () => van?.click());

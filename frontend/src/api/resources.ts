@@ -727,6 +727,7 @@ export const customersApi = {
     api.post<Subscription>(`/api/subscriptions/${subscriptionId}/due-day`, { dueDay }),
 
   invoicePix: (invoiceId: string) => api.post<PixCharge>(`/api/invoices/${invoiceId}/pix`),
+  invoiceBoleto: (invoiceId: string) => api.post<PixCharge>(`/api/invoices/${invoiceId}/boleto`),
   charge: (id: string) => api.get<PixCharge>(`/api/charges/${id}`),
   simulateCharge: (id: string) => api.post<PixCharge>(`/api/charges/${id}/simulate`),
   refundCharge: (id: string, reason: string) =>
@@ -866,6 +867,8 @@ export const payLinkApi = {
       // A chave termina em ":todas": o Pix de todas as faturas do vencimento.
       invoicePix: (key: string) =>
         request<PixCharge>(key.endsWith(GROUP_SUFFIX) ? `${base}/pix-group` : `${base}/pix`, { method: 'POST', anonymous: true }),
+      invoiceBoleto: (key: string) =>
+        request<PixCharge>(key.endsWith(GROUP_SUFFIX) ? `${base}/boleto-group` : `${base}/boleto`, { method: 'POST', anonymous: true }),
       charge: (id: string) => request<PixCharge>(`${base}/charges/${id}`, { anonymous: true }),
       simulateCharge: (id: string) => request<PixCharge>(`${base}/charges/${id}/simulate`, { method: 'POST', anonymous: true }),
     };
@@ -997,6 +1000,9 @@ export const meApi = {
   invoicePix: (invoiceId: string) => api.post<PixCharge>(`/api/me/invoices/${invoiceId}/pix`),
   /** Um Pix só para várias faturas (a do mês da frota, ou as vencidas). */
   invoicesPix: (invoiceIds: string[]) => api.post<PixCharge>('/api/me/invoices/pix', { invoiceIds }),
+  /** O boleto (com Pix junto) de uma fatura, ou um só para várias. */
+  invoiceBoleto: (invoiceId: string) => api.post<PixCharge>(`/api/me/invoices/${invoiceId}/boleto`),
+  invoicesBoleto: (invoiceIds: string[]) => api.post<PixCharge>('/api/me/invoices/boleto', { invoiceIds }),
   charge: (id: string) => api.get<PixCharge>(`/api/me/charges/${id}`),
   simulateCharge: (id: string) => api.post<PixCharge>(`/api/me/charges/${id}/simulate`),
 
@@ -1037,9 +1043,10 @@ export const meApi = {
   testPush: () => api.post<{ delivered: number }>('/api/me/push/test'),
 };
 
-/** As operações de Pix que a janela de pagamento usa (cliente ou central). */
+/** As operações que a janela de pagamento usa (cliente ou central). */
 export interface PixApi {
   invoicePix: (invoiceId: string) => Promise<PixCharge>;
+  invoiceBoleto: (invoiceId: string) => Promise<PixCharge>;
   charge: (id: string) => Promise<PixCharge>;
   simulateCharge: (id: string) => Promise<PixCharge>;
 }
