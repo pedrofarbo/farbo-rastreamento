@@ -70,6 +70,7 @@
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   justify-content: flex-end;
 }
@@ -102,6 +103,16 @@
 @media (max-width: 640px) {
   .page {
     padding: var(--space-3);
+  }
+
+  /* Os botões do topo, embaixo do título, ocupam a linha toda (lado a lado
+     quando cabem) em vez de ficarem empilhados à direita. */
+  .header > .actions {
+    flex: 1 1 100%;
+  }
+
+  .header > .actions > * {
+    flex: 1 1 auto;
   }
 }
 

@@ -44,8 +44,42 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
   font-size: var(--text-xs);
   color: var(--text-muted);
+}
+
+/* O campo de data encolhe para caber: no iPhone, o do Safari tem largura
+   mínima própria e, sem isto, as duas datas ficam uma por cima da outra. */
+.date input[type='date'] {
+  min-width: 0;
+  max-width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.date input[type='date']::-webkit-date-and-time-value {
+  text-align: left;
+}
+
+/* Celular: De e Até lado a lado, cada um com metade; o Ver e o grupo com a
+   largura toda. */
+@media (max-width: 600px) {
+  .period {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  .dates {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+
+  .dates > button {
+    grid-column: 1 / -1;
+  }
 }
 
 .problem {
