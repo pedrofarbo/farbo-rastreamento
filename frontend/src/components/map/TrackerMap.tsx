@@ -238,7 +238,19 @@ export function TrackerMap({
       </MapContainer>
 
       {located.length === 0 && !track && phase !== 'loading' && (
-        <div className={styles.empty}>Nenhum veículo com posição conhecida ainda</div>
+        <div className={`map-empty ${styles.empty}`} role="status">
+          <div className={styles.emptyCard}>
+            <span className={styles.emptyIcon} aria-hidden="true">
+              🛰️
+            </span>
+            <span className={styles.emptyTitle}>Nenhum veículo com posição conhecida</span>
+            <span className={styles.emptyDesc}>
+              {vehicles.length === 0
+                ? 'Cadastre ou vincule um veículo para acompanhar no mapa'
+                : 'Aguardando o primeiro sinal GPS do rastreador'}
+            </span>
+          </div>
+        </div>
       )}
 
       <MapLoading

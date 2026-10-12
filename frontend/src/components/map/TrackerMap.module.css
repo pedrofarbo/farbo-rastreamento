@@ -79,12 +79,60 @@
 .empty {
   position: absolute;
   inset: 0;
+  z-index: var(--z-map-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
+  padding: var(--space-4);
   pointer-events: none;
+}
+
+.emptyCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 320px;
+  width: min(320px, calc(100% - 2 * var(--space-4)));
+  padding: var(--space-4) var(--space-5);
+  background: color-mix(in srgb, var(--surface-overlay) 92%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+  animation: emptyFade 280ms ease-out both;
+}
+
+.emptyIcon {
+  font-size: 26px;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.emptyTitle {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.emptyDesc {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+@keyframes emptyFade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* O carregamento: uma grade de "ruas" com um brilho passando e, no meio, o

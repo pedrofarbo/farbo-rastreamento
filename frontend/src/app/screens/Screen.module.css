@@ -85,9 +85,10 @@
   bottom: calc(var(--app-bottom) + var(--map-inset, 0px));
 }
 
-/* O carregamento do mapa: o cartão logo abaixo do topo, onde a lista (aberta
-   até o meio ao entrar) não cobre. */
-.map :global(.map-loading) {
+/* O carregamento do mapa e o aviso de sem veículos: o cartão logo abaixo do
+   topo, onde a lista (aberta até o meio ao entrar) não cobre. */
+.map :global(.map-loading),
+.map :global(.map-empty) {
   align-items: flex-start;
   padding-top: calc(var(--app-top) + var(--space-7));
 }
