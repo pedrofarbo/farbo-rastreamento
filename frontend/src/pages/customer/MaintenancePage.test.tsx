@@ -10,13 +10,15 @@ import type { MaintenanceItem } from '@/types';
 const calls: unknown[] = [];
 const item = (over: Partial<MaintenanceItem>): MaintenanceItem => ({
   id: 'i', vehicleId: 'v1', vehicleName: 'Van 01', plate: 'NOR1A11', groupId: 'g1', name: 'Troca de óleo', everyKm: 10000,
-  everyMonths: 6, lastKm: 40000, lastDate: '2026-08-01', nextKm: 50000, nextDate: '2027-02-01', remainingKm: 7000,
-  remainingDays: 112, status: 'ok', ...over,
+  everyMonths: 6, everyHours: null, lastKm: 40000, lastHours: 900, lastDate: '2026-08-01', nextKm: 50000, nextHours: null,
+  nextDate: '2027-02-01', remainingKm: 7000, remainingHours: null, remainingDays: 112, status: 'ok', ...over,
 });
 const ITEMS: MaintenanceItem[] = [
   item({ id: 'i1', status: 'due', remainingKm: -320, remainingDays: 100 }),
   item({ id: 'i2', vehicleId: 'v2', vehicleName: 'Carro 02', plate: 'SUL2B22', groupId: 'g2', name: 'Revisão', everyKm: null, everyMonths: 1, remainingKm: null, remainingDays: 8, status: 'soon' }),
   item({ id: 'i3', vehicleId: 'v3', vehicleName: 'Moto 03', plate: '', groupId: null, name: 'Pneus' }),
+  item({ id: 'i4', vehicleId: 'v4', vehicleName: 'Van 04', name: 'Filtro de ar', everyKm: null, everyMonths: null, everyHours: 250,
+    remainingKm: null, remainingDays: null, remainingHours: 40, status: 'soon' }),
 ];
 vi.mock('@/api/resources', () => ({
   maintenanceApi: {
@@ -87,6 +89,8 @@ describe('manutenção da frota', () => {
     await flush();
     expect(text()).toContain('passou 320 km');
     expect(text()).toContain('faltam 8 dias');
+    expect(text()).toContain('A cada 250 h de motor');
+    expect(text()).toContain('faltam 40 h de motor');
 
     // O contador filtra.
     await act(async () => button(/^1Vencidas$/).click());
@@ -100,9 +104,10 @@ describe('manutenção da frota', () => {
     await act(async () => button('Registrar feitas').click());
     expect(text()).toContain('Registrar 2 manutenções');
     expect(text()).not.toContain('Com quantos km');
+    expect(text()).not.toContain('Com quantas horas de motor');
     await act(async () => button('Registrar').click());
     await flush();
-    expect(calls).toEqual([['done', { itemIds: ['i1', 'i2'], date: expect.any(String), km: null, notes: '' }]]);
+    expect(calls).toEqual([['done', { itemIds: ['i1', 'i2'], date: expect.any(String), km: null, hours: null, notes: '' }]]);
 
     // Nova manutenção num grupo: os veículos dele (o compartilhado por outro não entra).
     calls.length = 0;
@@ -110,12 +115,18 @@ describe('manutenção da frota', () => {
     expect(text()).toContain('Toda a frota (3)');
     await act(async () => type(field('O que fazer') as HTMLInputElement, 'Troca de óleo'));
     await act(async () => type(field('A cada (km)') as HTMLInputElement, '10.000'));
+    await act(async () => type(field('Ou a cada (horas de motor)') as HTMLInputElement, '500'));
+    // Em vários veículos, cada um conta do próprio horímetro: sem o campo das horas.
+    expect(text()).not.toContain('Com quantas horas de motor');
     const group = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="maintenance-scope"]'))[1];
     await act(async () => group.click());
     await act(async () => button('Criar em 2 veículos').click());
     await flush();
     expect(calls).toEqual([
-      ['create', { name: 'Troca de óleo', everyKm: 10000, everyMonths: null, lastDate: expect.any(String), lastKm: null, vehicleIds: ['v1', 'v4'] }],
+      ['create', {
+        name: 'Troca de óleo', everyKm: 10000, everyMonths: null, everyHours: 500, lastDate: expect.any(String), lastKm: null,
+        lastHours: null, vehicleIds: ['v1', 'v4'],
+      }],
     ]);
   });
 });

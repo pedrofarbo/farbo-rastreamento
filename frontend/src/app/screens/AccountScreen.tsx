@@ -91,7 +91,7 @@ export function AccountScreen() {
               <span>
                 <strong>Manutenção</strong>
                 <br />
-                <span className={styles.muted}>Hodômetro e o que vence em cada veículo, por km ou por data</span>
+                <span className={styles.muted}>O que vence em cada veículo, por km, horas de motor ou data</span>
               </span>
               <span className={styles.chevron}>
                 <ChevronIcon />

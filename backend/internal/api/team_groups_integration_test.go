@@ -231,14 +231,18 @@ func TestTeamRestrictedToGroups(t *testing.T) {
 	expect("registrar a do norte", supervisor, http.MethodPost, "/api/me/maintenance/done",
 		map[string]any{"itemIds": []string{maint.Items[0].ID}, "notes": "óleo 5W30"}, http.StatusOK, "")
 	expect("hodômetro do sul", supervisor, http.MethodPut, path(vanSul)+"/odometer", map[string]any{"km": 1}, http.StatusNotFound, "")
+	expect("horímetro do norte", supervisor, http.MethodPut, path(vanNorte)+"/engine-hours", map[string]any{"hours": 1200}, http.StatusOK, "")
+	expect("horímetro do sul", supervisor, http.MethodPut, path(vanSul)+"/engine-hours", map[string]any{"hours": 1}, http.StatusNotFound, "")
 	var detail struct {
 		Odometer struct {
-			Km *float64 `json:"km"`
+			Km    *float64 `json:"km"`
+			Hours float64  `json:"hours"`
 		} `json:"odometer"`
 		Records []map[string]any `json:"records"`
 	}
 	_ = json.Unmarshal(expect("manutenção do veículo", supervisor, http.MethodGet, path(vanNorte)+"/maintenance", nil, http.StatusOK, ""), &detail)
-	if detail.Odometer.Km == nil || *detail.Odometer.Km != 48000 || len(detail.Records) != 1 || detail.Records[0]["notes"] != "óleo 5W30" {
+	if detail.Odometer.Km == nil || *detail.Odometer.Km != 48000 || detail.Odometer.Hours != 1200 || len(detail.Records) != 1 ||
+		detail.Records[0]["notes"] != "óleo 5W30" {
 		t.Errorf("manutenção do veículo = %+v", detail)
 	}
 

@@ -1051,7 +1051,10 @@ export interface TrackerOrderResult {
 /** A situação de uma manutenção: em dia, perto, vencida ou sem hodômetro (vence só por km). */
 export type MaintenanceStatus = 'ok' | 'soon' | 'due' | 'unknown';
 
-/** O hodômetro: a leitura informada mais os km do GPS. */
+/**
+ * O hodômetro (a leitura informada mais os km do GPS) e o horímetro (as
+ * horas de motor: andando ou parado com a ignição ligada).
+ */
 export interface Odometer {
   vehicleId: string;
   /** Os km medidos pelo GPS desde a instalação. */
@@ -1059,6 +1062,11 @@ export interface Odometer {
   /** Nulo enquanto ninguém informou a leitura. */
   km: number | null;
   setAt: string | null;
+  /** As horas de motor medidas desde a instalação. */
+  trackedHours: number;
+  /** A leitura informada mais as horas medidas depois; sem ela, as medidas. */
+  hours: number;
+  hoursSetAt: string | null;
 }
 
 export interface MaintenanceItem {
@@ -1070,12 +1078,16 @@ export interface MaintenanceItem {
   name: string;
   everyKm: number | null;
   everyMonths: number | null;
+  everyHours: number | null;
   lastKm: number | null;
+  lastHours: number | null;
   lastDate: string;
   nextKm: number | null;
+  nextHours: number | null;
   nextDate: string | null;
   /** Negativo: passou. */
   remainingKm: number | null;
+  remainingHours: number | null;
   remainingDays: number | null;
   status: MaintenanceStatus;
 }
@@ -1087,6 +1099,7 @@ export interface MaintenanceRecord {
   name: string;
   doneDate: string;
   km: number | null;
+  hours: number | null;
   notes: string;
   createdAt: string;
 }

@@ -38,6 +38,13 @@
   gap: var(--space-4);
 }
 
+/* O hodômetro e o horímetro, lado a lado quando cabem. */
+.meters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-4);
+}
+
 .odometer {
   display: flex;
   align-items: flex-start;

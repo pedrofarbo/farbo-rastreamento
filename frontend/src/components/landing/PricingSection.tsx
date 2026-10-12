@@ -267,7 +267,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
               </li>
               <li>
                 <span className={styles.checkIcon}>✓</span>
-                Manutenção preventiva por km ou data
+                Manutenção preventiva por km, horas de motor ou data
               </li>
               <li>
                 <span className={styles.checkIcon}>✓</span>

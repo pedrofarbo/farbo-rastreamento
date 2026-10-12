@@ -57,7 +57,7 @@ export const FLEET_FEATURES: { title: string; text: string; icon: React.ReactNod
   },
   {
     title: 'Manutenção preventiva',
-    text: 'Hodômetro de cada veículo e aviso antes de vencer a troca de óleo, os pneus, a revisão ou o licenciamento, por km ou por data.',
+    text: 'Hodômetro e horímetro de cada veículo e aviso antes de vencer a troca de óleo, os pneus, a revisão ou o licenciamento, por km, horas de motor ou data.',
     icon: <path d="M14.7 6.3a4 4 0 0 0 5 5L21 13l-8 8-3-3 1.3-1.3a4 4 0 0 0-5-5L3 10l8-8 3 3-1.3 1.3Z" />,
   },
   {

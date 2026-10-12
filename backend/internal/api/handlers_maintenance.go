@@ -179,8 +179,8 @@ func (s *Server) handleMaintenanceDone(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"done": done})
 }
 
-// handleVehicleMaintenance: o hodômetro, as manutenções e o histórico do
-// veículo.
+// handleVehicleMaintenance: o hodômetro e o horímetro, as manutenções e o
+// histórico do veículo.
 func (s *Server) handleVehicleMaintenance(w http.ResponseWriter, r *http.Request) {
 	vehicle, _, ok := s.vehicleFromURL(w, r, false)
 	if !ok {
@@ -220,5 +220,26 @@ func (s *Server) handleSetOdometer(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordAudit(r, audit.ActionMaintenanceChanged, &vehicle.ID, vehicle.DeviceID,
 		map[string]any{"action": "odometer", "km": req.Km})
+	writeJSON(w, http.StatusOK, odometer)
+}
+
+func (s *Server) handleSetEngineHours(w http.ResponseWriter, r *http.Request) {
+	vehicle, _, ok := s.vehicleFromURL(w, r, false)
+	if !ok {
+		return
+	}
+	var req struct {
+		Hours float64 `json:"hours"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	odometer, err := s.Maintenance.SetEngineHours(r.Context(), vehicle.ID, req.Hours)
+	if !writeMaintenanceError(w, err, "veículo não encontrado") {
+		return
+	}
+	s.recordAudit(r, audit.ActionMaintenanceChanged, &vehicle.ID, vehicle.DeviceID,
+		map[string]any{"action": "engine_hours", "hours": req.Hours})
 	writeJSON(w, http.StatusOK, odometer)
 }

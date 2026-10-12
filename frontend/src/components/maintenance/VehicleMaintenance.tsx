@@ -9,7 +9,7 @@ import { TextField } from '@/components/ui/Field';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateOnly } from '@/services/format';
-import { STATUS_LABEL, formatKm, intervalLabel, parseWholeNumber, remainingLabel } from '@/services/maintenance';
+import { STATUS_LABEL, formatHours, formatKm, intervalLabel, parseWholeNumber, remainingLabel } from '@/services/maintenance';
 import type { MaintenanceItem, MaintenanceStatus } from '@/types';
 
 import { DoneModal, MaintenanceFormModal } from './MaintenanceModals';
@@ -25,9 +25,80 @@ export const STATUS_TONE: Record<MaintenanceStatus, 'danger' | 'warning' | 'succ
 export const vehicleMaintenanceKey = (vehicleId: string) => ['vehicle', vehicleId, 'maintenance'] as const;
 
 /**
- * O hodômetro e a manutenção de um veículo: a leitura (informar ou
- * corrigir), o que vence e quanto falta, e o histórico. Quem só acompanha vê;
- * quem mexe na conta registra e edita.
+ * Um medidor do veículo (o hodômetro ou o horímetro): o valor, de onde vem
+ * e, para quem pode, informar ou corrigir a leitura.
+ */
+function Meter({
+  label,
+  value,
+  hint,
+  editLabel,
+  initial,
+  canEdit,
+  informed,
+  saving,
+  onSave,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  editLabel: string;
+  /** O valor que o campo traz ao abrir. */
+  initial: string;
+  canEdit: boolean;
+  /** Já tem leitura informada (o botão diz Corrigir). */
+  informed: boolean;
+  saving: boolean;
+  /** Salva a leitura; true fecha o campo. */
+  onSave: (text: string) => Promise<boolean>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState('');
+  return (
+    <div className={styles.odometer}>
+      {editing ? (
+        <div className={styles.odometerEdit}>
+          <TextField label={editLabel} inputMode="numeric" autoFocus value={text} onChange={(e) => setText(e.target.value)} />
+          <div className={styles.rowActions}>
+            <Button size="small" variant="primary" loading={saving} onClick={async () => (await onSave(text)) && setEditing(false)}>
+              Salvar
+            </Button>
+            <Button size="small" variant="ghost" onClick={() => setEditing(false)}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div>
+            <span className={styles.label}>{label}</span>
+            <strong className={styles.odometerValue}>{value}</strong>
+            <span className={styles.muted}>{hint}</span>
+          </div>
+          {canEdit && (
+            <Button
+              size="small"
+              variant="ghost"
+              onClick={() => {
+                setText(initial);
+                setEditing(true);
+              }}
+            >
+              {informed ? 'Corrigir' : 'Informar'}
+            </Button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * O hodômetro, o horímetro e a manutenção de um veículo: as leituras
+ * (informar ou corrigir), o que vence e quanto falta, e o histórico. O
+ * horímetro só aparece quando alguma manutenção vence por horas de motor (ou
+ * já foi informado). Quem só acompanha vê; quem mexe na conta registra e
+ * edita.
  */
 export function VehicleMaintenance({
   vehicle,
@@ -44,8 +115,6 @@ export function VehicleMaintenance({
   const { notify } = useToast();
   const key = vehicleMaintenanceKey(vehicle.id);
   const data = useQuery({ queryKey: key, queryFn: () => maintenanceApi.vehicle(vehicle.id) });
-  const [editingOdometer, setEditingOdometer] = useState(false);
-  const [odometerText, setOdometerText] = useState('');
   const [form, setForm] = useState<{ item: MaintenanceItem | null } | null>(null);
   const [doing, setDoing] = useState<MaintenanceItem[]>([]);
   const [allRecords, setAllRecords] = useState(false);
@@ -58,10 +127,17 @@ export function VehicleMaintenance({
     mutationFn: (km: number) => maintenanceApi.setOdometer(vehicle.id, km),
     onSuccess: (o) => {
       refresh();
-      setEditingOdometer(false);
       notify({ tone: 'success', title: `Hodômetro: ${formatKm(o.km ?? 0)}`, description: 'Daqui em diante, somam-se os km medidos pelo GPS.' });
     },
     onError: (err: Error) => notify({ tone: 'error', title: 'Hodômetro não salvo', description: err.message }),
+  });
+  const setEngineHours = useMutation({
+    mutationFn: (hours: number) => maintenanceApi.setEngineHours(vehicle.id, hours),
+    onSuccess: (o) => {
+      refresh();
+      notify({ tone: 'success', title: `Horímetro: ${formatHours(o.hours)}`, description: 'Daqui em diante, somam-se as horas de motor medidas.' });
+    },
+    onError: (err: Error) => notify({ tone: 'error', title: 'Horímetro não salvo', description: err.message }),
   });
   const remove = useMutation({
     mutationFn: (item: MaintenanceItem) => maintenanceApi.remove(item.id),
@@ -74,10 +150,18 @@ export function VehicleMaintenance({
   const odometer = data.data?.odometer;
   const items = data.data?.items ?? [];
   const records = data.data?.records ?? [];
-  const saveOdometer = () => {
-    const km = parseWholeNumber(odometerText);
-    if (km === null || Number.isNaN(km)) return notify({ tone: 'error', title: 'Informe o hodômetro em km' });
-    setOdometer.mutate(km);
+  const showHours = Boolean(odometer?.hoursSetAt) || items.some((it) => it.everyHours !== null);
+  // Salva a leitura digitada; false deixa o campo aberto (número inválido ou erro).
+  const saveReading = async (text: string, invalid: string, mutation: typeof setOdometer) => {
+    const n = parseWholeNumber(text);
+    if (n === null || Number.isNaN(n)) {
+      notify({ tone: 'error', title: invalid });
+      return false;
+    }
+    return mutation.mutateAsync(n).then(
+      () => true,
+      () => false,
+    );
   };
 
   return (
@@ -95,49 +179,38 @@ export function VehicleMaintenance({
         <Spinner inline />
       ) : (
         <div className={styles.vehicle}>
-          <div className={styles.odometer}>
-            {editingOdometer ? (
-              <div className={styles.odometerEdit}>
-                <TextField
-                  label="Hodômetro do veículo agora (km)"
-                  inputMode="numeric"
-                  autoFocus
-                  value={odometerText}
-                  onChange={(e) => setOdometerText(e.target.value)}
-                />
-                <div className={styles.rowActions}>
-                  <Button size="small" variant="primary" loading={setOdometer.isPending} onClick={saveOdometer}>
-                    Salvar
-                  </Button>
-                  <Button size="small" variant="ghost" onClick={() => setEditingOdometer(false)}>
-                    Cancelar
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div>
-                  <span className={styles.label}>Hodômetro</span>
-                  <strong className={styles.odometerValue}>{odometer?.km != null ? formatKm(odometer.km) : 'não informado'}</strong>
-                  <span className={styles.muted}>
-                    {odometer?.km != null
-                      ? `Leitura de ${formatDateOnly(odometer.setAt?.slice(0, 10))} mais os km do GPS.`
-                      : `O GPS mediu ${formatKm(odometer?.trackedKm ?? 0)} desde a instalação. Informe a leitura do painel para contar as manutenções por km.`}
-                  </span>
-                </div>
-                {canEditOdometer && (
-                  <Button
-                    size="small"
-                    variant="ghost"
-                    onClick={() => {
-                      setOdometerText(odometer?.km != null ? String(Math.round(odometer.km)) : '');
-                      setEditingOdometer(true);
-                    }}
-                  >
-                    {odometer?.km != null ? 'Corrigir' : 'Informar'}
-                  </Button>
-                )}
-              </>
+          <div className={styles.meters}>
+            <Meter
+              label="Hodômetro"
+              value={odometer?.km != null ? formatKm(odometer.km) : 'não informado'}
+              hint={
+                odometer?.km != null
+                  ? `Leitura de ${formatDateOnly(odometer.setAt?.slice(0, 10))} mais os km do GPS.`
+                  : `O GPS mediu ${formatKm(odometer?.trackedKm ?? 0)} desde a instalação. Informe a leitura do painel para contar as manutenções por km.`
+              }
+              editLabel="Hodômetro do veículo agora (km)"
+              initial={odometer?.km != null ? String(Math.round(odometer.km)) : ''}
+              canEdit={canEditOdometer}
+              informed={odometer?.km != null}
+              saving={setOdometer.isPending}
+              onSave={(text) => saveReading(text, 'Informe o hodômetro em km', setOdometer)}
+            />
+            {showHours && (
+              <Meter
+                label="Horímetro"
+                value={formatHours(odometer?.hours ?? 0)}
+                hint={
+                  odometer?.hoursSetAt
+                    ? `Leitura de ${formatDateOnly(odometer.hoursSetAt.slice(0, 10))} mais as horas de motor medidas.`
+                    : 'Horas de motor medidas pelo rastreador desde a instalação (andando ou parado com a ignição ligada). Se o veículo tem horímetro, informe a leitura.'
+                }
+                editLabel="Horímetro do veículo agora (horas)"
+                initial={String(Math.round(odometer?.hours ?? 0))}
+                canEdit={canEditOdometer}
+                informed={Boolean(odometer?.hoursSetAt)}
+                saving={setEngineHours.isPending}
+                onSave={(text) => saveReading(text, 'Informe o horímetro em horas', setEngineHours)}
+              />
             )}
           </div>
 
@@ -154,6 +227,7 @@ export function VehicleMaintenance({
                   <span className={styles.muted}>
                     {intervalLabel(item)} · última em {formatDateOnly(item.lastDate)}
                     {item.lastKm !== null && ` com ${formatKm(item.lastKm)}`}
+                    {item.everyHours !== null && item.lastHours !== null && `${item.lastKm !== null ? ' e' : ' com'} ${formatHours(item.lastHours)}`}
                   </span>
                   <span className={item.status === 'due' ? styles.due : item.status === 'soon' ? styles.soon : styles.muted}>
                     {remainingLabel(item)}
@@ -186,6 +260,7 @@ export function VehicleMaintenance({
                     <span>
                       <strong>{r.name}</strong>
                       {r.km !== null && ` · ${formatKm(r.km)}`}
+                      {showHours && r.hours !== null && ` · ${formatHours(r.hours)}`}
                       {r.notes && <span className={styles.muted}> · {r.notes}</span>}
                     </span>
                   </li>

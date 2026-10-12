@@ -84,8 +84,9 @@ export function MaintenancePage({ backTo }: { backTo?: string } = {}) {
               <h1 className={pageStyles.title}>Manutenção</h1>
             </div>
             <p className={pageStyles.description}>
-              O que vence em cada veículo, por km ou por data. Os km vêm do hodômetro informado mais o que o GPS mediu
-              depois; quem cuida da conta recebe um e-mail quando algo fica perto ou vence.
+              O que vence em cada veículo, por km, horas de motor ou data. Os km vêm do hodômetro informado mais o que o
+              GPS mediu depois, e as horas, do tempo com a ignição ligada; quem cuida da conta recebe um e-mail quando
+              algo fica perto ou vence.
             </p>
           </div>
           {canOperateAccount && (

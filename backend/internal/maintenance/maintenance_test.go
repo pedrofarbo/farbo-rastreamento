@@ -249,3 +249,118 @@ func TestMaintenanceEndToEnd(t *testing.T) {
 		t.Errorf("o histórico não ficou ao apagar: %+v", records)
 	}
 }
+
+// O horímetro: sem a leitura, valem as horas medidas (andando ou parado com
+// a ignição ligada); na primeira leitura, as horas guardadas passam para a
+// escala do horímetro; nas seguintes, ficam; registrar a feita guarda as
+// horas.
+func TestEngineHours(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	var owner, device, truck uuid.UUID
+	if err := db.QueryRow(ctx, `INSERT INTO users (email, name, role, password_hash) VALUES ('h@manutencao.test', 'H', 'customer', 'x') RETURNING id`).Scan(&owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(ctx, `INSERT INTO devices (imei) VALUES ('869247061260009') RETURNING id`).Scan(&device); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(ctx, `INSERT INTO vehicles (name, device_id, owner_id) VALUES ('Caminhão', $1, $2) RETURNING id`, device, owner).Scan(&truck); err != nil {
+		t.Fatal(err)
+	}
+	run := func(day string, moving, idle float64) {
+		t.Helper()
+		if _, err := db.Exec(ctx, `
+			INSERT INTO vehicle_daily_stats (device_id, day, vehicle_id, moving_s, idle_s) VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (device_id, day) DO UPDATE SET moving_s = vehicle_daily_stats.moving_s + EXCLUDED.moving_s,
+				idle_s = vehicle_daily_stats.idle_s + EXCLUDED.idle_s`,
+			device, day, truck, int(moving*3600), int(idle*3600)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := NewService(db, "America/Sao_Paulo")
+	loc, _ := time.LoadLocation("America/Sao_Paulo")
+	svc.SetClock(func() time.Time { return time.Date(2026, 10, 12, 10, 0, 0, 0, loc) })
+	item := func(name string) *Item {
+		t.Helper()
+		items, err := svc.Items(ctx, []uuid.UUID{truck})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, it := range items {
+			if it.Name == name {
+				return it
+			}
+		}
+		t.Fatalf("%s não encontrada", name)
+		return nil
+	}
+
+	// Sem a leitura: as horas medidas.
+	run("2026-10-01", 80, 20)
+	if o, _ := svc.Odometers(ctx, []uuid.UUID{truck}); o[truck].Hours != 100 || o[truck].TrackedHours != 100 || o[truck].HoursSetAt != nil {
+		t.Fatalf("horímetro sem leitura = %+v", o[truck])
+	}
+	if _, err := svc.Create(ctx, []uuid.UUID{truck}, ItemInput{Name: "Filtro de ar", EveryHours: ptr(250)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Create(ctx, []uuid.UUID{truck}, ItemInput{Name: "Lubrificação", EveryHours: ptr(50)}); err != nil {
+		t.Fatal(err)
+	}
+	if f := item("Filtro de ar"); *f.LastHours != 100 || *f.RemainingHours != 250 || f.Status != StatusOK || f.RemainingKm != nil {
+		t.Errorf("filtro = %+v", f)
+	}
+	if _, err := svc.Done(ctx, DoneInput{ItemIDs: []uuid.UUID{item("Lubrificação").ID}}, owner); err != nil {
+		t.Fatal(err)
+	}
+
+	// A primeira leitura: o que estava guardado passa para a escala dela.
+	var input *InputError
+	if _, err := svc.SetEngineHours(ctx, truck, -1); !errors.As(err, &input) {
+		t.Errorf("horímetro negativo: %v", err)
+	}
+	if o, err := svc.SetEngineHours(ctx, truck, 5000); err != nil || o.Hours != 5000 || o.TrackedHours != 100 || o.HoursSetAt == nil {
+		t.Fatalf("leitura = %+v, %v", o, err)
+	}
+	if f := item("Filtro de ar"); *f.LastHours != 5000 || *f.RemainingHours != 250 {
+		t.Errorf("filtro depois da leitura = %+v", f)
+	}
+	if records, _ := svc.Records(ctx, truck, 10); len(records) != 1 || *records[0].Hours != 5000 {
+		t.Errorf("histórico depois da leitura = %+v", records)
+	}
+
+	// Daí em diante, mais as horas medidas.
+	run("2026-10-12", 200, 30)
+	if f := item("Filtro de ar"); f.Status != StatusSoon || Describe(f) != "faltam 20 h de motor" {
+		t.Errorf("filtro perto = %s %q", f.Status, Describe(f))
+	}
+	// Uma nova leitura corrige o horímetro, não o que já foi guardado.
+	if _, err := svc.SetEngineHours(ctx, truck, 5300); err != nil {
+		t.Fatal(err)
+	}
+	if f := item("Filtro de ar"); *f.LastHours != 5000 || f.Status != StatusDue || Describe(f) != "passou 50 h de motor" {
+		t.Errorf("filtro vencido = %+v %q", f, Describe(f))
+	}
+
+	// Registrar a feita com as horas informadas (só numa manutenção).
+	both := []uuid.UUID{item("Filtro de ar").ID, item("Lubrificação").ID}
+	if _, err := svc.Done(ctx, DoneInput{ItemIDs: both, Hours: ptr(5290.0)}, owner); !errors.As(err, &input) {
+		t.Errorf("horas em várias: %v", err)
+	}
+	if _, err := svc.Done(ctx, DoneInput{ItemIDs: both[:1], Hours: ptr(5290.0)}, owner); err != nil {
+		t.Fatal(err)
+	}
+	if f := item("Filtro de ar"); *f.LastHours != 5290 || *f.RemainingHours != 240 || f.Status != StatusOK {
+		t.Errorf("filtro feito = %+v", f)
+	}
+	if records, _ := svc.Records(ctx, truck, 10); len(records) != 2 || *records[0].Hours != 5290 {
+		t.Errorf("histórico = %+v", records)
+	}
+	// Editar troca o intervalo; as horas da última vez ficam.
+	f := item("Filtro de ar")
+	if err := svc.Update(ctx, f.ID, ItemInput{Name: f.Name, EveryHours: ptr(500), LastDate: f.LastDate}); err != nil {
+		t.Fatal(err)
+	}
+	if f := item("Filtro de ar"); *f.LastHours != 5290 || *f.RemainingHours != 490 {
+		t.Errorf("filtro editado = %+v", f)
+	}
+}

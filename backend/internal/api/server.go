@@ -362,6 +362,7 @@ func (s *Server) routes() chi.Router {
 					if s.Maintenance != nil {
 						r.Get("/maintenance", s.handleVehicleMaintenance)
 						r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleCustomer), s.requireAccountOperator).Put("/odometer", s.handleSetOdometer)
+						r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleCustomer), s.requireAccountOperator).Put("/engine-hours", s.handleSetEngineHours)
 					}
 
 					// Bloqueio, desbloqueio e pedidos de posição/status: equipe

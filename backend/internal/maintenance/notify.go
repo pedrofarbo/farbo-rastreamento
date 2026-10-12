@@ -172,8 +172,8 @@ func (n *Notifier) people(ctx context.Context, account uuid.UUID) ([]person, err
 	return out, database.MapError(rows.Err())
 }
 
-// Describe diz quanto falta (ou passou), por extenso: "venceu há 320 km",
-// "faltam 12 dias".
+// Describe diz quanto falta (ou passou), por extenso: "passou 320 km",
+// "faltam 40 h de motor", "faltam 12 dias".
 func Describe(it *Item) string {
 	var parts []string
 	if it.RemainingKm != nil {
@@ -182,6 +182,14 @@ func Describe(it *Item) string {
 			parts = append(parts, fmt.Sprintf("passou %s km", thousands(-km)))
 		} else {
 			parts = append(parts, fmt.Sprintf("faltam %s km", thousands(km)))
+		}
+	}
+	if it.RemainingHours != nil {
+		hours := int(math.Round(*it.RemainingHours))
+		if hours <= 0 {
+			parts = append(parts, fmt.Sprintf("passou %s h de motor", thousands(-hours)))
+		} else {
+			parts = append(parts, fmt.Sprintf("faltam %s h de motor", thousands(hours)))
 		}
 	}
 	if it.RemainingDays != nil {

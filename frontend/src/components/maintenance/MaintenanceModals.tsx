@@ -28,8 +28,10 @@ interface Draft {
   name: string;
   everyKm: string;
   everyMonths: string;
+  everyHours: string;
   lastDate: string;
   lastKm: string;
+  lastHours: string;
 }
 
 /** O pedido a partir do formulário, ou a mensagem do que falta. */
@@ -38,17 +40,24 @@ export function maintenanceInput(d: Draft, single: boolean): MaintenanceInput | 
   if (!name) return 'Dê um nome à manutenção (por exemplo, Troca de óleo).';
   const everyKm = parseWholeNumber(d.everyKm);
   const everyMonths = parseWholeNumber(d.everyMonths);
-  if (Number.isNaN(everyKm) || Number.isNaN(everyMonths)) return 'Use só números nos intervalos.';
-  if (everyKm === null && everyMonths === null) return 'Informe a cada quantos km ou a cada quantos meses (ou os dois).';
+  const everyHours = parseWholeNumber(d.everyHours);
+  if (Number.isNaN(everyKm) || Number.isNaN(everyMonths) || Number.isNaN(everyHours)) return 'Use só números nos intervalos.';
+  if (everyKm === null && everyMonths === null && everyHours === null)
+    return 'Informe a cada quantos km, horas de motor ou meses (dá para combinar).';
   const lastKm = single ? parseWholeNumber(d.lastKm) : null;
   if (Number.isNaN(lastKm)) return 'O km da última vez precisa ser um número.';
-  return { name, everyKm, everyMonths, lastDate: d.lastDate, lastKm };
+  const lastHours = single && everyHours !== null ? parseWholeNumber(d.lastHours) : null;
+  if (Number.isNaN(lastHours)) return 'As horas da última vez precisam ser um número.';
+  return { name, everyKm, everyMonths, everyHours, lastDate: d.lastDate, lastKm, lastHours };
 }
+
+/** Um número guardado (km, horas) para o campo do formulário. */
+const asText = (n: number | null | undefined) => (n != null ? String(Math.round(n)) : '');
 
 /**
  * Criar ou editar uma manutenção. Na frota, vale para todos os veículos, um
- * grupo ou os escolhidos; num veículo só, dá para informar o km da última vez
- * (sem ele, o hodômetro de agora).
+ * grupo ou os escolhidos; num veículo só, dá para informar o km e as horas
+ * de motor da última vez (sem eles, o hodômetro e o horímetro de agora).
  */
 export function MaintenanceFormModal({
   open,
@@ -70,10 +79,12 @@ export function MaintenanceFormModal({
   const single = vehicles.length === 1 || Boolean(item);
   const [draft, setDraft] = useState<Draft>(() => ({
     name: item?.name ?? '',
-    everyKm: item?.everyKm ? String(item.everyKm) : '',
-    everyMonths: item?.everyMonths ? String(item.everyMonths) : '',
+    everyKm: asText(item?.everyKm),
+    everyMonths: asText(item?.everyMonths),
+    everyHours: asText(item?.everyHours),
     lastDate: item?.lastDate ?? todayISO(),
-    lastKm: item?.lastKm !== null && item?.lastKm !== undefined ? String(Math.round(item.lastKm)) : '',
+    lastKm: asText(item?.lastKm),
+    lastHours: asText(item?.lastHours),
   }));
   const [scope, setScope] = useState<Scope>('all');
   const [group, setGroup] = useState(groups[0]?.id ?? '');
@@ -158,6 +169,13 @@ export function MaintenanceFormModal({
             onChange={(e) => setDraft({ ...draft, everyKm: e.target.value })}
           />
           <TextField
+            label="Ou a cada (horas de motor)"
+            inputMode="numeric"
+            value={draft.everyHours}
+            placeholder="250"
+            onChange={(e) => setDraft({ ...draft, everyHours: e.target.value })}
+          />
+          <TextField
             label="Ou a cada (meses)"
             inputMode="numeric"
             value={draft.everyMonths}
@@ -165,7 +183,10 @@ export function MaintenanceFormModal({
             onChange={(e) => setDraft({ ...draft, everyMonths: e.target.value })}
           />
         </div>
-        <p className={styles.muted}>O que vier primeiro. Deixe em branco o que não se aplica (o licenciamento, por exemplo, é só por data).</p>
+        <p className={styles.muted}>
+          O que vier primeiro. Deixe em branco o que não se aplica: o licenciamento é só por data; caminhões, máquinas e
+          geradores costumam ir por horas de motor (andando ou parado com a ignição ligada).
+        </p>
         <div className={pageStyles.formRow}>
           <TextField
             label="Feita pela última vez em"
@@ -183,9 +204,18 @@ export function MaintenanceFormModal({
               onChange={(e) => setDraft({ ...draft, lastKm: e.target.value })}
             />
           )}
+          {single && draft.everyHours.trim() !== '' && (
+            <TextField
+              label="Com quantas horas de motor"
+              inputMode="numeric"
+              value={draft.lastHours}
+              placeholder="o horímetro de agora"
+              onChange={(e) => setDraft({ ...draft, lastHours: e.target.value })}
+            />
+          )}
         </div>
         {!single && (
-          <p className={styles.muted}>Cada veículo começa a contar pelo hodômetro dele de agora.</p>
+          <p className={styles.muted}>Cada veículo começa a contar pelo hodômetro e pelo horímetro dele de agora.</p>
         )}
 
         {!single && (
@@ -248,8 +278,9 @@ export function MaintenanceFormModal({
 }
 
 /**
- * Registrar manutenções feitas: a data, o km (com uma só; com várias, o
- * hodômetro de cada veículo) e uma observação. A contagem recomeça daí.
+ * Registrar manutenções feitas: a data, o km e as horas de motor (com uma
+ * só; com várias, o hodômetro e o horímetro de cada veículo) e uma
+ * observação. A contagem recomeça daí.
  */
 export function DoneModal({
   items,
@@ -261,15 +292,20 @@ export function DoneModal({
   onDone: (message: string) => void;
 }) {
   const single = items.length === 1;
+  // As horas só pedem campo quando a manutenção vence por elas.
+  const withHours = single && items[0].everyHours !== null;
   const [date, setDate] = useState(todayISO());
   const [km, setKm] = useState('');
+  const [hours, setHours] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const done = useMutation({
     mutationFn: () => {
       const parsed = single ? parseWholeNumber(km) : null;
       if (Number.isNaN(parsed)) throw new Error('O km precisa ser um número.');
-      return maintenanceApi.done({ itemIds: items.map((i) => i.id), date, km: parsed, notes });
+      const parsedHours = withHours ? parseWholeNumber(hours) : null;
+      if (Number.isNaN(parsedHours)) throw new Error('As horas de motor precisam ser um número.');
+      return maintenanceApi.done({ itemIds: items.map((i) => i.id), date, km: parsed, hours: parsedHours, notes });
     },
     onSuccess: ({ done: n }) => onDone(n === 1 ? `${items[0].name} registrada` : `${n} manutenções registradas`),
     onError: (err: Error) => setError(err.message),
@@ -298,9 +334,11 @@ export function DoneModal({
           </div>
         )}
         <p className={pageStyles.description}>
-          {single
-            ? `${items[0]?.vehicleName}: a contagem recomeça desta data e deste km.`
-            : 'A contagem de cada uma recomeça desta data e do hodômetro de cada veículo.'}
+          {!single
+            ? 'A contagem de cada uma recomeça desta data e do hodômetro e do horímetro de cada veículo.'
+            : withHours
+              ? `${items[0]?.vehicleName}: a contagem recomeça desta data, deste km e destas horas de motor.`
+              : `${items[0]?.vehicleName}: a contagem recomeça desta data e deste km.`}
         </p>
         <div className={pageStyles.formRow}>
           <TextField label="Feita em" type="date" max={todayISO()} value={date} onChange={(e) => setDate(e.target.value)} />
@@ -311,6 +349,15 @@ export function DoneModal({
               value={km}
               placeholder="o hodômetro de agora"
               onChange={(e) => setKm(e.target.value)}
+            />
+          )}
+          {withHours && (
+            <TextField
+              label="Com quantas horas de motor"
+              inputMode="numeric"
+              value={hours}
+              placeholder="o horímetro de agora"
+              onChange={(e) => setHours(e.target.value)}
             />
           )}
         </div>

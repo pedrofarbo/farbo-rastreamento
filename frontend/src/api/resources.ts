@@ -569,29 +569,34 @@ export const reportsApi = {
   download: (kind: ReportKind, q: ReportQuery) => download(reportPath(kind, q, true)),
 };
 
-/** O hodômetro e a manutenção dos veículos. */
+/** O hodômetro, o horímetro e a manutenção dos veículos. */
 export const maintenanceApi = {
   /** As manutenções da frota (os veículos que a pessoa vê), das mais urgentes. */
   list: () => api.get<{ items: MaintenanceItem[]; counts: Partial<Record<MaintenanceStatus, number>> }>('/api/me/maintenance'),
   create: (input: MaintenanceInput & { vehicleIds: string[] }) => api.post<{ created: number }>('/api/me/maintenance', input),
   update: (id: string, input: MaintenanceInput) => api.patch<void>(`/api/me/maintenance/${id}`, input),
   remove: (id: string) => api.delete<void>(`/api/me/maintenance/${id}`),
-  /** Registra feitas: com uma, dá para informar o km; com várias, vale o hodômetro de cada veículo. */
-  done: (input: { itemIds: string[]; date?: string; km?: number | null; notes?: string }) =>
+  /** Registra feitas: com uma, dá para informar o km e as horas; com várias, vale o hodômetro e o horímetro de cada veículo. */
+  done: (input: { itemIds: string[]; date?: string; km?: number | null; hours?: number | null; notes?: string }) =>
     api.post<{ done: number }>('/api/me/maintenance/done', input),
   vehicle: (vehicleId: string) =>
     api.get<{ odometer: Odometer; items: MaintenanceItem[]; records: MaintenanceRecord[] }>(`/api/vehicles/${vehicleId}/maintenance`),
   setOdometer: (vehicleId: string, km: number) => api.put<Odometer>(`/api/vehicles/${vehicleId}/odometer`, { km }),
+  setEngineHours: (vehicleId: string, hours: number) => api.put<Odometer>(`/api/vehicles/${vehicleId}/engine-hours`, { hours }),
 };
 
 export interface MaintenanceInput {
   name: string;
   everyKm: number | null;
   everyMonths: number | null;
+  /** Horas de motor. */
+  everyHours: number | null;
   /** Vazio: hoje. */
   lastDate?: string;
   /** Só com um veículo; sem ele, o hodômetro de agora. */
   lastKm?: number | null;
+  /** Só com um veículo; sem elas, o horímetro de agora. */
+  lastHours?: number | null;
 }
 
 /** O relatório da frota por e-mail: os agendamentos de quem está logado. */
