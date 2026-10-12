@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
+import { isDeviceActivated } from '@/services/deviceBulk';
 import { formatDeviceStatus, formatPhoneInput } from '@/services/format';
 import type { Device, Vehicle } from '@/types';
 
@@ -35,6 +36,8 @@ export function DeviceBulkActivationModal({
   const [search, setSearch] = useState('');
   const [unlock, setUnlock] = useState(false);
   const [ask, setAsk] = useState(false);
+  const [hideActivated, setHideActivated] = useState(true);
+  const [allowReactivation, setAllowReactivation] = useState(false);
   const [results, setResults] = useState<BulkSmsSetupResponse | null>(null);
   const [submitError, setSubmitError] = useState('');
 
@@ -47,12 +50,27 @@ export function DeviceBulkActivationModal({
     return map;
   }, [vehicles]);
 
+  // Contagem de aparelhos já ativados vs pendentes
+  const activatedDevices = useMemo(
+    () => devices.filter((d) => isDeviceActivated(d)),
+    [devices],
+  );
+
+  const pendingDevicesWithChip = useMemo(
+    () =>
+      devices.filter(
+        (d) => !isDeviceActivated(d) && Boolean(d.phoneNumber && d.phoneNumber.trim().length > 0),
+      ),
+    [devices],
+  );
+
   // Set of selected device IDs
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
     const initial = new Set<string>();
     const initialSet = new Set(initialSelectedIds);
     for (const d of devices) {
       if (d.phoneNumber && (initialSet.size === 0 || initialSet.has(d.id))) {
+        // Se fornecido IDs iniciais, só seleciona os que não foram ativados (a menos que seja seleção explícita)
         if (initialSet.size > 0 && initialSet.has(d.id)) {
           initial.add(d.id);
         }
@@ -67,11 +85,15 @@ export function DeviceBulkActivationModal({
     [devices],
   );
 
-  // Filtered devices according to search
+  // Filtered devices according to search and hideActivated
   const filteredDevices = useMemo(() => {
+    let list = devices;
+    if (hideActivated) {
+      list = list.filter((d) => !isDeviceActivated(d));
+    }
     const q = search.trim().toLowerCase();
-    if (!q) return devices;
-    return devices.filter((d) => {
+    if (!q) return list;
+    return list.filter((d) => {
       const v = vehicleByDeviceId.get(d.id);
       return (
         d.imei.toLowerCase().includes(q) ||
@@ -81,7 +103,7 @@ export function DeviceBulkActivationModal({
         (v && v.plate && v.plate.toLowerCase().includes(q))
       );
     });
-  }, [devices, search, vehicleByDeviceId]);
+  }, [devices, hideActivated, search, vehicleByDeviceId]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -95,10 +117,10 @@ export function DeviceBulkActivationModal({
     });
   };
 
-  const selectAllEligible = () => {
+  const selectPendingWithChip = () => {
     const all = new Set<string>();
     for (const d of filteredDevices) {
-      if (d.phoneNumber && d.phoneNumber.trim().length > 0) {
+      if (d.phoneNumber && d.phoneNumber.trim().length > 0 && (!isDeviceActivated(d) || allowReactivation)) {
         all.add(d.id);
       }
     }
@@ -115,6 +137,7 @@ export function DeviceBulkActivationModal({
         deviceIds: Array.from(selectedIds),
         unlock,
         query: ask,
+        force: allowReactivation,
       }),
     onSuccess: (data) => {
       setResults(data);
@@ -132,8 +155,8 @@ export function DeviceBulkActivationModal({
       if (data.failed > 0) {
         notify({
           tone: 'warning',
-          title: 'Alguns rastreadores falharam',
-          description: `${data.failed} rastreador(es) não puderam ser ativados.`,
+          title: 'Alguns rastreadores não foram ativados',
+          description: `${data.failed} rastreador(es) falharam ou já estavam ativos.`,
         });
       }
     },
@@ -196,8 +219,8 @@ export function DeviceBulkActivationModal({
                 onChange={(e) => setSearch(e.target.value)}
               />
               <div className={styles.quickButtons}>
-                <Button size="small" variant="ghost" onClick={selectAllEligible}>
-                  Selecionar com chip ({eligibleDevices.length})
+                <Button size="small" variant="ghost" onClick={selectPendingWithChip}>
+                  Selecionar pendentes ({pendingDevicesWithChip.length})
                 </Button>
                 {selectedIds.size > 0 && (
                   <Button size="small" variant="ghost" onClick={deselectAll}>
@@ -213,14 +236,38 @@ export function DeviceBulkActivationModal({
                   {selectedIds.size} selecionado(s) para ativação
                 </span>
                 <span className={styles.statPill}>
-                  {eligibleDevices.length} com chip cadastrado
+                  {pendingDevicesWithChip.length} pendente(s) com chip
                 </span>
+                {activatedDevices.length > 0 && (
+                  <span className={styles.statPill} style={{ color: 'var(--success)' }}>
+                    {activatedDevices.length} já ativado(s)
+                  </span>
+                )}
                 {devices.length - eligibleDevices.length > 0 && (
                   <span className={`${styles.statPill} ${styles.statWarning}`}>
                     {devices.length - eligibleDevices.length} sem número de chip
                   </span>
                 )}
               </div>
+              <label
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 'var(--space-2)',
+                  fontSize: 'var(--text-xs)',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  fontWeight: 500,
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={hideActivated}
+                  onChange={(e) => setHideActivated(e.target.checked)}
+                />
+                Ocultar já ativados ({activatedDevices.length})
+              </label>
             </div>
 
             <div className={styles.tableWrap}>
@@ -233,11 +280,11 @@ export function DeviceBulkActivationModal({
                         checked={
                           filteredDevices.length > 0 &&
                           filteredDevices
-                            .filter((d) => d.phoneNumber)
+                            .filter((d) => d.phoneNumber && (!isDeviceActivated(d) || allowReactivation))
                             .every((d) => selectedIds.has(d.id))
                         }
                         onChange={(e) => {
-                          if (e.target.checked) selectAllEligible();
+                          if (e.target.checked) selectPendingWithChip();
                           else deselectAll();
                         }}
                       />
@@ -246,28 +293,31 @@ export function DeviceBulkActivationModal({
                     <th>Número do chip</th>
                     <th>Veículo</th>
                     <th>Situação</th>
+                    <th>Ativação</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredDevices.map((device) => {
                     const hasPhone = Boolean(device.phoneNumber && device.phoneNumber.trim().length > 0);
+                    const isActivated = isDeviceActivated(device);
+                    const canSelect = hasPhone && (!isActivated || allowReactivation);
                     const isSelected = selectedIds.has(device.id);
                     const vehicle = vehicleByDeviceId.get(device.id);
 
                     return (
                       <tr
                         key={device.id}
-                        className={!hasPhone ? styles.rowDisabled : undefined}
+                        className={!canSelect ? styles.rowDisabled : undefined}
                         onClick={() => {
-                          if (hasPhone) toggleSelect(device.id);
+                          if (canSelect) toggleSelect(device.id);
                         }}
-                        style={{ cursor: hasPhone ? 'pointer' : 'default' }}
+                        style={{ cursor: canSelect ? 'pointer' : 'default' }}
                       >
                         <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"
                             checked={isSelected}
-                            disabled={!hasPhone}
+                            disabled={!canSelect}
                             onChange={() => toggleSelect(device.id)}
                           />
                         </td>
@@ -312,6 +362,15 @@ export function DeviceBulkActivationModal({
                             {formatDeviceStatus(device.status)}
                           </Badge>
                         </td>
+                        <td>
+                          {isActivated ? (
+                            <Badge tone="success">Já ativado</Badge>
+                          ) : hasPhone ? (
+                            <Badge tone="neutral">Pendente</Badge>
+                          ) : (
+                            <span className={styles.dangerText}>Sem chip</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -337,6 +396,16 @@ export function DeviceBulkActivationModal({
                 />
                 Pedir a configuração de volta no fim (PARAM#)
               </label>
+              {!hideActivated && activatedDevices.length > 0 && (
+                <label style={{ color: 'var(--warning)', marginTop: 4 }}>
+                  <input
+                    type="checkbox"
+                    checked={allowReactivation}
+                    onChange={(e) => setAllowReactivation(e.target.checked)}
+                  />
+                  <strong>Permitir reativar rastreadores já ativados ({activatedDevices.length})</strong>
+                </label>
+              )}
             </div>
 
             {submitError && (

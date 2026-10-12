@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanIccid, cleanImei, parseTrackerBatch, templateTrackerCsv } from './deviceBulk';
+import { cleanIccid, cleanImei, isDeviceActivated, parseTrackerBatch, templateTrackerCsv } from './deviceBulk';
 
 describe('deviceBulk', () => {
   it('templateTrackerCsv returns CSV with BOM and headers', () => {
@@ -17,6 +17,14 @@ describe('deviceBulk', () => {
   it('cleanIccid removes SP suffix and non-digits', () => {
     expect(cleanIccid('89553202100093795330SP')).toBe('89553202100093795330');
     expect(cleanIccid('8955 3202 1000 9379 5330')).toBe('89553202100093795330');
+  });
+
+  it('isDeviceActivated correctly identifies active vs pending devices', () => {
+    expect(isDeviceActivated({ status: 'ONLINE', lastSeenAt: null })).toBe(true);
+    expect(isDeviceActivated({ status: 'STALE', lastSeenAt: null })).toBe(true);
+    expect(isDeviceActivated({ status: 'OFFLINE', lastSeenAt: '2026-10-10T12:00:00Z' })).toBe(true);
+    expect(isDeviceActivated({ status: 'OFFLINE', lastSeenAt: null })).toBe(false);
+    expect(isDeviceActivated({ status: undefined, lastSeenAt: undefined })).toBe(false);
   });
 
   it('parses raw text with one IMEI per line without headers', () => {

@@ -52,6 +52,28 @@ const MOCK_DEVICES: Device[] = [
     createdAt: '2026-09-01T12:00:00Z',
     updatedAt: '2026-10-10T12:00:00Z',
   },
+  {
+    id: 'd3',
+    imei: '869000000000003',
+    model: 'J16',
+    manufacturer: 'TKSTAR',
+    protocol: 'gt06',
+    firmware: '1.0',
+    phoneNumber: '11999997777',
+    iccid: '895522',
+    status: 'ONLINE',
+    lastSeenAt: '2026-10-10T12:00:00Z',
+    apn: '',
+    apnUser: '',
+    serverHost: '',
+    serverPort: null,
+    reportIntervalSeconds: 30,
+    heartbeatIntervalSeconds: 60,
+    commandOverrides: {},
+    notes: '',
+    createdAt: '2026-09-01T12:00:00Z',
+    updatedAt: '2026-10-10T12:00:00Z',
+  },
 ];
 
 const MOCK_VEHICLES: Vehicle[] = [
@@ -134,23 +156,45 @@ afterEach(() => {
 });
 
 describe('DeviceBulkActivationModal', () => {
-  it('renderiza os rastreadores e identifica os que não possuem chip cadastrado', async () => {
+  it('renderiza os rastreadores e oculta por padrão os já ativados', async () => {
     await renderModal();
 
     expect(document.body.textContent).toContain('Ativação de rastreadores em massa');
     expect(document.body.textContent).toContain('869000000000001');
     expect(document.body.textContent).toContain('869000000000002');
+    // d3 está ativo, portanto fica oculto por padrão
+    expect(document.body.textContent).not.toContain('869000000000003');
     expect(document.body.textContent).toContain('Sem número de chip');
-    expect(document.body.textContent).toContain('1 com chip cadastrado');
+    expect(document.body.textContent).toContain('1 pendente(s) com chip');
     expect(document.body.textContent).toContain('1 sem número de chip');
+    expect(document.body.textContent).toContain('Ocultar já ativados (1)');
   });
 
-  it('permite selecionar com chip e disparar ativação em massa', async () => {
+  it('permite exibir já ativados ao desmarcar a opção de ocultar', async () => {
     await renderModal();
 
-    // Clica em "Selecionar com chip (1)"
+    const hideCheckbox = Array.from(document.body.querySelectorAll('input[type="checkbox"]')).find(
+      (input) => input.parentElement?.textContent?.includes('Ocultar já ativados'),
+    ) as HTMLInputElement | undefined;
+    expect(hideCheckbox).toBeDefined();
+    expect(hideCheckbox?.checked).toBe(true);
+
+    act(() => {
+      hideCheckbox?.click();
+    });
+    await flush();
+
+    // Agora o rastreador já ativado d3 é exibido na listagem com o badge Já ativado
+    expect(document.body.textContent).toContain('869000000000003');
+    expect(document.body.textContent).toContain('Já ativado');
+  });
+
+  it('permite selecionar pendentes e disparar ativação em massa', async () => {
+    await renderModal();
+
+    // Clica em "Selecionar pendentes (1)"
     const selectBtn = Array.from(document.body.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Selecionar com chip'),
+      b.textContent?.includes('Selecionar pendentes'),
     );
     expect(selectBtn).toBeDefined();
 
@@ -176,6 +220,7 @@ describe('DeviceBulkActivationModal', () => {
       deviceIds: ['d1'],
       unlock: false,
       query: false,
+      force: false,
     });
 
     // Exibe tela de resultado com sucesso

@@ -905,17 +905,19 @@ export interface BulkSmsSetupResponse {
 /** Configuração do rastreador por SMS (SMSDev) na ativação. */
 export const smsSetupApi = {
   get: (deviceId: string) => api.get<SmsSetupView>(`/api/devices/${deviceId}/sms-setup`),
-  start: (deviceId: string, input: { fulfillmentId?: string | null; unlock?: boolean; query?: boolean }) =>
+  start: (deviceId: string, input: { fulfillmentId?: string | null; unlock?: boolean; query?: boolean; force?: boolean }) =>
     api.post<SmsSession>(`/api/devices/${deviceId}/sms-setup`, {
       fulfillmentId: input.fulfillmentId ?? null,
       unlock: Boolean(input.unlock),
       query: Boolean(input.query),
+      force: Boolean(input.force),
     }),
-  startBulk: (input: { deviceIds: string[]; unlock?: boolean; query?: boolean }) =>
+  startBulk: (input: { deviceIds: string[]; unlock?: boolean; query?: boolean; force?: boolean }) =>
     api.post<BulkSmsSetupResponse>('/api/devices/bulk/sms-setup', {
       deviceIds: input.deviceIds,
       unlock: Boolean(input.unlock),
       query: Boolean(input.query),
+      force: Boolean(input.force),
     }),
   cancel: (sessionId: string) => api.post<SmsSession>(`/api/sms-setup/${sessionId}/cancel`),
   /** O saldo no SMSDev e quantas ativações ele paga (o contador da página de rastreadores). */

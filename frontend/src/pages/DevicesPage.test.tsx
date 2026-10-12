@@ -30,6 +30,29 @@ const MOCK_DEVICE: Device = {
   updatedAt: '2026-10-10T12:00:00Z',
 };
 
+const MOCK_PENDING_DEVICE: Device = {
+  id: 'dev-2',
+  imei: '869247061230022',
+  model: 'TK910',
+  manufacturer: 'TKSTAR',
+  protocol: 'gt06',
+  firmware: '1.0',
+  phoneNumber: '34999990022',
+  iccid: '89553202100093795331',
+  status: 'OFFLINE',
+  lastSeenAt: null,
+  apn: '',
+  apnUser: '',
+  serverHost: '',
+  serverPort: null,
+  reportIntervalSeconds: 30,
+  heartbeatIntervalSeconds: 60,
+  commandOverrides: {},
+  notes: '',
+  createdAt: '2026-09-02T12:00:00Z',
+  updatedAt: '2026-09-02T12:00:00Z',
+};
+
 const MOCK_VEHICLE: Vehicle = {
   id: 'veh-1',
   name: 'Caminhão 01',
@@ -69,7 +92,7 @@ const MOCK_CUSTOMER: CustomerSummary = {
 
 vi.mock('@/api/resources', () => ({
   devicesApi: {
-    list: async () => [MOCK_DEVICE],
+    list: async () => [MOCK_DEVICE, MOCK_PENDING_DEVICE],
     create: async () => MOCK_DEVICE,
     update: async () => MOCK_DEVICE,
     provisioning: async () => ({ device: MOCK_DEVICE, commands: [], warning: '' }),
@@ -155,7 +178,7 @@ describe('DevicesPage', () => {
     expect(headers).toContain('Protocolo');
     expect(headers).toContain('Situação');
 
-    // Confere os dados do rastreador na linha
+    // Confere os dados do rastreador na primeira linha
     const row = host.querySelector('tbody tr');
     expect(row).not.toBeNull();
     expect(row?.textContent).toContain('869247061230011');
@@ -183,24 +206,72 @@ describe('DevicesPage', () => {
     expect(document.body.textContent).toContain('Baixar modelo CSV');
   });
 
-  it('exibe botão "Ativar" na listagem e abre o modal de ativação do rastreador', async () => {
+  it('exibe botão "Ativar" para pendentes e "Reativar" para já ativados', async () => {
     const host = await render();
 
-    const row = host.querySelector('tbody tr');
-    expect(row).not.toBeNull();
+    const rows = Array.from(host.querySelectorAll('tbody tr'));
+    expect(rows).toHaveLength(2);
 
-    const activateBtn = Array.from(row!.querySelectorAll('button')).find(
+    // Linha 1 (MOCK_DEVICE) está ONLINE/ativo -> botão "Reativar"
+    const row1ReactivateBtn = Array.from(rows[0].querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Reativar',
+    );
+    expect(row1ReactivateBtn).toBeDefined();
+
+    // Linha 2 (MOCK_PENDING_DEVICE) está OFFLINE/sem lastSeenAt -> botão "Ativar"
+    const row2ActivateBtn = Array.from(rows[1].querySelectorAll('button')).find(
       (b) => b.textContent?.trim() === 'Ativar',
     );
-    expect(activateBtn).toBeDefined();
+    expect(row2ActivateBtn).toBeDefined();
 
+    // Clicar em "Ativar" abre o modal do rastreador pendente
     act(() => {
-      activateBtn?.click();
+      row2ActivateBtn?.click();
     });
     await flush();
 
-    expect(document.body.textContent).toContain('Ativar rastreador 869247061230011');
+    expect(document.body.textContent).toContain('Ativar rastreador 869247061230022');
     expect(document.body.textContent).toContain('Configurar por SMS');
+  });
+
+  it('permite filtrar por "Pendentes de ativação" e "Já ativados"', async () => {
+    const host = await render();
+
+    expect(host.textContent).toContain('Todos (2)');
+    expect(host.textContent).toContain('Pendentes de ativação (1)');
+    expect(host.textContent).toContain('Já ativados (1)');
+
+    const pendingFilterBtn = Array.from(host.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Pendentes de ativação'),
+    );
+    expect(pendingFilterBtn).toBeDefined();
+
+    // Filtra por pendentes
+    act(() => {
+      pendingFilterBtn?.click();
+    });
+    await flush();
+
+    const rowsPending = Array.from(host.querySelectorAll('tbody tr'));
+    expect(rowsPending).toHaveLength(1);
+    expect(rowsPending[0].textContent).toContain('869247061230022');
+    expect(rowsPending[0].textContent).not.toContain('869247061230011');
+
+    // Filtra por já ativados
+    const activatedFilterBtn = Array.from(host.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Já ativados'),
+    );
+    expect(activatedFilterBtn).toBeDefined();
+
+    act(() => {
+      activatedFilterBtn?.click();
+    });
+    await flush();
+
+    const rowsActivated = Array.from(host.querySelectorAll('tbody tr'));
+    expect(rowsActivated).toHaveLength(1);
+    expect(rowsActivated[0].textContent).toContain('869247061230011');
+    expect(rowsActivated[0].textContent).not.toContain('869247061230022');
   });
 
   it('exibe botão "Ativação em massa" no header e abre o modal de ativação em massa', async () => {

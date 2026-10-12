@@ -209,3 +209,16 @@ export function parseTrackerBatch(
 
   return { rows, validCount, errorCount, duplicateCount };
 }
+
+/**
+ * Determina se o rastreador já está ativado e comunicando com o servidor
+ * (online, pacote recente ou último contato registrado).
+ */
+export function isDeviceActivated(device: { status?: string | null; lastSeenAt?: string | null }): boolean {
+  return Boolean(
+    device.status === 'ONLINE' ||
+    device.status === 'STALE' ||
+    (device.lastSeenAt && device.lastSeenAt.trim().length > 0),
+  );
+}
+

@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smssetup"
 )
 
@@ -66,10 +67,23 @@ func (s *Server) handleStartSMSSetup(w http.ResponseWriter, r *http.Request) {
 		FulfillmentID *uuid.UUID `json:"fulfillmentId"`
 		Unlock        bool       `json:"unlock"`
 		Query         bool       `json:"query"`
+		Force         bool       `json:"force"`
 	}
 	if !decodeOr400(w, r, &req) {
 		return
 	}
+
+	// Não ativa duas vezes rastreador que já conectou ao sistema, a menos que
+	// venha com force=true ou seja etapa de pedido de fulfillment.
+	if !req.Force && req.FulfillmentID == nil {
+		if dev, err := s.Devices.Get(r.Context(), id); err == nil && dev != nil {
+			if dev.LastSeenAt != nil || dev.Status == devices.StatusOnline {
+				writeError(w, http.StatusBadRequest, "Este rastreador já está ativado e conectado ao sistema.")
+				return
+			}
+		}
+	}
+
 	session, err := s.SMSSetup.Start(r.Context(), id, req.FulfillmentID, smssetup.Options{Unlock: req.Unlock, Query: req.Query}, actor(r))
 	if err != nil {
 		s.recordAudit(r, audit.ActionSMSSetup, nil, nil, map[string]any{"device": id, "result": "erro", "error": err.Error()})
@@ -100,6 +114,7 @@ type bulkSMSSetupRequest struct {
 	DeviceIDs []uuid.UUID `json:"deviceIds"`
 	Unlock    bool        `json:"unlock"`
 	Query     bool        `json:"query"`
+	Force     bool        `json:"force"`
 }
 
 type BulkSMSSetupItemResult struct {
@@ -145,9 +160,20 @@ func (s *Server) handleStartSMSSetupBulk(w http.ResponseWriter, r *http.Request)
 
 	for _, id := range req.DeviceIDs {
 		item := BulkSMSSetupItemResult{DeviceID: id}
-		if dev, err := s.Devices.Get(r.Context(), id); err == nil && dev != nil {
+		dev, err := s.Devices.Get(r.Context(), id)
+		if err == nil && dev != nil {
 			item.IMEI = dev.IMEI
 		}
+
+		// Regra contra ativação duplicada: ignora rastreador que já conectou ao sistema a menos que force=true.
+		if !req.Force && dev != nil && (dev.LastSeenAt != nil || dev.Status == devices.StatusOnline) {
+			item.Success = false
+			item.Error = "Rastreador já está ativado e conectado ao sistema."
+			failed++
+			results = append(results, item)
+			continue
+		}
+
 		session, err := s.SMSSetup.Start(r.Context(), id, nil, opts, act)
 		if err != nil {
 			item.Success = false

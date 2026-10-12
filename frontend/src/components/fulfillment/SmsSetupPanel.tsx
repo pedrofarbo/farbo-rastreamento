@@ -51,11 +51,15 @@ export function SmsSetupPanel({
   fulfillmentId,
   onEditDevice,
   buttonLabel,
+  force,
+  disabled,
 }: {
   deviceId: string;
   fulfillmentId?: string | null;
   onEditDevice?: () => void;
   buttonLabel?: string;
+  force?: boolean;
+  disabled?: boolean;
 }) {
   const { notify } = useToast();
   const queryClient = useQueryClient();
@@ -92,7 +96,13 @@ export function SmsSetupPanel({
     void view.refetch();
   };
   const start = useMutation({
-    mutationFn: () => smsSetupApi.start(deviceId, { fulfillmentId: fulfillmentId ?? null, unlock, query: ask }),
+    mutationFn: () =>
+      smsSetupApi.start(deviceId, {
+        fulfillmentId: fulfillmentId ?? null,
+        unlock,
+        query: ask,
+        ...(force ? { force: true } : {}),
+      }),
     onSuccess: (s) => {
       setError('');
       refresh(s);
@@ -110,7 +120,7 @@ export function SmsSetupPanel({
   if (view.isLoading) return <Spinner label="Carregando a configuração por SMS" />;
   if (!view.data) return null;
   const { plan, enabled } = view.data;
-  const blocked = !enabled || plan.problems.length > 0;
+  const blocked = !enabled || plan.problems.length > 0 || Boolean(disabled);
   const actionText =
     session && session.status !== 'DONE'
       ? 'Mandar de novo'

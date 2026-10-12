@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 
@@ -17,6 +17,7 @@ import { Modal } from '@/components/ui/Modal';
 import { SmsCounter } from '@/components/fulfillment/SmsCounter';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
+import { isDeviceActivated } from '@/services/deviceBulk';
 import { formatDeviceStatus, formatPhoneInput, formatRelative } from '@/services/format';
 import { useAuth } from '@/stores/AuthContext';
 import type { Device } from '@/types';
@@ -98,6 +99,7 @@ export function DevicesPage() {
   const [activatingDevice, setActivatingDevice] = useState<Device | null>(null);
   const [bulkActivationOpen, setBulkActivationOpen] = useState(false);
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<Set<string>>(new Set());
+  const [activationFilter, setActivationFilter] = useState<'all' | 'pending' | 'activated'>('all');
 
   const devices = useQuery({ queryKey: ['devices'], queryFn: devicesApi.list });
   const vehicles = useQuery({ queryKey: ['vehicles'], queryFn: vehiclesApi.list });
@@ -144,6 +146,16 @@ export function DevicesPage() {
     (customers.data ?? []).map((customer) => [customer.id, customer]),
   );
 
+  const allDevices = devices.data ?? [];
+  const activatedCount = allDevices.filter(isDeviceActivated).length;
+  const pendingCount = allDevices.length - activatedCount;
+
+  const displayedDevices = useMemo(() => {
+    if (activationFilter === 'pending') return allDevices.filter((d) => !isDeviceActivated(d));
+    if (activationFilter === 'activated') return allDevices.filter(isDeviceActivated);
+    return allDevices;
+  }, [allDevices, activationFilter]);
+
   return (
     <div className={styles.page}>
       <div className={styles.inner}>
@@ -172,6 +184,43 @@ export function DevicesPage() {
         </header>
 
         {canOperate && <SmsCounter />}
+
+        {allDevices.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 'var(--space-3)',
+              flexWrap: 'wrap',
+              marginBottom: 'var(--space-3)',
+            }}
+          >
+            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+              <Button
+                size="small"
+                variant={activationFilter === 'all' ? 'primary' : 'ghost'}
+                onClick={() => setActivationFilter('all')}
+              >
+                Todos ({allDevices.length})
+              </Button>
+              <Button
+                size="small"
+                variant={activationFilter === 'pending' ? 'primary' : 'ghost'}
+                onClick={() => setActivationFilter('pending')}
+              >
+                Pendentes de ativação ({pendingCount})
+              </Button>
+              <Button
+                size="small"
+                variant={activationFilter === 'activated' ? 'primary' : 'ghost'}
+                onClick={() => setActivationFilter('activated')}
+              >
+                Já ativados ({activatedCount})
+              </Button>
+            </div>
+          </div>
+        )}
 
         {selectedDeviceIds.size > 0 && (
           <div
@@ -228,12 +277,12 @@ export function DevicesPage() {
                         type="checkbox"
                         aria-label="Selecionar todos os rastreadores"
                         checked={
-                          (devices.data ?? []).length > 0 &&
-                          (devices.data ?? []).every((d) => selectedDeviceIds.has(d.id))
+                          displayedDevices.length > 0 &&
+                          displayedDevices.every((d) => selectedDeviceIds.has(d.id))
                         }
                         onChange={(e) => {
                           if (e.target.checked) {
-                            setSelectedDeviceIds(new Set((devices.data ?? []).map((d) => d.id)));
+                            setSelectedDeviceIds(new Set(displayedDevices.map((d) => d.id)));
                           } else {
                             setSelectedDeviceIds(new Set());
                           }
@@ -252,7 +301,7 @@ export function DevicesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(devices.data ?? []).map((device) => {
+                  {displayedDevices.map((device) => {
                     const vehicle = vehicleByDevice.get(device.id);
                     const customer = vehicle?.ownerId ? customerById.get(vehicle.ownerId) : null;
                     return (
@@ -339,14 +388,26 @@ export function DevicesPage() {
                       <td>{formatRelative(device.lastSeenAt)}</td>
                       <td>
                         <div className={styles.actions}>
-                          <Button
-                            size="small"
-                            variant="ghost"
-                            onClick={() => setActivatingDevice(device)}
-                            title="Ativar rastreador via comandos SMS"
-                          >
-                            Ativar
-                          </Button>
+                          {isDeviceActivated(device) ? (
+                            <Button
+                              size="small"
+                              variant="ghost"
+                              onClick={() => setActivatingDevice(device)}
+                              title="Rastreador já ativo e transmitindo. Clique para reconfigurar via SMS."
+                              style={{ opacity: 0.8 }}
+                            >
+                              Reativar
+                            </Button>
+                          ) : (
+                            <Button
+                              size="small"
+                              variant="primary"
+                              onClick={() => setActivatingDevice(device)}
+                              title="Ativar rastreador via comandos SMS"
+                            >
+                              Ativar
+                            </Button>
+                          )}
                           <Button
                             size="small"
                             variant="ghost"
