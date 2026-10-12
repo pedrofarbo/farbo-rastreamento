@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
-import { isDeviceActivated } from '@/services/deviceBulk';
+import { SMS_BULK_LIMIT, chunk, failedBatch, isDeviceActivated, mergeBulkResults } from '@/services/deviceBulk';
 import { formatDeviceStatus, formatPhoneInput } from '@/services/format';
 import type { Device, Vehicle } from '@/types';
 
@@ -39,6 +39,8 @@ export function DeviceBulkActivationModal({
   const [hideActivated, setHideActivated] = useState(true);
   const [allowReactivation, setAllowReactivation] = useState(false);
   const [results, setResults] = useState<BulkSmsSetupResponse | null>(null);
+  // Com mais de SMS_BULK_LIMIT, os lotes saem um atrás do outro: quantos já foram.
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [submitError, setSubmitError] = useState('');
 
   // Map of vehicle by deviceId for quick lookup
@@ -131,14 +133,30 @@ export function DeviceBulkActivationModal({
     setSelectedIds(new Set());
   };
 
+  // O servidor aceita até SMS_BULK_LIMIT por vez: acima disso, a tela manda em
+  // lotes, um atrás do outro, e junta os resultados. Um lote que falhar inteiro
+  // (rede, sessão) entra no resultado com o erro, e os outros seguem.
   const startBulk = useMutation({
-    mutationFn: () =>
-      smsSetupApi.startBulk({
-        deviceIds: Array.from(selectedIds),
-        unlock,
-        query: ask,
-        force: allowReactivation,
-      }),
+    mutationFn: async () => {
+      const ids = Array.from(selectedIds);
+      const imeiOf = (id: string) => devices.find((d) => d.id === id)?.imei;
+      const parts: BulkSmsSetupResponse[] = [];
+      let done = 0;
+      try {
+        for (const batch of chunk(ids, SMS_BULK_LIMIT)) {
+          setProgress({ done, total: ids.length });
+          try {
+            parts.push(await smsSetupApi.startBulk({ deviceIds: batch, unlock, query: ask, force: allowReactivation }));
+          } catch (err) {
+            parts.push(failedBatch(batch, err instanceof Error ? err.message : 'Falha ao enviar o lote.', imeiOf));
+          }
+          done += batch.length;
+        }
+      } finally {
+        setProgress(null);
+      }
+      return mergeBulkResults(parts);
+    },
     onSuccess: (data) => {
       setResults(data);
       setSubmitError('');
@@ -196,7 +214,9 @@ export function DeviceBulkActivationModal({
               loading={startBulk.isPending}
               onClick={() => startBulk.mutate()}
             >
-              Ativar {selectedIds.size > 0 ? `${selectedIds.size} rastreador(es)` : ''}
+              {progress
+                ? `Enviando ${Math.min(progress.done + SMS_BULK_LIMIT, progress.total)} de ${progress.total}…`
+                : `Ativar ${selectedIds.size > 0 ? `${selectedIds.size} rastreador(es)` : ''}`}
             </Button>
           </>
         )

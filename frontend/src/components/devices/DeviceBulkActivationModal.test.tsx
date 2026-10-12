@@ -99,23 +99,26 @@ const MOCK_VEHICLES: Vehicle[] = [
 ];
 
 let bulkStartPayload: unknown = null;
+const bulkCalls: string[][] = [];
+// Lote cujo envio falha inteiro (rede, sessão), pelo número da chamada.
+let failCall = -1;
 vi.mock('@/api/resources', () => ({
   smsSetupApi: {
-    startBulk: async (input: unknown) => {
+    startBulk: async (input: { deviceIds: string[] }) => {
       bulkStartPayload = input;
+      bulkCalls.push(input.deviceIds);
+      if (bulkCalls.length - 1 === failCall) throw new Error('Sem conexão');
       return {
-        total: 1,
-        started: 1,
+        total: input.deviceIds.length,
+        started: input.deviceIds.length,
         failed: 0,
-        results: [
-          {
-            deviceId: 'd1',
-            imei: '869000000000001',
-            success: true,
-            sessionId: 'sess-1',
-            status: 'SENDING',
-          },
-        ],
+        results: input.deviceIds.map((deviceId) => ({
+          deviceId,
+          imei: deviceId === 'd1' ? '869000000000001' : undefined,
+          success: true,
+          sessionId: `sess-${deviceId}`,
+          status: 'SENDING',
+        })),
       };
     },
   },
@@ -126,7 +129,7 @@ import { DeviceBulkActivationModal } from './DeviceBulkActivationModal';
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const flush = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 
-async function renderModal(initialSelectedIds: string[] = []) {
+async function renderModal(initialSelectedIds: string[] = [], devices: Device[] = MOCK_DEVICES) {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -138,7 +141,7 @@ async function renderModal(initialSelectedIds: string[] = []) {
           <DeviceBulkActivationModal
             open
             onClose={() => {}}
-            devices={MOCK_DEVICES}
+            devices={devices}
             vehicles={MOCK_VEHICLES}
             initialSelectedIds={initialSelectedIds}
           />
@@ -153,7 +156,18 @@ async function renderModal(initialSelectedIds: string[] = []) {
 afterEach(() => {
   document.body.innerHTML = '';
   bulkStartPayload = null;
+  bulkCalls.length = 0;
+  failCall = -1;
 });
+
+const clickButton = async (label: string) => {
+  const btn = Array.from(document.body.querySelectorAll('button')).find((b) => b.textContent?.includes(label));
+  expect(btn).toBeDefined();
+  await act(async () => {
+    btn?.click();
+  });
+  await flush();
+};
 
 describe('DeviceBulkActivationModal', () => {
   it('renderiza os rastreadores e oculta por padrão os já ativados', async () => {
@@ -226,5 +240,31 @@ describe('DeviceBulkActivationModal', () => {
     // Exibe tela de resultado com sucesso
     expect(document.body.textContent).toContain('1 de 1 ativações iniciadas com sucesso!');
     expect(document.body.textContent).toContain('Iniciado');
+  });
+
+  it('acima de 100, manda em lotes e junta os resultados mesmo com um lote falhando', async () => {
+    const many: Device[] = Array.from({ length: 250 }, (_, i) => ({
+      ...MOCK_DEVICES[0],
+      id: `m${i}`,
+      imei: `8690000000${String(i).padStart(5, '0')}`,
+      phoneNumber: `1199${String(i).padStart(7, '0')}`,
+    }));
+    failCall = 1; // o segundo lote não chega ao servidor
+    await renderModal([], many);
+
+    await clickButton('Selecionar pendentes');
+    expect(document.body.textContent).toContain('250 selecionado(s) para ativação');
+    await clickButton('Ativar 250 rastreador(es)');
+
+    expect(bulkCalls.map((ids) => ids.length)).toEqual([100, 100, 50]);
+    expect(new Set(bulkCalls.flat()).size).toBe(250);
+    // Os do lote que falhou aparecem com o erro e o IMEI, os outros seguiram.
+    expect(document.body.textContent).toContain('150 de 250');
+    expect(document.body.textContent).toContain('Sem conexão');
+    expect(document.body.textContent).toContain(many[100].imei);
+    // Os que falharam vêm primeiro na lista.
+    const firstRow = document.body.querySelector('tbody tr');
+    expect(firstRow?.textContent).toContain(many[100].imei);
+    expect(firstRow?.textContent).toContain('Sem conexão');
   });
 });

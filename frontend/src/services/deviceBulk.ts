@@ -1,4 +1,4 @@
-import type { DeviceInput } from '@/api/resources';
+import type { BulkSmsSetupResponse, DeviceInput } from '@/api/resources';
 import { normalizeHeader, parseCsv } from '@/services/fleetImport';
 import { formatPhoneInput } from '@/services/format';
 
@@ -222,3 +222,43 @@ export function isDeviceActivated(device: { status?: string | null; lastSeenAt?:
   );
 }
 
+/** Quantos rastreadores o servidor aceita por lote de ativação por SMS. */
+export const SMS_BULK_LIMIT = 100;
+
+/** Divide a lista em lotes de até `size`. */
+export function chunk<T>(list: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+  return out;
+}
+
+/** Junta as respostas dos lotes numa só; as que falharam vêm primeiro (são as que pedem reenvio). */
+export function mergeBulkResults(parts: BulkSmsSetupResponse[]): BulkSmsSetupResponse {
+  const merged = parts.reduce<BulkSmsSetupResponse>(
+    (all, part) => ({
+      total: all.total + part.total,
+      started: all.started + part.started,
+      failed: all.failed + part.failed,
+      results: [...all.results, ...part.results],
+    }),
+    { total: 0, started: 0, failed: 0, results: [] },
+  );
+  return {
+    ...merged,
+    results: [...merged.results.filter((r) => !r.success), ...merged.results.filter((r) => r.success)],
+  };
+}
+
+/** Um lote que não chegou ao servidor: todos os rastreadores dele com o erro. */
+export function failedBatch(
+  deviceIds: string[],
+  message: string,
+  imeiOf: (id: string) => string | undefined,
+): BulkSmsSetupResponse {
+  return {
+    total: deviceIds.length,
+    started: 0,
+    failed: deviceIds.length,
+    results: deviceIds.map((deviceId) => ({ deviceId, imei: imeiOf(deviceId), success: false, error: message })),
+  };
+}
