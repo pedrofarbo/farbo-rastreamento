@@ -514,6 +514,43 @@ export function DevicesPage() {
               />
             </div>
 
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 'var(--space-3)',
+                flexWrap: 'wrap',
+                padding: 'var(--space-2) var(--space-3)',
+                background: 'var(--surface-sunken)',
+                border: '1px dashed var(--border-subtle, var(--accent))',
+                borderRadius: 'var(--radius-md)',
+              }}
+            >
+              <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+                Servidor Farbo + chip Algar (tcp.farborastreadores.com.br:5000, APN ss.algar.br)
+              </span>
+              <Button
+                size="small"
+                variant="primary"
+                id="device-autofill-farbo-algar"
+                onClick={() =>
+                  setDeviceForm({
+                    ...deviceForm,
+                    serverHost: 'tcp.farborastreadores.com.br',
+                    serverPort: 5000,
+                    apn: 'ss.algar.br',
+                    apnUser: 'algar',
+                    apnPassword: 'algar',
+                    clearApnPassword: false,
+                    commandPassword: '',
+                  })
+                }
+              >
+                Autopreencher
+              </Button>
+            </div>
+
             <div className={styles.formRow}>
               <TextField
                 label="Host do servidor"
