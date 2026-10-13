@@ -98,6 +98,8 @@ type Store interface {
 	MarkPushed(ctx context.Context, id int64, count int) error
 	// DeviceOffline diz se o rastreador continua sem comunicação.
 	DeviceOffline(ctx context.Context, deviceID uuid.UUID) (bool, error)
+	// LastSeen é o último pacote do rastreador (zero se nunca mandou).
+	LastSeen(ctx context.Context, deviceID uuid.UUID) (time.Time, error)
 	// Prune apaga o histórico mais velho que before.
 	Prune(ctx context.Context, before time.Time) (int64, error)
 	// LastTest é o último e-mail de teste do usuário.
@@ -387,6 +389,18 @@ func (s *DBStore) DeviceOffline(ctx context.Context, deviceID uuid.UUID) (bool, 
 		return false, database.MapError(err)
 	}
 	return status == "OFFLINE", nil
+}
+
+func (s *DBStore) LastSeen(ctx context.Context, deviceID uuid.UUID) (time.Time, error) {
+	var seen *time.Time
+	err := s.db.QueryRow(ctx, `SELECT last_seen_at FROM devices WHERE id = $1`, deviceID).Scan(&seen)
+	if errors.Is(database.MapError(err), database.ErrNotFound) || (err == nil && seen == nil) {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, database.MapError(err)
+	}
+	return *seen, nil
 }
 
 func (s *DBStore) Prune(ctx context.Context, before time.Time) (int64, error) {

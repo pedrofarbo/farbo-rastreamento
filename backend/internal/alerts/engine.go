@@ -118,6 +118,9 @@ type candidate struct {
 	deviceID uuid.UUID
 	eventID  *int64
 	at       time.Time
+	// lastSeen: no sinal perdido, o último pacote do rastreador — quando ele
+	// parou de se comunicar (at é quando a queda foi percebida).
+	lastSeen time.Time
 
 	lat, lon *float64
 	speed    *float64
@@ -127,6 +130,29 @@ type candidate struct {
 
 	// Cerca do cliente: qual, o nome e de quem é.
 	fenceID, fenceName, fenceOwner string
+}
+
+// when é o horário que o alerta mostra: no sinal perdido, o do último pacote.
+func (c candidate) when() time.Time {
+	if !c.lastSeen.IsZero() {
+		return c.lastSeen
+	}
+	return c.at
+}
+
+// metaTime lê um instante dos dados do evento (time.Time no processo; texto
+// RFC 3339 se veio do banco). Zero se não houver.
+func metaTime(v any) time.Time {
+	switch t := v.(type) {
+	case time.Time:
+		return t
+	case string:
+		parsed, err := time.Parse(time.RFC3339Nano, t)
+		if err == nil {
+			return parsed
+		}
+	}
+	return time.Time{}
 }
 
 type recipient struct {
@@ -396,6 +422,12 @@ func (e *Engine) handleEvent(ctx context.Context, ev *events.Event) {
 		e.mu.Unlock()
 		return
 	case events.DeviceDisconnected:
+		// A sessão antiga que o próprio rastreador trocou por outra
+		// (reconectou): o fim dela chega depois da nova e não é queda.
+		if replaced, _ := ev.Metadata["replaced"].(bool); replaced {
+			return
+		}
+		c.lastSeen = metaTime(ev.Metadata["lastSeenAt"])
 		// Só memória: a frota inteira caindo de uma vez não pode encher a
 		// fila com consultas ao banco.
 		moving := e.wasMoving(ev.DeviceID)
@@ -491,6 +523,18 @@ func (e *Engine) sweepLost(ctx context.Context) {
 	e.mu.Unlock()
 
 	for _, c := range due {
+		// Chegou pacote depois da queda (outra sessão, que o aviso de conexão
+		// não pegou a tempo): o rastreador voltou, não há o que avisar. Se não
+		// voltou e a sessão não disse o último pacote, vale o do banco.
+		last, err := e.store.LastSeen(ctx, c.deviceID)
+		if err != nil {
+			e.log.Warn("falha ao conferir o último contato do rastreador", "device", c.deviceID, "err", err)
+		} else if last.After(c.at) {
+			e.log.Info("rastreador voltou a se comunicar no prazo; sem alerta de sinal perdido", "device", c.deviceID)
+			continue
+		} else if c.lastSeen.IsZero() {
+			c.lastSeen = last
+		}
 		e.process(ctx, c)
 	}
 }
@@ -675,7 +719,7 @@ func (e *Engine) deliver(ctx context.Context, t *Target, c candidate, r recipien
 	deviceID := c.deviceID
 	n := &Notification{
 		Recipient: r.email, UserID: r.userID, VehicleID: t.VehicleID, DeviceID: &deviceID,
-		Kind: notificationKind(c, r.kind), EventID: c.eventID, OccurredAt: c.at,
+		Kind: notificationKind(c, r.kind), EventID: c.eventID, OccurredAt: c.when(),
 	}
 
 	last, sent, err := e.store.LastSent(ctx, r.email, deviceID, n.Kind)

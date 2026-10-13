@@ -180,18 +180,27 @@ func (i *Ingestor) HandleDisconnect(ctx context.Context, conn *tcp.DeviceConnect
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 
+	// lastSeenAt: o último pacote desta sessão, quando ele parou de mandar (o
+	// fim da sessão pode ser bem depois, no prazo de leitura). replaced: o
+	// rastreador abriu outra sessão, que derrubou esta — o fim dela chega
+	// depois da nova e não é queda de sinal.
+	metadata := map[string]any{
+		"protocol":    conn.ProtocolName(),
+		"connectedAt": conn.ConnectedAt,
+		"remoteAddr":  conn.RemoteAddr(),
+		"lastSeenAt":  conn.LastSeenAt().UTC(),
+	}
+	if conn.Replaced() {
+		metadata["replaced"] = true
+	}
 	i.events.Record(ctx, &events.Event{
 		DeviceID:  deviceID,
 		Type:      events.DeviceDisconnected,
 		Timestamp: time.Now().UTC(),
-		Metadata: map[string]any{
-			"protocol":    conn.ProtocolName(),
-			"connectedAt": conn.ConnectedAt,
-			"remoteAddr":  conn.RemoteAddr(),
-		},
+		Metadata:  metadata,
 	})
 	i.log.Info("sessão encerrada", "imei", telemetry.IMEI(conn.IMEI()),
-		"duration", time.Since(conn.ConnectedAt).Round(time.Second))
+		"duration", time.Since(conn.ConnectedAt).Round(time.Second), "substituida", conn.Replaced())
 }
 
 func (i *Ingestor) onConnected(ctx context.Context, conn *tcp.DeviceConnection, dev *devices.Device, protocolName string) {

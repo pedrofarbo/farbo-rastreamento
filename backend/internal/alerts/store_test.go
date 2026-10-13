@@ -208,6 +208,24 @@ func TestDBStore(t *testing.T) {
 		t.Error("rastreador OFFLINE")
 	}
 
+	// O último pacote: zero se nunca mandou (ou o rastreador não existe).
+	if _, err := db.Exec(ctx, `UPDATE devices SET last_seen_at = NULL WHERE id = $1`, deviceID); err != nil {
+		t.Fatal(err)
+	}
+	if seen, err := store.LastSeen(ctx, deviceID); err != nil || !seen.IsZero() {
+		t.Errorf("nunca mandou: %v %v", seen, err)
+	}
+	seenAt := time.Date(2026, 10, 13, 21, 8, 59, 0, time.UTC)
+	if _, err := db.Exec(ctx, `UPDATE devices SET last_seen_at = $2 WHERE id = $1`, deviceID, seenAt); err != nil {
+		t.Fatal(err)
+	}
+	if seen, err := store.LastSeen(ctx, deviceID); err != nil || !seen.Equal(seenAt) {
+		t.Errorf("último pacote = %v %v", seen, err)
+	}
+	if seen, err := store.LastSeen(ctx, uuid.New()); err != nil || !seen.IsZero() {
+		t.Errorf("rastreador que não existe: %v %v", seen, err)
+	}
+
 	// Limpeza do histórico antigo.
 	if _, err := db.Exec(ctx, `UPDATE alert_notifications SET created_at = NOW() - INTERVAL '100 days' WHERE id = $1`, first.ID); err != nil {
 		t.Fatal(err)

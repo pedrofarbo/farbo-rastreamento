@@ -28,6 +28,9 @@ type DeviceConnection struct {
 	deviceID uuid.UUID
 	protocol protocols.TrackerProtocol
 	lastSeen time.Time
+	// replaced: o rastreador abriu outra sessão, e esta foi derrubada por
+	// isso (não é uma queda de sinal).
+	replaced bool
 
 	writeMu      sync.Mutex
 	writeTimeout time.Duration
@@ -87,6 +90,19 @@ func (c *DeviceConnection) LastSeenAt() time.Time {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.lastSeen
+}
+
+// Replaced diz se a sessão foi derrubada porque o rastreador abriu outra.
+func (c *DeviceConnection) Replaced() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.replaced
+}
+
+func (c *DeviceConnection) markReplaced() {
+	c.mu.Lock()
+	c.replaced = true
+	c.mu.Unlock()
 }
 
 func (c *DeviceConnection) touch() {
@@ -182,6 +198,7 @@ func (m *Manager) Register(conn *DeviceConnection) {
 	m.mu.Unlock()
 
 	if existed && previous != conn {
+		previous.markReplaced()
 		_ = previous.Close()
 	}
 	m.notify(total)

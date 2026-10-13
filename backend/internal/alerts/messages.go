@@ -19,7 +19,7 @@ func (e *Engine) compose(t *Target, c candidate, r recipient, suppressed int) ma
 	a := mail.Alert{
 		To: r.email, Name: r.name, Severity: severity, Title: title, Summary: summary,
 		Subject: "Alerta: " + title + " — " + vehicle,
-		Vehicle: vehicle, Plate: t.Plate, When: e.formatWhen(c.at),
+		Vehicle: vehicle, Plate: t.Plate, When: e.formatWhen(c.when()),
 		Latitude: c.lat, Longitude: c.lon, Suppressed: suppressed, Cooldown: humanize(e.cfg.Cooldown),
 		AppURL: e.appURL, ActionURL: e.appURL + "/dashboard",
 	}
@@ -58,7 +58,7 @@ func theftQuery(kind string) string {
 
 // describe escreve a manchete, a explicação e a gravidade de cada alerta.
 func (e *Engine) describe(kind string, c candidate, vehicle string, s Settings) (title, summary, severity string) {
-	clock := c.at.In(e.loc).Format("15:04")
+	clock := c.when().In(e.loc).Format("15:04")
 	switch kind {
 	case KindSOS:
 		return "Botão de pânico (SOS) acionado",

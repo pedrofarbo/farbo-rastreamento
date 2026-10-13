@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols/gt06"
@@ -508,5 +510,35 @@ func TestServerLimitsPendingPerIP(t *testing.T) {
 	_, err := fourth.Read(make([]byte, 16))
 	if ne, ok := err.(net.Error); !ok || !ne.Timeout() {
 		t.Fatalf("com vaga livre a conexão devia ser aceita, veio %v", err)
+	}
+}
+
+// O rastreador que abre outra sessão derruba a antiga, que fica marcada como
+// substituída: o fim dela não é uma queda de sinal (alertas).
+func TestManagerMarksReplacedSession(t *testing.T) {
+	m := NewManager(nil)
+	open := func() *DeviceConnection {
+		client, server := net.Pipe()
+		t.Cleanup(func() { _ = client.Close() })
+		c := newConnection(server, time.Second)
+		c.Identify("869247061230011", uuid.New())
+		return c
+	}
+	old, fresh := open(), open()
+	m.Register(old)
+	if old.Replaced() {
+		t.Fatal("a primeira sessão não foi substituída")
+	}
+	m.Register(fresh)
+	if !old.Replaced() || fresh.Replaced() {
+		t.Errorf("substituída: antiga %v, nova %v", old.Replaced(), fresh.Replaced())
+	}
+	if current, _ := m.Get("869247061230011"); current != fresh {
+		t.Error("a sessão corrente é a nova")
+	}
+	// A antiga, ao terminar, não apaga a nova.
+	m.UnregisterConn(old)
+	if current, ok := m.Get("869247061230011"); !ok || current != fresh {
+		t.Error("a antiga apagou a nova")
 	}
 }

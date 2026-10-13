@@ -27,8 +27,10 @@ type memStore struct {
 	now     func() time.Time
 	targets map[uuid.UUID]*Target
 	offline map[uuid.UUID]bool
-	rows    []*Notification
-	nextID  int64
+	// lastSeen: o último pacote de cada rastreador (sem: nunca mandou).
+	lastSeen map[uuid.UUID]time.Time
+	rows     []*Notification
+	nextID   int64
 	// digested: os segurados pelo teto que já entraram num resumo.
 	digested map[int64]bool
 }
@@ -133,6 +135,11 @@ func (m *memStore) MarkPushed(_ context.Context, id int64, count int) error {
 
 func (m *memStore) DeviceOffline(_ context.Context, id uuid.UUID) (bool, error) {
 	return m.offline[id], nil
+}
+func (m *memStore) LastSeen(_ context.Context, id uuid.UUID) (time.Time, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastSeen[id], nil
 }
 func (m *memStore) Prune(context.Context, time.Time) (int64, error) { return 0, nil }
 
@@ -535,6 +542,74 @@ func TestSignalLostIgnoresQuickReconnect(t *testing.T) {
 	h.e.sweepLost(h.ctx)
 	if got := h.flush(); len(got) != 0 {
 		t.Fatalf("mandou posição depois da queda: sem alerta, veio %d", len(got))
+	}
+}
+
+// O rastreador que abre outra conexão derruba a antiga, e o fim dela chega
+// depois da nova (o caso real de 13/10, às 18:11): não é sinal perdido. Nem
+// a queda depois da qual chegou pacote. E a queda de verdade avisa a hora do
+// último pacote, não a de quando o sistema percebeu.
+func TestSignalLostReplacedSessionAndLastPacketTime(t *testing.T) {
+	h := newHarness(t, nil)
+	h.states[deviceID] = &tracking.State{ACC: ptr(true)}
+	h.store.lastSeen = map[uuid.UUID]time.Time{}
+
+	// A sessão nova abre; a antiga, substituída, fecha 3 ms depois.
+	h.event(events.DeviceConnected, h.now, nil)
+	h.event(events.DeviceDisconnected, h.now.Add(3*time.Millisecond), map[string]any{
+		"replaced": true, "lastSeenAt": h.now.Add(-2 * time.Minute),
+	})
+	h.now = h.now.Add(2 * signalLostGrace)
+	h.e.sweepLost(h.ctx)
+	if got := h.flush(); len(got) != 0 {
+		t.Fatalf("sessão substituída não é queda, veio %+v", got)
+	}
+
+	// Sem a marca (outro caminho), mas chegou pacote depois da queda: voltou.
+	drop := h.now
+	h.event(events.DeviceDisconnected, drop, nil)
+	h.store.lastSeen[deviceID] = drop.Add(20 * time.Second)
+	h.now = h.now.Add(2 * signalLostGrace)
+	h.e.sweepLost(h.ctx)
+	if got := h.flush(); len(got) != 0 {
+		t.Fatalf("mandou pacote depois da queda: sem alerta, veio %+v", got)
+	}
+
+	// Queda de verdade: o último pacote às 02:16:59, percebida às 02:19:03.
+	h.now = time.Date(2026, 9, 30, 2, 19, 3, 0, sp)
+	lastPacket := time.Date(2026, 9, 30, 2, 16, 59, 0, sp)
+	h.store.lastSeen[deviceID] = lastPacket.Add(-5 * time.Second) // o banco grava a cada 15 s
+	h.event(events.DeviceDisconnected, h.now, map[string]any{"lastSeenAt": lastPacket.UTC()})
+	h.now = h.now.Add(signalLostGrace)
+	h.e.sweepLost(h.ctx)
+	got := h.flush()
+	if len(got) != 1 || !strings.Contains(got[0].Summary, "parou de se comunicar às 02:16") ||
+		got[0].When != "30/09/2026 às 02:16 (horário de Brasília)" {
+		t.Fatalf("a hora do último pacote, veio %+v", got)
+	}
+	if rows := h.store.match("ana@cliente.test", deviceID, KindSignalLost, StatusSent); len(rows) != 1 ||
+		!rows[0].OccurredAt.Equal(lastPacket.UTC()) {
+		t.Errorf("histórico com a hora do último pacote: %+v", rows)
+	}
+}
+
+// Sem a hora na sessão (a queda percebida pela varredura de status), vale o
+// último pacote do banco; a hora em texto (evento lido do banco) também serve.
+func TestSignalLostTimeFromStore(t *testing.T) {
+	h := newHarness(t, nil)
+	h.states[deviceID] = &tracking.State{ACC: ptr(true)}
+	h.store.lastSeen = map[uuid.UUID]time.Time{deviceID: time.Date(2026, 9, 30, 2, 9, 30, 0, sp)}
+	h.event(events.DeviceDisconnected, h.now, nil)
+	h.now = h.now.Add(signalLostGrace)
+	h.e.sweepLost(h.ctx)
+	if got := h.flush(); len(got) != 1 || got[0].When != "30/09/2026 às 02:09 (horário de Brasília)" {
+		t.Fatalf("a hora do banco, veio %+v", got)
+	}
+	if got := metaTime("2026-10-13T21:08:59.5Z"); !got.Equal(time.Date(2026, 10, 13, 21, 8, 59, 500_000_000, time.UTC)) {
+		t.Errorf("hora em texto = %v", got)
+	}
+	if !metaTime(nil).IsZero() || !metaTime("ontem").IsZero() {
+		t.Error("sem hora: zero")
 	}
 }
 
