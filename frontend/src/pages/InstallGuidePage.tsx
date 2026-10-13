@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
+import { InstallAnimation } from '@/components/install/InstallAnimation';
 import { HarnessDiagram, RelayDiagram } from '@/components/install/J16Wiring';
 import { ClientAreaLink } from '@/components/landing/ClientAreaLink';
 import { InstallersModal } from '@/components/landing/InstallersModal';
@@ -121,6 +122,17 @@ export function InstallGuidePage() {
             </a>
           ))}
         </nav>
+      </section>
+
+      <section className={styles.card} aria-labelledby="animacao">
+        <h2 id="animacao" className={styles.heading}>
+          A instalação inteira, passo a passo
+        </h2>
+        <p className={styles.muted}>
+          Toca sozinha; pause para ver uma etapa com calma, ou toque nas bolinhas para ir direto a ela. Abaixo, os
+          detalhes de cada etapa.
+        </p>
+        <InstallAnimation />
       </section>
 
       <section id="local" className={styles.card} aria-labelledby="local-titulo">

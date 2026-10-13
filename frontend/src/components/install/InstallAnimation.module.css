@@ -1,0 +1,794 @@
+/* A instalação animada do J16 (InstallAnimation). O desenho sem animação é
+   o estado final de cada etapa: é o que aparece parado (pausado, fora da tela)
+   ou com "reduzir movimento". As animações só levam até ele. */
+
+.player {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.stage {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #eef2f6;
+}
+
+.scene {
+  display: block;
+  width: 100%;
+  height: auto;
+  font-family: inherit;
+}
+
+/* Textos da cena. */
+.small {
+  fill: #475569;
+  font-size: 9.5px;
+}
+
+.label {
+  fill: #0d130e;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.light {
+  fill: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.lightBold {
+  fill: #e2e8f0;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.trackerLabel {
+  fill: #3be558;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.relayLabel {
+  fill: #3be558;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.pill {
+  fill: #ffffff;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.blockedNote {
+  fill: #dc2626;
+  font-size: 10px;
+  font-weight: 800;
+  opacity: 0;
+}
+
+.scissors {
+  fill: #dc2626;
+  font-size: 18px;
+  opacity: 0;
+}
+
+/* O cenário. */
+.dash {
+  fill: #cbd5e1;
+}
+
+.waves path {
+  fill: none;
+  stroke: #16a34a;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.faceUp path {
+  fill: none;
+  stroke: #16a34a;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* O destaque do que a etapa mexe. */
+.lit {
+  filter: drop-shadow(0 0 5px rgba(22, 163, 74, 0.85));
+}
+
+/* Os fios. */
+.wire {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.whiteWire {
+  filter: drop-shadow(0 0 1px #334155) drop-shadow(0 0 1px #334155);
+}
+
+.hidden {
+  display: none;
+}
+
+.drawing {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+.splice {
+  fill: #0d130e;
+}
+
+.pumpWire {
+  fill: none;
+  stroke: #64748b;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.cutAway {
+  opacity: 0;
+}
+
+.flow {
+  fill: none;
+  stroke: #f59e0b;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 3 9;
+}
+
+/* O relê: a alavanca fechada (o combustível passa). */
+.lever {
+  stroke: #cbd5e1;
+  stroke-width: 3;
+  stroke-linecap: round;
+  transform-box: view-box;
+  transform-origin: 322px 190px;
+}
+
+/* A chave da ignição: em pé, desligada; girada, ligada. */
+.key {
+  transform-box: view-box;
+  transform-origin: 252px 58px;
+}
+
+.keyOn {
+  transform: rotate(50deg);
+}
+
+.led {
+  fill: #475569;
+}
+
+.ledOn {
+  fill: #22c55e;
+}
+
+.releaseButton {
+  opacity: 1;
+}
+
+.blockButton,
+.tap {
+  opacity: 0;
+}
+
+.tap {
+  fill: rgba(15, 23, 42, 0.35);
+}
+
+/* A barra do tempo da etapa. */
+.progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: rgba(15, 23, 42, 0.08);
+}
+
+.progress span {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: #16a34a;
+}
+
+/* ---- Movimento (só para quem não pediu menos movimento) ---- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .lit {
+    animation: litPulse 1.6s ease-in-out infinite;
+  }
+
+  .drawing {
+    animation: draw 1.6s ease-in-out 0.5s both;
+  }
+
+  .drawing.later {
+    animation-delay: 2.7s;
+  }
+
+  .drawing.afterCut {
+    animation-delay: 2.4s;
+  }
+
+  .drawing.energized {
+    animation:
+      draw 1.6s ease-in-out 0.5s both,
+      glowOnce 6.5s linear both;
+  }
+
+  .energized {
+    animation: glow 1.4s ease-in-out infinite;
+  }
+
+  .spliceLate {
+    animation: fadeIn 0.4s ease 4.3s both;
+  }
+
+  .cutAway {
+    animation: fadeOut 0.5s ease 1.7s both;
+  }
+
+  .scissors {
+    animation: snip 2.2s ease-in-out 0.2s both;
+  }
+
+  .flow {
+    animation: flowMove 0.9s linear infinite;
+  }
+
+  .flowLate {
+    animation:
+      flowMove 0.9s linear infinite,
+      fadeIn 0.5s ease 4.4s both;
+  }
+
+  .flowBlocked {
+    animation:
+      flowMove 0.9s linear infinite,
+      blocked 10s linear both;
+  }
+
+  .leverBlock {
+    animation: leverOpen 10s ease-in-out both;
+  }
+
+  .keyOff {
+    animation: keyToOff 1.2s ease-in-out 0.6s both;
+  }
+
+  .keyBlink {
+    animation: keyBlink 6.5s ease-in-out both;
+  }
+
+  .keyOn {
+    animation: keyToOn 0.9s ease-in-out both;
+  }
+
+  .dropIn {
+    animation: dropIn 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .faceUp {
+    animation:
+      fadeIn 0.4s ease 1.3s both,
+      bob 1.2s ease-in-out 1.7s infinite;
+  }
+
+  .waves path {
+    animation: wave 1.8s ease-out infinite both;
+  }
+
+  .waves path:nth-child(2) {
+    animation-delay: 0.3s;
+  }
+
+  .waves path:nth-child(3) {
+    animation-delay: 0.6s;
+  }
+
+  .popIn {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: popIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .ledOn {
+    animation: blink 1.2s steps(2, jump-none) infinite;
+  }
+
+  .phone {
+    animation: slideUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .online {
+    animation: fadeIn 0.4s ease 1.2s both;
+  }
+
+  .pin {
+    transform-box: fill-box;
+    transform-origin: bottom center;
+    animation: pinDrop 0.6s cubic-bezier(0.22, 1, 0.36, 1) 1.4s both;
+  }
+
+  .blockButton {
+    animation: blockButton 10s linear both;
+  }
+
+  .releaseButton {
+    animation: releaseButton 10s linear both;
+  }
+
+  .tap {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: tap 10s ease-out both;
+  }
+
+  .blockedNote {
+    animation: blockedOn 10s linear both;
+  }
+
+  .progress span {
+    animation: progress linear both;
+  }
+}
+
+/* Parada (pausada ou fora da tela): a etapa pronta, sem movimento. */
+.still * {
+  animation: none !important;
+}
+
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes litPulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(22, 163, 74, 0.5));
+  }
+  50% {
+    filter: drop-shadow(0 0 7px rgba(22, 163, 74, 0.95));
+  }
+}
+
+@keyframes glow {
+  0%,
+  100% {
+    filter: none;
+  }
+  50% {
+    filter: drop-shadow(0 0 4px rgba(234, 88, 12, 0.95));
+  }
+}
+
+/* O pós-chave acende enquanto a chave está ligada (35% a 75% da etapa). */
+@keyframes glowOnce {
+  0%,
+  34%,
+  76%,
+  100% {
+    filter: none;
+  }
+  40%,
+  70% {
+    filter: drop-shadow(0 0 5px rgba(234, 88, 12, 1));
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes snip {
+  0% {
+    opacity: 0;
+    transform: translateX(-36px);
+  }
+  20% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  70% {
+    transform: translateX(0) scale(1.25);
+  }
+  85% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+}
+
+@keyframes flowMove {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+
+/* O bloqueio: de 34% a 72% da etapa do teste. */
+@keyframes blocked {
+  0%,
+  33% {
+    opacity: 1;
+  }
+  35%,
+  71% {
+    opacity: 0;
+  }
+  73%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes blockedOn {
+  0%,
+  33% {
+    opacity: 0;
+  }
+  35%,
+  71% {
+    opacity: 1;
+  }
+  73%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes leverOpen {
+  0%,
+  32% {
+    transform: rotate(0deg);
+  }
+  36%,
+  70% {
+    transform: rotate(-32deg);
+  }
+  74%,
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes keyToOff {
+  from {
+    transform: rotate(50deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes keyToOn {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(50deg);
+  }
+}
+
+@keyframes keyBlink {
+  0%,
+  28% {
+    transform: rotate(0deg);
+  }
+  34%,
+  74% {
+    transform: rotate(50deg);
+  }
+  80%,
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes dropIn {
+  from {
+    opacity: 0;
+    transform: translateY(-70px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes wave {
+  0% {
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes blink {
+  50% {
+    fill: #86efac;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pinDrop {
+  from {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* O botão do app: Desligar motor até 65% da etapa; depois, Liberar motor. */
+@keyframes blockButton {
+  0%,
+  64% {
+    opacity: 1;
+  }
+  66%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes releaseButton {
+  0%,
+  64% {
+    opacity: 0;
+  }
+  66%,
+  100% {
+    opacity: 1;
+  }
+}
+
+/* O toque no botão: aos 30% (bloquear) e aos 70% (liberar). */
+@keyframes tap {
+  0%,
+  27% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  34% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  35%,
+  67% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  74%,
+  100% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+@keyframes progress {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+/* ---- A legenda e os controles ---- */
+
+.caption {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-height: 9.5rem;
+}
+
+.counter {
+  margin: 0;
+  color: var(--color-neon-green);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.captionTitle {
+  margin: 0;
+  font-size: 1.1rem;
+  line-height: 1.3;
+}
+
+.captionText {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.chips span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  color: #e2e8f0;
+  font-size: 0.8125rem;
+}
+
+.chips i {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.7);
+}
+
+.details {
+  align-self: flex-start;
+  color: var(--color-neon-green);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.controls {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.control {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffffff;
+  font: inherit;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.play {
+  border-color: transparent;
+  background: var(--color-neon-green);
+  color: #060907;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.dots {
+  display: flex;
+  justify-content: center;
+  gap: 0.15rem;
+}
+
+.dot,
+.dotOn {
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+}
+
+.dot::after,
+.dotOn::after {
+  content: '';
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  transform: translate(-50%, -50%);
+}
+
+.dotOn::after {
+  width: 1.4rem;
+  background: var(--color-neon-green);
+}
+
+@media print {
+  .controls,
+  .dots,
+  .progress {
+    display: none;
+  }
+}
