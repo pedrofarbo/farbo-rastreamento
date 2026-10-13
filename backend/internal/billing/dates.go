@@ -47,6 +47,22 @@ func nextMonthly(d Date, dueDay int) Date {
 	return NewDate(d.Year(), d.Month()+1, dueDay)
 }
 
+// followingDue é o vencimento depois de `d`: no dia da conta, pelo menos um
+// mês depois. Para um vencimento no dia da conta, é o do mês seguinte; para a
+// 1ª mensalidade, que vence no dia da contratação, a 2ª nunca vem colada nela
+// (contratando dia 28 com a conta no dia 10, vence dia 10 do mês depois do
+// seguinte).
+func followingDue(d Date, dueDay int) Date {
+	return firstDueDate(addMonth(d), dueDay)
+}
+
+// addMonth é a mesma data no mês seguinte; sem esse dia (31/01), o último do
+// mês (28 ou 29/02).
+func addMonth(d Date) Date {
+	last := NewDate(d.Year(), d.Month()+2, 0).Day()
+	return NewDate(d.Year(), d.Month()+1, min(d.Day(), last))
+}
+
 // firstDueDate é o primeiro vencimento no dia escolhido a partir de hoje
 // (inclusive): assinando no dia 5 com vencimento dia 10, vence dia 10; no dia
 // 15, vence dia 10 do mês seguinte.

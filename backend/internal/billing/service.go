@@ -273,6 +273,11 @@ func (s *Service) GetInvoice(ctx context.Context, id uuid.UUID) (*Invoice, error
 	return s.decorate(inv), nil
 }
 
+// FirstInvoice é a 1ª mensalidade da assinatura, a que se paga com o pedido.
+func (s *Service) FirstInvoice(ctx context.Context, subscriptionID uuid.UUID) (*Invoice, error) {
+	return s.decorated(s.repo.FirstInvoice(ctx, subscriptionID))
+}
+
 func (s *Service) ListInvoices(ctx context.Context, customerID uuid.UUID) ([]*Invoice, error) {
 	list, err := s.repo.ListInvoices(ctx, customerID)
 	if err != nil {

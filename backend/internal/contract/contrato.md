@@ -40,9 +40,10 @@ A instalação é feita por prestadores independentes indicados na plataforma, c
 ## 5. Preço, faturas e pagamento
 
 - A mensalidade de cada veículo é a do plano escolhido no pedido, mostrada antes da confirmação. Condições promocionais valem pelo prazo informado na contratação.
+- A 1ª mensalidade vence no dia da contratação e é paga junto com o pedido. As seguintes vencem todo mês no dia de vencimento da conta, a 2ª pelo menos um mês depois da 1ª.
 - As faturas ficam disponíveis na plataforma antes do vencimento e são enviadas por e-mail, com o link para pagar por Pix.
 {{- if gt .MaxInstallments 1}}
-- O rastreador pode ser pago à vista ou parcelado em até {{.MaxInstallments}} ({{.MaxInstallmentsWords}}) vezes sem juros, por Pix: no pedido, paga-se só o frete, e as parcelas vêm somadas às mensalidades daquele veículo, uma por mês, a 1ª junto com a 1ª mensalidade. O número e o valor das parcelas são mostrados antes da confirmação do pedido.
+- O rastreador pode ser pago à vista ou parcelado em até {{.MaxInstallments}} ({{.MaxInstallmentsWords}}) vezes sem juros, por Pix: no pedido, paga-se o frete e a 1ª mensalidade, e as parcelas vêm somadas às mensalidades daquele veículo, uma por mês, a 1ª junto com a 1ª mensalidade. O número e o valor das parcelas são mostrados antes da confirmação do pedido.
 {{- end}}
 - Reajuste anual pelo IPCA: a mensalidade é reajustada uma vez por ano, em agosto, pela variação do IPCA (IBGE) acumulada nos 12 meses encerrados em maio daquele ano, o último índice publicado antes do aviso. O valor novo vale para as faturas que vencem a partir de 1º de agosto e é avisado por e-mail com pelo menos 30 dias de antecedência; se o aviso sair depois de 1º de julho, o reajuste passa a valer 30 dias depois dele.
 - Só é reajustada a assinatura que completar 12 meses até a data do reajuste (Lei 10.192/2001); as mais novas são reajustadas no agosto seguinte. Se o índice acumulado for zero ou negativo, a mensalidade fica como está. Se o IPCA deixar de ser publicado, vale o índice oficial que o substituir.

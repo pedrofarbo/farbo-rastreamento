@@ -31,11 +31,11 @@ import (
 // A versão em vigor. Ao mudar o texto (contrato.md), mude a versão e a data:
 // todo cliente aceita de novo no próximo acesso.
 const (
-	Version       = "4"
-	EffectiveDate = "9 de outubro de 2026"
+	Version       = "5"
+	EffectiveDate = "13 de outubro de 2026"
 	// Changes resume o que mudou desde a versão anterior (o cliente que
 	// aceitou a anterior lê ao aceitar de novo, e recebe por e-mail).
-	Changes = "No rastreador parcelado (cláusula 5), o pedido cobra só o frete: as parcelas vêm todas somadas às mensalidades, uma por mês, a 1ª junto com a 1ª mensalidade — nunca duas no mesmo mês. A assinatura fica ativa até a mensalidade com a última parcela. Para quem pagou o rastreador à vista, nada muda."
+	Changes = "A 1ª mensalidade de cada veículo passa a vencer no dia da contratação e é paga junto com o pedido; a 2ª vence no dia de vencimento da conta, pelo menos um mês depois (cláusula 5). No rastreador parcelado, o pedido cobra o frete e a 1ª mensalidade, que já traz a 1ª parcela. As assinaturas já contratadas continuam como estão."
 	// MinMonths é a permanência mínima de cada assinatura.
 	MinMonths = 3
 )

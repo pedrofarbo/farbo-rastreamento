@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -450,9 +451,10 @@ func TestLaunchPromoEndToEnd(t *testing.T) {
 		t.Fatalf("assinatura = %+v", sub)
 	}
 
-	// 13 mensalidades: as 12 primeiras com a promoção, a 13ª pelo plano.
+	// As 12 primeiras mensalidades com a promoção (a 1ª vence com o pedido),
+	// a 13ª pelo plano.
 	repo := billing.NewRepository(env.db)
-	horizon := billing.Date{Time: first.AddDate(1, 0, 0)}
+	horizon := billing.Date{Time: first.AddDate(1, 1, 0)}
 	for i := 0; i < 2; i++ {
 		if _, err := repo.GenerateDue(ctx, horizon); err != nil {
 			t.Fatal(err)
@@ -476,7 +478,7 @@ func TestLaunchPromoEndToEnd(t *testing.T) {
 		amounts = append(amounts, cents)
 	}
 	rows.Close()
-	if len(amounts) != 13 || amounts[0] != 3490 || amounts[11] != 3490 || amounts[12] != 6990 {
+	if len(amounts) < 13 || slices.ContainsFunc(amounts[:12], func(c int) bool { return c != 3490 }) || amounts[12] != 6990 {
 		t.Fatalf("mensalidades = %v, quer 12 × 3490 e depois 6990", amounts)
 	}
 

@@ -249,7 +249,8 @@ type Mail struct {
 
 type Billing struct {
 	// InvoiceLeadDays: a fatura é gerada esta quantidade de dias antes do
-	// vencimento, para o cliente ver e pagar com antecedência.
+	// vencimento, para o cliente ver e pagar com antecedência. A primeira de
+	// cada assinatura sai na hora, com a contratação.
 	InvoiceLeadDays int
 	// SuspendAfterDays: com fatura vencida há mais que isso, o cliente perde o
 	// acesso ao mapa e aos veículos até pagar. 0 desliga a suspensão.
@@ -324,11 +325,12 @@ type Catalog struct {
 	DefaultDueDay       int
 	EquipmentName       string
 	EquipmentPriceCents int
-	// SetupDueDays: prazo da fatura do equipamento.
+	// SetupDueDays: prazo da cobrança do pedido (equipamento, frete) e da 1ª
+	// mensalidade, que vence junto; 0: no dia da contratação.
 	SetupDueDays int
 	// EquipmentMaxInstallments: em até quantas vezes sem juros o rastreador
-	// pode ser parcelado (1: só à vista). No pedido, só o frete; as parcelas
-	// vêm somadas às mensalidades, a 1ª na 1ª.
+	// pode ser parcelado (1: só à vista). No pedido, o frete e a 1ª
+	// mensalidade; as parcelas vêm somadas às mensalidades, a 1ª na 1ª.
 	EquipmentMaxInstallments int
 	// LaunchPromo é a promoção de pré-lançamento.
 	LaunchPromo LaunchPromo
@@ -759,7 +761,7 @@ func Load() (*Config, error) {
 			DefaultDueDay:            num("CATALOG_DEFAULT_DUE_DAY", 10),
 			EquipmentName:            str("CATALOG_EQUIPMENT_NAME", "Rastreador J16 GT06"),
 			EquipmentPriceCents:      num("CATALOG_EQUIPMENT_PRICE_CENTS", 15000),
-			SetupDueDays:             num("CATALOG_SETUP_DUE_DAYS", 3),
+			SetupDueDays:             num("CATALOG_SETUP_DUE_DAYS", 0),
 			EquipmentMaxInstallments: num("CATALOG_EQUIPMENT_MAX_INSTALLMENTS", 10),
 			LaunchPromo: LaunchPromo{
 				Enabled:        bl("LAUNCH_PROMO_ENABLED", true),

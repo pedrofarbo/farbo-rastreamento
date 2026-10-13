@@ -235,7 +235,8 @@ Como funciona, do lado da central (menu **Clientes**, perfil `admin`):
    o cliente — veículo, rastreador e assinatura de uma vez (ver abaixo). Depois
    da instalação, a central vincula o rastreador na linha do veículo.
 3. **Faturas**: a mensalidade é gerada sozinha `BILLING_INVOICE_LEAD_DAYS`
-   dias antes do vencimento (uma por vencimento, sem duplicar). Na ficha, a
+   dias antes do vencimento (uma por vencimento, sem duplicar); a primeira de
+   cada assinatura sai adiantada, na contratação. Na ficha, a
    central informa o link de pagamento e/ou o Pix copia-e-cola, dá baixa quando
    recebe, cancela, ou lança uma cobrança avulsa (troca de equipamento, por
    exemplo).
@@ -1517,7 +1518,7 @@ mais importam:
 | `MAIL_FROM` | vazio | remetente; obrigatório com `SMTP_HOST` |
 | `PASSWORD_RESET_TTL` | `1h` | validade do link de redefinição de senha |
 | `CUSTOMER_INVITE_TTL` | `72h` | validade do convite do cliente novo |
-| `BILLING_INVOICE_LEAD_DAYS` | `10` | antecedência com que a fatura mensal é gerada |
+| `BILLING_INVOICE_LEAD_DAYS` | `10` | antecedência com que a fatura mensal é gerada (a primeira de cada assinatura sai na contratação) |
 | `BILLING_SUSPEND_AFTER_DAYS` | `10` | dias de atraso até suspender o acesso do cliente; `0` desliga |
 | `BILLING_TIMEZONE` | `America/Sao_Paulo` | fuso do "hoje" dos vencimentos |
 | `ABACATEPAY_API_KEY` | vazio | liga o Pix das faturas; `abc_dev_...` é sandbox |

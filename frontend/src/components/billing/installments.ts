@@ -2,8 +2,8 @@ import { formatDateOnly, formatMoney } from '@/services/format';
 import type { Subscription } from '@/types';
 
 /**
- * O rastreador parcelado sem juros, por Pix: no pedido, só o frete; as
- * parcelas vêm somadas às mensalidades, a 1ª na 1ª. A assinatura fica ativa
+ * O rastreador parcelado sem juros, por Pix: no pedido, o frete e a 1ª
+ * mensalidade; as parcelas vêm somadas às mensalidades, a 1ª na 1ª. A assinatura fica ativa
  * até a última; encerrada antes, o saldo vence de uma vez.
  */
 

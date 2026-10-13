@@ -1057,6 +1057,8 @@ export interface TrackerOrderResult {
   subscription: Subscription;
   /** Fatura do equipamento (com o frete); nula quando nada foi cobrado. */
   setupInvoice: Invoice | null;
+  /** A 1ª mensalidade, que vence com o pedido e se paga junto com ele. */
+  firstInvoice: Invoice | null;
   /** O frete cobrado; nulo se o pedido saiu sem frete. */
   shipping: ShippingChoice | null;
 }

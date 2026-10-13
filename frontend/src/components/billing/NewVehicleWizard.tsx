@@ -54,6 +54,12 @@ interface AdminDraft {
   promo: boolean;
 }
 
+/** O prazo da cobrança do pedido: "vence hoje", "vence amanhã", "vence em 3 dias". */
+function dueIn(days: number): string {
+  if (days <= 0) return 'vence hoje';
+  return days === 1 ? 'vence amanhã' : `vence em ${days} dias`;
+}
+
 export function addDays(iso: string, days: number): string {
   const [y, m, d] = iso.split('-').map(Number);
   const date = new Date(y, m - 1, d + days);
@@ -336,10 +342,12 @@ export function NewVehicleWizard({
   const arranged = ships && shippingId === ARRANGE_DELIVERY && shippingQuote.data?.arrange === true;
   // O cliente só confirma com a entrega escolhida (quando o frete é cotado).
   const needsShipping = !isAdmin && ships && shippingQuote.data?.enabled === true;
-  // Parcelado: agora vai só o frete; as parcelas, nas mensalidades (a 1ª na 1ª).
+  // Parcelado: o equipamento vai nas mensalidades (a 1ª parcela na 1ª).
   const choices = installmentChoices(equipmentCents ?? 0, c?.equipmentMaxInstallments ?? 1);
   const parcels = installments > 1 && choices.length >= installments ? splitInstallments(equipmentCents ?? 0, installments) : null;
-  const totalNow = (parcels ? 0 : (equipmentCents ?? 0)) + (freight?.cents ?? 0);
+  // A 1ª mensalidade vence com o pedido e se paga junto com ele.
+  const firstMonthly = (promoMonthly ?? monthly?.cents ?? 0) + (parcels?.[0] ?? 0);
+  const totalNow = (parcels ? 0 : (equipmentCents ?? 0)) + (freight?.cents ?? 0) + firstMonthly;
 
   const goTo = (next: number) => {
     setError('');
@@ -503,7 +511,8 @@ export function NewVehicleWizard({
                     onChange={(e) => setAdminDraft({ ...adminDraft, equipment: e.target.value })}
                   />
                   <TextField
-                    label="Vencimento da fatura"
+                    label="Vencimento do pedido"
+                    hint="A 1ª mensalidade vence junto."
                     type="date"
                     value={adminDraft.dueDate}
                     onChange={(e) => setAdminDraft({ ...adminDraft, dueDate: e.target.value })}
@@ -557,7 +566,7 @@ export function NewVehicleWizard({
                 <div className={styles.orderSummary}>
                   <div className={`${styles.orderLine} ${styles.orderTotal}`}>
                     <span>
-                      {c.equipmentName} (vence em {c.setupDueDays} {c.setupDueDays === 1 ? 'dia' : 'dias'})
+                      {c.equipmentName} ({dueIn(c.setupDueDays)})
                     </span>
                     <span>
                       {customerPromo && <s className={styles.muted}>{formatMoney(c.equipmentPriceCents)}</s>}{' '}
@@ -588,8 +597,8 @@ export function NewVehicleWizard({
                   />
                 ) : (
                   <p className={pageStyles.description}>
-                    A assinatura começa com o pedido, no plano da sua conta: {c.planName}, vence todo dia{' '}
-                    {c.defaultDueDay}.
+                    A assinatura começa com o pedido, no plano da sua conta: {c.planName}. A 1ª mensalidade se paga
+                    com o pedido; as outras vencem todo dia {c.defaultDueDay} (a 2ª, pelo menos um mês depois).
                   </p>
                 )}
 
@@ -645,10 +654,20 @@ export function NewVehicleWizard({
                       <span>sem frete</span>
                     </div>
                   )}
+                  {firstMonthly > 0 && (
+                    <div className={styles.orderLine}>
+                      <span>1ª mensalidade{parcels ? ', com a 1ª parcela' : ''}</span>
+                      <span>{formatMoney(firstMonthly)}</span>
+                    </div>
+                  )}
                   <div className={`${styles.orderLine} ${styles.orderTotal}`}>
                     <span>
-                      Agora{parcels ? (freight ? ': frete' : '') : freight ? ': equipamento e frete' : ': equipamento'}
-                      {isAdmin && adminDraft && totalNow ? ` · vence ${formatDateOnly(adminDraft.dueDate)}` : ''}
+                      Agora
+                      {isAdmin && adminDraft
+                        ? totalNow
+                          ? ` · vence ${formatDateOnly(adminDraft.dueDate)}`
+                          : ''
+                        : ` · ${dueIn(c.setupDueDays)}`}
                     </span>
                     <span>{totalNow ? formatMoney(totalNow) : 'sem cobrança'}</span>
                   </div>
@@ -656,6 +675,8 @@ export function NewVehicleWizard({
                     <div className={`${styles.orderLine} ${styles.orderMonthly}`}>
                       <span>
                         Assinatura: {monthly.name || 'plano'}, todo dia {monthly.dueDay}
+                        <br />
+                        <span className={styles.muted}>A 2ª mensalidade vence pelo menos um mês depois da 1ª.</span>
                         {promo && (
                           <>
                             <br />
@@ -747,7 +768,7 @@ function InstallmentsField({
       label={staff ? 'Pagamento do equipamento' : 'Como pagar o rastreador'}
       hint={
         value > 1
-          ? `${staff ? 'No pedido' : 'Agora'}, só o frete; as ${value} parcelas vêm somadas às mensalidades, a 1ª junto com a 1ª.`
+          ? `As ${value} parcelas vêm somadas às mensalidades: a 1ª junto com a 1ª mensalidade, paga com o pedido.`
           : `À vista, ou parcelado em até ${choices.length}x sem juros nas mensalidades.`
       }
       value={value}

@@ -43,6 +43,33 @@ func TestNextMonthlyKeepsDayAndCrossesYear(t *testing.T) {
 	}
 }
 
+// A mensalidade depois da 1ª (que vence no dia da contratação): no dia da
+// conta, pelo menos um mês depois; para um vencimento no dia da conta, o mês
+// seguinte, como sempre.
+func TestFollowingDue(t *testing.T) {
+	cases := []struct {
+		name   string
+		from   Date
+		dueDay int
+		want   Date
+	}{
+		{"no dia da conta: o mês seguinte", NewDate(2026, 11, 20), 20, NewDate(2026, 12, 20)},
+		{"antes do dia da conta: o do mês seguinte", NewDate(2026, 10, 13), 20, NewDate(2026, 11, 20)},
+		{"logo depois do dia da conta: pula um mês", NewDate(2026, 10, 28), 10, NewDate(2026, 12, 10)},
+		{"um dia depois do dia da conta", NewDate(2026, 10, 21), 20, NewDate(2026, 12, 20)},
+		{"fim do mês com a conta no dia 1", NewDate(2026, 10, 31), 1, NewDate(2026, 12, 1)},
+		{"31 de janeiro: fevereiro não tem 31", NewDate(2027, 1, 31), 28, NewDate(2027, 2, 28)},
+		{"virada de ano", NewDate(2026, 12, 15), 10, NewDate(2027, 2, 10)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := followingDue(tc.from, tc.dueDay); got != tc.want {
+				t.Fatalf("followingDue(%s, %d) = %s, esperado %s", tc.from, tc.dueDay, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestDateInUsesBillingTimezone(t *testing.T) {
 	saoPaulo, err := time.LoadLocation("America/Sao_Paulo")
 	if err != nil {

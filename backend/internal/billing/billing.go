@@ -355,6 +355,12 @@ func (r *Repository) GetInvoice(ctx context.Context, id uuid.UUID) (*Invoice, er
 	return scanInvoice(r.db.QueryRow(ctx, `SELECT `+invoiceColumns+` FROM invoices WHERE id = $1`, id))
 }
 
+// FirstInvoice é a 1ª mensalidade da assinatura (ErrNotFound: ainda não saiu).
+func (r *Repository) FirstInvoice(ctx context.Context, subscriptionID uuid.UUID) (*Invoice, error) {
+	return scanInvoice(r.db.QueryRow(ctx, `SELECT `+invoiceColumns+` FROM invoices
+		WHERE subscription_id = $1 ORDER BY due_date LIMIT 1`, subscriptionID))
+}
+
 // ClosedInvoicesPage é quantas faturas já fechadas (pagas ou canceladas) a
 // lista do cliente traz por vez, das mais recentes — no mínimo: o último
 // vencimento entra inteiro (numa frota, um vencimento são centenas, uma por
@@ -498,7 +504,9 @@ func (r *Repository) UpdateInvoicePayment(ctx context.Context, id uuid.UUID, pay
 }
 
 // GenerateDue cria as faturas de todas as assinaturas ativas com vencimento
-// até `horizon` e avança o próximo vencimento de cada uma. Várias instâncias
+// até `horizon` e avança o próximo vencimento de cada uma. A assinatura que
+// ainda não tem fatura nenhuma ganha a primeira na hora, qualquer que seja o
+// vencimento: o cliente vê a cobrança assim que contrata. Várias instâncias
 // podem rodar ao mesmo tempo: SKIP LOCKED separa as assinaturas entre elas, e
 // a chave única (assinatura, vencimento) impede fatura em dobro.
 func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, error) {
@@ -513,16 +521,19 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 		nextPrice      *int
 		nextFrom       *Date
 		installments   int
+		first          bool
 	}
 
 	var created int64
 	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-			SELECT id, customer_id, plan_name, price_cents, due_day, next_due_date, promo_price_cents, promo_until,
-				next_price_cents, next_price_from, installments
-			FROM subscriptions
-			WHERE status = 'ACTIVE' AND next_due_date <= $1
-			ORDER BY next_due_date
+			SELECT s.id, s.customer_id, s.plan_name, s.price_cents, s.due_day, s.next_due_date, s.promo_price_cents,
+				s.promo_until, s.next_price_cents, s.next_price_from, s.installments,
+				NOT EXISTS (SELECT 1 FROM invoices i WHERE i.subscription_id = s.id)
+			FROM subscriptions s
+			WHERE s.status = 'ACTIVE'
+				AND (s.next_due_date <= $1 OR NOT EXISTS (SELECT 1 FROM invoices i WHERE i.subscription_id = s.id))
+			ORDER BY s.next_due_date
 			FOR UPDATE SKIP LOCKED`, horizon.Time)
 		if err != nil {
 			return err
@@ -533,7 +544,7 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 			var next time.Time
 			var promoUntil, nextFrom *time.Time
 			if err := rows.Scan(&d.id, &d.customerID, &d.planName, &d.priceCents, &d.dueDay, &next,
-				&d.promoCents, &promoUntil, &d.nextPrice, &nextFrom, &d.installments); err != nil {
+				&d.promoCents, &promoUntil, &d.nextPrice, &nextFrom, &d.installments, &d.first); err != nil {
 				rows.Close()
 				return err
 			}
@@ -553,7 +564,12 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 
 		for _, d := range pending {
 			next := d.next
-			for i := 0; i < maxCatchUp && !horizon.Before(next); i++ {
+			// A primeira fatura sai adiantada; as outras, na antecedência.
+			until := horizon
+			if d.first && until.Before(next) {
+				until = next
+			}
+			for i := 0; i < maxCatchUp && !until.Before(next); i++ {
 				amount, promotional := priceOn(d.priceCents, d.nextPrice, d.nextFrom, d.promoCents, d.promoUntil, next)
 				description := invoiceDescription(d.planName, next)
 				if promotional {
@@ -591,7 +607,7 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 						}
 					}
 				}
-				next = nextMonthly(next, d.dueDay)
+				next = followingDue(next, d.dueDay)
 			}
 			if _, err := tx.Exec(ctx,
 				`UPDATE subscriptions SET next_due_date = $2, updated_at = NOW() WHERE id = $1`,

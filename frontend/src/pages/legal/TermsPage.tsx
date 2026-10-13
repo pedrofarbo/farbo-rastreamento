@@ -144,8 +144,10 @@ const SECTIONS: LegalSection[] = [
           antecedência. Nenhuma delas altera as condições promocionais já contratadas durante o seu prazo.
         </p>
         <p>
-          O rastreador pode ser pago à vista ou <strong>parcelado sem juros, por Pix</strong>: no pedido, paga-se só o
-          frete, e as parcelas vêm somadas às mensalidades, uma por mês, a 1ª junto com a 1ª mensalidade.
+          A <strong>1ª mensalidade vence no dia da contratação</strong> e é paga junto com o pedido; as seguintes vencem
+          todo mês no dia de vencimento da conta, a 2ª pelo menos um mês depois da 1ª. O rastreador pode ser pago à
+          vista ou <strong>parcelado sem juros, por Pix</strong>: no pedido, paga-se o frete e a 1ª mensalidade, e as
+          parcelas vêm somadas às mensalidades, uma por mês, a 1ª junto com a 1ª mensalidade.
         </p>
         <p>
           Cada assinatura tem <strong>permanência mínima de 3 meses</strong>. Para cada rastreador, mantemos um

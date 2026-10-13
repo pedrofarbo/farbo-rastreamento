@@ -135,6 +135,11 @@ func (s *Service) ImportFleet(ctx context.Context, customerID uuid.UUID, in Impo
 		if err := s.billing.AlignDueDay(ctx, tx, template, in.Plan.FirstDueDate != nil); err != nil {
 			return err
 		}
+		// A 1ª mensalidade de cada veículo vence com a fatura do equipamento
+		// (como no pedido de um veículo); um 1º vencimento combinado prevalece.
+		if in.Plan.FirstDueDate == nil {
+			template.NextDueDate = due
+		}
 		for _, name := range plan.newGroups {
 			var id uuid.UUID
 			if err := tx.QueryRow(ctx, `INSERT INTO vehicle_groups (owner_id, name) VALUES ($1, $2) RETURNING id`,

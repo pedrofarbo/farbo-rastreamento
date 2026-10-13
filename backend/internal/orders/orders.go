@@ -70,8 +70,8 @@ type Order struct {
 	// entrega combinada, só fica no acompanhamento.
 	Shipping *fulfillment.Choice
 	// Installments parcela o equipamento sem juros (0 ou 1: à vista; até o
-	// EquipmentMaxInstallments do catálogo): no pedido, só o frete; as
-	// parcelas vêm somadas às mensalidades, a 1ª na 1ª. A assinatura fica
+	// EquipmentMaxInstallments do catálogo): no pedido, o frete e a 1ª
+	// mensalidade; as parcelas vêm somadas às mensalidades, a 1ª na 1ª. A assinatura fica
 	// ativa até a última.
 	Installments int
 }
@@ -83,6 +83,9 @@ type Result struct {
 	// SetupInvoice é a fatura do equipamento (com o frete); nula quando nada
 	// foi cobrado (aparelho do cliente, cortesia, sem frete...).
 	SetupInvoice *billing.Invoice `json:"setupInvoice"`
+	// FirstInvoice é a 1ª mensalidade, que vence com o pedido e se paga junto
+	// com ele; nula se a geração falhar (a rotina de faturas a cria depois).
+	FirstInvoice *billing.Invoice `json:"firstInvoice"`
 	// Shipping é a entrega escolhida (nula: sem frete).
 	Shipping *fulfillment.Choice `json:"shipping"`
 }
@@ -160,6 +163,12 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 		if err := s.billing.AlignDueDay(ctx, tx, sub, o.Plan.FirstDueDate != nil); err != nil {
 			return err
 		}
+		// A 1ª mensalidade vence com o pedido: no dia da contratação (ou no
+		// que a central escolheu para a cobrança dele). A 2ª, no dia da conta,
+		// pelo menos um mês depois. Um 1º vencimento combinado prevalece.
+		if o.Plan.FirstDueDate == nil {
+			sub.NextDueDate = due
+		}
 		if o.LaunchPromo {
 			var err error
 			if setup, err = s.applyPromo(ctx, tx, customerID, sub, setup); err != nil {
@@ -167,7 +176,8 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 			}
 		}
 		// Parcelado: o rastreador vai inteiro nas mensalidades (a 1ª parcela
-		// na 1ª); no pedido fica só o frete, se houver.
+		// na 1ª, que vence com o pedido); a fatura do pedido fica só com o
+		// frete, se houver.
 		var installments []int
 		financed := ""
 		if o.Installments > 0 {
@@ -257,8 +267,15 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 		s.billing.Decorate(result.SetupInvoice)
 	}
 
-	// Primeira mensalidade, se já estiver dentro da antecedência.
+	// A 1ª mensalidade sai na hora, para pagar junto com o pedido.
 	s.billing.GenerateInvoices(ctx)
+	first, err := s.billing.FirstInvoice(ctx, result.Subscription.ID)
+	switch {
+	case err == nil:
+		result.FirstInvoice = first
+	case !errors.Is(err, database.ErrNotFound):
+		s.log.Warn("pedido feito, mas a 1ª mensalidade não foi lida", "subscription", result.Subscription.ID, "err", err)
+	}
 	freightCents := 0
 	if result.Shipping != nil {
 		freightCents = result.Shipping.PriceCents

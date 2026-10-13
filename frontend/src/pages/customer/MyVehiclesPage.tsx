@@ -9,6 +9,7 @@ import { DeliveryBox } from '@/components/address/DeliveryBox';
 import billing from '@/components/billing/Billing.module.css';
 import { MonthlyPrice } from '@/components/billing/MonthlyPrice';
 import { installmentProgress } from '@/components/billing/installments';
+import { meGroupPixApi } from '@/components/billing/groupPix';
 import { NewVehicleWizard } from '@/components/billing/NewVehicleWizard';
 import { PixPaymentModal } from '@/components/billing/PixPaymentModal';
 import { SuspendedNotice, isSuspendedError } from '@/components/billing/SuspendedNotice';
@@ -26,6 +27,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateTime, formatDeviceStatus, formatRelative } from '@/services/format';
 import { stepOf, trackerTone } from '@/services/fulfillment';
+import { orderPayment } from '@/services/invoiceGroups';
 import { subscriptionsByVehicle, subscriptionsWithoutVehicle } from '@/services/subscriptions';
 import { NO_GROUP, inGroup, matchesVehicle, situationOf } from '@/services/vehicleFilters';
 import { FleetSettingsModal } from '@/components/vehicle/FleetSettingsModal';
@@ -60,7 +62,8 @@ export function MyVehiclesPage() {
 
   const [form, setForm] = useState<VehicleForm | null>(null);
   const [ordering, setOrdering] = useState(false);
-  const [paying, setPaying] = useState<Invoice | null>(null);
+  // Uma fatura ou o grupo do pedido (o equipamento e a 1ª mensalidade).
+  const [paying, setPaying] = useState<(Pick<Invoice, 'id' | 'description'> & { amountCents?: number }) | null>(null);
   // A forma que o cliente escolheu ao contratar (a janela abre nela).
   const [payingWith, setPayingWith] = useState<ChargeMethod | undefined>(undefined);
   const [showInstallers, setShowInstallers] = useState(false);
@@ -437,10 +440,12 @@ export function MyVehiclesPage() {
             title: 'Pedido feito',
             description: `${result.vehicle.name} foi cadastrado; o rastreador segue para instalação.`,
           });
-          // Com o Pix online, já abre o pagamento do equipamento.
-          if (result.setupInvoice && account.data?.onlinePayment) {
+          // Com o pagamento online, já abre o do pedido: o equipamento (com o
+          // frete) e a 1ª mensalidade, num pagamento só.
+          const due = orderPayment([result.setupInvoice, result.firstInvoice]);
+          if (due && account.data?.onlinePayment) {
             setPayingWith(payment);
-            setPaying(result.setupInvoice);
+            setPaying(due);
           }
         }}
       />
@@ -498,7 +503,7 @@ export function MyVehiclesPage() {
 
       <PixPaymentModal
         invoice={paying}
-        api={meApi}
+        api={meGroupPixApi}
         audience="customer"
         initialMethod={payingWith}
         autoDebit={payingWith === 'CARD'}

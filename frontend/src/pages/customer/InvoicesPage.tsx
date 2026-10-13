@@ -3,8 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { meApi } from '@/api/resources';
-import type { PixApi } from '@/api/resources';
 import billing from '@/components/billing/Billing.module.css';
+import { meGroupPixApi } from '@/components/billing/groupPix';
 import { InvoiceDayRows } from '@/components/billing/InvoiceDayRows';
 import { InvoiceLines } from '@/components/billing/InvoiceLines';
 import { InvoiceStatus } from '@/components/billing/InvoiceStatus';
@@ -21,7 +21,6 @@ import { adjustmentNoticeVisible } from '@/services/adjustment';
 import { formatDateOnly, formatMoney } from '@/services/format';
 import {
   CLOSED_PAGE,
-  groupIds,
   groupOf,
   historyRows,
   monthlyGroups,
@@ -29,7 +28,7 @@ import {
   overdueGroup,
 } from '@/services/invoiceGroups';
 import type { HistoryDay, InvoiceGroup } from '@/services/invoiceGroups';
-import type { CardPayInput, Invoice } from '@/types';
+import type { Invoice } from '@/types';
 
 import styles from '../Page.module.css';
 
@@ -37,25 +36,6 @@ import styles from '../Page.module.css';
 export function InvoicesPage() {
   const queryClient = useQueryClient();
   const [paying, setPaying] = useState<(Pick<Invoice, 'id' | 'description'> & { amountCents?: number }) | null>(null);
-  // A janela de pagamento serve a uma fatura ou a um grupo (a chave "grupo:<ids>").
-  const pixApi = useMemo<PixApi>(
-    () => ({
-      ...meApi,
-      invoicePix: (key: string) => {
-        const ids = groupIds(key);
-        return ids ? meApi.invoicesPix(ids) : meApi.invoicePix(key);
-      },
-      invoiceBoleto: (key: string) => {
-        const ids = groupIds(key);
-        return ids ? meApi.invoicesBoleto(ids) : meApi.invoiceBoleto(key);
-      },
-      invoiceCard: (key: string, input: CardPayInput) => {
-        const ids = groupIds(key);
-        return ids ? meApi.invoicesCard(ids, input) : meApi.invoiceCard(key, input);
-      },
-    }),
-    [],
-  );
   const payGroup = (g: InvoiceGroup, description: string) => setPaying({ id: g.key, description, amountCents: g.amountCents });
 
   const account = useQuery({ queryKey: ['me', 'account'], queryFn: meApi.account });
@@ -125,9 +105,9 @@ export function InvoicesPage() {
             <p className={styles.description}>
               {onlinePayment
                 ? cardOn
-                  ? 'As faturas saem alguns dias antes do vencimento. Pague aqui mesmo, com Pix, boleto ou cartão: a baixa é automática (no Pix e no cartão, em segundos; no boleto, quando o banco compensar).'
-                  : 'As faturas saem alguns dias antes do vencimento. Pague aqui mesmo, com Pix ou boleto: a baixa é automática (no Pix, em segundos; no boleto, quando o banco compensar).'
-                : 'As faturas saem alguns dias antes do vencimento. Pague pelo link ou pelo Pix copia-e-cola; a baixa é feita pela nossa equipe assim que o pagamento é confirmado.'}{' '}
+                  ? 'A primeira fatura sai assim que o rastreador é contratado; as outras, alguns dias antes do vencimento. Pague aqui mesmo, com Pix, boleto ou cartão: a baixa é automática (no Pix e no cartão, em segundos; no boleto, quando o banco compensar).'
+                  : 'A primeira fatura sai assim que o rastreador é contratado; as outras, alguns dias antes do vencimento. Pague aqui mesmo, com Pix ou boleto: a baixa é automática (no Pix, em segundos; no boleto, quando o banco compensar).'
+                : 'A primeira fatura sai assim que o rastreador é contratado; as outras, alguns dias antes do vencimento. Pague pelo link ou pelo Pix copia-e-cola; a baixa é feita pela nossa equipe assim que o pagamento é confirmado.'}{' '}
               {/* Link comum: no app (em /app), a página do contrato fica fora das rotas dele. */}
               <a href="/contrato">Ver o contrato de prestação de serviços</a>.
             </p>
@@ -246,7 +226,7 @@ export function InvoicesPage() {
             <EmptyState
               icon="🧾"
               title="Nenhuma fatura ainda"
-              description="A primeira fatura aparece aqui alguns dias antes do vencimento."
+              description="A primeira fatura aparece aqui assim que o rastreador é contratado."
             />
           ) : (
             <div className={styles.tableWrap}>
@@ -346,7 +326,7 @@ export function InvoicesPage() {
 
       <PixPaymentModal
         invoice={paying}
-        api={pixApi}
+        api={meGroupPixApi}
         audience="customer"
         onClose={() => setPaying(null)}
         onPaid={onPaid}

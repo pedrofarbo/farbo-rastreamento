@@ -12,9 +12,9 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 )
 
-// O rastreador parcelado sem juros, por Pix: no pedido, só o frete; as
-// parcelas vêm somadas às mensalidades da assinatura, uma por mês (a 1ª na
-// 1ª mensalidade). Ela fica ativa até a última parcela (CommitmentUntil); se
+// O rastreador parcelado sem juros, por Pix: no pedido, o frete e a 1ª
+// mensalidade; as parcelas vêm somadas às mensalidades da assinatura, uma por
+// mês (a 1ª na 1ª mensalidade). Ela fica ativa até a última parcela (CommitmentUntil); se
 // for encerrada antes, o saldo vira uma fatura só — ou é dispensado
 // (arrependimento, pedido desfeito).
 
@@ -38,11 +38,11 @@ func SplitInstallments(totalCents, n int) []int {
 
 // PlanInstallments marca a assinatura como de rastreador parcelado em n
 // vezes: a parcela k vai na mensalidade k, e a permanência vai até o
-// vencimento da que traz a última.
+// vencimento da que traz a última. Chame depois de definir o 1º vencimento.
 func (s *Subscription) PlanInstallments(n int) {
 	last := s.NextDueDate
 	for i := 1; i < n; i++ {
-		last = nextMonthly(last, s.DueDay)
+		last = followingDue(last, s.DueDay)
 	}
 	s.Installments, s.CommitmentUntil = n, &last
 }

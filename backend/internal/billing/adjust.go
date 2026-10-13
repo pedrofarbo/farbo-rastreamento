@@ -155,7 +155,7 @@ func (s *Service) FinanceInvoice(ctx context.Context, invoiceID, subscriptionID 
 		if remaining > 0 {
 			end := sub.NextDueDate
 			for i := 1; i < remaining; i++ {
-				end = nextMonthly(end, sub.DueDay)
+				end = followingDue(end, sub.DueDay)
 			}
 			last = &end
 		}

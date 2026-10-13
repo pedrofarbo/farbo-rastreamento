@@ -44,7 +44,8 @@ func TestContractText(t *testing.T) {
 		"serviços de segurança ou de vigilância", "central de monitoramento", "seguro veicular",
 		"equipe tática ou de pronta-resposta de prontidão", "não garante a recuperação do veículo em caso de roubo ou furto",
 		"prazo de arrependimento (cláusula 9)", "nova versão deste contrato (cláusula 14)",
-		"parcelado em até 10 (dez) vezes sem juros, por Pix", "no pedido, paga-se só o frete", "a 1ª junto com a 1ª mensalidade",
+		"parcelado em até 10 (dez) vezes sem juros, por Pix", "no pedido, paga-se o frete e a 1ª mensalidade", "a 1ª junto com a 1ª mensalidade",
+		"A 1ª mensalidade vence no dia da contratação", "a 2ª pelo menos um mês depois da 1ª",
 		"ativa até a mensalidade que traz a última parcela", "as parcelas restantes vencem de uma vez, numa fatura só",
 		"não são multa: são o preço do rastreador",
 	} {
@@ -63,12 +64,12 @@ func TestContractText(t *testing.T) {
 	if s := doc.Sections[6]; s.Title != "7. Permanência mínima e multa" || len(s.Blocks) != 1 || s.Blocks[0].Kind != "ul" || len(s.Blocks[0].Items) != 5 {
 		t.Errorf("cláusula 7 = %+v", s)
 	}
-	if s := doc.Sections[4]; len(s.Blocks) != 1 || len(s.Blocks[0].Items) != 6 {
+	if s := doc.Sections[4]; len(s.Blocks) != 1 || len(s.Blocks[0].Items) != 7 {
 		t.Errorf("cláusula 5 = %+v", s)
 	}
 	// Só à vista: o contrato não fala em parcelamento.
 	cash := renderWith(t, "", 1)
-	if strings.Contains(cash.Text, "parcela") || len(cash.Sections[6].Blocks[0].Items) != 4 || len(cash.Sections[4].Blocks[0].Items) != 5 {
+	if strings.Contains(cash.Text, "parcela") || len(cash.Sections[6].Blocks[0].Items) != 4 || len(cash.Sections[4].Blocks[0].Items) != 6 {
 		t.Errorf("contrato sem parcelamento:\n%s", cash.Text)
 	}
 	// Com o endereço, ele entra; o hash muda junto com o texto.

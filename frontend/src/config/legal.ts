@@ -15,7 +15,7 @@ export const COMPANY = {
 };
 
 /** A data da versão em vigor dos dois documentos (mude ao alterar o texto). */
-export const LEGAL_UPDATED_AT = '7 de outubro de 2026';
+export const LEGAL_UPDATED_AT = '13 de outubro de 2026';
 
 export const TERMS_PATH = '/termos-de-uso';
 export const PRIVACY_PATH = '/politica-de-privacidade';

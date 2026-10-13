@@ -1015,8 +1015,8 @@ export function CustomerDetailsPage() {
               onChange={(draft) => setReactivate({ ...reactivate, draft })}
             />
             <p className={billing.muted}>
-              Sem fatura de equipamento: o rastreador já está com o cliente. A primeira mensalidade vence
-              no próximo dia escolhido.
+              Sem fatura de equipamento: o rastreador já está com o cliente. A primeira mensalidade já sai em
+              aberto, com vencimento no próximo dia escolhido.
             </p>
           </div>
         )}

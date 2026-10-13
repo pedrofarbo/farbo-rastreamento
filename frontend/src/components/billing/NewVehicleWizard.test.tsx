@@ -249,15 +249,16 @@ describe('frete no pedido', () => {
       ],
     };
     await openWizard();
-    // O mais barato vem marcado; o total soma o frete.
+    // O mais barato vem marcado; o total soma o frete e a 1ª mensalidade.
     expect(text()).toContain('Entrega para o CEP 20040-020');
     expect(text()).toContain('Frete: Correios PAC (até 7 dias úteis)R$ 22,40');
-    expect(text()).toContain('Agora: equipamento e freteR$ 172,40');
-    expect(button(/Confirmar pedido · R\$\s172,40/)).toBeTruthy();
+    expect(text()).toContain('1ª mensalidadeR$ 69,90');
+    expect(text()).toContain('Agora · vence em 3 diasR$ 242,30');
+    expect(button(/Confirmar pedido · R\$\s242,30/)).toBeTruthy();
     // Escolhe o SEDEX.
     const sedex = Array.from(document.querySelectorAll('input[type=radio]'))[1] as HTMLInputElement;
     await act(async () => sedex.click());
-    expect(text()).toContain('Agora: equipamento e freteR$ 189,90');
+    expect(text()).toContain('Agora · vence em 3 diasR$ 259,80');
     await act(async () => button(/Confirmar pedido/).click());
     await flush();
     expect(ordered).toEqual([{ vehicle: expect.objectContaining({ name: 'Moto do trabalho' }), launchPromo: false, shippingServiceId: 2 }]);
@@ -280,8 +281,8 @@ describe('frete no pedido', () => {
     const arrange = document.querySelector('input[type=radio]') as HTMLInputElement;
     await act(async () => arrange.click());
     expect(text()).toContain('Entrega: combinar com a Farbosem frete');
-    expect(text()).toContain('Agora: equipamentoR$ 150,00');
-    expect(button(/Confirmar pedido · R\$\s150,00/).disabled).toBe(false);
+    expect(text()).toContain('Agora · vence em 3 diasR$ 219,90');
+    expect(button(/Confirmar pedido · R\$\s219,90/).disabled).toBe(false);
     await act(async () => button(/Confirmar pedido/).click());
     await flush();
     expect(ordered).toEqual([{ vehicle: expect.objectContaining({ name: 'Moto do trabalho' }), launchPromo: false, arrangeDelivery: true }]);
@@ -301,24 +302,25 @@ describe('frete no pedido', () => {
     quote = { enabled: false, zipCode: '', problem: '', quotes: [], arrange: false };
     await openWizard();
     expect(text()).not.toContain('Entrega para o CEP');
-    expect(button(/Confirmar pedido · R\$\s150,00/).disabled).toBe(false);
+    expect(button(/Confirmar pedido · R\$\s219,90/).disabled).toBe(false);
     await act(async () => button(/Confirmar pedido/).click());
     await flush();
     expect(ordered).toEqual([{ vehicle: expect.objectContaining({ name: 'Moto do trabalho' }), launchPromo: false }]);
   });
 
-  it('parcelado em 10x: agora só o frete, a 1ª parcela na 1ª mensalidade, e o cliente confirma que fica até a última', async () => {
+  it('parcelado em 10x: agora o frete e a 1ª mensalidade, com a 1ª parcela, e o cliente confirma que fica até a última', async () => {
     quote = {
       enabled: true, zipCode: '20040020', problem: '', arrange: false,
       quotes: [{ serviceId: 1, service: 'PAC', company: 'Correios', priceCents: 2240, deliveryDays: 7, error: '' }],
     };
     await openWizard(10);
     expect(text()).toContain('Equipamento: R$ 150,00 em 10x sem jurosnas mensalidades');
-    expect(text()).toContain('Agora: freteR$ 22,40');
+    expect(text()).toContain('1ª mensalidade, com a 1ª parcelaR$ 84,90');
+    expect(text()).toContain('Agora · vence em 3 diasR$ 107,30');
     expect(text()).toContain('+ R$ 15,00 do rastreador em cada uma das 10 primeiras mensalidades.');
     expect(text()).toContain('fica ativa até a mensalidade com a última parcela (a 10ª)');
     // Sem o "entendi", não confirma.
-    expect(button(/Confirmar pedido · R\$\s22,40/).disabled).toBe(true);
+    expect(button(/Confirmar pedido · R\$\s107,30/).disabled).toBe(true);
     const agree = document.querySelector('input[type=checkbox]') as HTMLInputElement;
     await act(async () => agree.click());
     expect(button(/Confirmar pedido/).disabled).toBe(false);

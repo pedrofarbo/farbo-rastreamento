@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import type { Invoice } from '@/types';
 
-import { HISTORY_GROUP_MIN, dayStatus, groupIds, historyRows, monthlyGroups, oldestClosedDue, overdueGroup } from './invoiceGroups';
+import {
+  HISTORY_GROUP_MIN,
+  dayStatus,
+  groupIds,
+  historyRows,
+  monthlyGroups,
+  oldestClosedDue,
+  orderPayment,
+  overdueGroup,
+} from './invoiceGroups';
 import type { HistoryDay } from './invoiceGroups';
 
 const inv = (id: string, dueDate: string, amountCents: number, over: Partial<Invoice> = {}): Invoice =>
@@ -35,6 +44,18 @@ describe('faturas para pagar juntas', () => {
     ]);
     expect(late?.ids).toEqual(['set', 'out']);
     expect(late?.amountCents).toBe(9980);
+  });
+});
+
+describe('o pagamento logo depois do pedido', () => {
+  it('o equipamento e a 1ª mensalidade num pagamento só; só uma, ela; nenhuma em aberto, nada', () => {
+    const both = orderPayment([inv('equipamento', '2026-10-13', 12000), inv('mensalidade', '2026-10-13', 3990)]);
+    expect(both).toEqual({ id: 'grupo:equipamento,mensalidade', description: 'Pedido: equipamento e 1ª mensalidade', amountCents: 15990 });
+    expect(groupIds(both!.id)).toEqual(['equipamento', 'mensalidade']);
+    // Parcelado sem frete: só a 1ª mensalidade.
+    expect(orderPayment([null, inv('mensalidade', '2026-10-13', 3990)])?.id).toBe('mensalidade');
+    expect(orderPayment([null, inv('mensalidade', '2026-10-13', 0, { status: 'CANCELED' })])).toBeNull();
+    expect(orderPayment([null, null])).toBeNull();
   });
 });
 
