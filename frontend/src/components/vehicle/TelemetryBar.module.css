@@ -50,32 +50,50 @@
   color: var(--text-muted);
 }
 
-/* No celular, uma faixa única que rola na horizontal: três linhas de
-   telemetria ocupariam quase metade da altura disponível para o mapa. */
+/* No celular, uma grade compacta de 4 colunas: os 7 dados cabem em 2 linhas,
+   todos à vista (a faixa que rolava para o lado escondia bateria, motor e a
+   última comunicação). A última comunicação ocupa o resto da 2ª linha. */
 @media (max-width: 900px) {
   .bar {
-    grid-template-columns: none;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(104px, 1fr);
-    overflow-x: auto;
-    scroll-snap-type: x proximity;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    background: var(--surface-raised);
   }
 
   .cell {
-    padding: var(--space-2) var(--space-3);
-    scroll-snap-align: start;
+    min-width: 0;
+    padding: var(--space-2) var(--space-2);
+    border-right: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
   }
 
-  .label,
-  .value {
+  .cell:nth-child(4n),
+  .cell:last-child {
+    border-right: none;
+  }
+
+  .cell:nth-child(n + 5) {
+    border-bottom: none;
+  }
+
+  .cell:nth-child(7):last-child {
+    grid-column: span 2;
+  }
+
+  .label {
+    font-size: 10px;
+    letter-spacing: 0.02em;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .value {
-    font-size: var(--text-base);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
   }
 
   .small {
-    font-size: var(--text-sm);
+    font-size: var(--text-xs);
   }
 }

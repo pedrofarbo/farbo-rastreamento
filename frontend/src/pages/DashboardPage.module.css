@@ -66,15 +66,48 @@
 }
 
 @media (max-width: 900px) {
+  /* minmax(0, ...): um nome de veículo comprido não alarga a tela além do
+     celular (a coluna encolhe e o nome ganha reticências). */
   .page {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .sidebar {
+    min-width: 0;
     max-height: 32dvh;
     border-right: none;
     border-bottom: 1px solid var(--border-subtle);
+  }
+
+  /* O veículo escolhido numa linha: o nome (com reticências) e o endereço
+     (até 2 linhas) à esquerda, o botão à direita. */
+  .detailBar {
+    flex-wrap: nowrap;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .detailText {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .detailName {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .detailMeta {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+
+  .detailAction {
+    flex-shrink: 0;
   }
 
   /* Em tela baixa, a coluna rola em vez de deixar o mapa (cujas camadas do

@@ -80,12 +80,18 @@
 }
 
 .name {
+  min-width: 0;
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* O status ao lado do nome não encolhe (quem cede é o nome, com reticências). */
+.itemHeader > :last-child {
+  flex-shrink: 0;
 }
 
 .plate {

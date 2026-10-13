@@ -97,7 +97,7 @@ export function DashboardPage() {
         {selected && (
           <>
             <div className={styles.detailBar}>
-              <div>
+              <div className={styles.detailText}>
                 <div className={styles.detailName}>{selected.name}</div>
                 <div className={styles.detailMeta}>
                   {selected.lastPosition ? (
@@ -112,7 +112,7 @@ export function DashboardPage() {
                 </div>
               </div>
 
-              <Link to={`/veiculos/${selected.id}`}>
+              <Link to={`/veiculos/${selected.id}`} className={styles.detailAction}>
                 <Button variant="primary" size="small">
                   Abrir veículo
                 </Button>
