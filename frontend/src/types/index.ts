@@ -1716,6 +1716,46 @@ export interface CashFlow {
   projections: CashProjection[];
 }
 
+/**
+ * O saldo na AbacatePay agora: o que já pode sair, o que vai ser liberado e o
+ * bloqueado. Os valores são nulos se a consulta falhou (error diz por quê).
+ */
+export interface GatewayBalance {
+  enabled: boolean;
+  devMode: boolean;
+  availableCents: number | null;
+  pendingCents: number | null;
+  blockedCents: number | null;
+  checkedAt: string;
+  error: string;
+}
+
+/** Como a fatura do cliente foi paga: MANUAL é a baixa da central. */
+export type CustomerPaymentMethod = 'PIX' | 'BOLETO' | 'CARD' | 'MANUAL';
+
+/** Uma fatura de cliente paga: o que entrou no caixa. */
+export interface CustomerPayment {
+  invoiceId: string;
+  customerId: string;
+  customerName: string;
+  description: string;
+  amountCents: number;
+  dueDate: DateOnly;
+  paidAt: string;
+  method: CustomerPaymentMethod;
+}
+
+/** Os pagamentos dos clientes de um mês (o total é o das faturas no fluxo de caixa). */
+export interface CustomerPayments {
+  month: string;
+  count: number;
+  cents: number;
+  byMethod: { method: CustomerPaymentMethod; count: number; cents: number }[];
+  /** Os mais recentes (até 500); truncated diz que há mais. */
+  payments: CustomerPayment[];
+  truncated: boolean;
+}
+
 export interface DreMonth {
   month: string;
   invoicesCents: number;

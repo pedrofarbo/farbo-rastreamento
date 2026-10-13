@@ -41,6 +41,9 @@ import type {
   SmsSetupView,
   PublicAffiliate,
   CashFlow,
+  CustomerPaymentMethod,
+  CustomerPayments,
+  GatewayBalance,
   DreMonth,
   EntryKind,
   FinanceAlerts,
@@ -1141,6 +1144,13 @@ export const financeApi = {
   overview: () => api.get<FinanceOverview>('/api/finance/overview'),
   cashflow: (months = 12) => api.get<CashFlow>(`/api/finance/cashflow?months=${months}`),
   dre: (months = 12) => api.get<DreMonth[]>(`/api/finance/dre?months=${months}`),
+  /** Os pagamentos dos clientes do mês ("2026-10"), com a busca e a forma. */
+  customerPayments: (f: { month: string; q?: string; method?: CustomerPaymentMethod | '' }) => {
+    const params = new URLSearchParams({ month: f.month });
+    if (f.q) params.set('q', f.q);
+    if (f.method) params.set('method', f.method);
+    return api.get<CustomerPayments>(`/api/finance/customer-payments?${params}`);
+  },
   saveSettings: (input: FinanceSettings) => api.put<FinanceSettings>('/api/finance/settings', input),
 
   entries: (f: EntryFilter) => {
@@ -1158,6 +1168,8 @@ export const financeApi = {
   reopen: (id: string) => api.post<FinanceEntry>(`/api/finance/entries/${id}/reopen`),
   /** Pix pela AbacatePay: ligado, modo e saldo. */
   pixInfo: () => api.get<PixInfo>('/api/finance/pix'),
+  /** O saldo na AbacatePay agora (disponível, a liberar e bloqueado). */
+  balance: () => api.get<GatewayBalance>('/api/finance/balance'),
   /** Para onde e quanto vai sair (ou o problema), e os envios anteriores. */
   entryPix: (id: string) =>
     api.get<{ plan: PixPlan | null; problem: string; transfers: PixTransfer[] }>(`/api/finance/entries/${id}/pix`),

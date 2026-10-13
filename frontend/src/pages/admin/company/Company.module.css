@@ -539,3 +539,47 @@ table td.right {
 .warn {
   color: var(--warning);
 }
+
+/* O saldo na AbacatePay, no topo da tela da empresa. */
+.balance {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 220px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+}
+
+.balanceHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.balanceLabel {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.balanceAmount {
+  font-size: var(--text-xl);
+  font-variant-numeric: tabular-nums;
+}
+
+.balanceFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+@media (max-width: 640px) {
+  .balance {
+    width: 100%;
+  }
+}

@@ -32,6 +32,9 @@ type Service struct {
 	// pix paga fornecedores pela AbacatePay (nil: desligado); pixDev: chave de testes.
 	pix    PixSender
 	pixDev bool
+	// balance lê o saldo da AbacatePay (nil: sem a chave); balanceDev: de testes.
+	balance    BalanceReader
+	balanceDev bool
 }
 
 func NewService(db *database.DB, mailer Mailer, log *slog.Logger) *Service {

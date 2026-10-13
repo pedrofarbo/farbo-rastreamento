@@ -3,7 +3,9 @@ import { useSearchParams } from 'react-router-dom';
 import pageStyles from '../../Page.module.css';
 import { CashFlowTab } from './CashFlowTab';
 import { EntriesTab } from './EntriesTab';
+import { GatewayBalanceCard } from './GatewayBalanceCard';
 import { OverviewTab } from './OverviewTab';
+import { ReceivablesTab } from './ReceivablesTab';
 import { RegistryTab } from './RegistryTab';
 import { ResultTab } from './ResultTab';
 import { StockTab } from './StockTab';
@@ -39,6 +41,7 @@ export function CompanyPage() {
               e o estoque. As faturas dos clientes entram sozinhas quando são pagas.
             </p>
           </div>
+          <GatewayBalanceCard />
         </header>
 
         <div className={`${pageStyles.tabs} ${styles.tabs}`} role="tablist">
@@ -59,7 +62,7 @@ export function CompanyPage() {
         {tab === 'pagar' ? (
           <EntriesTab key="pagar" kind="PAYABLE" />
         ) : tab === 'receber' ? (
-          <EntriesTab key="receber" kind="RECEIVABLE" />
+          <ReceivablesTab />
         ) : tab === 'caixa' ? (
           <CashFlowTab />
         ) : tab === 'resultado' ? (

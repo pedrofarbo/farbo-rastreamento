@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { addDays, daysBetween, entrySituation, installmentLabel, monthLabel, splitInstallments, todayISO } from './labels';
+import { addDays, addMonths, daysBetween, entrySituation, installmentLabel, monthLabel, splitInstallments, todayISO } from './labels';
 import { formatDocument } from './RegistryTab';
 import { margin, money } from './ResultTab';
 
@@ -8,6 +8,10 @@ describe('datas', () => {
   it('mês, hoje em Brasília, diferença e soma de dias', () => {
     expect(monthLabel('2026-10')).toBe('out/2026');
     expect(monthLabel('2027-01')).toBe('jan/2027');
+    expect(addMonths('2026-10', 1)).toBe('2026-11');
+    expect(addMonths('2026-01', -1)).toBe('2025-12');
+    expect(addMonths('2026-12', 1)).toBe('2027-01');
+    expect(addMonths('2026-10', -23)).toBe('2024-11');
     // 01h UTC do dia 16 ainda é dia 15 em Brasília.
     expect(todayISO(new Date('2026-10-16T01:00:00Z'))).toBe('2026-10-15');
     expect(todayISO(new Date('2026-10-16T04:00:00Z'))).toBe('2026-10-16');

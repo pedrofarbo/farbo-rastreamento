@@ -3,6 +3,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -339,6 +340,11 @@ func run() error {
 		financeSvc.SetPixSender(abacatepay.NewClient(cfg.Payments.AbacatePayBaseURL, key), abacatepay.IsDevKey(key))
 		log.Info("pagamento de fornecedores por Pix via AbacatePay", "testes", abacatepay.IsDevKey(key),
 			"chave_propria", cfg.Payments.TransferAPIKey != "")
+	}
+	// O saldo da AbacatePay na tela da empresa: o da conta dos envios, se
+	// houver, ou o da chave dos pagamentos.
+	if key := cmp.Or(cfg.Payments.TransferKey(), cfg.Payments.AbacatePayAPIKey); key != "" {
+		financeSvc.SetBalanceReader(abacatepay.NewClient(cfg.Payments.AbacatePayBaseURL, key), abacatepay.IsDevKey(key))
 	}
 	affiliatesSvc := affiliates.NewService(db, log)
 	// As recargas da carteira do Melhor Envios (pagas também pela AbacatePay).

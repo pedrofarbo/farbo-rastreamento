@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InviteLinkModal } from './InviteLinkModal';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const text = () => (document.body.textContent ?? '').replace(/ /g, ' ');
+const text = () => (document.body.textContent ?? '').replace(/\u00a0/g, ' ');
 const button = (label: string) =>
   Array.from(document.querySelectorAll('button')).find((b) => b.textContent === label) as HTMLButtonElement | undefined;
 

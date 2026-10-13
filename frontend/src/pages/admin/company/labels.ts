@@ -1,5 +1,5 @@
 import type { BadgeTone } from '@/components/ui/Badge';
-import type { DreGroup, FinanceEntry, PaymentMethod, StockKind, StockMoveType } from '@/types';
+import type { CustomerPaymentMethod, DreGroup, FinanceEntry, PaymentMethod, StockKind, StockMoveType } from '@/types';
 
 /** As linhas do resultado do mês (DRE), como a tela mostra. */
 export const GROUP_LABELS: Record<DreGroup, string> = {
@@ -53,6 +53,14 @@ export const MOVE_LABELS: Record<StockMoveType, string> = {
   ADJUST: 'Acerto de contagem',
 };
 
+/** Como o cliente pagou a fatura. */
+export const PAID_VIA_LABELS: Record<CustomerPaymentMethod, string> = {
+  PIX: 'Pix',
+  BOLETO: 'Boleto',
+  CARD: 'Cartão',
+  MANUAL: 'Baixa manual',
+};
+
 const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
 /** "2026-10" → "out/2026". */
@@ -60,6 +68,13 @@ export function monthLabel(month: string): string {
   const [year, m] = month.split('-');
   const index = Number(m) - 1;
   return MONTHS[index] ? `${MONTHS[index]}/${year}` : month;
+}
+
+/** "2026-10" + 1 → "2026-11"; "2026-01" − 1 → "2025-12". */
+export function addMonths(month: string, delta: number): string {
+  const [year, m] = month.split('-').map(Number);
+  const index = year * 12 + (m - 1) + delta;
+  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`;
 }
 
 /** Hoje em Brasília, "2026-10-15" (o navegador pode estar em outro fuso). */

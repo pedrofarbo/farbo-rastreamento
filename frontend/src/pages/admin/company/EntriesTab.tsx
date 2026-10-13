@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
 
 import { financeApi } from '@/api/resources';
 import type { EntryFilter } from '@/api/resources';
@@ -145,8 +144,8 @@ export function EntriesTab({ kind }: { kind: EntryKind }) {
 
       {kind === 'RECEIVABLE' && (
         <p className={pageStyles.note}>
-          As mensalidades e faturas dos clientes entram sozinhas no caixa e no resultado quando são pagas (veja em{' '}
-          <Link to="/clientes">Clientes</Link>). Aqui ficam as outras receitas: venda de equipamento, aporte, empréstimo.
+          As faturas dos clientes estão em Pagamentos dos clientes e entram sozinhas no caixa e no resultado quando
+          são pagas. Aqui ficam as outras receitas, lançadas à mão: venda de equipamento, aporte, empréstimo.
         </p>
       )}
 

@@ -570,6 +570,7 @@ func (s *Server) routes() chi.Router {
 						r.Get("/overview", s.handleFinanceOverview)
 						r.Get("/cashflow", s.handleFinanceCashFlow)
 						r.Get("/dre", s.handleFinanceDRE)
+						r.Get("/customer-payments", s.handleCustomerPayments)
 						r.Put("/settings", s.handleFinanceSettings)
 
 						r.Get("/entries", s.handleListEntries)
@@ -585,6 +586,7 @@ func (s *Server) routes() chi.Router {
 							r.Post("/pix", s.handleSendEntryPix)
 						})
 						r.Get("/pix", s.handleFinancePixInfo)
+						r.Get("/balance", s.handleGatewayBalance)
 						r.Post("/pix/{id}/resolve", s.handleResolvePix)
 						r.Get("/attachments/{id}", s.handleGetAttachment)
 						r.Delete("/attachments/{id}", s.handleDeleteAttachment)

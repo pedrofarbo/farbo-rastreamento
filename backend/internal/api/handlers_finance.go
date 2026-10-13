@@ -89,6 +89,20 @@ func (s *Server) handleFinanceCashFlow(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// handleCustomerPayments: os pagamentos dos clientes de um mês (as faturas
+// pagas), na aba de receitas.
+func (s *Server) handleCustomerPayments(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	out, err := s.Finance.CustomerPayments(r.Context(), finance.CustomerPaymentsFilter{
+		Month: q.Get("month"), Search: q.Get("q"), Method: q.Get("method"),
+	})
+	if err != nil {
+		financeError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) handleFinanceDRE(w http.ResponseWriter, r *http.Request) {
 	out, err := s.Finance.DRE(r.Context(), queryInt(r, "months", 12))
 	if err != nil {
@@ -521,6 +535,13 @@ func (s *Server) handleMoveStock(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // handleFinancePixInfo: se o Pix está ligado, o modo e o saldo disponível.
+// handleGatewayBalance: o saldo na AbacatePay agora, para o topo da tela da
+// empresa.
+func (s *Server) handleGatewayBalance(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, s.Finance.GatewayBalance(r.Context()))
+}
+
 func (s *Server) handleFinancePixInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.Finance.PixInfo(r.Context()))
 }
