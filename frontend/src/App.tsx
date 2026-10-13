@@ -38,6 +38,7 @@ const PartnerFlyerPage = page(() => import('@/pages/PartnerFlyerPage'), 'Partner
 const PublicTheftPage = page(() => import('@/pages/PublicTheftPage'), 'PublicTheftPage');
 const TheftReportPage = page(() => import('@/pages/TheftReportPage'), 'TheftReportPage');
 const PublicPayPage = page(() => import('@/pages/PublicPayPage'), 'PublicPayPage');
+const InstallGuidePage = page(() => import('@/pages/InstallGuidePage'), 'InstallGuidePage');
 const ContractPage = page(() => import('@/pages/legal/ContractPage'), 'ContractPage');
 const AlertsPage = page(() => import('@/pages/customer/AlertsPage'), 'AlertsPage');
 const InvoicesPage = page(() => import('@/pages/customer/InvoicesPage'), 'InvoicesPage');
@@ -95,6 +96,8 @@ export function App() {
                 <Route path="/localizar/:token" element={<PublicTheftPage />} />
                 {/* O link de pagamento dos lembretes de fatura (sem login). */}
                 <Route path="/pagar/:token" element={<PublicPayPage />} />
+                {/* A instalação do J16 (o QR Code do folheto da embalagem). */}
+                <Route path="/instalacao" element={<InstallGuidePage />} />
 
                 <Route element={<RequireAuth />}>
                   {/* O relatório para o boletim de ocorrência: sem o menu (vai para a impressora). */}
