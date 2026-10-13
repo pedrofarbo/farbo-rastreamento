@@ -217,14 +217,20 @@ func (r *Repository) GetSubscription(ctx context.Context, id uuid.UUID) (*Subscr
 // daqui em diante.
 // UpdateSubscription troca o plano e o preço. Preço novo à mão substitui o
 // reajuste agendado (vale o que o admin informou).
-func (r *Repository) UpdateSubscription(ctx context.Context, id uuid.UUID, planName string, priceCents int) (*Subscription, error) {
+// UpdateSubscription grava o plano. promoCents é a mensalidade promocional do
+// plano novo: vale só se o plano mudou e a promoção ainda não acabou.
+func (r *Repository) UpdateSubscription(ctx context.Context, id uuid.UUID, planName string, priceCents int, promoCents *int) (*Subscription, error) {
 	return scanSubscription(r.db.QueryRow(ctx, `
 		UPDATE subscriptions SET plan_name = $2, price_cents = $3,
 			next_price_cents = CASE WHEN price_cents = $3 THEN next_price_cents END,
 			next_price_from = CASE WHEN price_cents = $3 THEN next_price_from END,
+			promo_price_cents = CASE
+				WHEN $4::int IS NOT NULL AND promo_price_cents IS NOT NULL AND promo_until >= CURRENT_DATE
+					AND lower(btrim(plan_name)) <> lower(btrim($2)) THEN $4
+				ELSE promo_price_cents END,
 			updated_at = NOW()
 		WHERE id = $1
-		RETURNING `+subscriptionColumns, id, planName, priceCents))
+		RETURNING `+subscriptionColumns, id, planName, priceCents, promoCents))
 }
 
 // CancelOptions diz o que fazer com o saldo do rastreador parcelado

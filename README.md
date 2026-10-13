@@ -1541,6 +1541,7 @@ mais importam:
 | `LAUNCH_PROMO_ENABLED` | `true` | promoção de pré-lançamento para quem está na lista |
 | `LAUNCH_PROMO_EQUIPMENT_CENTS` / `_MONTHLY_CENTS` | `12000` / `3490` | rastreador e mensalidade na promoção |
 | `LAUNCH_PROMO_INSANOS_MONTHLY_CENTS` / `_INSANOS_PLAN_NAME` | `2790` / `Especial Insanos MC` | mensalidade na promoção no plano do Insanos MC (pelo nome do plano) |
+| `LAUNCH_PROMO_INSANOS_PLAN_CENTS` | `3990` | valor do plano do Insanos MC; quem o escolheu no pré-cadastro já é cadastrado com ele na conta (`0` desliga) |
 | `LAUNCH_PROMO_MONTHS` / `_SLOTS` | `12` / `500` | meses de mensalidade promocional e vagas (clientes) |
 
 ---

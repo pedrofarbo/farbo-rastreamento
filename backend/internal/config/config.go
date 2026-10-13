@@ -346,7 +346,11 @@ type LaunchPromo struct {
 	// integrantes do Insanos MC (InsanosPlanName); depois, a desse plano.
 	InsanosMonthlyCents int
 	InsanosPlanName     string
-	Months              int
+	// InsanosPlanCents é o valor do plano dos Insanos depois da promoção: a
+	// conta criada a partir de um pré-cadastro que escolheu esse plano já nasce
+	// com ele.
+	InsanosPlanCents int
+	Months           int
 	// Slots é quantos clientes podem usar (os primeiros a contratar).
 	Slots int
 }
@@ -357,7 +361,7 @@ func (p LaunchPromo) validate() error {
 	}
 	switch {
 	case p.EquipmentCents < 0 || p.EquipmentCents > 100_000_00 || p.MonthlyCents < 0 || p.MonthlyCents > 100_000_00 ||
-		p.InsanosMonthlyCents < 0 || p.InsanosMonthlyCents > 100_000_00:
+		p.InsanosMonthlyCents < 0 || p.InsanosMonthlyCents > 100_000_00 || p.InsanosPlanCents < 0 || p.InsanosPlanCents > 100_000_00:
 		return fmt.Errorf("LAUNCH_PROMO_*_CENTS fora da faixa (0..10000000 centavos)")
 	case p.Months < 1 || p.Months > 60:
 		return fmt.Errorf("LAUNCH_PROMO_MONTHS fora da faixa (1..60)")
@@ -365,6 +369,14 @@ func (p LaunchPromo) validate() error {
 		return fmt.Errorf("LAUNCH_PROMO_SLOTS fora da faixa (1..1000000)")
 	}
 	return nil
+}
+
+// IsInsanosPlan diz se o texto fala do plano dos Insanos (o nome da
+// assinatura, ou o plano escolhido no pré-cadastro: "Preço Especial Insanos
+// MC - R$ 39,90").
+func (p LaunchPromo) IsInsanosPlan(text string) bool {
+	name := strings.ToLower(strings.TrimSpace(p.InsanosPlanName))
+	return name != "" && strings.Contains(strings.ToLower(text), name)
 }
 
 // MonthlyFor é a mensalidade da promoção para o plano da assinatura: o do
@@ -756,6 +768,7 @@ func Load() (*Config, error) {
 				// O nome é o do plano que a central escolhe para os integrantes.
 				InsanosMonthlyCents: num("LAUNCH_PROMO_INSANOS_MONTHLY_CENTS", 2790),
 				InsanosPlanName:     strings.TrimSpace(str("LAUNCH_PROMO_INSANOS_PLAN_NAME", "Especial Insanos MC")),
+				InsanosPlanCents:    num("LAUNCH_PROMO_INSANOS_PLAN_CENTS", 3990),
 				Months:              num("LAUNCH_PROMO_MONTHS", 12),
 				Slots:               num("LAUNCH_PROMO_SLOTS", 500),
 			},

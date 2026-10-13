@@ -9,7 +9,7 @@ import { AddressModal } from '@/components/address/AddressModal';
 import billing from '@/components/billing/Billing.module.css';
 import { InvoiceDayRows } from '@/components/billing/InvoiceDayRows';
 import { CustomerStatus, InvoiceStatus } from '@/components/billing/InvoiceStatus';
-import { MonthlyPrice } from '@/components/billing/MonthlyPrice';
+import { MonthlyPrice, promoActive } from '@/components/billing/MonthlyPrice';
 import { installmentProgress } from '@/components/billing/installments';
 import { FleetImportModal } from '@/components/billing/FleetImportModal';
 import { NewVehicleWizard } from '@/components/billing/NewVehicleWizard';
@@ -1165,6 +1165,12 @@ export function CustomerDetailsPage() {
               value={editSubscription.price}
               onChange={(e) => setEditSubscription({ ...editSubscription, price: e.target.value })}
             />
+            {promoActive(editSubscription.sub) && (
+              <p className={billing.muted}>
+                Na promoção de pré-lançamento até {formatDateOnly(editSubscription.sub.promoUntil)}: a mensalidade
+                promocional segue o plano (no Especial Insanos MC, a dos Insanos; nos demais, a padrão).
+              </p>
+            )}
             <SelectField
               label="Vencimento da conta"
               hint="Muda todas as assinaturas ativas do cliente: a conta vence num dia só. As mensalidades em aberto que ainda não venceram vão para o dia novo; as próximas já saem nele."

@@ -155,11 +155,22 @@ func (s *Service) GetSubscription(ctx context.Context, id uuid.UUID) (*Subscript
 	return sub, s.repo.fillInstallments(ctx, sub)
 }
 
-func (s *Service) UpdateSubscription(ctx context.Context, id uuid.UUID, planName string, priceCents int) (*Subscription, error) {
+// UpdateSubscription troca o nome e o valor do plano. Com a promoção de
+// pré-lançamento ainda valendo, trocar de plano leva a mensalidade
+// promocional do plano novo (promoFor: o do Insanos MC tem a sua); mudar só o
+// valor não mexe nela. promoFor nil deixa a promoção como está.
+func (s *Service) UpdateSubscription(ctx context.Context, id uuid.UUID, planName string, priceCents int,
+	promoFor func(planName string) int) (*Subscription, error) {
 	if err := validatePlan(planName, priceCents); err != nil {
 		return nil, err
 	}
-	return s.repo.UpdateSubscription(ctx, id, strings.TrimSpace(planName), priceCents)
+	planName = strings.TrimSpace(planName)
+	var promo *int
+	if promoFor != nil {
+		cents := promoFor(planName)
+		promo = &cents
+	}
+	return s.repo.UpdateSubscription(ctx, id, planName, priceCents, promo)
 }
 
 // CancelSubscription encerra a assinatura; com o rastreador parcelado e

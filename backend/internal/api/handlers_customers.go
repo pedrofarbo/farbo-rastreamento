@@ -285,6 +285,7 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 			s.Log.Error("cliente cadastrado, mas o pré-cliente não foi marcado como convertido",
 				"lead", *req.LeadID, "customer", user.ID, "err", err)
 		}
+		s.applyLeadPlan(r, user.ID, *req.LeadID)
 	}
 	// Veio pelo link de um afiliado (o pré-cadastro, ou o e-mail na lista de
 	// lançamento): o cliente fica indicado por ele.
@@ -390,14 +391,19 @@ func (s *Server) handleUpdateSubscription(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	sub, err := s.Billing.UpdateSubscription(r.Context(), id, req.PlanName, req.PriceCents)
+	// A mensalidade promocional segue o plano (a do Insanos MC é outra).
+	var promoFor func(string) int
+	if s.Orders != nil {
+		promoFor = s.Orders.Catalog().LaunchPromo.MonthlyFor
+	}
+	sub, err := s.Billing.UpdateSubscription(r.Context(), id, req.PlanName, req.PriceCents, promoFor)
 	if err != nil {
 		writeBillingError(w, err, "assinatura não encontrada")
 		return
 	}
 	s.recordBillingAudit(r, audit.ActionSubscriptionUpdated, map[string]any{
 		"customerId": sub.CustomerID, "subscriptionId": sub.ID,
-		"plan": sub.PlanName, "priceCents": sub.PriceCents,
+		"plan": sub.PlanName, "priceCents": sub.PriceCents, "promoPriceCents": sub.PromoPriceCents,
 	})
 	writeJSON(w, http.StatusOK, sub)
 }
@@ -637,4 +643,34 @@ func (s *Server) transitionInvoice(
 		"customerId": inv.CustomerID, "invoiceId": inv.ID, "amountCents": inv.AmountCents,
 	})
 	writeJSON(w, http.StatusOK, inv)
+}
+
+// applyLeadPlan: quem escolheu o plano dos Insanos no pré-cadastro já nasce
+// com ele na conta. Sem isso, o pedido feito pelo app antes de a central
+// definir o plano saía no plano padrão (e com a promoção dos demais).
+func (s *Server) applyLeadPlan(r *http.Request, customerID, leadID uuid.UUID) {
+	if s.Orders == nil {
+		return
+	}
+	lead, err := s.Leads.Repo().Get(r.Context(), leadID)
+	if err != nil {
+		s.Log.Warn("cliente cadastrado; o plano do pré-cadastro não foi conferido", "lead", leadID, "err", err)
+		return
+	}
+	catalog := s.Orders.Catalog()
+	promo := catalog.LaunchPromo
+	if !promo.IsInsanosPlan(lead.Plan) || promo.InsanosPlanCents <= 0 {
+		return
+	}
+	plan, err := s.Orders.SetAccountPlan(r.Context(), customerID, billing.SubscriptionInput{
+		PlanName: promo.InsanosPlanName, PriceCents: promo.InsanosPlanCents, DueDay: catalog.DefaultDueDay,
+	}, actor(r))
+	if err != nil {
+		s.Log.Error("cliente cadastrado, mas sem o plano dos Insanos do pré-cadastro", "customer", customerID, "err", err)
+		return
+	}
+	s.recordBillingAudit(r, audit.ActionCustomerUpdated, map[string]any{
+		"customerId": customerID, "plan": plan.PlanName, "priceCents": plan.PriceCents, "dueDay": plan.DueDay,
+		"origin": "pré-cadastro", "leadId": leadID,
+	})
 }
