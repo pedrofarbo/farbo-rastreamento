@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/dunning"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/mail"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/twofactor"
@@ -368,6 +370,47 @@ func (s *Server) handleInviteCustomer(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordBillingAudit(r, audit.ActionCustomerInvited, map[string]any{"customerId": id})
 	writeJSON(w, http.StatusAccepted, map[string]string{"message": "convite enviado para " + user.Email})
+}
+
+// inviteLinkResponse: o link do convite e até quando ele vale.
+type inviteLinkResponse struct {
+	URL       string    `json:"url"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+// handleCustomerInviteLink gera o link do convite (para criar a senha) e o
+// devolve à central, que o manda por outro meio (WhatsApp, por exemplo), sem
+// o e-mail. Como no reenvio, o link anterior — inclusive o do e-mail — deixa
+// de valer.
+func (s *Server) handleCustomerInviteLink(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.customerFromURL(w, r)
+	if !ok {
+		return
+	}
+	if s.Config.Mail.AppURL == "" {
+		writeError(w, http.StatusServiceUnavailable, "o endereço do painel (APP_URL) não está configurado")
+		return
+	}
+	user, err := s.Auth.GetUser(r.Context(), id)
+	if err != nil {
+		handleStoreError(w, err, "cliente não encontrado")
+		return
+	}
+	token, ttl, err := s.Auth.IssueInvite(r.Context(), user)
+	if err != nil {
+		if errors.Is(err, auth.ErrInactiveUser) {
+			writeError(w, http.StatusConflict, "o cliente está desativado; reative antes de convidar")
+			return
+		}
+		handleStoreError(w, err, "cliente não encontrado")
+		return
+	}
+	s.recordBillingAudit(r, audit.ActionCustomerInvited, map[string]any{"customerId": id, "via": "link"})
+	// O link dá acesso à conta: nada de guardar a resposta em cache.
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, inviteLinkResponse{
+		URL: mail.InviteURL(s.Config.Mail.AppURL, token), ExpiresAt: time.Now().Add(ttl),
+	})
 }
 
 // ---------------------------------------------------------------------------

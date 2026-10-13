@@ -30,6 +30,12 @@ export function whatsappUrl(text = '', number: string = WHATSAPP_NUMBER): string
   return `https://wa.me/${number}${text ? `?text=${encodeURIComponent(text)}` : ''}`;
 }
 
+/** Conversa no WhatsApp com o número de um cliente (com o 55 do Brasil) e, se houver, a mensagem já escrita. */
+export function whatsappLink(phone: string, text = ''): string {
+  const d = phone.replace(/\D/g, '');
+  return whatsappUrl(text, d.length <= 11 ? `55${d}` : d);
+}
+
 /** O número como aparece no rodapé, ex.: (11) 99999-9999. */
 export function whatsappDisplay(number: string = WHATSAPP_NUMBER): string {
   const national = number.replace(/\D/g, '').replace(/^55/, '');

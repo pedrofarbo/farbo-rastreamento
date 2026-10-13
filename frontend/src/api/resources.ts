@@ -682,6 +682,8 @@ export const customersApi = {
   update: (id: string, input: { name: string; phone: string; document: string; active: boolean }) =>
     api.patch<CustomerDetail>(`/api/customers/${id}`, input),
   invite: (id: string) => api.post<{ message: string }>(`/api/customers/${id}/invite`),
+  /** O link do convite, para mandar sem o e-mail; derruba o anterior. */
+  inviteLink: (id: string) => api.post<{ url: string; expiresAt: string }>(`/api/customers/${id}/invite-link`),
   saveAddress: (id: string, input: DeliveryAddress) =>
     api.put<DeliveryAddress>(`/api/customers/${id}/address`, input),
   /** Prazo do histórico de todos os veículos do cliente (nulo = padrão da central). */

@@ -672,6 +672,7 @@ func (s *Server) routes() chi.Router {
 							}
 							r.Put("/alerts", s.handleSaveCustomerAlerts)
 							r.Post("/invite", s.handleInviteCustomer)
+							r.Post("/invite-link", s.handleCustomerInviteLink)
 							r.Post("/invoices", s.handleCreateInvoice)
 							r.Post("/trackers", s.handleAdminOrderTracker)
 							r.Post("/trackers/import", s.handleAdminImportFleet)

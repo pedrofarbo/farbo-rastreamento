@@ -56,6 +56,7 @@ import styles from '../Page.module.css';
 import { CustomerReferralCard } from './affiliates/CustomerReferralCard';
 import { CustomerPlanCard } from './CustomerPlanCard';
 import { CustomerTeamCard } from './CustomerTeamCard';
+import { InviteLinkModal } from './InviteLinkModal';
 import { InvoiceAdjustModal } from './InvoiceAdjustModal';
 import { LaunchPromoCard } from './LaunchPromoCard';
 
@@ -99,6 +100,11 @@ export function CustomerDetailsPage() {
   const [attach, setAttach] = useState<{ subscription: Subscription; input: VehicleInput } | null>(null);
   const [following, setFollowing] = useState<string | null>(null);
   const [editingAddress, setEditingAddress] = useState(false);
+  // O link do convite, para a central mandar por fora do e-mail.
+  const inviteLink = useMutation({
+    mutationFn: () => customersApi.inviteLink(id),
+    onError: (err: Error) => notify({ tone: 'error', title: 'Link não gerado', description: err.message }),
+  });
 
   // A régua de cobrança: o link de pagamento (sem login) e o lembrete na hora.
   const copyPayLink = async (url: string) => {
@@ -223,6 +229,15 @@ export function CustomerDetailsPage() {
               onClick={() => run(`Convite reenviado para ${data.email}`, () => customersApi.invite(id))}
             >
               Reenviar convite
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!data.active}
+              loading={inviteLink.isPending}
+              title="Gera o link para o cliente criar a senha, para mandar pelo WhatsApp ou como preferir."
+              onClick={() => inviteLink.mutate()}
+            >
+              Link do convite
             </Button>
             {data.twoFactor?.enabled && (
               <Button
@@ -1186,6 +1201,8 @@ export function CustomerDetailsPage() {
           </div>
         )}
       </Modal>
+
+      <InviteLinkModal link={inviteLink.data ?? null} name={data.name} phone={data.phone} onClose={() => inviteLink.reset()} />
 
       {adjusting && (
         <InvoiceAdjustModal

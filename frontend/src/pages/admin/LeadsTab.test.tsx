@@ -42,7 +42,9 @@ vi.mock('@/api/resources', () => ({
   },
 }));
 
-import { byOrigin, eventLabel, interest, leadsCsv, matches, originLabel, whatsappLink, whatsappMessage, LeadsTab } from './LeadsTab';
+import { whatsappLink } from '@/config/contact';
+
+import { byOrigin, eventLabel, interest, leadsCsv, matches, originLabel, whatsappMessage, LeadsTab } from './LeadsTab';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const flush = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));

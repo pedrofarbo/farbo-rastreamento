@@ -16,6 +16,13 @@ import (
 // aparece em log de proxy nem em cabeçalho Referer.
 const ResetPath = "/redefinir-senha"
 
+// InviteURL é o link do convite (para o usuário novo criar a senha): o da
+// redefinição, com o parâmetro boasvindas, que só muda os textos da tela. A
+// central também o entrega por outro meio (WhatsApp), sem o e-mail.
+func InviteURL(appURL, token string) string {
+	return strings.TrimRight(appURL, "/") + ResetPath + "#token=" + url.QueryEscape(token) + "&boasvindas=1"
+}
+
 // AccountMailer escreve e envia os e-mails da conta do usuário.
 type AccountMailer struct {
 	sender Sender
@@ -51,14 +58,13 @@ var teamRoles = map[string]struct{ Label, Access string }{
 }
 
 // Invite manda o link para o usuário novo criar a senha: as boas-vindas ao
-// cliente, ou, para alguém da equipe (role), o acesso com o perfil dele. O
-// link é o mesmo da redefinição; o parâmetro boasvindas só muda os textos da
-// tela.
+// cliente, ou, para alguém da equipe (role), o acesso com o perfil dele
+// (InviteURL).
 func (m *AccountMailer) Invite(ctx context.Context, to, name, role, token string, ttl time.Duration) error {
 	data := accountData{
 		Name:      firstName(name),
 		AppURL:    m.appURL,
-		ActionURL: m.appURL + ResetPath + "#token=" + url.QueryEscape(token) + "&boasvindas=1",
+		ActionURL: InviteURL(m.appURL, token),
 		Validity:  humanizeDuration(ttl),
 	}
 	templates, subject := inviteTemplates, "Bem-vindo à Farbo Rastreadores — crie sua senha"

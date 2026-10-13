@@ -15,7 +15,7 @@ import fieldStyles from '@/components/ui/Field.module.css';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { whatsappUrl } from '@/config/contact';
+import { whatsappLink } from '@/config/contact';
 import { formatDateTime, formatMoney, formatRelative } from '@/services/format';
 import { useAuth } from '@/stores/AuthContext';
 import type { Lead, LeadStatus, PromoOffer, PromoUsage } from '@/types';
@@ -96,12 +96,6 @@ export function matches(lead: Pick<Lead, 'name' | 'email' | 'city' | 'phone'>, s
     [lead.name, lead.email, lead.city].some((v) => plain(v).includes(q)) ||
     (digits.length >= 4 && lead.phone.replace(/\D/g, '').includes(digits))
   );
-}
-
-/** Conversa no WhatsApp com o número (com o 55 do Brasil) e, se houver, a mensagem já escrita. */
-export function whatsappLink(phone: string, text = ''): string {
-  const d = phone.replace(/\D/g, '');
-  return whatsappUrl(text, d.length <= 11 ? `55${d}` : d);
 }
 
 /** Dá para chamar: o número tem DDD. */
