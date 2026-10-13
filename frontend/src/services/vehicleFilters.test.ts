@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { VehicleView } from '@/types';
 
-import { NO_GROUP, inGroup, matchesVehicle, situationOf } from './vehicleFilters';
+import { NO_GROUP, inGroup, matchesVehicle, searchPlaceholder, situationOf } from './vehicleFilters';
 
 const vehicle = (over: Partial<VehicleView> & { status?: string } = {}) => {
   const { status, ...rest } = over;
@@ -40,5 +40,13 @@ describe('os filtros de Meus veículos', () => {
     expect(inGroup(v, 'g2')).toBe(false);
     expect(inGroup(v, NO_GROUP)).toBe(false);
     expect(inGroup({ groupId: null }, NO_GROUP)).toBe(true);
+  });
+
+  it('na central, a busca acha também pelo cliente dono do veículo', () => {
+    const v = vehicle({ ownerName: 'Transportes Frota Ltda' });
+    expect(matchesVehicle(v, 'frota ltda')).toBe(true);
+    expect(matchesVehicle(vehicle(), 'frota ltda')).toBe(false);
+    expect(searchPlaceholder([vehicle(), v])).toBe('Buscar por nome, placa, IMEI ou cliente');
+    expect(searchPlaceholder([vehicle()])).toBe('Buscar por nome, placa ou IMEI');
   });
 });

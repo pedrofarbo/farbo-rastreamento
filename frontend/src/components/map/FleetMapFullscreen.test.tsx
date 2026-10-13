@@ -37,7 +37,11 @@ function vehicle(id: string, over: Partial<VehicleView> = {}): VehicleView {
   } as unknown as VehicleView;
 }
 
-const VEHICLES = [vehicle('1'), vehicle('2', { device: { status: 'OFFLINE' } } as Partial<VehicleView>), vehicle('3')];
+const VEHICLES = [
+  vehicle('1', { ownerId: 'c-frota', ownerName: 'Transportes Frota Ltda' }),
+  vehicle('2', { device: { status: 'OFFLINE' } } as Partial<VehicleView>),
+  vehicle('3'),
+];
 const FENCES = [{ id: 'f1', name: 'Base', active: true } as Geofence];
 
 let fullscreenElement: Element | null = null;
@@ -60,7 +64,7 @@ afterEach(() => {
   exitFullscreen.mockClear();
 });
 
-function render(selectedId: string | null, onClose = vi.fn(), onSelect = vi.fn()) {
+function render(selectedId: string | null, onClose = vi.fn(), onSelect = vi.fn(), customerLinks = false) {
   const host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
@@ -73,6 +77,7 @@ function render(selectedId: string | null, onClose = vi.fn(), onSelect = vi.fn()
           onSelect={onSelect}
           geofences={FENCES}
           title="Rota Norte"
+          customerLinks={customerLinks}
           onClose={onClose}
         />
       </MemoryRouter>,
@@ -98,6 +103,23 @@ describe('o mapa da central em tela cheia', () => {
     expect(document.querySelector('a')?.getAttribute('href')).toBe('/veiculos/1');
     // O anterior e o próximo, na ordem da lista.
     expect(text()).toContain('1 de 3');
+  });
+
+  it('de quem é o veículo: o nome, e para o admin o link da ficha do cliente', () => {
+    render('1');
+    expect(text()).toContain('Transportes Frota Ltda');
+    expect(document.querySelector('a[href="/clientes/c-frota"]')).toBeNull();
+    act(() => root?.unmount());
+    root = null;
+    document.body.innerHTML = '';
+    render('1', vi.fn(), vi.fn(), true);
+    expect(document.querySelector('a[href="/clientes/c-frota"]')?.textContent).toBe('Transportes Frota Ltda');
+    // Sem dono conhecido (o veículo do próprio cliente), nada.
+    act(() => root?.unmount());
+    root = null;
+    document.body.innerHTML = '';
+    render('3');
+    expect(text()).not.toContain('Transportes Frota Ltda');
   });
 
   it('sem veículo escolhido, um convite para tocar num veículo', () => {

@@ -104,6 +104,29 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	return scanUser(r.db.QueryRow(ctx, `SELECT `+userColumns+` FROM users WHERE id = $1`, id))
 }
 
+// Names devolve o nome de cada usuário pedido (os que não existem ficam de
+// fora), numa consulta só.
+func (r *Repository) Names(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	out := make(map[uuid.UUID]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := r.db.Query(ctx, `SELECT id, name FROM users WHERE id = ANY($1)`, ids)
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		out[id] = name
+	}
+	return out, database.MapError(rows.Err())
+}
+
 // ListTeam lista a equipe da central (sem os clientes).
 func (r *Repository) ListTeam(ctx context.Context) ([]*User, error) {
 	rows, err := r.db.Query(ctx, `SELECT `+userColumns+` FROM users WHERE role <> $1 ORDER BY created_at`, RoleCustomer)

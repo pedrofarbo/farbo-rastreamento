@@ -17,12 +17,15 @@ import { VehicleSwitcher } from '@/components/vehicle/VehicleSwitcher';
 import fieldStyles from '@/components/ui/Field.module.css';
 import { useFleet } from '@/hooks/useFleet';
 import { useVehicles } from '@/hooks/useVehicles';
+import { useAuth } from '@/stores/AuthContext';
 import { NO_GROUP, inGroup, sortVehicles } from '@/services/vehicleFilters';
 
 import styles from './DashboardPage.module.css';
 
 export function DashboardPage() {
   const { data: all = [], isLoading, error } = useVehicles();
+  // O admin abre a ficha do cliente pelo nome dele.
+  const { canManage } = useAuth();
   // O grupo escolhido filtra a lista e o mapa.
   const { groups } = useFleet();
   const [group, setGroup] = useState('');
@@ -129,7 +132,19 @@ export function DashboardPage() {
           <>
             <div className={styles.detailBar}>
               <div className={styles.detailText}>
-                <div className={styles.detailName}>{selected.name}</div>
+                <div className={styles.detailName}>
+                  {selected.name}
+                  {selected.ownerName && (
+                    <span className={styles.detailOwner}>
+                      <span className={styles.detailSep}> · </span>
+                      {canManage && selected.ownerId ? (
+                        <Link to={`/clientes/${selected.ownerId}`}>{selected.ownerName}</Link>
+                      ) : (
+                        selected.ownerName
+                      )}
+                    </span>
+                  )}
+                </div>
                 <div className={styles.detailMeta}>
                   {selected.lastPosition ? (
                     <Address
@@ -167,6 +182,7 @@ export function DashboardPage() {
           onSelect={setSelectedId}
           geofences={geofences}
           title={(group === NO_GROUP ? 'Sem grupo' : groups.find((g) => g.id === group)?.name) || 'Frota'}
+          customerLinks={canManage}
           onClose={closeFullscreen}
         />
       )}

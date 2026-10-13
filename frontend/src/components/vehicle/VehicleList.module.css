@@ -144,3 +144,12 @@
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
+
+/* De quem é o veículo (só na central). */
+.owner {
+  overflow: hidden;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

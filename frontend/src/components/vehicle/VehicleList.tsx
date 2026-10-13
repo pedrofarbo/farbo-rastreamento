@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/stores/AuthContext';
 import { formatDeviceStatus, formatRelative, formatSpeed } from '@/services/format';
-import { matchesVehicle, sortVehicles } from '@/services/vehicleFilters';
+import { matchesVehicle, searchPlaceholder, sortVehicles } from '@/services/vehicleFilters';
 import type { DeviceStatus, VehicleView } from '@/types';
 
 import styles from './VehicleList.module.css';
@@ -52,7 +52,7 @@ export function VehicleList({ vehicles, selectedId, onSelect }: VehicleListProps
         <input
           className={styles.searchInput}
           type="search"
-          placeholder="Buscar por nome, placa ou IMEI"
+          placeholder={searchPlaceholder(vehicles)}
           value={search}
           onChange={(event) => {
             setSearch(event.target.value);
@@ -128,6 +128,7 @@ const VehicleRow = memo(function VehicleRow({
       </div>
 
       {vehicle.plate && <div className={styles.plate}>{vehicle.plate}</div>}
+      {vehicle.ownerName && <div className={styles.owner}>{vehicle.ownerName}</div>}
       {vehicle.shared && <div className={styles.shared}>Compartilhado por {vehicle.shared.ownerName}</div>}
 
       <div className={styles.metrics}>

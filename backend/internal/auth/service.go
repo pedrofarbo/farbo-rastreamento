@@ -298,6 +298,11 @@ func (s *Service) GetUser(ctx context.Context, id uuid.UUID) (*User, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
+// Names devolve o nome de cada usuário pedido, numa consulta só.
+func (s *Service) Names(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	return s.repo.Names(ctx, ids)
+}
+
 // FindByEmail acha o usuário pelo e-mail (sem diferença de maiúsculas).
 func (s *Service) FindByEmail(ctx context.Context, email string) (*User, error) {
 	return s.repo.GetByEmail(ctx, email)

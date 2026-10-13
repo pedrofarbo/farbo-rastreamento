@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { formatDeviceStatus } from '@/services/format';
-import { matchesVehicle } from '@/services/vehicleFilters';
+import { matchesVehicle, searchPlaceholder } from '@/services/vehicleFilters';
 import type { VehicleView } from '@/types';
 
 import styles from './VehicleSwitcher.module.css';
@@ -97,7 +97,7 @@ export function VehicleSwitcher({
             className={styles.search}
             type="search"
             autoFocus
-            placeholder="Buscar por nome, placa ou IMEI"
+            placeholder={searchPlaceholder(vehicles)}
             aria-label="Buscar veículo"
             value={term}
             onChange={(event) => setTerm(event.target.value)}

@@ -38,6 +38,8 @@ interface FleetMapFullscreenProps {
   geofences: Geofence[];
   /** "Frota", ou o grupo escolhido. */
   title: string;
+  /** O nome do dono abre a ficha dele (só o admin). */
+  customerLinks?: boolean;
   onClose: () => void;
 }
 
@@ -46,7 +48,15 @@ interface FleetMapFullscreenProps {
  * (com a troca e a busca) e os dados dele num cartão por cima do mapa. Fecha
  * no X, no Esc e ao sair da tela cheia do navegador.
  */
-export function FleetMapFullscreen({ vehicles, selectedId, onSelect, geofences, title, onClose }: FleetMapFullscreenProps) {
+export function FleetMapFullscreen({
+  vehicles,
+  selectedId,
+  onSelect,
+  geofences,
+  title,
+  customerLinks = false,
+  onClose,
+}: FleetMapFullscreenProps) {
   const [following, setFollowing] = useState(true);
   const [recenter, setRecenter] = useState(0);
   const [fences, setFences] = useState(true);
@@ -167,6 +177,15 @@ export function FleetMapFullscreen({ vehicles, selectedId, onSelect, geofences, 
                   {selected.device ? formatDeviceStatus(selected.device.status) : 'Sem rastreador'}
                 </Badge>
               </div>
+              {selected.ownerName && (
+                <span className={styles.owner}>
+                  {customerLinks && selected.ownerId ? (
+                    <Link to={`/clientes/${selected.ownerId}`}>{selected.ownerName}</Link>
+                  ) : (
+                    selected.ownerName
+                  )}
+                </span>
+              )}
               {position ? (
                 <>
                   <span className={styles.stats}>

@@ -65,6 +65,12 @@
   color: var(--text-muted);
 }
 
+/* De quem é o veículo, ao lado do nome (só na central). */
+.detailOwner {
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
 @media (max-width: 900px) {
   /* minmax(0, ...): um nome de veículo comprido não alarga a tela além do
      celular (a coluna encolhe e o nome ganha reticências). */
@@ -96,6 +102,18 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* No celular, o dono numa linha só dele (o nome comprido não o esconde). */
+  .detailOwner {
+    display: block;
+    overflow: hidden;
+    font-size: var(--text-xs);
+    text-overflow: ellipsis;
+  }
+
+  .detailSep {
+    display: none;
   }
 
   .detailMeta {

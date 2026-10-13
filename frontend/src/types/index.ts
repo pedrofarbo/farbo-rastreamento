@@ -279,6 +279,8 @@ export interface VehicleView extends Vehicle {
   shared?: SharedAccess | null;
   /** O modo roubo ligado (ausente: desligado). */
   theft?: TheftBrief | null;
+  /** De quem é o veículo: só para a equipe da central (ausente para o cliente). */
+  ownerName?: string;
 }
 
 /** O modo roubo ligado, na lista de veículos. */

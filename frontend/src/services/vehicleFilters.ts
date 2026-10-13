@@ -12,9 +12,21 @@ export function situationOf(vehicle: VehicleView): Situation {
 export function matchesVehicle(vehicle: VehicleView, term: string): boolean {
   const t = term.trim().toLowerCase();
   if (!t) return true;
-  return [vehicle.name, vehicle.plate, vehicle.brand, vehicle.model, vehicle.device?.imei, vehicle.custom1, vehicle.custom2].some(
-    (v) => v?.toLowerCase().includes(t),
-  );
+  return [
+    vehicle.name,
+    vehicle.plate,
+    vehicle.brand,
+    vehicle.model,
+    vehicle.device?.imei,
+    vehicle.custom1,
+    vehicle.custom2,
+    vehicle.ownerName,
+  ].some((v) => v?.toLowerCase().includes(t));
+}
+
+/** O texto da busca: na central (com o dono de cada veículo), também pelo cliente. */
+export function searchPlaceholder(vehicles: Pick<VehicleView, 'ownerName'>[]): string {
+  return vehicles.some((v) => v.ownerName) ? 'Buscar por nome, placa, IMEI ou cliente' : 'Buscar por nome, placa ou IMEI';
 }
 
 /** O filtro de grupo: '' todos, NO_GROUP os sem grupo, ou o id do grupo. */

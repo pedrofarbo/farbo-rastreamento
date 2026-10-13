@@ -38,6 +38,9 @@ type vehicleView struct {
 	Shared *sharedAccess `json:"shared,omitempty"`
 	// Theft: o modo roubo ligado (nulo: desligado).
 	Theft *theft.Brief `json:"theft,omitempty"`
+	// OwnerName: de quem é o veículo, só para a equipe da central (o cliente
+	// vê os dele; o compartilhado traz o dono em Shared).
+	OwnerName string `json:"ownerName,omitempty"`
 }
 
 // customerOf devolve o id do cliente quando quem chama é um cliente final.
@@ -168,9 +171,28 @@ func (s *Server) vehicleViews(ctx context.Context, list []*vehicles.Vehicle, aud
 		}
 	}
 
+	// De quem é cada veículo, para a equipe da central (numa consulta só).
+	var owners map[uuid.UUID]string
+	if audience != devices.AudienceCustomer {
+		ids := make([]uuid.UUID, 0, len(list))
+		seen := map[uuid.UUID]bool{}
+		for _, vehicle := range list {
+			if vehicle.OwnerID != nil && !seen[*vehicle.OwnerID] {
+				seen[*vehicle.OwnerID] = true
+				ids = append(ids, *vehicle.OwnerID)
+			}
+		}
+		if owners, err = s.Auth.Names(ctx, ids); err != nil {
+			return nil, err
+		}
+	}
+
 	views := make([]vehicleView, 0, len(list))
 	for _, vehicle := range list {
 		view := vehicleView{Vehicle: vehicle}
+		if vehicle.OwnerID != nil {
+			view.OwnerName = owners[*vehicle.OwnerID]
+		}
 		if b, ok := stolen[vehicle.ID]; ok {
 			view.Theft = &b
 		}

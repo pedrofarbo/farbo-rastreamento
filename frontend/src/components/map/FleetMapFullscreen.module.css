@@ -219,6 +219,16 @@
   flex-shrink: 0;
 }
 
+/* De quem é o veículo (só na central). */
+.owner {
+  margin-top: -2px;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .stats {
   display: flex;
   flex-wrap: wrap;
