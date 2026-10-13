@@ -5,6 +5,7 @@ package payments
 
 import (
 	"context"
+	"crypto/cipher"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,7 +18,6 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
-	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments/abacatepay"
 )
 
@@ -27,13 +27,15 @@ const providerAbacatePay = "abacatepay"
 const (
 	MethodPix    = "PIX"
 	MethodBoleto = "BOLETO"
+	MethodCard   = "CARD"
 )
 
-// Como a fatura foi quitada: por Pix ou por boleto (pelo código de barras ou
-// pelo Pix que vem nele), confirmados no provedor.
+// Como a fatura foi quitada: por Pix, por boleto (pelo código de barras ou
+// pelo Pix que vem nele) ou no cartão, confirmados no provedor.
 const (
 	PaidViaPix    = "PIX"
 	PaidViaBoleto = "BOLETO"
+	PaidViaCard   = "CARD"
 )
 
 var (
@@ -93,6 +95,8 @@ type Gateway interface {
 	RefundPix(ctx context.Context, id, reason string) (*abacatepay.Refund, error)
 	CreateBoleto(ctx context.Context, req abacatepay.BoletoRequest) (*abacatepay.Boleto, error)
 	GetCharge(ctx context.Context, id string) (*abacatepay.PixStatus, error)
+	CreateCard(ctx context.Context, req abacatepay.CardRequest) (*abacatepay.Card, error)
+	FindCard(ctx context.Context, since time.Time, key, value string) (*abacatepay.Card, error)
 }
 
 // Invoices é o que o serviço usa da cobrança. *billing.Service implementa.
@@ -127,6 +131,9 @@ type Service struct {
 	audit    Auditor
 	cfg      config.Payments
 	log      *slog.Logger
+	// O cartão salvo (cifrado) e o débito automático (ver card.go).
+	cardKey cipher.AEAD
+	debit   DebitConfig
 }
 
 func NewService(repo *Repository, invoices Invoices, gateway Gateway, auditor Auditor, cfg config.Payments, log *slog.Logger) *Service {
@@ -205,47 +212,13 @@ func (s *Service) ChargeForInvoices(ctx context.Context, customerID uuid.UUID, i
 	if method != MethodPix && method != MethodBoleto {
 		return nil, ErrUnknownMethod
 	}
-	seen := map[uuid.UUID]bool{}
-	unique := make([]uuid.UUID, 0, len(invoiceIDs))
-	for _, id := range invoiceIDs {
-		if !seen[id] {
-			seen[id] = true
-			unique = append(unique, id)
-		}
-	}
-	switch {
-	case len(unique) == 0:
-		return nil, ErrNoInvoices
-	case len(unique) > MaxGroupInvoices:
-		return nil, fmt.Errorf("%w: no máximo %d de uma vez", ErrNoInvoices, MaxGroupInvoices)
-	}
-	invoices, err := s.invoices.GetInvoices(ctx, unique)
+	invoices, total, err := s.openInvoices(ctx, customerID, invoiceIDs)
 	if err != nil {
 		return nil, err
-	}
-	if len(invoices) != len(unique) {
-		return nil, database.ErrNotFound
-	}
-	total := 0
-	for _, inv := range invoices {
-		if inv.CustomerID != customerID {
-			return nil, database.ErrNotFound
-		}
-		if inv.Status != billing.InvoiceOpen || inv.AmountCents <= 0 {
-			return nil, ErrInvoiceNotOpen
-		}
-		total += inv.AmountCents
 	}
 	if len(invoices) == 1 {
 		return s.ChargeForInvoice(ctx, invoices[0].ID, method, payer)
 	}
-	// A primeira a vencer é a principal (a que a lista de pagamentos mostra).
-	sort.Slice(invoices, func(i, j int) bool {
-		if !invoices[i].DueDate.Equal(invoices[j].DueDate.Time) {
-			return invoices[i].DueDate.Before(invoices[j].DueDate)
-		}
-		return invoices[i].CreatedAt.Before(invoices[j].CreatedAt)
-	})
 	ids := make([]uuid.UUID, len(invoices))
 	items := make([]ChargeInvoice, len(invoices))
 	for i, inv := range invoices {
@@ -377,7 +350,8 @@ func (s *Service) Refresh(ctx context.Context, id uuid.UUID, force bool) (*Charg
 	if err != nil {
 		return nil, err
 	}
-	if !s.Enabled() {
+	// Sem resposta do provedor ainda (o cartão): quem resolve é ReconcileCards.
+	if !s.Enabled() || charge.Status == StatusCreating {
 		return s.withInvoiceStatus(ctx, charge), nil
 	}
 	if !force {
@@ -388,9 +362,10 @@ func (s *Service) Refresh(ctx context.Context, id uuid.UUID, force bool) (*Charg
 		}
 	}
 
-	// O /transparents/check é só para Pix; o boleto se consulta pelo get.
+	// O /transparents/check é só para Pix; o boleto e o cartão se consultam
+	// pelo get.
 	var status *abacatepay.PixStatus
-	if charge.Method == MethodBoleto {
+	if charge.Method != MethodPix {
 		status, err = s.gateway.GetCharge(ctx, charge.ProviderChargeID)
 	} else {
 		status, err = s.gateway.CheckPix(ctx, charge.ProviderChargeID)
@@ -444,7 +419,7 @@ func (s *Service) RefundCharge(ctx context.Context, id uuid.UUID, reason string)
 	if charge.RefundRequestedAt != nil && charge.Status != abacatepay.StatusRefunded {
 		return nil, ErrRefundPending
 	}
-	if charge.Status != abacatepay.StatusPaid {
+	if !paidStatus(charge.Method, charge.Status) {
 		return nil, ErrNotRefundable
 	}
 
@@ -461,9 +436,9 @@ func (s *Service) RefundCharge(ctx context.Context, id uuid.UUID, reason string)
 	s.log.Info("estorno pedido", "charge", charge.ID, "refund", refund.RefundID(), "status", refund.Status)
 
 	// Em testes o estorno conclui na hora (a consulta pode levar um instante
-	// para refletir); em produção é assíncrono e isto ainda deve voltar PAID,
+	// para refletir); em produção é assíncrono e isto ainda deve voltar pago,
 	// com "estorno em andamento" até o webhook ou a consulta periódica.
-	return s.awaitChange(ctx, charge.ID, abacatepay.StatusPaid)
+	return s.awaitChange(ctx, charge.ID, charge.Status)
 }
 
 // awaitChange reconsulta o Pix até o status sair de `from`, por poucos
@@ -493,6 +468,7 @@ func (s *Service) SyncPending(ctx context.Context) {
 	if !s.Enabled() {
 		return
 	}
+	s.ReconcileCards(ctx)
 	pending, err := s.repo.DuePending(ctx, syncIdle, boletoSyncIdle, 100)
 	if err != nil {
 		s.log.Warn("falha ao listar Pix pendentes", "err", err)
@@ -552,15 +528,34 @@ func (s *Service) RecordWebhook(ctx context.Context, ev *abacatepay.Event) error
 	return s.repo.RecordWebhook(ctx, ev.ID, providerAbacatePay, ev.Event)
 }
 
+// StatusCreating é a cobrança de cartão gravada antes de ir ao provedor, à
+// espera da resposta dele (ver CardForInvoices e ReconcileCards).
+const StatusCreating = "CREATING"
+
+// paidStatus diz se o provedor confirmou o pagamento: o Pix e o boleto quando
+// pagos; o cartão já na aprovação (o PAID dele é o repasse da adquirente,
+// dias depois).
+func paidStatus(method, status string) bool {
+	return status == abacatepay.StatusPaid || (method == MethodCard && status == abacatepay.StatusApproved)
+}
+
 // apply grava o novo status e leva a consequência para a fatura.
 func (s *Service) apply(ctx context.Context, charge *Charge, status string) error {
 	if status == charge.Status {
 		return s.repo.TouchChecked(ctx, charge.ID)
 	}
-	if err := s.repo.SetStatus(ctx, charge.ID, status, status == abacatepay.StatusPaid); err != nil {
+	wasPaid, nowPaid := paidStatus(charge.Method, charge.Status), paidStatus(charge.Method, status)
+	if err := s.repo.SetStatus(ctx, charge.ID, status, nowPaid); err != nil {
 		return err
 	}
 	s.log.Info("status da cobrança mudou", "method", charge.Method, "charge", charge.ID, "from", charge.Status, "to", status)
+	if wasPaid && nowPaid {
+		// O cartão aprovado que a adquirente repassou: a fatura já quitou.
+		return nil
+	}
+	if nowPaid {
+		status = abacatepay.StatusPaid
+	}
 
 	meta := map[string]any{
 		"invoiceId": charge.InvoiceID, "chargeId": charge.ID,
@@ -696,8 +691,11 @@ func (s *Service) applyGroup(ctx context.Context, charge *Charge, status string,
 
 // paidVia é como a cobrança quita a fatura.
 func paidVia(charge *Charge) string {
-	if charge.Method == MethodBoleto {
+	switch charge.Method {
+	case MethodBoleto:
 		return PaidViaBoleto
+	case MethodCard:
+		return PaidViaCard
 	}
 	return PaidViaPix
 }
@@ -769,4 +767,15 @@ func customerFor(p *Payer) *abacatepay.Customer {
 		Name: strings.TrimSpace(p.Name), Email: strings.TrimSpace(p.Email),
 		TaxID: onlyDigits(p.Document), Cellphone: phone,
 	}
+}
+
+// sortByDue ordena as faturas da primeira a vencer à última: a primeira é a
+// principal da cobrança de várias (a que a lista de pagamentos mostra).
+func sortByDue(invoices []*billing.Invoice) {
+	sort.Slice(invoices, func(i, j int) bool {
+		if !invoices[i].DueDate.Equal(invoices[j].DueDate.Time) {
+			return invoices[i].DueDate.Before(invoices[j].DueDate)
+		}
+		return invoices[i].CreatedAt.Before(invoices[j].CreatedAt)
+	})
 }

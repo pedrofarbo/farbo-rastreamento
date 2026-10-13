@@ -161,7 +161,12 @@ const SECTIONS: LegalSection[] = [
     title: 'Pagamento e atraso',
     body: (
       <ul>
-        <li>As faturas ficam disponíveis na plataforma antes do vencimento e podem ser pagas por Pix ou boleto.</li>
+        <li>As faturas ficam disponíveis na plataforma antes do vencimento e podem ser pagas por Pix, boleto ou cartão de crédito.</li>
+        <li>
+          Se o Cliente autorizar o débito automático ao salvar o cartão, as faturas da conta são cobradas nele no dia do
+          vencimento (e, se o banco recusar, nos 2 dias seguintes). O Cliente desliga o débito ou apaga o cartão quando
+          quiser, em Faturas.
+        </li>
         <li>
           Com fatura vencida há mais de {LEGAL_FACTS.suspendAfterDays} dias, o acesso do Cliente à plataforma
           fica suspenso até o pagamento. O rastreador continua registrando as posições, que voltam a aparecer

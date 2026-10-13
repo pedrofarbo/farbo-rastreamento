@@ -420,9 +420,16 @@ type Payments struct {
 	SupplierPix bool
 	// TransferAPIKey é uma chave só para os envios; vazia usa AbacatePayAPIKey.
 	TransferAPIKey string
+	// PublicKey (pk_...) liga o cartão de crédito: vai para o navegador, que
+	// monta o formulário do cartão (abacatepay.js). A de testes só vale com a
+	// chave de API de testes, e a de produção com a de produção.
+	PublicKey string
 }
 
 func (p Payments) Enabled() bool { return p.AbacatePayAPIKey != "" }
+
+// CardEnabled diz se o cartão de crédito está ligado.
+func (p Payments) CardEnabled() bool { return p.Enabled() && p.PublicKey != "" }
 
 // TransferKey é a chave dos envios a fornecedores ("" se desligado).
 func (p Payments) TransferKey() string {
@@ -761,6 +768,7 @@ func Load() (*Config, error) {
 			PixExpiresIn:      dur("PIX_EXPIRES_IN", 24*time.Hour),
 			SupplierPix:       bl("ABACATEPAY_SUPPLIER_PIX", true),
 			TransferAPIKey:    str("ABACATEPAY_TRANSFER_API_KEY", ""),
+			PublicKey:         str("ABACATEPAY_PUBLIC_KEY", ""),
 		},
 		Shipping: Shipping{
 			Sandbox:      bl("MELHORENVIO_SANDBOX", true),

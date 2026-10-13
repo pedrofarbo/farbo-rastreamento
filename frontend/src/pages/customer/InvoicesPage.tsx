@@ -9,6 +9,7 @@ import { InvoiceDayRows } from '@/components/billing/InvoiceDayRows';
 import { InvoiceLines } from '@/components/billing/InvoiceLines';
 import { InvoiceStatus } from '@/components/billing/InvoiceStatus';
 import { MonthlyPrice } from '@/components/billing/MonthlyPrice';
+import { CardSettings } from '@/components/billing/CardSettings';
 import { PixPaymentModal } from '@/components/billing/PixPaymentModal';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -28,14 +29,14 @@ import {
   overdueGroup,
 } from '@/services/invoiceGroups';
 import type { HistoryDay, InvoiceGroup } from '@/services/invoiceGroups';
-import type { Invoice } from '@/types';
+import type { CardPayInput, Invoice } from '@/types';
 
 import styles from '../Page.module.css';
 
 /** Faturas e assinaturas do cliente. Continua acessível mesmo com o acesso suspenso. */
 export function InvoicesPage() {
   const queryClient = useQueryClient();
-  const [paying, setPaying] = useState<Pick<Invoice, 'id' | 'description'> | null>(null);
+  const [paying, setPaying] = useState<(Pick<Invoice, 'id' | 'description'> & { amountCents?: number }) | null>(null);
   // A janela de pagamento serve a uma fatura ou a um grupo (a chave "grupo:<ids>").
   const pixApi = useMemo<PixApi>(
     () => ({
@@ -48,12 +49,17 @@ export function InvoicesPage() {
         const ids = groupIds(key);
         return ids ? meApi.invoicesBoleto(ids) : meApi.invoiceBoleto(key);
       },
+      invoiceCard: (key: string, input: CardPayInput) => {
+        const ids = groupIds(key);
+        return ids ? meApi.invoicesCard(ids, input) : meApi.invoiceCard(key, input);
+      },
     }),
     [],
   );
-  const payGroup = (g: InvoiceGroup, description: string) => setPaying({ id: g.key, description });
+  const payGroup = (g: InvoiceGroup, description: string) => setPaying({ id: g.key, description, amountCents: g.amountCents });
 
   const account = useQuery({ queryKey: ['me', 'account'], queryFn: meApi.account });
+  const cardOn = Boolean(useQuery({ queryKey: ['me', 'card'], queryFn: meApi.card }).data?.enabled);
   const invoices = useQuery({ queryKey: ['me', 'invoices'], queryFn: meApi.invoices });
   const subscriptions = useQuery({ queryKey: ['me', 'subscriptions'], queryFn: meApi.subscriptions });
 
@@ -118,7 +124,9 @@ export function InvoicesPage() {
             <h1 className={styles.title}>Faturas</h1>
             <p className={styles.description}>
               {onlinePayment
-                ? 'As faturas saem alguns dias antes do vencimento. Pague aqui mesmo, com Pix ou boleto: a baixa é automática (no Pix, em segundos; no boleto, quando o banco compensar).'
+                ? cardOn
+                  ? 'As faturas saem alguns dias antes do vencimento. Pague aqui mesmo, com Pix, boleto ou cartão: a baixa é automática (no Pix e no cartão, em segundos; no boleto, quando o banco compensar).'
+                  : 'As faturas saem alguns dias antes do vencimento. Pague aqui mesmo, com Pix ou boleto: a baixa é automática (no Pix, em segundos; no boleto, quando o banco compensar).'
                 : 'As faturas saem alguns dias antes do vencimento. Pague pelo link ou pelo Pix copia-e-cola; a baixa é feita pela nossa equipe assim que o pagamento é confirmado.'}{' '}
               {/* Link comum: no app (em /app), a página do contrato fica fora das rotas dele. */}
               <a href="/contrato">Ver o contrato de prestação de serviços</a>.
@@ -190,6 +198,8 @@ export function InvoicesPage() {
             </span>
           </div>
         </div>
+
+        {onlinePayment && <CardSettings />}
 
         {late && (
           <div className={`${billing.banner} ${billing.bannerDanger}`} role="status">

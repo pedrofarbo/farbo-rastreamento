@@ -165,8 +165,10 @@ const SECTIONS: LegalSection[] = [
             <strong>Hospedagem</strong>: os servidores onde o sistema e o banco de dados ficam.
           </li>
           <li>
-            <strong>AbacatePay</strong>, para gerar e confirmar os pagamentos por Pix e boleto (nome, e-mail, CPF
-            ou CNPJ e celular).
+            <strong>AbacatePay</strong>, para gerar e confirmar os pagamentos por Pix, boleto e cartão (nome, e-mail,
+            CPF ou CNPJ e celular). Os dados do cartão são digitados direto no formulário da AbacatePay e dos parceiros
+            dela (Rinne e Evervault): a Farbo não recebe nem guarda o número do cartão, só um código cifrado para cobrar
+            o cartão salvo, a bandeira e os 4 últimos dígitos.
           </li>
           <li>
             <strong>Melhor Envios e a transportadora</strong>, para emitir a etiqueta e entregar o rastreador

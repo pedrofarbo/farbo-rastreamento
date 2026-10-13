@@ -7,7 +7,13 @@ export function InvoiceStatus({ invoice }: { invoice: Invoice }) {
   if (invoice.status === 'PAID') {
     return (
       <Badge tone="success" title={invoice.paidAt ? `Paga em ${formatDateTime(invoice.paidAt)}` : undefined}>
-        {invoice.paidVia === 'PIX' ? 'Paga via Pix' : invoice.paidVia === 'BOLETO' ? 'Paga via boleto' : 'Paga'}
+        {invoice.paidVia === 'PIX'
+          ? 'Paga via Pix'
+          : invoice.paidVia === 'BOLETO'
+            ? 'Paga via boleto'
+            : invoice.paidVia === 'CARD'
+              ? 'Paga no cartão'
+              : 'Paga'}
       </Badge>
     );
   }

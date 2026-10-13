@@ -379,6 +379,93 @@
   background: var(--accent-soft);
 }
 
+.methods3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* O cartão */
+
+.cardChoice {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  text-align: left;
+  font-size: var(--text-sm);
+}
+
+.cardChoice label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+/* O formulário da AbacatePay (um iframe dela): fundo claro, como ela desenha. */
+.cardForm {
+  width: 100%;
+  min-height: 220px;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  color: #0d130e;
+  text-align: left;
+}
+
+.cardConsent {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  width: 100%;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.cardConsent input {
+  margin-top: 3px;
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* No modo de testes, o abacatepay.js desenha campos simples aqui dentro. */
+.cardForm input {
+  background: #ffffff;
+  color: #0d130e;
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.cardConfirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.cardError {
+  width: 100%;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
 .methodOn strong {
   color: var(--accent);
 }
@@ -862,4 +949,41 @@
   color: var(--accent);
   background: var(--accent-soft);
   border-radius: 999px;
+}
+
+/* Novo veículo: como pagar o pedido. */
+.paymentChoice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: none;
+  font-size: var(--text-sm);
+}
+
+.paymentChoice legend {
+  margin-bottom: var(--space-2);
+  font-weight: 600;
+}
+
+.paymentChoice label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.paymentChoice input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.paymentOn {
+  border-color: var(--accent) !important;
+  background: var(--accent-soft);
 }

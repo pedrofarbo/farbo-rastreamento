@@ -77,6 +77,8 @@ import type {
   Geofence,
   Invoice,
   PixCharge,
+  CardPayInput,
+  CardView,
   Position,
   PositionHistory,
   ProtocolDescriptor,
@@ -729,6 +731,9 @@ export const customersApi = {
   invoicePix: (invoiceId: string) => api.post<PixCharge>(`/api/invoices/${invoiceId}/pix`),
   invoiceBoleto: (invoiceId: string) => api.post<PixCharge>(`/api/invoices/${invoiceId}/boleto`),
   charge: (id: string) => api.get<PixCharge>(`/api/charges/${id}`),
+  /** O cartão salvo do cliente: a central só desliga o débito automático ou apaga. */
+  disableAutoDebit: (customerId: string) => api.put<unknown>(`/api/customers/${customerId}/card/auto-debit`, { enabled: false }),
+  removeCard: (customerId: string) => api.delete<void>(`/api/customers/${customerId}/card`),
   simulateCharge: (id: string) => api.post<PixCharge>(`/api/charges/${id}/simulate`),
   refundCharge: (id: string, reason: string) =>
     api.post<PixCharge>(`/api/charges/${id}/refund`, { reason }),
@@ -1003,6 +1008,14 @@ export const meApi = {
   /** O boleto (com Pix junto) de uma fatura, ou um só para várias. */
   invoiceBoleto: (invoiceId: string) => api.post<PixCharge>(`/api/me/invoices/${invoiceId}/boleto`),
   invoicesBoleto: (invoiceIds: string[]) => api.post<PixCharge>('/api/me/invoices/boleto', { invoiceIds }),
+  /** O cartão: pagar uma fatura ou várias (202: sem resposta do banco ainda; a tela acompanha). */
+  invoiceCard: (invoiceId: string, input: CardPayInput) => api.post<PixCharge>(`/api/me/invoices/${invoiceId}/card`, input),
+  invoicesCard: (invoiceIds: string[], input: CardPayInput) =>
+    api.post<PixCharge>('/api/me/invoices/card', { ...input, invoiceIds }),
+  /** O cartão da conta: ligado?, a chave pública, o cartão salvo e o pagador. */
+  card: () => api.get<CardView>('/api/me/card'),
+  setAutoDebit: (enabled: boolean) => api.put<CardView>('/api/me/card/auto-debit', { enabled }),
+  removeCard: () => api.delete<void>('/api/me/card'),
   charge: (id: string) => api.get<PixCharge>(`/api/me/charges/${id}`),
   simulateCharge: (id: string) => api.post<PixCharge>(`/api/me/charges/${id}/simulate`),
 
@@ -1047,6 +1060,9 @@ export const meApi = {
 export interface PixApi {
   invoicePix: (invoiceId: string) => Promise<PixCharge>;
   invoiceBoleto: (invoiceId: string) => Promise<PixCharge>;
+  /** O cartão (só o cliente logado: o formulário pede os dados do pagador). */
+  invoiceCard?: (invoiceId: string, input: CardPayInput) => Promise<PixCharge>;
+  card?: () => Promise<CardView>;
   charge: (id: string) => Promise<PixCharge>;
   simulateCharge: (id: string) => Promise<PixCharge>;
 }

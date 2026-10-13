@@ -1194,12 +1194,19 @@ POST   /api/invoices/:id/pix             (admin) gera o Pix da fatura (AbacatePa
 POST   /api/invoices/:id/boleto          (admin) gera o boleto da fatura, com Pix junto (exige CPF/CNPJ no cadastro)
 GET    /api/charges/:id                  (admin) status do Pix ou boleto, consultado na AbacatePay
 POST   /api/charges/:id/simulate         (admin) só com chave de testes (só Pix: o sandbox não simula boleto)
-POST   /api/charges/:id/refund           (admin) {reason} estorno integral do Pix pago (boleto não tem estorno pela AbacatePay)
+POST   /api/charges/:id/refund           (admin) {reason} estorno integral do Pix ou cartão pago (boleto não tem estorno pela AbacatePay)
+PUT    /api/customers/:id/card/auto-debit  (admin) {enabled: false} desliga o débito automático (ligar é só o cliente)
+DELETE /api/customers/:id/card           (admin) apaga o cartão salvo do cliente
 
 POST   /api/me/invoices/:id/pix          (customer) gera ou reaproveita o Pix da própria fatura
 POST   /api/me/invoices/:id/boleto       (customer) gera ou reaproveita o boleto (vence com a fatura; vencida, 3 dias úteis)
 POST   /api/me/invoices/pix|boleto       (customer) {invoiceIds} um Pix ou um boleto só para várias faturas
-GET    /api/me/charges/:id               (customer) status do Pix ou boleto
+POST   /api/me/invoices/:id/card         (customer) {token | useSaved, save, autoDebit} paga no cartão (402: recusado; 202: sem resposta do banco, a tela acompanha)
+POST   /api/me/invoices/card             (customer) {invoiceIds, token | useSaved, ...} um pagamento no cartão para várias faturas
+GET    /api/me/card                      (customer) {enabled, publicKey, saved, payer}: o cartão da conta e o que o formulário pede
+PUT    /api/me/card/auto-debit           (customer) {enabled} liga (a autorização de quem pede) ou desliga o débito automático
+DELETE /api/me/card                      (customer) apaga o cartão salvo
+GET    /api/me/charges/:id               (customer) status do Pix, boleto ou cartão
 POST   /api/me/charges/:id/simulate      (customer) só com chave de testes
 
 POST   /api/payments/abacatepay/webhook  (público; segredo + assinatura HMAC)

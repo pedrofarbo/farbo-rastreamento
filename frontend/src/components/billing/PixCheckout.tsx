@@ -7,8 +7,9 @@ import buttonStyles from '@/components/ui/Button.module.css';
 import fieldStyles from '@/components/ui/Field.module.css';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
+import { cardErrorMessage, loadAbacatePay, type AbacateCheckout } from '@/services/abacatepayCard';
 import { formatDateOnly, formatDateTime, formatMoney } from '@/services/format';
-import type { ChargeMethod, PixCharge } from '@/types';
+import type { CardPayInput, ChargeMethod, PixCharge } from '@/types';
 
 import styles from './Billing.module.css';
 
@@ -18,6 +19,7 @@ const POLL_MS = 4000;
 const METHODS: { id: ChargeMethod; label: string; hint: string }[] = [
   { id: 'PIX', label: 'Pix', hint: 'confirma na hora' },
   { id: 'BOLETO', label: 'Boleto', hint: 'compensa em até 3 dias úteis' },
+  { id: 'CARD', label: 'Cartão', hint: 'crédito, à vista' },
 ];
 
 /** A linha digitável em blocos, como sai impressa: "00190.00009 02759.288002 19329.781701 8 78900000050000". */
@@ -27,18 +29,31 @@ export function formatBoletoLine(line: string): string {
   return `${d.slice(0, 5)}.${d.slice(5, 10)} ${d.slice(10, 15)}.${d.slice(15, 21)} ${d.slice(21, 26)}.${d.slice(26, 32)} ${d.slice(32, 33)} ${d.slice(33)}`;
 }
 
-const isPaid = (c: PixCharge) => c.status === 'PAID' || c.invoiceStatus === 'PAID';
+// O cartão quita já aprovado (o PAID dele é o repasse da adquirente, depois).
+const isPaid = (c: PixCharge) =>
+  c.status === 'PAID' || (c.method === 'CARD' && c.status === 'APPROVED') || c.invoiceStatus === 'PAID';
+
+export interface CheckoutOptions {
+  /** O total da fatura (ou do grupo): o cartão só aparece sabendo o valor (o formulário cobra exatamente ele). */
+  amountCents?: number;
+  /** A forma que a janela abre (na contratação, a que a pessoa escolheu). */
+  initialMethod?: ChargeMethod;
+  /** A autorização do débito automático já vem marcada (quem escolheu cartão na contratação). */
+  autoDebit?: boolean;
+}
 
 /**
- * O pagamento de uma fatura por Pix ou boleto (que traz um Pix junto): gera
- * (ou reaproveita) o Pix quando a fatura chega e o boleto quando a pessoa
- * escolhe, pergunta o status do que está na tela enquanto espera e avisa uma
- * vez quando é pago. Serve à janela do painel e à página do link de
- * pagamento.
+ * O pagamento de uma fatura por Pix, boleto (que traz um Pix junto) ou
+ * cartão: gera (ou reaproveita) o Pix quando a fatura chega e o boleto quando
+ * a pessoa escolhe; o cartão é cobrado quando ela confirma o formulário.
+ * Pergunta o status do que está na tela enquanto espera e avisa uma vez
+ * quando é pago. Serve à janela do painel e à página do link de pagamento
+ * (que não tem cartão: o formulário pede os dados do pagador).
  */
-export function usePixCheckout(invoiceId: string | null, api: PixApi, onPaid: () => void) {
+export function usePixCheckout(invoiceId: string | null, api: PixApi, onPaid: () => void, options: CheckoutOptions = {}) {
   const { notify } = useToast();
-  const [method, setMethod] = useState<ChargeMethod>('PIX');
+  const initial = options.initialMethod ?? 'PIX';
+  const [method, setMethod] = useState<ChargeMethod>(initial);
   const [charges, setCharges] = useState<Partial<Record<ChargeMethod, PixCharge>>>({});
   const [errors, setErrors] = useState<Partial<Record<ChargeMethod, string>>>({});
   const notified = useRef(false);
@@ -49,32 +64,53 @@ export function usePixCheckout(invoiceId: string | null, api: PixApi, onPaid: ()
     PIX: useMutation({ mutationFn: api.invoicePix, onSuccess: keep, onError: fail('PIX') }),
     BOLETO: useMutation({ mutationFn: api.invoiceBoleto, onSuccess: keep, onError: fail('BOLETO') }),
   };
+  const amount = options.amountCents ?? 0;
+  const card = useQuery({
+    queryKey: ['me', 'card'],
+    queryFn: () => api.card!(),
+    enabled: Boolean(invoiceId && api.card && api.invoiceCard && amount >= 100),
+  });
+  const cardOn = Boolean(card.data?.enabled && api.invoiceCard && amount >= 100);
+  const payCard = useMutation({
+    mutationFn: (input: CardPayInput) => api.invoiceCard!(invoiceId!, input),
+    onSuccess: (charged) => {
+      keep(charged);
+      card.refetch();
+    },
+    onError: fail('CARD'),
+  });
+
   const start = (m: ChargeMethod = method) => {
     if (!invoiceId) return;
     setCharges((all) => ({ ...all, [m]: undefined }));
     setErrors((all) => ({ ...all, [m]: '' }));
-    creators[m].mutate(invoiceId);
+    if (m !== 'CARD') creators[m].mutate(invoiceId);
   };
-  /** Troca entre Pix e boleto; o que ainda não foi gerado, gera. */
+  /** Troca de forma; o Pix e o boleto que ainda não foram gerados, gera (o cartão espera o formulário). */
   const choose = (m: ChargeMethod) => {
     setMethod(m);
-    if (!charges[m] && !errors[m] && !creators[m].isPending) start(m);
+    if (m !== 'CARD' && !charges[m] && !errors[m] && !creators[m].isPending) start(m);
   };
 
   useEffect(() => {
     notified.current = false;
-    setMethod('PIX');
+    setMethod(initial);
     setCharges({});
     setErrors({});
-    if (invoiceId) start('PIX');
+    if (invoiceId && initial !== 'CARD') start(initial);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoiceId]);
+  // Pediu cartão, mas ele não está disponível: volta ao Pix.
+  useEffect(() => {
+    if (method === 'CARD' && invoiceId && !cardOn && (card.isFetched || !api.card)) choose('PIX');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [method, cardOn, card.isFetched, invoiceId]);
 
   const charge = charges[method] ?? null;
-  // Paga por qualquer um (o Pix, o boleto ou o Pix do boleto), a fatura quitou.
+  // Paga por qualquer um (o Pix, o boleto, o Pix do boleto ou o cartão), a fatura quitou.
   const paidCharge = Object.values(charges).find((c): c is PixCharge => Boolean(c && isPaid(c))) ?? null;
   const paid = paidCharge !== null;
-  const ended = Boolean(charge && ['EXPIRED', 'CANCELLED', 'REFUNDED'].includes(charge.status));
+  const ended = Boolean(charge && ['EXPIRED', 'CANCELLED', 'REFUNDED', 'FAILED'].includes(charge.status));
 
   const status = useQuery({
     queryKey: ['pix-charge', charge?.id],
@@ -111,21 +147,26 @@ export function usePixCheckout(invoiceId: string | null, api: PixApi, onPaid: ()
   return {
     method,
     choose,
+    methods: METHODS.filter((m) => m.id !== 'CARD' || cardOn),
     charge,
     error: errors[method] ?? '',
     paid,
     paidCharge,
     ended,
-    creating: creators[method].isPending,
+    creating: method === 'CARD' ? false : creators[method].isPending,
     start,
     simulate,
     copy,
+    card: card.data ?? null,
+    amountCents: amount,
+    autoDebitDefault: Boolean(options.autoDebit),
+    payCard,
   };
 }
 
 export type PixCheckoutState = ReturnType<typeof usePixCheckout>;
 
-/** A escolha da forma, o Pix ou o boleto, e a confirmação (sem a moldura). */
+/** A escolha da forma, o Pix, o boleto ou o cartão, e a confirmação (sem a moldura). */
 export function PixCheckout({
   state,
   description,
@@ -136,13 +177,18 @@ export function PixCheckout({
   /** O texto do fim, quando o pagamento é confirmado. */
   paidText: string;
 }) {
-  const { method, choose, charge, error, paid, paidCharge, ended, creating, start } = state;
+  const { method, methods, choose, charge, error, paid, paidCharge, ended, creating, start } = state;
   const boleto = method === 'BOLETO';
+  const cardMethod = method === 'CARD';
   return (
     <>
       {!paid && (
-        <div className={styles.methods} role="radiogroup" aria-label="Forma de pagamento">
-          {METHODS.map((m) => (
+        <div
+          className={`${styles.methods} ${methods.length === 3 ? styles.methods3 : ''}`}
+          role="radiogroup"
+          aria-label="Forma de pagamento"
+        >
+          {methods.map((m) => (
             <button
               key={m.id}
               type="button"
@@ -160,7 +206,7 @@ export function PixCheckout({
 
       {creating && <Spinner label={boleto ? 'Gerando o boleto…' : 'Gerando o Pix…'} />}
 
-      {error && !paid && (
+      {error && !paid && !cardMethod && (
         <div className={styles.pix}>
           <p>{error}</p>
           <div className={styles.pixActions}>
@@ -182,7 +228,9 @@ export function PixCheckout({
         </div>
       )}
 
-      {charge && ended && !paid && (
+      {cardMethod && !paid && <CardPay state={state} description={description} />}
+
+      {charge && ended && !paid && !cardMethod && (
         <div className={styles.pix}>
           <p>
             {boleto
@@ -195,7 +243,7 @@ export function PixCheckout({
         </div>
       )}
 
-      {charge && !paid && !ended && (boleto ? <BoletoView state={state} charge={charge} description={description} /> : <PixView state={state} charge={charge} description={description} />)}
+      {charge && !paid && !ended && !cardMethod && (boleto ? <BoletoView state={state} charge={charge} description={description} /> : <PixView state={state} charge={charge} description={description} />)}
     </>
   );
 }
@@ -299,6 +347,158 @@ function BoletoView({ state, charge, description }: { state: PixCheckoutState; c
   );
 }
 
+/**
+ * O cartão: o salvo da conta ou o formulário da AbacatePay (o iframe dela,
+ * montado aqui), e a autorização do débito automático. Sem resposta do banco
+ * ainda, espera a confirmação, que aparece sozinha.
+ */
+function CardPay({ state, description }: { state: PixCheckoutState; description?: string }) {
+  const { card, charge, error, payCard, amountCents, autoDebitDefault, start } = state;
+  const saved = card?.saved ?? null;
+  const [useSaved, setUseSaved] = useState(Boolean(saved));
+  const [autoDebit, setAutoDebit] = useState(autoDebitDefault);
+  const [formError, setFormError] = useState('');
+  const [ready, setReady] = useState(false);
+  const [tokenizing, setTokenizing] = useState(false);
+  const host = useRef<HTMLDivElement>(null);
+  const checkout = useRef<AbacateCheckout | null>(null);
+  const waiting = Boolean(charge && (charge.status === 'CREATING' || charge.status === 'PENDING'));
+  const showForm = Boolean(card?.payer) && !useSaved && !waiting;
+
+  useEffect(() => {
+    setUseSaved(Boolean(saved));
+  }, [saved?.last4]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Monta o formulário (o iframe da AbacatePay) quando ele aparece.
+  useEffect(() => {
+    if (!showForm || !card || !host.current) return;
+    let alive = true;
+    const target = host.current;
+    setReady(false);
+    setFormError('');
+    loadAbacatePay()
+      .then((factory) => {
+        if (!alive) return undefined;
+        const instance = factory.create({ publicKey: card.publicKey, amount: amountCents, locale: 'pt', icons: true });
+        checkout.current = instance;
+        return instance.mount(target).then(() => {
+          if (alive) setReady(true);
+        });
+      })
+      .catch((err) => {
+        if (alive) setFormError(cardErrorMessage(err));
+      });
+    return () => {
+      alive = false;
+      checkout.current?.destroy();
+      checkout.current = null;
+    };
+  }, [showForm, card?.publicKey, amountCents]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!card) return <Spinner label="Carregando o cartão…" />;
+  if (!card.payer) {
+    return (
+      <div className={styles.pix}>
+        <p>
+          Para pagar com cartão, o cadastro da conta precisa do CPF ou CNPJ, do e-mail e do celular. Complete em Conta,
+          nos seus dados, ou pague com Pix ou boleto.
+        </p>
+      </div>
+    );
+  }
+  if (waiting && charge) {
+    return (
+      <div className={styles.pix}>
+        <div className={styles.pixAmount}>{formatMoney(charge.amountCents)}</div>
+        <Waiting until="" label="Confirmando com o banco" />
+        <p className={styles.muted}>Não precisa pagar de novo: a confirmação aparece aqui sozinha.</p>
+      </div>
+    );
+  }
+
+  const pay = async () => {
+    setFormError('');
+    start('CARD');
+    if (useSaved) {
+      payCard.mutate({ useSaved: true });
+      return;
+    }
+    if (!checkout.current || !card.payer) return;
+    setTokenizing(true);
+    try {
+      const { token } = await checkout.current.tokenize({
+        name: card.payer.name,
+        email: card.payer.email,
+        taxId: card.payer.taxId,
+        cellphone: card.payer.cellphone,
+      });
+      payCard.mutate({ token, save: autoDebit, autoDebit });
+    } catch (err) {
+      setFormError(cardErrorMessage(err));
+    } finally {
+      setTokenizing(false);
+    }
+  };
+  const message =
+    formError || error || (charge?.status === 'FAILED' ? 'O cartão foi recusado. Confira os dados ou use outro cartão.' : '');
+
+  return (
+    <div className={styles.pix}>
+      <div>
+        <div className={styles.pixAmount}>{formatMoney(amountCents)}</div>
+        {description && <div className={styles.muted}>{description}</div>}
+      </div>
+
+      {saved && (
+        <div className={styles.cardChoice} role="radiogroup" aria-label="Qual cartão">
+          <label>
+            <input type="radio" name="card-choice" checked={useSaved} onChange={() => setUseSaved(true)} />
+            {saved.brand} final {saved.last4}
+          </label>
+          <label>
+            <input type="radio" name="card-choice" checked={!useSaved} onChange={() => setUseSaved(false)} />
+            Outro cartão
+          </label>
+        </div>
+      )}
+
+      {showForm && (
+        <>
+          <div ref={host} className={styles.cardForm} />
+          {!ready && !formError && <Spinner label="Abrindo o formulário do cartão…" />}
+          <label className={styles.cardConsent}>
+            <input type="checkbox" checked={autoDebit} onChange={(e) => setAutoDebit(e.target.checked)} />
+            <span>
+              <strong>Débito automático:</strong> guardar este cartão e cobrar nele as próximas faturas da conta, no dia
+              do vencimento (se o banco recusar, tenta de novo nos 2 dias seguintes). Dá para desligar quando quiser, em
+              Faturas.
+            </span>
+          </label>
+        </>
+      )}
+
+      {message && (
+        <p className={styles.cardError} role="alert">
+          {message}
+        </p>
+      )}
+      <Button
+        variant="primary"
+        block
+        loading={payCard.isPending || tokenizing}
+        disabled={!useSaved && !ready}
+        onClick={() => void pay()}
+      >
+        Pagar {formatMoney(amountCents)}
+      </Button>
+      <p className={styles.muted}>
+        Os dados do cartão vão direto para a AbacatePay, num formulário seguro: não passam pela Farbo. Se o banco pedir
+        confirmação, ela abre numa janela dele.
+      </p>
+    </div>
+  );
+}
+
 function PixCode({ charge, onCopy }: { charge: PixCharge; onCopy: () => void }) {
   return (
     <div className={styles.pixCopy}>
@@ -316,11 +516,11 @@ function PixCode({ charge, onCopy }: { charge: PixCharge; onCopy: () => void }) 
   );
 }
 
-function Waiting({ until }: { until: string }) {
+function Waiting({ until, label = 'Aguardando pagamento' }: { until: string; label?: string }) {
   return (
     <div className={styles.pixWaiting}>
       <span className={styles.pixSpinner} aria-hidden="true" />
-      Aguardando pagamento
+      {label}
       {until && ` · ${until}`}
     </div>
   );

@@ -41,6 +41,7 @@ vi.mock('@/api/resources', () => ({
     },
     charge: async () => charge,
     simulateCharge: async () => charge,
+    card: async () => ({ enabled: false, publicKey: '', saved: null, payer: null }),
   },
 }));
 

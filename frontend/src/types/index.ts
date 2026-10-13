@@ -623,8 +623,8 @@ export interface Invoice {
   overdue: boolean;
   daysOverdue: number;
   paidAt: string | null;
-  /** Como foi quitada: MANUAL (baixa da central), PIX ou BOLETO (confirmados no provedor). */
-  paidVia: '' | 'MANUAL' | 'PIX' | 'BOLETO';
+  /** Como foi quitada: MANUAL (baixa da central), PIX, BOLETO ou CARD (confirmados no provedor). */
+  paidVia: '' | 'MANUAL' | 'PIX' | 'BOLETO' | 'CARD';
   /** A cobrança (Pix ou boleto) que quitou a fatura, quando paga pelo provedor. */
   paidChargeId: string | null;
   paymentUrl: string;
@@ -633,8 +633,8 @@ export interface Invoice {
   updatedAt: string;
 }
 
-/** A forma de pagamento online de uma fatura: Pix ou boleto (que traz um Pix junto). */
-export type ChargeMethod = 'PIX' | 'BOLETO';
+/** A forma de pagamento online de uma fatura: Pix, boleto (que traz um Pix junto) ou cartão de crédito. */
+export type ChargeMethod = 'PIX' | 'BOLETO' | 'CARD';
 
 /** Pix ou boleto gerado para pagar uma fatura (AbacatePay, checkout transparente). */
 export interface PixCharge {
@@ -654,6 +654,9 @@ export interface PixCharge {
   boletoLine: string;
   boletoBarcode: string;
   boletoUrl: string;
+  /** O cartão: a bandeira e os 4 últimos dígitos. */
+  cardBrand: string;
+  cardLast4: string;
   /** Cobrança do ambiente de testes: dá para simular o pagamento. */
   devMode: boolean;
   expiresAt: string | null;
@@ -865,6 +868,8 @@ export interface CustomerDetail extends CustomerSummary {
   affiliate: CustomerReferral | null;
   /** O plano definido pela central para os veículos novos (nulo: o padrão). */
   plan: AccountPlan | null;
+  /** O cartão salvo do cliente e o débito automático (nulo: nenhum). */
+  card: SavedCard | null;
   /** O último aceite do contrato (nulo: ainda não aceitou). */
   contract: ContractAcceptance | null;
   /** A versão do contrato em vigor. */
@@ -2048,4 +2053,42 @@ export interface ReportOverspeed {
   longitude: number | null;
   maxSpeedKmh: number;
   limitKmh: number | null;
+}
+
+/** O cartão salvo da conta (o token fica no servidor; aqui só a bandeira e o final). */
+export interface SavedCard {
+  brand: string;
+  last4: string;
+  /** O débito automático das faturas no vencimento. */
+  autoDebit: boolean;
+  consentAt: string | null;
+  /** A última recusa do débito automático. */
+  failedAt: string | null;
+  lastError: string;
+  createdAt: string;
+}
+
+/** Os dados do pagador que o formulário do cartão pede (os do titular). */
+export interface CardPayer {
+  name: string;
+  email: string;
+  taxId: string;
+  cellphone: string;
+}
+
+/** O cartão da conta: se está ligado, a chave pública do formulário, o cartão salvo e o pagador. */
+export interface CardView {
+  enabled: boolean;
+  publicKey: string;
+  saved: SavedCard | null;
+  /** Nulo: falta CPF/CNPJ, e-mail ou celular no cadastro. */
+  payer: CardPayer | null;
+}
+
+/** Pagar no cartão: o token do formulário (ou o cartão salvo) e se guarda o cartão com o débito automático. */
+export interface CardPayInput {
+  token?: string;
+  useSaved?: boolean;
+  save?: boolean;
+  autoDebit?: boolean;
 }

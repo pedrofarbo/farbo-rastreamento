@@ -26,14 +26,17 @@ type Charge struct {
 	QRCodeImage      string `json:"qrCodeImage"`
 	// O boleto: a linha digitável, o código de barras e o link para ver e
 	// imprimir.
-	BoletoLine    string     `json:"boletoLine"`
-	BoletoBarcode string     `json:"boletoBarcode"`
-	BoletoURL     string     `json:"boletoUrl"`
-	DevMode       bool       `json:"devMode"`
-	ExpiresAt     *time.Time `json:"expiresAt"`
-	PaidAt        *time.Time `json:"paidAt"`
-	CheckedAt     *time.Time `json:"-"`
-	CreatedAt     time.Time  `json:"createdAt"`
+	BoletoLine    string `json:"boletoLine"`
+	BoletoBarcode string `json:"boletoBarcode"`
+	BoletoURL     string `json:"boletoUrl"`
+	// O cartão: a bandeira e os 4 últimos dígitos.
+	CardBrand string     `json:"cardBrand"`
+	CardLast4 string     `json:"cardLast4"`
+	DevMode   bool       `json:"devMode"`
+	ExpiresAt *time.Time `json:"expiresAt"`
+	PaidAt    *time.Time `json:"paidAt"`
+	CheckedAt *time.Time `json:"-"`
+	CreatedAt time.Time  `json:"createdAt"`
 	// PlatformFeeCents é a tarifa que a AbacatePay informou ao gerar o Pix
 	// (o financeiro a lança como despesa quando o Pix é pago).
 	PlatformFeeCents int `json:"-"`
@@ -59,8 +62,8 @@ type ChargeInvoice struct {
 }
 
 const chargeColumns = `id, invoice_id, provider, method, provider_charge_id, amount_cents, status, br_code,
-	qr_code_image, boleto_line, boleto_barcode, boleto_url, dev_mode, expires_at, paid_at, checked_at, created_at,
-	refund_requested_at, refund_id, refund_reason`
+	qr_code_image, boleto_line, boleto_barcode, boleto_url, card_brand, card_last4, dev_mode, expires_at, paid_at,
+	checked_at, created_at, refund_requested_at, refund_id, refund_reason`
 
 type Repository struct{ db *database.DB }
 
@@ -70,8 +73,8 @@ func NewRepository(db *database.DB) *Repository { return &Repository{db: db} }
 func scanCharge(row database.Scanner, extra ...any) (*Charge, error) {
 	var c Charge
 	dest := append([]any{&c.ID, &c.InvoiceID, &c.Provider, &c.Method, &c.ProviderChargeID, &c.AmountCents,
-		&c.Status, &c.BrCode, &c.QRCodeImage, &c.BoletoLine, &c.BoletoBarcode, &c.BoletoURL, &c.DevMode,
-		&c.ExpiresAt, &c.PaidAt, &c.CheckedAt, &c.CreatedAt, &c.RefundRequestedAt, &c.RefundID, &c.RefundReason}, extra...)
+		&c.Status, &c.BrCode, &c.QRCodeImage, &c.BoletoLine, &c.BoletoBarcode, &c.BoletoURL, &c.CardBrand, &c.CardLast4,
+		&c.DevMode, &c.ExpiresAt, &c.PaidAt, &c.CheckedAt, &c.CreatedAt, &c.RefundRequestedAt, &c.RefundID, &c.RefundReason}, extra...)
 	if err := row.Scan(dest...); err != nil {
 		return nil, database.MapError(err)
 	}
@@ -97,9 +100,9 @@ func (r *Repository) listCharges(ctx context.Context, query string, args ...any)
 
 const insertCharge = `
 	INSERT INTO payment_charges (id, invoice_id, provider, method, provider_charge_id, amount_cents,
-		status, br_code, qr_code_image, boleto_line, boleto_barcode, boleto_url, dev_mode, expires_at,
-		platform_fee_cents, checked_at)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+		status, br_code, qr_code_image, boleto_line, boleto_barcode, boleto_url, card_brand, card_last4, dev_mode,
+		expires_at, platform_fee_cents, checked_at)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
 	RETURNING created_at`
 
 func (c *Charge) insertArgs() []any {
@@ -108,7 +111,8 @@ func (c *Charge) insertArgs() []any {
 		method = MethodPix
 	}
 	return []any{c.ID, c.InvoiceID, c.Provider, method, c.ProviderChargeID, c.AmountCents, c.Status, c.BrCode,
-		c.QRCodeImage, c.BoletoLine, c.BoletoBarcode, c.BoletoURL, c.DevMode, c.ExpiresAt, max(c.PlatformFeeCents, 0)}
+		c.QRCodeImage, c.BoletoLine, c.BoletoBarcode, c.BoletoURL, c.CardBrand, c.CardLast4, c.DevMode, c.ExpiresAt,
+		max(c.PlatformFeeCents, 0)}
 }
 
 func (r *Repository) Insert(ctx context.Context, c *Charge) error {
@@ -206,8 +210,9 @@ func (r *Repository) TouchChecked(ctx context.Context, id uuid.UUID) error {
 	return database.MapError(err)
 }
 
-// DuePending lista o que ainda pode mudar no provedor: Pix pendentes da
-// última semana (depois disso já expiraram) e estornos pedidos que ainda não
+// DuePending lista o que ainda pode mudar no provedor: Pix (e cartão à espera
+// do banco) pendentes da última semana (depois disso já expiraram) e estornos
+// pedidos que ainda não
 // concluíram (em produção são assíncronos), não consultados há `idle`; e
 // boletos pendentes ou vencidos há até boletoClearing (o pago no último dia
 // ainda compensa), não consultados há `boletoIdle` — o boleto vale dias, e o
@@ -215,7 +220,7 @@ func (r *Repository) TouchChecked(ctx context.Context, id uuid.UUID) error {
 func (r *Repository) DuePending(ctx context.Context, idle, boletoIdle time.Duration, limit int) ([]*Charge, error) {
 	return r.listCharges(ctx, `
 		SELECT `+chargeColumns+` FROM payment_charges
-		WHERE (method = 'PIX'
+		WHERE (method IN ('PIX', 'CARD')
 			AND ((status = 'PENDING' AND created_at > NOW() - INTERVAL '7 days')
 			    OR (refund_requested_at IS NOT NULL AND status <> 'REFUNDED'
 			        AND refund_requested_at > NOW() - INTERVAL '30 days'))
@@ -304,4 +309,24 @@ func (r *Repository) RecordWebhook(ctx context.Context, id, provider, event stri
 		INSERT INTO payment_webhook_events (id, provider, event) VALUES ($1, $2, $3)
 		ON CONFLICT (id) DO NOTHING`, id, provider, event)
 	return database.MapError(err)
+}
+
+// SetProviderCharge grava a cobrança de cartão que o provedor criou (até ali
+// ela era CREATING, sem id dele).
+func (r *Repository) SetProviderCharge(ctx context.Context, id uuid.UUID, providerID string, amountCents int, brand, last4 string,
+	devMode bool, feeCents int, expiresAt *time.Time) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE payment_charges SET provider_charge_id = $2, amount_cents = $3, card_brand = $4, card_last4 = $5,
+			dev_mode = $6, platform_fee_cents = $7, expires_at = $8, status = 'PENDING', checked_at = NOW(), updated_at = NOW()
+		WHERE id = $1`, id, providerID, amountCents, brand, last4, devMode, max(feeCents, 0), expiresAt)
+	return database.MapError(err)
+}
+
+// Creating são as cobranças de cartão que ficaram sem resposta do provedor
+// (CREATING) há mais de `idle`: a conferência procura cada uma lá.
+func (r *Repository) Creating(ctx context.Context, idle time.Duration, limit int) ([]*Charge, error) {
+	return r.listCharges(ctx, `
+		SELECT `+chargeColumns+` FROM payment_charges
+		WHERE method = 'CARD' AND status = 'CREATING' AND created_at < NOW() - make_interval(secs => $1)
+		ORDER BY created_at LIMIT $2`, idle.Seconds(), limit)
 }

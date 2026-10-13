@@ -15,6 +15,9 @@ let promoStatus: PromoStatus;
 // O pedido recusa uma vez por falta do aceite do contrato (quem só acompanhava).
 let needsContract = false;
 const accepted: unknown[] = [];
+// A forma de pagamento que o assistente devolve; o cartão ligado ou não.
+const paidWith: unknown[] = [];
+let cardEnabled = false;
 vi.mock('@/api/resources', () => ({
   catalogApi: {
     get: async () => ({
@@ -23,7 +26,9 @@ vi.mock('@/api/resources', () => ({
     }),
   },
   meApi: {
+    card: async () => ({ enabled: cardEnabled, publicKey: 'pk_teste', saved: null, payer: null }),
     account: async () => ({
+      onlinePayment: true,
       deliveryAddress: { zipCode: '20040020', street: 'Rua da Assembleia', number: '10', complement: '', district: 'Centro', city: 'Rio de Janeiro', state: 'RJ' },
     }),
     shippingQuote: async () => quote,
@@ -84,7 +89,7 @@ async function openWizard(installments = 1) {
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <MemoryRouter>
           <ToastProvider>
-            <NewVehicleWizard open onClose={() => undefined} onDone={() => undefined} />
+            <NewVehicleWizard open onClose={() => undefined} onDone={(_, payment) => paidWith.push(payment)} />
           </ToastProvider>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -112,7 +117,31 @@ afterEach(() => {
   document.body.innerHTML = '';
   ordered.length = 0;
   accepted.length = 0;
+  paidWith.length = 0;
   needsContract = false;
+  cardEnabled = false;
+});
+
+describe('como pagar o pedido', () => {
+  it('Pix, boleto e, com ele ligado, o cartão: a janela de pagamento abre na escolhida', async () => {
+    quote = { enabled: false, zipCode: '', problem: '', arrange: false, quotes: [] };
+    await openWizard();
+    expect(text()).toContain('Como pagar');
+    expect(text()).not.toContain('Cartão de crédito');
+    await act(async () => button(/Confirmar pedido/).click());
+    await flush();
+    expect(paidWith).toEqual(['PIX']);
+
+    document.body.innerHTML = '';
+    cardEnabled = true;
+    await openWizard();
+    const card = Array.from(document.querySelectorAll('label')).find((l) => l.textContent?.startsWith('Cartão de crédito'));
+    expect(card?.textContent).toContain('as mensalidades também caem nele');
+    await act(async () => (card?.querySelector('input') as HTMLInputElement).click());
+    await act(async () => button(/Confirmar pedido/).click());
+    await flush();
+    expect(paidWith).toEqual(['PIX', 'CARD']);
+  });
 });
 
 describe('a central e a promoção de pré-lançamento', () => {

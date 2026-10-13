@@ -24,8 +24,12 @@ func (s *Server) writePaymentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusServiceUnavailable, "o pagamento online não está disponível no momento")
 	case errors.Is(err, payments.ErrInvoiceNotOpen):
 		writeError(w, http.StatusConflict, "esta fatura não está mais em aberto")
-	case errors.Is(err, payments.ErrNoInvoices), errors.Is(err, payments.ErrUnknownMethod):
+	case errors.Is(err, payments.ErrNoInvoices), errors.Is(err, payments.ErrUnknownMethod),
+		errors.Is(err, payments.ErrCardTokenMissing):
 		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, payments.ErrCardDisabled), errors.Is(err, payments.ErrCardPayerIncomplete),
+		errors.Is(err, payments.ErrNoSavedCard):
+		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, payments.ErrNotDevMode),
 		errors.Is(err, payments.ErrNotRefundable),
 		errors.Is(err, payments.ErrRefundPending),

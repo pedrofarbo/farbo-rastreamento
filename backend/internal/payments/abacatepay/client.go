@@ -1,5 +1,5 @@
-// Package abacatepay fala com a API v2 da AbacatePay: Pix e boleto por
-// checkout transparente (criar, consultar, simular o Pix em testes) e
+// Package abacatepay fala com a API v2 da AbacatePay: Pix, boleto e cartão
+// por checkout transparente (criar, consultar, simular o Pix em testes) e
 // verificação dos webhooks.
 package abacatepay
 
@@ -208,7 +208,17 @@ type envelope struct {
 	Error   json.RawMessage `json:"error"`
 }
 
+// doPaged é o GET de uma listagem: o data em `out` e o envelope inteiro (com
+// a paginação) em `page`.
+func (c *Client) doPaged(ctx context.Context, path string, query url.Values, out, page any) error {
+	return c.request(ctx, http.MethodGet, path, query, nil, out, page)
+}
+
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, body, out any) error {
+	return c.request(ctx, method, path, query, body, out, nil)
+}
+
+func (c *Client) request(ctx context.Context, method, path string, query url.Values, body, out, page any) error {
 	endpoint := c.baseURL + path
 	if len(query) > 0 {
 		endpoint += "?" + query.Encode()
@@ -253,6 +263,11 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	}
 	if resp.StatusCode >= 300 || !env.Success {
 		return &APIError{HTTPStatus: resp.StatusCode, Message: errorMessage(env.Error)}
+	}
+	if page != nil {
+		if err := json.Unmarshal(raw, page); err != nil {
+			return fmt.Errorf("decodificando resposta da AbacatePay: %w", err)
+		}
 	}
 	if out == nil {
 		return nil

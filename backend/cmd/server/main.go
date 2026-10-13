@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/accounts"
@@ -227,6 +228,26 @@ func run() error {
 	auditSvc := audit.NewService(auditRepo, log)
 	paymentsSvc := payments.NewService(payments.NewRepository(db), billingSvc,
 		newPaymentGateway(cfg, log), auditSvc, cfg.Payments, log)
+	// O cartão salvo fica cifrado com a chave derivada do segredo do servidor;
+	// o débito automático cobra com os dados do titular e avisa a recusa.
+	if err := paymentsSvc.SetCardSecret(string(cfg.Auth.JWTSecret)); err != nil {
+		return fmt.Errorf("preparando o cartão salvo: %w", err)
+	}
+	debitLoc, err := time.LoadLocation(cfg.Billing.Timezone)
+	if err != nil {
+		debitLoc = time.FixedZone("BRT", -3*60*60)
+	}
+	paymentsSvc.SetDebit(payments.DebitConfig{
+		Payer: func(ctx context.Context, id uuid.UUID) (*payments.Payer, error) {
+			u, err := authSvc.GetUser(ctx, id)
+			if err != nil {
+				return nil, err
+			}
+			return &payments.Payer{Name: u.Name, Email: u.Email, Document: u.Document, Phone: u.Phone}, nil
+		},
+		Notifier: mail.NewCardMailer(mailer, cfg.Mail.AppURL),
+		Location: debitLoc,
+	})
 	geofenceSvc := geofences.NewService(geofenceRepo)
 	// O horário dos avisos das cercas é no fuso da central.
 	if loc, err := time.LoadLocation(cfg.Billing.Timezone); err == nil {
@@ -480,6 +501,14 @@ func run() error {
 		maintenanceNotifier.Run(ctx)
 	}()
 
+	if paymentsSvc.CardEnabled() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			paymentsSvc.RunDebits(ctx)
+		}()
+	}
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -694,8 +723,8 @@ func newPaymentGateway(cfg *config.Config, log *slog.Logger) payments.Gateway {
 	if p.WebhookSecret == "" {
 		log.Warn("ABACATEPAY_WEBHOOK_SECRET vazio: webhooks recusados; a baixa vem só da consulta periódica")
 	}
-	log.Info("pagamento por Pix via AbacatePay", "modo", mode, "webhook", p.WebhookSecret != "",
-		"validade_pix", p.PixExpiresIn.String())
+	log.Info("pagamento por Pix, boleto e cartão via AbacatePay", "modo", mode, "webhook", p.WebhookSecret != "",
+		"validade_pix", p.PixExpiresIn.String(), "cartao", p.CardEnabled())
 	return abacatepay.NewClient(p.AbacatePayBaseURL, p.AbacatePayAPIKey)
 }
 

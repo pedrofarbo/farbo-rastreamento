@@ -635,10 +635,49 @@ export function CustomerDetailsPage() {
           )}
         </Card>
 
+        {data.card && (
+          <Card
+            title="Cartão de crédito"
+            subtitle={`${data.card.brand} final ${data.card.last4} · ${
+              data.card.autoDebit
+                ? `débito automático ligado${data.card.consentAt ? ` desde ${formatDateOnly(data.card.consentAt.slice(0, 10))}` : ''}`
+                : 'débito automático desligado'
+            }`}
+            actions={
+              <div className={styles.actions}>
+                {data.card.autoDebit && (
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    onClick={() => run('Débito automático desligado', () => customersApi.disableAutoDebit(data.id))}
+                  >
+                    Desligar o débito
+                  </Button>
+                )}
+                <Button
+                  size="small"
+                  variant="ghost"
+                  onClick={() => run('Cartão apagado', () => customersApi.removeCard(data.id))}
+                >
+                  Apagar o cartão
+                </Button>
+              </div>
+            }
+          >
+            <p className={billing.muted}>
+              {data.card.failedAt
+                ? `O banco recusou a cobrança de ${formatDateOnly(data.card.failedAt.slice(0, 10))}${
+                    data.card.lastError && data.card.lastError !== 'recusado pelo banco' ? ` (${data.card.lastError})` : ''
+                  }. O cliente recebeu o aviso por e-mail.`
+                : 'Só o cliente liga o débito automático (é a autorização dele); a central desliga ou apaga o cartão.'}
+            </p>
+          </Card>
+        )}
+
         {data.payments.length > 0 && (
           <Card
             title="Pagamentos online"
-            subtitle="Pix e boletos recebidos pela AbacatePay. O estorno do Pix devolve o valor integral ao cliente; o boleto não tem estorno pela AbacatePay."
+            subtitle="Pix, boletos e cartões recebidos pela AbacatePay. O estorno do Pix e do cartão devolve o valor integral ao cliente; o boleto não tem estorno pela AbacatePay."
             flush
           >
             <div className={styles.tableWrap}>
@@ -664,13 +703,21 @@ export function CustomerDetailsPage() {
                         )}
                         {payment.refundReason && <div className={billing.muted}>estorno: {payment.refundReason}</div>}
                       </td>
-                      <td>{payment.method === 'BOLETO' ? 'Boleto' : 'Pix'}</td>
+                      <td>
+                        {payment.method === 'BOLETO'
+                          ? 'Boleto'
+                          : payment.method === 'CARD'
+                            ? `Cartão ${payment.cardBrand} ${payment.cardLast4}`.trim()
+                            : 'Pix'}
+                      </td>
                       <td className={billing.amount}>{formatMoney(payment.amountCents)}</td>
                       <td>
                         <PaymentStatus payment={payment} />
                       </td>
                       <td>
-                        {payment.method !== 'BOLETO' && payment.status === 'PAID' && !payment.refundRequestedAt && (
+                        {payment.method !== 'BOLETO' &&
+                          (payment.status === 'PAID' || (payment.method === 'CARD' && payment.status === 'APPROVED')) &&
+                          !payment.refundRequestedAt && (
                           <div className={styles.actions}>
                             <Button
                               size="small"

@@ -17,14 +17,16 @@ import (
 // cheia no caixa e a tarifa sai como despesa paga no mesmo dia — o saldo bate
 // com o dela.
 
-// RecordReceivedFees lança a tarifa de cada Pix ou boleto recebido que ainda
-// não tem a sua: pago, estornado ou em disputa (a tarifa foi cobrada). Uma
-// vez por cobrança; a de testes não tem tarifa.
+// RecordReceivedFees lança a tarifa de cada Pix, boleto ou cartão recebido
+// que ainda não tem a sua: pago (o cartão, já aprovado), estornado ou em
+// disputa (a tarifa foi cobrada). Uma vez por cobrança; a de testes não tem
+// tarifa. A do cartão só entra quando a AbacatePay a informa (ela não publica
+// a tabela do cartão).
 func (s *Service) RecordReceivedFees(ctx context.Context) {
 	rows, err := s.db.Query(ctx, `
 		SELECT id FROM payment_charges
-		WHERE status IN ('PAID', 'REFUNDED', 'UNDER_DISPUTE') AND NOT dev_mode AND paid_at IS NOT NULL
-			AND fee_entry_id IS NULL
+		WHERE status IN ('PAID', 'APPROVED', 'REFUNDED', 'UNDER_DISPUTE') AND NOT dev_mode AND paid_at IS NOT NULL
+			AND fee_entry_id IS NULL AND NOT (method = 'CARD' AND platform_fee_cents = 0)
 		ORDER BY paid_at LIMIT 100`)
 	if err != nil {
 		s.log.Error("falha ao listar as tarifas do Pix recebido", "err", err)
@@ -61,9 +63,9 @@ func (s *Service) recordReceivedFee(ctx context.Context, chargeID uuid.UUID) err
 		if err != nil {
 			return err
 		}
-		what := "Pix"
-		if method == "BOLETO" {
-			what = "boleto"
+		what := map[string]string{"BOLETO": "boleto", "CARD": "cartão"}[method]
+		if what == "" {
+			what = "Pix"
 		}
 		if fee <= 0 {
 			fee = abacatepay.PixReceiveFeeCents

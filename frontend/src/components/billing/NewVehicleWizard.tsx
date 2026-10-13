@@ -25,7 +25,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { EMPTY_VEHICLE, VehicleFields } from '@/components/vehicle/VehicleFields';
 import { centsToInput, formatDateOnly, formatMoney, parseMoney, todayISO } from '@/services/format';
 import { errorCode } from '@/services/stepUp';
-import type { AccountPlan, Catalog, CustomerAccount, DeliveryAddress, Device, Subscription, TrackerOrderResult, FleetSettings } from '@/types';
+import type { AccountPlan, Catalog, ChargeMethod, CustomerAccount, DeliveryAddress, Device, Subscription, TrackerOrderResult, FleetSettings } from '@/types';
 
 import pageStyles from '@/pages/Page.module.css';
 import styles from './Billing.module.css';
@@ -141,7 +141,8 @@ export function NewVehicleWizard({
   /** A organização da frota do cliente: o grupo e os campos personalizados já no cadastro. */
   fleet?: FleetSettings;
   onClose: () => void;
-  onDone: (result: TrackerOrderResult) => void;
+  /** O pedido feito e, para o cliente, a forma que ele escolheu para pagar agora. */
+  onDone: (result: TrackerOrderResult, payment?: ChargeMethod) => void;
 }) {
   const queryClient = useQueryClient();
   const isAdmin = Boolean(admin);
@@ -163,6 +164,8 @@ export function NewVehicleWizard({
   // cliente sobre manter a assinatura até a última parcela.
   const [installments, setInstallments] = useState(1);
   const [committed, setCommitted] = useState(false);
+  // Como o cliente paga o pedido (a janela de pagamento abre nela).
+  const [payment, setPayment] = useState<ChargeMethod>('PIX');
 
   const catalog = useQuery({ queryKey: ['catalog'], queryFn: catalogApi.get, enabled: open });
   // Para a central: se o cliente pode contratar com a promoção de pré-lançamento.
@@ -172,6 +175,8 @@ export function NewVehicleWizard({
     enabled: open && isAdmin,
   });
   const account = useQuery({ queryKey: ['me', 'account'], queryFn: meApi.account, enabled: open && !isAdmin });
+  // O cartão de crédito aparece na escolha quando está ligado.
+  const card = useQuery({ queryKey: ['me', 'card'], queryFn: meApi.card, enabled: open && !isAdmin });
   // A central libera a promoção para quem não está na lista; ela já vem marcada.
   const grantPromo = useMutation({
     mutationFn: () => customersApi.grantLaunchPromo(admin!.customerId),
@@ -196,6 +201,7 @@ export function NewVehicleWizard({
     setShippingId(null);
     setInstallments(1);
     setCommitted(false);
+    setPayment('PIX');
   }, [open]);
 
   // Os valores da central partem do catálogo, uma vez por abertura: uma nova
@@ -259,7 +265,7 @@ export function NewVehicleWizard({
         ...(parcels ? { installments: parcels.length } : {}),
       });
     },
-    onSuccess: onDone,
+    onSuccess: (result) => onDone(result, isAdmin ? undefined : payment),
     onError: (err: Error) => {
       // Quem só acompanhava o veículo de outra pessoa aceita o contrato ao
       // pedir o primeiro rastreador: o contrato abre e o pedido segue depois.
@@ -676,6 +682,9 @@ export function NewVehicleWizard({
                     </div>
                   )}
                 </div>
+                {!isAdmin && totalNow > 0 && account.data?.onlinePayment && (
+                  <PaymentChoice value={payment} onChange={setPayment} card={Boolean(card.data?.enabled)} />
+                )}
                 {parcels && (
                   <Commitment
                     installments={parcels.length}
@@ -738,8 +747,8 @@ function InstallmentsField({
       label={staff ? 'Pagamento do equipamento' : 'Como pagar o rastreador'}
       hint={
         value > 1
-          ? `Por Pix: ${staff ? 'no pedido' : 'agora'}, só o frete; as ${value} parcelas vêm somadas às mensalidades, a 1ª junto com a 1ª.`
-          : `Por Pix, ou parcelado em até ${choices.length}x sem juros.`
+          ? `${staff ? 'No pedido' : 'Agora'}, só o frete; as ${value} parcelas vêm somadas às mensalidades, a 1ª junto com a 1ª.`
+          : `À vista, ou parcelado em até ${choices.length}x sem juros nas mensalidades.`
       }
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
@@ -750,6 +759,42 @@ function InstallmentsField({
         </option>
       ))}
     </SelectField>
+  );
+}
+
+const PAYMENT_CHOICES: { id: ChargeMethod; label: string; hint: string }[] = [
+  { id: 'PIX', label: 'Pix', hint: 'confirma na hora' },
+  { id: 'BOLETO', label: 'Boleto', hint: 'compensa em até 3 dias úteis' },
+  {
+    id: 'CARD',
+    label: 'Cartão de crédito',
+    hint: 'à vista; marcando o débito automático, as mensalidades também caem nele, no vencimento',
+  },
+];
+
+/** Como pagar o pedido: a janela de pagamento abre na forma escolhida. */
+function PaymentChoice({
+  value,
+  onChange,
+  card,
+}: {
+  value: ChargeMethod;
+  onChange: (value: ChargeMethod) => void;
+  card: boolean;
+}) {
+  return (
+    <fieldset className={styles.paymentChoice}>
+      <legend>Como pagar</legend>
+      {PAYMENT_CHOICES.filter((choice) => choice.id !== 'CARD' || card).map((choice) => (
+        <label key={choice.id} className={value === choice.id ? styles.paymentOn : undefined}>
+          <input type="radio" name="order-payment" checked={value === choice.id} onChange={() => onChange(choice.id)} />
+          <span>
+            <strong>{choice.label}</strong>
+            <span className={styles.muted}> · {choice.hint}</span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
   );
 }
 

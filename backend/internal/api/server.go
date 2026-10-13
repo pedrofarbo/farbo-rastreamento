@@ -442,6 +442,12 @@ func (s *Server) routes() chi.Router {
 					// Várias de uma vez: a fatura do mês da frota, ou as vencidas.
 					r.Post("/invoices/pix", s.handleMyInvoicesPix)
 					r.Post("/invoices/boleto", s.handleMyInvoicesBoleto)
+					// O cartão: pagar, o cartão salvo e o débito automático.
+					r.Post("/invoices/{id}/card", s.handleMyInvoiceCard)
+					r.Post("/invoices/card", s.handleMyInvoicesCard)
+					r.Get("/card", s.handleMyCard)
+					r.Put("/card/auto-debit", s.handleMyCardAutoDebit)
+					r.Delete("/card", s.handleMyCardRemove)
 					r.Get("/charges/{id}", s.handleMyCharge)
 					r.Post("/charges/{id}/simulate", s.handleMyChargeSimulate)
 					// Acompanhamento do chip e do rastreador até a casa dele.
@@ -674,6 +680,9 @@ func (s *Server) routes() chi.Router {
 							r.Post("/launch-promo/grant", s.handleGrantLaunchPromo)
 							r.Put("/plan", s.handleSetCustomerPlan)
 							r.Delete("/plan", s.handleClearCustomerPlan)
+							// O cartão salvo: a central só desliga o débito ou apaga.
+							r.Put("/card/auto-debit", s.handleCustomerCardAutoDebit)
+							r.Delete("/card", s.handleCustomerCardRemove)
 							r.Delete("/launch-promo/grant", s.handleRevokeLaunchPromo)
 							if s.Affiliates != nil {
 								r.Put("/affiliate", s.handleSetCustomerAffiliate)

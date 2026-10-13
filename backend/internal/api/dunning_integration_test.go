@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -31,6 +32,15 @@ type fakePixGateway struct {
 	paid       map[string]bool
 	n          int
 	lastBoleto abacatepay.BoletoRequest
+	// O cartão: cardMode "" aprova, "decline" recusa, "network" cobra mas a
+	// resposta se perde, "lost" nem chega lá, "pending" fica à espera do
+	// banco. cards guarda as cobranças feitas (para a conferência) e status,
+	// o status de cada uma na consulta.
+	cardMode string
+	cardFee  int
+	cards    []*abacatepay.Card
+	status   map[string]string
+	lastCard abacatepay.CardRequest
 }
 
 func (g *fakePixGateway) CreatePix(_ context.Context, req abacatepay.PixRequest) (*abacatepay.Pix, error) {
@@ -61,8 +71,61 @@ func (g *fakePixGateway) SimulatePayment(_ context.Context, id string) (*abacate
 	return &abacatepay.Pix{ID: id, Status: abacatepay.StatusPaid, DevMode: true}, nil
 }
 
-func (g *fakePixGateway) RefundPix(context.Context, string, string) (*abacatepay.Refund, error) {
+func (g *fakePixGateway) RefundPix(_ context.Context, id, _ string) (*abacatepay.Refund, error) {
+	g.setStatus(id, abacatepay.StatusRefunded)
+	return &abacatepay.Refund{ID: "tran_" + id, Status: "PENDING", OriginalID: id}, nil
+}
+
+// CreateCard cobra o cartão conforme cardMode.
+func (g *fakePixGateway) CreateCard(_ context.Context, req abacatepay.CardRequest) (*abacatepay.Card, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.lastCard = req
+	switch g.cardMode {
+	case "decline":
+		return nil, &abacatepay.APIError{HTTPStatus: 400, Message: "Não foi possível processar o pagamento com este cartão"}
+	case "lost":
+		return nil, errors.New("AbacatePay indisponível: tempo esgotado")
+	}
+	g.n++
+	status := abacatepay.StatusApproved
+	if g.cardMode == "pending" {
+		status = abacatepay.StatusPending
+	}
+	card := &abacatepay.Card{ID: "card_" + strings.Repeat("z", g.n), Amount: req.AmountCents, Status: status, DevMode: true,
+		CardToken: "dev_card_4242", Brand: "VISA", LastFour: "4242", PlatformFee: g.cardFee, Metadata: req.Metadata}
+	g.cards = append(g.cards, card)
+	if g.status == nil {
+		g.status = map[string]string{}
+	}
+	g.status[card.ID] = status
+	if g.cardMode == "network" {
+		return nil, errors.New("AbacatePay indisponível: tempo esgotado")
+	}
+	return card, nil
+}
+
+// FindCard acha a cobrança de cartão pela metadata.
+func (g *fakePixGateway) FindCard(_ context.Context, _ time.Time, key, value string) (*abacatepay.Card, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, c := range g.cards {
+		if c.Metadata[key] == value {
+			copied := *c
+			copied.Status = g.status[c.ID]
+			return &copied, nil
+		}
+	}
 	return nil, nil
+}
+
+func (g *fakePixGateway) setStatus(id, status string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.status == nil {
+		g.status = map[string]string{}
+	}
+	g.status[id] = status
 }
 
 // CreateBoleto gera o boleto (com o Pix junto); last guarda o pedido.
@@ -79,8 +142,15 @@ func (g *fakePixGateway) CreateBoleto(_ context.Context, req abacatepay.BoletoRe
 		BrCodeBase64: "data:image/png;base64,BBBB", PlatformFee: 250, ExpiresAt: &exp}, nil
 }
 
-// GetCharge é a consulta do boleto (pago quando o teste chama pay).
+// GetCharge é a consulta do boleto e do cartão (o boleto pago quando o
+// teste chama pay; o cartão, ou o que mudou, pelo status).
 func (g *fakePixGateway) GetCharge(ctx context.Context, id string) (*abacatepay.PixStatus, error) {
+	g.mu.Lock()
+	status, ok := g.status[id]
+	g.mu.Unlock()
+	if ok {
+		return &abacatepay.PixStatus{ID: id, Status: status}, nil
+	}
 	return g.CheckPix(ctx, id)
 }
 

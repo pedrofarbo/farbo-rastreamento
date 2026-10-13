@@ -34,7 +34,7 @@ import type { Situation } from '@/services/vehicleFilters';
 import { useAuth } from '@/stores/AuthContext';
 import { SharesModal, sharesKey } from '@/components/vehicle/SharesModal';
 import { EMPTY_VEHICLE, VehicleFields } from '@/components/vehicle/VehicleFields';
-import type { CustomerAccount, CustomerFulfillment, Invoice, Subscription, VehicleView } from '@/types';
+import type { ChargeMethod, CustomerAccount, CustomerFulfillment, Invoice, Subscription, VehicleView } from '@/types';
 
 import styles from '../Page.module.css';
 
@@ -61,6 +61,8 @@ export function MyVehiclesPage() {
   const [form, setForm] = useState<VehicleForm | null>(null);
   const [ordering, setOrdering] = useState(false);
   const [paying, setPaying] = useState<Invoice | null>(null);
+  // A forma que o cliente escolheu ao contratar (a janela abre nela).
+  const [payingWith, setPayingWith] = useState<ChargeMethod | undefined>(undefined);
   const [showInstallers, setShowInstallers] = useState(false);
   const [editingAddress, setEditingAddress] = useState(false);
   const [following, setFollowing] = useState<CustomerFulfillment | null>(null);
@@ -427,7 +429,7 @@ export function MyVehiclesPage() {
         open={ordering}
         fleet={fleet}
         onClose={() => setOrdering(false)}
-        onDone={(result) => {
+        onDone={(result, payment) => {
           setOrdering(false);
           refresh();
           notify({
@@ -436,7 +438,10 @@ export function MyVehiclesPage() {
             description: `${result.vehicle.name} foi cadastrado; o rastreador segue para instalação.`,
           });
           // Com o Pix online, já abre o pagamento do equipamento.
-          if (result.setupInvoice && account.data?.onlinePayment) setPaying(result.setupInvoice);
+          if (result.setupInvoice && account.data?.onlinePayment) {
+            setPayingWith(payment);
+            setPaying(result.setupInvoice);
+          }
         }}
       />
 
@@ -495,7 +500,12 @@ export function MyVehiclesPage() {
         invoice={paying}
         api={meApi}
         audience="customer"
-        onClose={() => setPaying(null)}
+        initialMethod={payingWith}
+        autoDebit={payingWith === 'CARD'}
+        onClose={() => {
+          setPaying(null);
+          setPayingWith(undefined);
+        }}
         onPaid={refresh}
       />
     </div>

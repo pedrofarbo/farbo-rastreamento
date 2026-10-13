@@ -31,8 +31,8 @@ type customerDetail struct {
 	Invoices      []*billing.Invoice      `json:"invoices"`
 	Vehicles      []vehicleView           `json:"vehicles"`
 	OnlinePayment bool                    `json:"onlinePayment"`
-	// Payments são os Pix que movimentaram dinheiro (pagos, estornados, em
-	// disputa) — onde a central estorna.
+	// Payments são os Pix, boletos e cartões que movimentaram dinheiro
+	// (pagos, estornados, em disputa) — onde a central estorna.
 	Payments []*payments.Payment `json:"payments"`
 	// DeliveryAddress é para onde vão os rastreadores; nulo se não cadastrado.
 	DeliveryAddress *addresses.Address `json:"deliveryAddress"`
@@ -57,6 +57,8 @@ type customerDetail struct {
 	// Plan: o plano definido pela central para os veículos novos (nulo: o
 	// padrão — o da assinatura ativa ou o do catálogo).
 	Plan *orders.AccountPlan `json:"plan"`
+	// Card: o cartão salvo do cliente e o débito automático (nulo: nenhum).
+	Card *payments.SavedCard `json:"card"`
 }
 
 func (s *Server) customerDetail(ctx context.Context, id uuid.UUID) (*customerDetail, error) {
@@ -134,6 +136,12 @@ func (s *Server) customerDetail(ctx context.Context, id uuid.UUID) (*customerDet
 			return nil, err
 		}
 	}
+	var card *payments.SavedCard
+	if s.Payments.Enabled() {
+		if card, err = s.Payments.SavedCard(ctx, id); err != nil {
+			return nil, err
+		}
+	}
 	var security twofactor.Brief
 	if s.TwoFactor != nil {
 		briefs, err := s.TwoFactor.Briefs(ctx, []uuid.UUID{id})
@@ -147,7 +155,7 @@ func (s *Server) customerDetail(ctx context.Context, id uuid.UUID) (*customerDet
 		OnlinePayment: s.Payments.Enabled(), Payments: paid, DeliveryAddress: address, Fulfillments: tracking,
 		HistoryRetentionDays: retentionDays, DefaultHistoryDays: s.Retention.Default(), Affiliate: referral,
 		Reminders: reminders, PaymentLinks: links, Contract: accepted, ContractVersion: version, TwoFactor: security,
-		Plan: plan,
+		Plan: plan, Card: card,
 	}, nil
 }
 
