@@ -54,13 +54,15 @@ type Company struct {
 	Email     string
 }
 
-// SMS configura o envio pelo SMSDev e a configuração do rastreador por SMS
-// na ativação (APN, servidor, fuso e intervalo, para o número do chip).
+// SMS configura o envio pela SMS Market e a configuração do rastreador por
+// SMS na ativação (APN, servidor, fuso e intervalo, para o número do chip).
 type SMS struct {
-	// SMSDevAPIKey é a chave da conta no SMSDev (vazia: configuração por SMS
-	// desligada). SMSDevBaseURL troca a API (testes).
-	SMSDevAPIKey  string
-	SMSDevBaseURL string
+	// SMSMarketUser e SMSMarketPassword são os da conta na SMS Market (sem
+	// eles: configuração por SMS desligada). SMSMarketBaseURL troca a API
+	// (testes).
+	SMSMarketUser     string
+	SMSMarketPassword string
+	SMSMarketBaseURL  string
 	// TrackerHost e TrackerPort são para onde o rastreador manda as posições
 	// (o padrão é o host do APP_URL e a TCP_PORT).
 	TrackerHost string
@@ -871,13 +873,14 @@ func Load() (*Config, error) {
 	}
 	cfg.Infra = Infra{BackupDir: strings.TrimSpace(str("BACKUP_DIR", ""))}
 	cfg.SMS = SMS{
-		SMSDevAPIKey:  strings.TrimSpace(str("SMSDEV_API_KEY", "")),
-		SMSDevBaseURL: strings.TrimRight(str("SMSDEV_BASE_URL", ""), "/"),
-		TrackerHost:   strings.TrimSpace(str("TRACKER_PUBLIC_HOST", "")),
-		TrackerPort:   num("TRACKER_PUBLIC_PORT", cfg.TCP.Port),
-		APN:           strings.TrimSpace(str("TRACKER_APN", "")),
-		APNUser:       strings.TrimSpace(str("TRACKER_APN_USER", "")),
-		APNPassword:   strings.TrimSpace(str("TRACKER_APN_PASSWORD", "")),
+		SMSMarketUser:     strings.TrimSpace(str("SMSMARKET_USER", "")),
+		SMSMarketPassword: str("SMSMARKET_PASSWORD", ""),
+		SMSMarketBaseURL:  strings.TrimRight(str("SMSMARKET_BASE_URL", ""), "/"),
+		TrackerHost:       strings.TrimSpace(str("TRACKER_PUBLIC_HOST", "")),
+		TrackerPort:       num("TRACKER_PUBLIC_PORT", cfg.TCP.Port),
+		APN:               strings.TrimSpace(str("TRACKER_APN", "")),
+		APNUser:           strings.TrimSpace(str("TRACKER_APN_USER", "")),
+		APNPassword:       strings.TrimSpace(str("TRACKER_APN_PASSWORD", "")),
 		// Testado em campo com o J16: 10 s com a ignição ligada.
 		ReportSeconds: num("TRACKER_REPORT_INTERVAL_SECONDS", 10),
 		ParkedSeconds: num("TRACKER_PARKED_INTERVAL_SECONDS", 3600),

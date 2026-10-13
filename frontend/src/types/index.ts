@@ -1957,7 +1957,7 @@ export interface PartnerReport {
 }
 
 // ---------------------------------------------------------------------------
-// Configuração do rastreador por SMS (SMSDev) na ativação
+// Configuração do rastreador por SMS (SMS Market) na ativação
 // ---------------------------------------------------------------------------
 
 /** Um comando de configuração (texto redigido: as senhas viram ***). */
@@ -2006,9 +2006,9 @@ export interface SmsSession {
   createdAt: string;
 }
 
-/** O contador da página de rastreadores: o saldo no SMSDev e quantas ativações ele paga. */
+/** O contador da página de rastreadores: o saldo na SMS Market e quantas ativações ele paga. */
 export interface SmsUsage {
-  /** O SMSDev está configurado no servidor. */
+  /** A SMS Market está configurada no servidor. */
   enabled: boolean;
   /** Saldo em SMS; nulo se não deu para ler (balanceError diz por quê). */
   balance: number | null;
@@ -2022,9 +2022,9 @@ export interface SmsUsage {
 }
 
 export interface SmsSetupView {
-  /** O SMSDev está configurado. */
+  /** A SMS Market está configurada. */
   enabled: boolean;
-  /** Quem envia (o SMSDev). */
+  /** Quem envia (a SMS Market). */
   from: string;
   plan: SmsPlan;
   /** A última configuração deste rastreador. */

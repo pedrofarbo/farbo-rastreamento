@@ -43,7 +43,7 @@ const LIVE: SmsSession['status'][] = ['SENDING', 'WAITING'];
 
 /**
  * Configurar o rastreador por SMS na ativação: os comandos do J16 vão para o
- * número do chip, um por vez, pelo SMSDev. Quando o rastreador conecta no
+ * número do chip, um por vez, pela SMS Market. Quando o rastreador conecta no
  * servidor, o pedido passa sozinho para "Configurado".
  */
 export function SmsSetupPanel({
@@ -139,7 +139,7 @@ export function SmsSetupPanel({
         <>
           {!enabled && (
             <p className={styles.warn}>
-              O envio de SMS não está configurado (SMSDev). Os comandos abaixo podem ser mandados à mão pelo celular.
+              O envio de SMS não está configurado (SMS Market). Os comandos abaixo podem ser mandados à mão pelo celular.
             </p>
           )}
           {plan.problems.map((p) => (

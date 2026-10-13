@@ -80,7 +80,7 @@ const (
 	ActionMaintenanceChanged   = "MAINTENANCE_CHANGED"
 	ActionInstallerChanged     = "INSTALLER_CHANGED"
 	ActionFinanceChanged       = "FINANCE_CHANGED"
-	// ActionSMSSetup: configuração do rastreador por SMS (SMSDev) na ativação.
+	// ActionSMSSetup: configuração do rastreador por SMS (SMS Market) na ativação.
 	ActionSMSSetup = "SMS_SETUP"
 	// ActionSupplierPix: Pix a um fornecedor pela AbacatePay (enviado,
 	// recusado ou conferido à mão).

@@ -7,13 +7,13 @@ import styles from './SmsCounter.module.css';
 /** Abaixo disso, o contador avisa para recarregar. */
 const LOW_ACTIVATIONS = 10;
 
-/** O painel do SMSDev, onde se compra mais SMS. */
-const SMSDEV_PANEL = 'https://painel.smsdev.com.br';
+/** O painel da SMS Market, onde se compra mais SMS. */
+const SMS_PANEL = 'https://dashboard.smsmarket.com.br';
 
 const number = (n: number) => n.toLocaleString('pt-BR');
 
 /**
- * O contador de SMS da configuração por SMS: o saldo no SMSDev, quantos
+ * O contador de SMS da configuração por SMS: o saldo na SMS Market, quantos
  * rastreadores ele ativa (4 SMS cada) e o que saiu nos últimos 30 dias.
  */
 export function SmsCounter() {
@@ -30,7 +30,7 @@ export function SmsCounter() {
     return (
       <section className={styles.counter} aria-label="SMS da ativação">
         <p className={styles.off}>
-          SMS da ativação desligado: o servidor está sem a chave do SMSDev (SMSDEV_API_KEY).
+          SMS da ativação desligado: o servidor está sem o usuário e a senha da SMS Market (SMSMARKET_USER e SMSMARKET_PASSWORD).
         </p>
       </section>
     );
@@ -40,7 +40,7 @@ export function SmsCounter() {
   return (
     <section className={styles.counter} aria-label="SMS da ativação">
       <div className={styles.stat}>
-        <span className={styles.label}>Saldo no SMSDev</span>
+        <span className={styles.label}>Saldo na SMS Market</span>
         <span className={styles.value}>{u.balance === null ? '—' : `${number(u.balance)} SMS`}</span>
         {u.balanceError && <span className={styles.hint}>Não deu para ler o saldo: {u.balanceError}</span>}
       </div>
@@ -57,13 +57,13 @@ export function SmsCounter() {
         <span className={styles.label}>Enviados em 30 dias</span>
         <span className={styles.value}>{number(u.sentLast30Days)} SMS</span>
       </div>
-      <a className={styles.link} href={SMSDEV_PANEL} target="_blank" rel="noopener noreferrer">
+      <a className={styles.link} href={SMS_PANEL} target="_blank" rel="noopener noreferrer">
         Comprar SMS
       </a>
       {low && (
         <p className={styles.low}>
           Saldo baixo: {u.activations === 0 ? 'não dá para ativar nenhum rastreador' : `dá para só ${u.activations}`}.
-          Recarregue no painel do SMSDev.
+          Recarregue no painel da SMS Market.
         </p>
       )}
     </section>

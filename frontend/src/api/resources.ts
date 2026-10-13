@@ -920,7 +920,7 @@ export interface BulkSmsSetupResponse {
   results: BulkSmsSetupResult[];
 }
 
-/** Configuração do rastreador por SMS (SMSDev) na ativação. */
+/** Configuração do rastreador por SMS (SMS Market) na ativação. */
 export const smsSetupApi = {
   get: (deviceId: string) => api.get<SmsSetupView>(`/api/devices/${deviceId}/sms-setup`),
   start: (deviceId: string, input: { fulfillmentId?: string | null; unlock?: boolean; query?: boolean; force?: boolean }) =>
@@ -938,7 +938,7 @@ export const smsSetupApi = {
       force: Boolean(input.force),
     }),
   cancel: (sessionId: string) => api.post<SmsSession>(`/api/sms-setup/${sessionId}/cancel`),
-  /** O saldo no SMSDev e quantas ativações ele paga (o contador da página de rastreadores). */
+  /** O saldo na SMS Market e quantas ativações ele paga (o contador da página de rastreadores). */
   usage: () => api.get<SmsUsage>('/api/sms/usage'),
 };
 

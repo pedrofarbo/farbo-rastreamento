@@ -111,7 +111,7 @@ vi.mock('@/api/resources', () => ({
     usage: async () => ({ currentMonth: 0, limit: 100 }),
     get: async () => ({
       enabled: true,
-      from: 'SMSDev',
+      from: 'SMS Market',
       plan: {
         phone: '+5534999990011',
         steps: [

@@ -103,7 +103,7 @@ type Deps struct {
 	Finance *finance.Service
 	// Affiliates: o programa de afiliados (links de indicação e comissões).
 	Affiliates *affiliates.Service
-	// SMSSetup: a configuração do rastreador por SMS (SMSDev) na ativação.
+	// SMSSetup: a configuração do rastreador por SMS (SMS Market) na ativação.
 	SMSSetup *smssetup.Service
 	// Contract: o contrato que o cliente aceita no primeiro acesso. Nil: sem
 	// exigência (testes).

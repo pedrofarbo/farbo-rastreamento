@@ -476,7 +476,7 @@ export function DeviceBulkActivationModal({
                       <td>
                         {res.success ? (
                           <span style={{ color: 'var(--text-muted)' }}>
-                            Comandos SMS enviados para a fila do SMSDev
+                            Comandos SMS enviados para a fila da SMS Market
                           </span>
                         ) : (
                           <span className={styles.dangerText}>{res.error || 'Erro desconhecido'}</span>

@@ -11,7 +11,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smssetup"
 )
 
-// Configuração do rastreador por SMS (SMSDev) na ativação. Ver o pacote
+// Configuração do rastreador por SMS (SMS Market) na ativação. Ver o pacote
 // smssetup.
 
 func smsError(w http.ResponseWriter, err error, notFound string) {
@@ -23,7 +23,7 @@ func smsError(w http.ResponseWriter, err error, notFound string) {
 	handleStoreError(w, err, notFound)
 }
 
-// handleSMSUsage: o contador da página de rastreadores — o saldo no SMSDev,
+// handleSMSUsage: o contador da página de rastreadores — o saldo na SMS Market,
 // quantas ativações ele paga e os SMS dos últimos 30 dias.
 func (s *Server) handleSMSUsage(w http.ResponseWriter, r *http.Request) {
 	usage, err := s.SMSSetup.Usage(r.Context())
@@ -135,7 +135,7 @@ type BulkSMSSetupResponse struct {
 
 // handleStartSMSSetupBulk inicia a configuração por SMS de múltiplos rastreadores de uma vez.
 // As sessões só são gravadas aqui (Queue): o primeiro SMS de cada uma sai pela
-// rotina do SMSDev, em até 10 s — esperar a resposta do SMSDev de cada
+// rotina da SMS Market, em até 10 s — esperar a resposta da SMS Market de cada
 // rastreador, um atrás do outro, passaria do tempo da requisição. Cada
 // rastreador vai para a auditoria, como no envio de um só.
 func (s *Server) handleStartSMSSetupBulk(w http.ResponseWriter, r *http.Request) {

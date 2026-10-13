@@ -44,7 +44,7 @@ describe('o contador de SMS da página de rastreadores', () => {
     expect(text).toContain('12 SMS');
     expect(text).toContain('Comprar SMS');
     expect(text).not.toContain('Saldo baixo');
-    expect(document.querySelector('a')?.getAttribute('href')).toBe('https://painel.smsdev.com.br');
+    expect(document.querySelector('a')?.getAttribute('href')).toBe('https://dashboard.smsmarket.com.br');
   });
 
   it('avisa quando o saldo está baixo', async () => {

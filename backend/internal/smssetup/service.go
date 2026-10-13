@@ -15,15 +15,15 @@ import (
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
-	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smsdev"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smsmarket"
 )
 
-// Sender é o SMSDev (ou o falso dos testes): manda o SMS, consulta a entrega
+// Sender é a SMS Market (ou o falso dos testes): manda o SMS, consulta a entrega
 // e lê as respostas recebidas.
 type Sender interface {
-	Send(ctx context.Context, to, body string) (*smsdev.Message, error)
-	Fetch(ctx context.Context, id string) (*smsdev.Message, error)
-	Inbox(ctx context.Context, since time.Time) ([]smsdev.Reply, error)
+	Send(ctx context.Context, to, body string) (*smsmarket.Message, error)
+	Fetch(ctx context.Context, id string) (*smsmarket.Message, error)
+	Inbox(ctx context.Context, since time.Time) ([]smsmarket.Reply, error)
 	Balance(ctx context.Context) (int, error)
 }
 
@@ -51,9 +51,9 @@ const (
 	silentGap    = 90 * time.Second
 	// connectTimeout: quanto esperar o rastreador conectar depois do último SMS.
 	connectTimeout = 20 * time.Minute
-	// maxAttempts: falhas seguidas do SMSDev (rede) antes de desistir.
+	// maxAttempts: falhas seguidas da SMS Market (rede) antes de desistir.
 	maxAttempts = 3
-	// fetchAfter: depois de quanto tempo consulta a entrega no SMSDev.
+	// fetchAfter: depois de quanto tempo consulta a entrega na SMS Market.
 	fetchAfter = 20 * time.Second
 	// inboxWindow: quanto tempo depois do último SMS enviado ainda lê as
 	// respostas (a do modo roubo também).
@@ -61,7 +61,7 @@ const (
 	// ActivationSMS: quantos SMS uma ativação padrão manda (APN, servidor,
 	// fuso e intervalo; os opcionais somam 1 cada).
 	ActivationSMS = 4
-	// balanceTTL: por quanto tempo o saldo lido no SMSDev vale.
+	// balanceTTL: por quanto tempo o saldo lido na SMS Market vale.
 	balanceTTL = time.Minute
 )
 
@@ -74,11 +74,11 @@ func invalid(format string, args ...any) error {
 	return ValidationError{Message: fmt.Sprintf(format, args...)}
 }
 
-// ErrDisabled: o SMSDev não está configurado.
-var ErrDisabled = ValidationError{Message: "O envio de SMS não está configurado (SMSDEV_API_KEY)."}
+// ErrDisabled: a SMS Market não está configurada.
+var ErrDisabled = ValidationError{Message: "O envio de SMS não está configurado (SMSMARKET_USER e SMSMARKET_PASSWORD)."}
 
 type Service struct {
-	// O último saldo lido no SMSDev (vale balanceTTL).
+	// O último saldo lido na SMS Market (vale balanceTTL).
 	balanceMu sync.Mutex
 	balance   *int
 	balanceAt time.Time
@@ -110,7 +110,7 @@ func (s *Service) Enabled() bool { return s != nil && s.sender != nil }
 // From é quem envia (para a tela).
 func (s *Service) From() string { return s.from }
 
-// Usage é o contador da página de rastreadores: o saldo no SMSDev, quantas
+// Usage é o contador da página de rastreadores: o saldo na SMS Market, quantas
 // ativações ele paga e o que saiu nos últimos 30 dias.
 type Usage struct {
 	Enabled bool `json:"enabled"`
@@ -140,7 +140,7 @@ func (s *Service) Usage(ctx context.Context) (*Usage, error) {
 	if s.balance == nil || s.now().Sub(s.balanceAt) >= balanceTTL {
 		n, err := s.sender.Balance(ctx)
 		if err != nil {
-			s.log.Warn("falha ao ler o saldo no SMSDev", "err", err)
+			s.log.Warn("falha ao ler o saldo na SMS Market", "err", err)
 			out.BalanceError = providerMessage(err)
 			return out, nil
 		}
@@ -187,7 +187,7 @@ func (s *Service) Plan(ctx context.Context, deviceID uuid.UUID) (*Plan, error) {
 }
 
 // Start começa a configuração: grava os passos e manda o primeiro SMS na hora
-// (uma recusa do SMSDev — número inválido, conta sem saldo — aparece já).
+// (uma recusa da SMS Market — número inválido, conta sem saldo — aparece já).
 func (s *Service) Start(ctx context.Context, deviceID uuid.UUID, fulfillmentID *uuid.UUID, opts Options, by *uuid.UUID) (*Session, error) {
 	id, err := s.create(ctx, deviceID, fulfillmentID, opts, by)
 	if err != nil {
@@ -203,7 +203,7 @@ func (s *Service) Start(ctx context.Context, deviceID uuid.UUID, fulfillmentID *
 }
 
 // Queue grava a configuração sem mandar nada: o primeiro SMS sai pelo Work,
-// em até 10 s. É o caminho do lote — esperar a resposta do SMSDev de cada
+// em até 10 s. É o caminho do lote — esperar a resposta da SMS Market de cada
 // rastreador, um atrás do outro, passaria do tempo da requisição.
 func (s *Service) Queue(ctx context.Context, deviceID uuid.UUID, opts Options, by *uuid.UUID) (*Session, error) {
 	id, err := s.create(ctx, deviceID, nil, opts, by)
@@ -281,7 +281,7 @@ func (s *Service) Cancel(ctx context.Context, id uuid.UUID) (*Session, error) {
 }
 
 // Work avança as configurações em andamento: o próximo SMS, o rastreador que
-// conectou, o tempo esgotado. Antes, consulta no SMSDev a entrega dos SMS e
+// conectou, o tempo esgotado. Antes, consulta na SMS Market a entrega dos SMS e
 // as respostas recebidas.
 func (s *Service) Work(ctx context.Context) {
 	if !s.Enabled() {
@@ -393,7 +393,7 @@ func (s *Service) sendNext(ctx context.Context, tx pgx.Tx, r *sessionRow) error 
 		if err != nil {
 			return err
 		}
-		if smsdev.Failed(status) {
+		if smsmarket.Failed(status) {
 			return s.finish(ctx, tx, r.id, StatusFailed, failureText(r.steps[r.next-1].Label, code, message))
 		}
 		var replied bool
@@ -402,7 +402,7 @@ func (s *Service) sendNext(ctx context.Context, tx pgx.Tx, r *sessionRow) error 
 			r.id, sentAt).Scan(&replied); err != nil {
 			return err
 		}
-		ready := replied || (status == smsdev.StatusDelivered && now.Sub(updatedAt) >= deliveredGap) || now.Sub(sentAt) >= silentGap
+		ready := replied || (status == smsmarket.StatusDelivered && now.Sub(updatedAt) >= deliveredGap) || now.Sub(sentAt) >= silentGap
 		if !ready {
 			return nil
 		}
@@ -424,7 +424,7 @@ func (s *Service) sendNext(ctx context.Context, tx pgx.Tx, r *sessionRow) error 
 	step := steps[r.next]
 	msg, sendErr := s.sender.Send(ctx, r.phone, step.real)
 	if sendErr != nil {
-		if smsdev.IsDefinitive(sendErr) || r.attempts+1 >= maxAttempts {
+		if smsmarket.IsDefinitive(sendErr) || r.attempts+1 >= maxAttempts {
 			s.log.Warn("SMS de configuração recusado", "session", r.id, "step", step.Kind, "err", sendErr)
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO sms_messages (session_id, device_id, direction, step, phone, body, status, error_message)
@@ -432,16 +432,16 @@ func (s *Service) sendNext(ctx context.Context, tx pgx.Tx, r *sessionRow) error 
 				r.id, r.deviceID, r.next, r.phone, step.Text, sendErr.Error()); err != nil {
 				return err
 			}
-			return s.finish(ctx, tx, r.id, StatusFailed, "O SMSDev não enviou o SMS ("+step.Label+"): "+providerMessage(sendErr))
+			return s.finish(ctx, tx, r.id, StatusFailed, "A SMS Market não enviou o SMS ("+step.Label+"): "+providerMessage(sendErr))
 		}
-		s.log.Warn("SMSDev sem resposta; tenta de novo", "session", r.id, "step", step.Kind, "err", sendErr)
+		s.log.Warn("SMS Market sem resposta; tenta de novo", "session", r.id, "step", step.Kind, "err", sendErr)
 		_, err := tx.Exec(ctx, `UPDATE sms_setup_sessions SET attempts = attempts + 1, updated_at = NOW() WHERE id = $1`, r.id)
 		return err
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO sms_messages (session_id, device_id, direction, step, phone, body, provider_sid, status, error_code, error_message)
 		VALUES ($1, $2, 'OUT', $3, $4, $5, NULLIF($6, ''), $7, $8, $9)`,
-		r.id, r.deviceID, r.next, r.phone, step.Text, msg.ID, orDefault(msg.Status, smsdev.StatusQueued), msg.ErrorCode, msg.ErrorMessage); err != nil {
+		r.id, r.deviceID, r.next, r.phone, step.Text, msg.ID, orDefault(msg.Status, smsmarket.StatusQueued), msg.ErrorCode, msg.ErrorMessage); err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `
@@ -505,7 +505,7 @@ func failureText(label, code, message string) string {
 	if message != "" {
 		text += ": " + message
 	} else if code != "" {
-		text += " (código " + code + " do SMSDev)"
+		text += " (código " + code + " da SMS Market)"
 	}
 	return text + ". Confira se o chip está ativo e aceita SMS."
 }
@@ -528,7 +528,7 @@ func orDefault(v, def string) string {
 }
 
 func providerMessage(err error) string {
-	var apiErr *smsdev.APIError
+	var apiErr *smsmarket.APIError
 	if errors.As(err, &apiErr) {
 		return apiErr.Message
 	}
@@ -544,7 +544,7 @@ func mapErr(err error) error {
 }
 
 // ---------------------------------------------------------------------------
-// Status dos SMS e respostas do rastreador (consultados no SMSDev)
+// Status dos SMS e respostas do rastreador (consultados na SMS Market)
 // ---------------------------------------------------------------------------
 
 // rank: a ordem dos status de um SMS enviado (um aviso atrasado não volta atrás).
@@ -562,7 +562,7 @@ func rank(status string) int {
 	return 0
 }
 
-// ErrNoSMS: sem o SMSDev configurado, ou o chip sem número.
+// ErrNoSMS: sem a SMS Market configurada, ou o chip sem número.
 var ErrNoSMS = errors.New("SMS indisponível para este rastreador")
 
 // SendText manda um comando avulso por SMS ao chip do rastreador (o modo
@@ -573,11 +573,11 @@ func (s *Service) SendText(ctx context.Context, dev *devices.Device, text string
 		return ErrNoSMS
 	}
 	msg, sendErr := s.sender.Send(ctx, phone, text)
-	status, sid, code, message := smsdev.StatusFailed, "", "", ""
+	status, sid, code, message := smsmarket.StatusFailed, "", "", ""
 	if sendErr != nil {
 		message = providerMessage(sendErr)
 	} else {
-		status, sid, code, message = orDefault(msg.Status, smsdev.StatusQueued), msg.ID, msg.ErrorCode, msg.ErrorMessage
+		status, sid, code, message = orDefault(msg.Status, smsmarket.StatusQueued), msg.ID, msg.ErrorCode, msg.ErrorMessage
 	}
 	if _, err := s.db.Exec(ctx, `
 		INSERT INTO sms_messages (device_id, direction, phone, body, provider_sid, status, error_code, error_message)
@@ -588,7 +588,7 @@ func (s *Service) SendText(ctx context.Context, dev *devices.Device, text string
 	return sendErr
 }
 
-// UpdateStatus grava o status de um SMS enviado (da consulta ao SMSDev).
+// UpdateStatus grava o status de um SMS enviado (da consulta à SMS Market).
 func (s *Service) UpdateStatus(ctx context.Context, sid, status, errorCode, errorMessage string) error {
 	status = strings.ToLower(strings.TrimSpace(status))
 	if sid == "" || rank(status) == 0 {
@@ -612,7 +612,7 @@ func (s *Service) UpdateStatus(ctx context.Context, sid, status, errorCode, erro
 	return database.MapError(err)
 }
 
-// refreshStatuses consulta no SMSDev a entrega dos SMS recentes sem status
+// refreshStatuses consulta na SMS Market a entrega dos SMS recentes sem status
 // final.
 func (s *Service) refreshStatuses(ctx context.Context) {
 	now := s.now()
@@ -699,7 +699,7 @@ func (s *Service) Inbound(ctx context.Context, from, body, sid string) (bool, er
 	return true, nil
 }
 
-// pollInbox lê no SMSDev as respostas recebidas desde ontem e grava as que
+// pollInbox lê na SMS Market as respostas recebidas desde ontem e grava as que
 // ainda não estão aqui (o id delas leva "mo-", para não cruzar com o dos
 // enviados). Só lê com configuração em andamento ou SMS enviado nas últimas
 // inboxWindow: sem nada no ar, ninguém vai responder.
@@ -713,7 +713,7 @@ func (s *Service) pollInbox(ctx context.Context) {
 	}
 	replies, err := s.sender.Inbox(ctx, s.now().Add(-24*time.Hour))
 	if err != nil {
-		s.log.Warn("falha ao ler as respostas no SMSDev", "err", err)
+		s.log.Warn("falha ao ler as respostas na SMS Market", "err", err)
 		return
 	}
 	if len(replies) == 0 {
@@ -825,7 +825,7 @@ func (s *Service) Session(ctx context.Context, id uuid.UUID) (*Session, error) {
 			sent := at
 			out.Steps[step].Status, out.Steps[step].SentAt = status, &sent
 			if message == "" && code != "" {
-				message = "código " + code + " do SMSDev"
+				message = "código " + code + " da SMS Market"
 			}
 			out.Steps[step].Error = message
 		}

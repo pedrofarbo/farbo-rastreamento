@@ -119,8 +119,9 @@ services:
       ABACATEPAY_SUPPLIER_PIX: ${ABACATEPAY_SUPPLIER_PIX:-true}
       ABACATEPAY_TRANSFER_API_KEY: ${ABACATEPAY_TRANSFER_API_KEY:-}
 
-      # Configuração do rastreador por SMS (SMSDev) na ativação.
-      SMSDEV_API_KEY: ${SMSDEV_API_KEY:-}
+      # Configuração do rastreador por SMS (SMS Market) na ativação.
+      SMSMARKET_USER: ${SMSMARKET_USER:-}
+      SMSMARKET_PASSWORD: ${SMSMARKET_PASSWORD:-}
       TRACKER_PUBLIC_HOST: ${TRACKER_PUBLIC_HOST:-}
       TRACKER_PUBLIC_PORT: ${TRACKER_PUBLIC_PORT:-}
       TRACKER_APN: ${TRACKER_APN:-}

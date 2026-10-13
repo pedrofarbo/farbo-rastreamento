@@ -1,6 +1,6 @@
 // Package smssetup configura o rastreador por SMS na ativação: manda os
 // comandos de configuração (APN, servidor, fuso, intervalo) para o número do
-// chip pelo SMSDev, um por vez, e espera o rastreador conectar no servidor —
+// chip pela SMS Market, um por vez, e espera o rastreador conectar no servidor —
 // a prova de que a configuração pegou. A sintaxe é a do J16 (GT06), em
 // docs/J16.md.
 package smssetup

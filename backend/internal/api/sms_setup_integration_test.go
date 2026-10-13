@@ -25,19 +25,19 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leakcheck"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols/gt06"
-	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smsdev"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smsmarket"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smssetup"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/telemetry"
 )
 
-// fakeSMSDev imita o SMSDev: guarda os SMS, devolve a situação de entrega e
+// fakeProvider imita a SMS Market: guarda os SMS, devolve a situação de entrega e
 // as respostas que o teste mandar.
-type fakeSMSDev struct {
+type fakeProvider struct {
 	mu       sync.Mutex
 	sent     []fakeSMS
 	statuses map[string]string
 	reasons  map[string]string
-	inbox    []smsdev.Reply
+	inbox    []smsmarket.Reply
 	fail     error
 	inboxes  int
 	balance  int
@@ -45,48 +45,48 @@ type fakeSMSDev struct {
 
 type fakeSMS struct{ to, body string }
 
-func (f *fakeSMSDev) Send(_ context.Context, to, body string) (*smsdev.Message, error) {
+func (f *fakeProvider) Send(_ context.Context, to, body string) (*smsmarket.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.fail != nil {
 		return nil, f.fail
 	}
 	f.sent = append(f.sent, fakeSMS{to, body})
-	return &smsdev.Message{ID: fmt.Sprint(len(f.sent)), Status: smsdev.StatusQueued}, nil
+	return &smsmarket.Message{ID: fmt.Sprint(len(f.sent)), Status: smsmarket.StatusQueued}, nil
 }
 
-func (f *fakeSMSDev) Fetch(_ context.Context, id string) (*smsdev.Message, error) {
+func (f *fakeProvider) Fetch(_ context.Context, id string) (*smsmarket.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return &smsdev.Message{ID: id, Status: f.statuses[id], ErrorMessage: f.reasons[id]}, nil
+	return &smsmarket.Message{ID: id, Status: f.statuses[id], ErrorMessage: f.reasons[id]}, nil
 }
 
-func (f *fakeSMSDev) Inbox(context.Context, time.Time) ([]smsdev.Reply, error) {
+func (f *fakeProvider) Inbox(context.Context, time.Time) ([]smsmarket.Reply, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.inboxes++
-	return append([]smsdev.Reply(nil), f.inbox...), nil
+	return append([]smsmarket.Reply(nil), f.inbox...), nil
 }
 
-func (f *fakeSMSDev) Balance(context.Context) (int, error) {
+func (f *fakeProvider) Balance(context.Context) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.balance, nil
 }
 
-func (f *fakeSMSDev) reply(r smsdev.Reply) {
+func (f *fakeProvider) reply(r smsmarket.Reply) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.inbox = append(f.inbox, r)
 }
 
-func (f *fakeSMSDev) setStatus(id, status, reason string) {
+func (f *fakeProvider) setStatus(id, status, reason string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.statuses[id], f.reasons[id] = status, reason
 }
 
-func (f *fakeSMSDev) bodies() []string {
+func (f *fakeProvider) bodies() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make([]string, len(f.sent))
@@ -96,12 +96,12 @@ func (f *fakeSMSDev) bodies() []string {
 	return out
 }
 
-// A configuração por SMS na ativação, de ponta a ponta com o SMSDev de
+// A configuração por SMS na ativação, de ponta a ponta com a SMS Market de
 // mentira: os comandos do J16 saem um por vez (pela entrega, pela resposta
 // do rastreador ou pelo tempo), a entrega e as respostas vêm das consultas
-// ao SMSDev (sem gravar resposta repetida), a senha do APN nunca aparece, e
+// à SMS Market (sem gravar resposta repetida), a senha do APN nunca aparece, e
 // o pedido passa a "Configurado" quando o rastreador conecta. E as falhas:
-// recusa do SMSDev, SMS não entregue, rastreador que não conecta. Precisa de
+// recusa da SMS Market, SMS não entregue, rastreador que não conecta. Precisa de
 // FARBO_TEST_DATABASE_URL.
 func TestSMSSetupEndToEnd(t *testing.T) {
 	db := integrationDB(t)
@@ -122,11 +122,11 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	}
 	devicesSvc := devices.NewService(devices.NewRepository(db), protocols.NewRegistry(gt06.New(false)))
 	fulfillmentSvc := fulfillment.NewService(db, fulfillment.NewRepository(db), nil, nil, cfg.Shipping, "", log)
-	fake := &fakeSMSDev{statuses: map[string]string{}, reasons: map[string]string{}}
+	fake := &fakeProvider{statuses: map[string]string{}, reasons: map[string]string{}}
 	now := time.Now()
 	clock := func() time.Time { return now }
 	defaults := smssetup.Defaults{ServerHost: "farborastreadores.com.br", ServerPort: 5000, ReportSeconds: 30, ParkedSeconds: 3600}
-	sms := smssetup.NewService(db, devicesSvc, fake, fulfillmentSvc, defaults, "SMSDev", log)
+	sms := smssetup.NewService(db, devicesSvc, fake, fulfillmentSvc, defaults, "SMS Market", log)
 	sms.SetClock(clock)
 	server := NewServer(Deps{
 		Config: cfg, Log: log, Metrics: telemetry.NewMetrics(), DB: db, Auth: authSvc, Devices: devicesSvc,
@@ -189,7 +189,7 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 		Session *smssetup.Session `json:"session"`
 	}
 	call(http.MethodGet, "/api/devices/"+j16.ID.String()+"/sms-setup", nil, http.StatusOK, &view)
-	if !view.Enabled || view.From != "SMSDev" || view.Plan.Phone != "+5511999998888" ||
+	if !view.Enabled || view.From != "SMS Market" || view.Plan.Phone != "+5511999998888" ||
 		len(view.Plan.Steps) != 4 || view.Plan.Steps[0].Text != "APN,zap.vivo.com.br,vivo,***#" ||
 		view.Plan.Unlock.Text != "CMDLOCK,123456,0#" || view.Plan.Query.Text != "PARAM#" || len(view.Plan.Problems) != 0 || view.Session != nil {
 		t.Fatalf("prévia = %+v", view)
@@ -201,7 +201,7 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	}
 	env.must(operator, http.MethodPost, "/api/devices/"+semChip.ID.String()+"/sms-setup", map[string]any{}, http.StatusBadRequest)
 
-	// Começa: o primeiro SMS sai na hora, com a senha de verdade só para o SMSDev.
+	// Começa: o primeiro SMS sai na hora, com a senha de verdade só para a SMS Market.
 	var session smssetup.Session
 	call(http.MethodPost, "/api/devices/"+j16.ID.String()+"/sms-setup",
 		map[string]any{"fulfillmentId": orderID, "query": true}, http.StatusCreated, &session)
@@ -220,18 +220,18 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 		t.Fatalf("mandou antes da hora: %v", fake.bodies())
 	}
 	// A consulta de entrega diz que chegou (RECEBIDA): o próximo sai.
-	fake.setStatus("1", smsdev.StatusDelivered, "")
+	fake.setStatus("1", smsmarket.StatusDelivered, "")
 	work(21 * time.Second)
 	if b := fake.bodies(); len(b) != 2 || b[1] != "SERVER,1,farborastreadores.com.br,5000,0#" {
 		t.Fatalf("depois da entrega: %v", b)
 	}
 	// Um status atrasado não volta para trás.
-	if err := sms.UpdateStatus(ctx, "1", smsdev.StatusSent, "", ""); err != nil {
+	if err := sms.UpdateStatus(ctx, "1", smsmarket.StatusSent, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	// A resposta do rastreador (lida no SMSDev, pelo número do chip) libera o
+	// A resposta do rastreador (lida na SMS Market, pelo número do chip) libera o
 	// próximo na hora; a senha que ele ecoa fica redigida.
-	fake.reply(smsdev.Reply{ID: "9001", SentID: "2", From: "5511999998888", Body: "APN:zap.vivo.com.br,vivo,Senh4APN OK"})
+	fake.reply(smsmarket.Reply{ID: "9001", SentID: "2", From: "5511999998888", Body: "APN:zap.vivo.com.br,vivo,Senh4APN OK"})
 	work(time.Second)
 	if b := fake.bodies(); len(b) != 3 || b[2] != "GMT,W,0,0#" {
 		t.Fatalf("depois da resposta: %v", b)
@@ -275,7 +275,7 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	}
 	// A resposta lida de novo (a consulta traz as do dia) não é gravada outra
 	// vez; a de um número que não é de rastreador é ignorada.
-	fake.reply(smsdev.Reply{ID: "9002", From: "5521988887777", Body: "oi"})
+	fake.reply(smsmarket.Reply{ID: "9002", From: "5521988887777", Body: "oi"})
 	work(time.Second)
 	var replies, strangers int
 	_ = db.QueryRow(ctx, `SELECT count(*) FILTER (WHERE device_id = $1), count(*) FILTER (WHERE phone LIKE '%21988887777')
@@ -284,15 +284,15 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 		t.Errorf("respostas gravadas = %d, de estranhos = %d", replies, strangers)
 	}
 
-	// Recusa do SMSDev: a configuração falha na hora, com o motivo.
-	fake.fail = &smsdev.APIError{HTTPStatus: http.StatusOK, Code: "300", Message: "SALDO INSUFICIENTE"}
+	// Recusa da SMS Market: a configuração falha na hora, com o motivo.
+	fake.fail = &smsmarket.APIError{HTTPStatus: http.StatusOK, Code: "300", Message: "SALDO INSUFICIENTE"}
 	recusado := newDevice("869999000000003", "(11) 98888-0000")
 	call(http.MethodPost, "/api/devices/"+recusado.ID.String()+"/sms-setup", map[string]any{}, http.StatusCreated, &session)
-	if session.Status != smssetup.StatusFailed || !strings.Contains(session.Error, "SALDO INSUFICIENTE") || !strings.Contains(session.Error, "SMSDev") {
+	if session.Status != smssetup.StatusFailed || !strings.Contains(session.Error, "SALDO INSUFICIENTE") || !strings.Contains(session.Error, "SMS Market") {
 		t.Fatalf("recusa = %+v", session)
 	}
-	// Sem resposta do SMSDev: tenta de novo, e desiste na terceira.
-	fake.fail = errors.New("SMSDev indisponível: timeout")
+	// Sem resposta da SMS Market: tenta de novo, e desiste na terceira.
+	fake.fail = errors.New("SMS Market indisponível: timeout")
 	instavel := newDevice("869999000000004", "(11) 97777-0000")
 	call(http.MethodPost, "/api/devices/"+instavel.ID.String()+"/sms-setup", map[string]any{}, http.StatusCreated, &session)
 	if session.Status != smssetup.StatusSending {
@@ -309,7 +309,7 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	// SMS não entregue (o chip não recebe): falha com o motivo.
 	naoEntregue := newDevice("869999000000005", "(11) 96666-0000")
 	call(http.MethodPost, "/api/devices/"+naoEntregue.ID.String()+"/sms-setup", map[string]any{}, http.StatusCreated, &session)
-	fake.setStatus(fmt.Sprint(len(fake.bodies())), smsdev.StatusFailed, "o número está na lista de bloqueio do SMSDev")
+	fake.setStatus(fmt.Sprint(len(fake.bodies())), smsmarket.StatusFailed, "o número está na lista de bloqueio da SMS Market")
 	work(21 * time.Second)
 	call(http.MethodGet, "/api/devices/"+naoEntregue.ID.String()+"/sms-setup", nil, http.StatusOK, &view)
 	if view.Session.Status != smssetup.StatusFailed || !strings.Contains(view.Session.Error, "não chegou ao chip") ||
@@ -389,7 +389,7 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 		t.Errorf("bulk item 2 devia ter falhado: %+v", bulkResp.Results[1])
 	}
 	// O lote só grava as sessões: nenhum SMS sai na requisição (com dezenas
-	// de rastreadores, esperar o SMSDev de cada um passaria do tempo dela); o
+	// de rastreadores, esperar a SMS Market de cada um passaria do tempo dela); o
 	// primeiro sai na volta seguinte da rotina.
 	fake.mu.Lock()
 	beforeWork := len(fake.sent)
@@ -410,7 +410,7 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	// O contador passa a contar o SMS do lote.
 	_ = db.QueryRow(ctx, `SELECT count(*) FROM sms_messages WHERE direction = 'OUT' AND status <> 'failed'`).Scan(&sent)
 
-	// Sem o SMSDev configurado, nada sai (e o contador diz que está desligado).
+	// Sem a SMS Market configurada, nada sai (e o contador diz que está desligado).
 	off := smssetup.NewService(db, devicesSvc, nil, fulfillmentSvc, defaults, "", log)
 	if _, err := off.Start(ctx, mudo.ID, nil, smssetup.Options{}, nil); !errors.Is(err, smssetup.ErrDisabled) {
 		t.Errorf("desligado: %v", err)

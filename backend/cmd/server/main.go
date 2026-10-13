@@ -59,7 +59,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/reports"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/shares"
-	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smsdev"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smsmarket"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smssetup"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/support"
@@ -362,7 +362,7 @@ func run() error {
 		infraSvc.SetRedis(func(ctx context.Context) error { return redisClient.Ping(ctx).Err() })
 	}
 
-	// Configuração do rastreador por SMS (SMSDev) na ativação.
+	// Configuração do rastreador por SMS (SMS Market) na ativação.
 	smsSvc := newSMSSetup(cfg, db, deviceSvc, fulfillmentSvc, log)
 
 	// Acessos de terceiros aos veículos (acompanhar e bloqueio de emergência).
@@ -695,21 +695,22 @@ func runWorkers(
 	}
 }
 
-// newSMSSetup monta a configuração por SMS. Sem a chave do SMSDev, a tela
-// mostra os comandos e avisa o que falta; nada é enviado.
+// newSMSSetup monta a configuração por SMS. Sem o usuário e a senha da SMS
+// Market, a tela mostra os comandos e avisa o que falta; nada é enviado. A
+// senha nunca vai para o log.
 func newSMSSetup(cfg *config.Config, db *database.DB, devs *devices.Service, activator smssetup.Activator, log *slog.Logger) *smssetup.Service {
 	c := cfg.SMS
 	defaults := smssetup.Defaults{
 		ServerHost: c.TrackerHost, ServerPort: c.TrackerPort, APN: c.APN, APNUser: c.APNUser, APNPassword: c.APNPassword,
 		ReportSeconds: c.ReportSeconds, ParkedSeconds: c.ParkedSeconds,
 	}
-	sd := smsdev.Config{BaseURL: c.SMSDevBaseURL, APIKey: c.SMSDevAPIKey}
-	if !sd.Enabled() {
-		log.Warn("SMSDEV_API_KEY não definida: configuração do rastreador por SMS desligada")
+	sm := smsmarket.Config{BaseURL: c.SMSMarketBaseURL, User: c.SMSMarketUser, Password: c.SMSMarketPassword}
+	if !sm.Enabled() {
+		log.Warn("SMSMARKET_USER/SMSMARKET_PASSWORD não definidos: configuração do rastreador por SMS desligada")
 		return smssetup.NewService(db, devs, nil, activator, defaults, "", log)
 	}
-	client := smsdev.NewClient(sd)
-	log.Info("configuração do rastreador por SMS via SMSDev",
+	client := smsmarket.NewClient(sm)
+	log.Info("configuração do rastreador por SMS via SMS Market",
 		"servidor", fmt.Sprintf("%s:%d", c.TrackerHost, c.TrackerPort), "apn_padrao", c.APN != "")
 	return smssetup.NewService(db, devs, client, activator, defaults, client.Sender(), log)
 }
