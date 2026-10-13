@@ -25,3 +25,19 @@ export function inGroup(vehicle: Pick<VehicleView, 'groupId'>, filter: string): 
   if (filter === NO_GROUP) return !vehicle.groupId;
   return vehicle.groupId === filter;
 }
+
+// Bem mais rápido que localeCompare a cada comparação (milhares por ordenação).
+const collator = new Intl.Collator('pt-BR');
+const STATUS_RANK: Record<string, number> = { ONLINE: 0, STALE: 1, OFFLINE: 2 };
+
+/**
+ * A ordem da lista de veículos (e do anterior/próximo): os online primeiro —
+ * é o que o operador precisa ver sem rolar —, depois sem sinal, e por nome.
+ */
+export function sortVehicles<T extends Pick<VehicleView, 'name' | 'device'>>(vehicles: T[]): T[] {
+  return [...vehicles].sort((a, b) => {
+    const byStatus =
+      (STATUS_RANK[a.device?.status ?? 'OFFLINE'] ?? 3) - (STATUS_RANK[b.device?.status ?? 'OFFLINE'] ?? 3);
+    return byStatus !== 0 ? byStatus : collator.compare(a.name, b.name);
+  });
+}

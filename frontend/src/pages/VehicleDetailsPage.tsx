@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { Address } from '@/components/ui/Address';
 
@@ -19,9 +19,11 @@ import { EventList } from '@/components/vehicle/EventList';
 import { Playback } from '@/components/vehicle/Playback';
 import { TelemetryBar } from '@/components/vehicle/TelemetryBar';
 import { TheftPanel } from '@/components/vehicle/TheftPanel';
-import { useVehicle } from '@/hooks/useVehicles';
+import { VehicleSwitcher } from '@/components/vehicle/VehicleSwitcher';
+import { useVehicle, useVehicles } from '@/hooks/useVehicles';
 import { useAuth } from '@/stores/AuthContext';
 import { formatCoordinates, formatDateTime, formatDeviceStatus, formatHeading, hoursAgo, nowISO, todayISO } from '@/services/format';
+import { sortVehicles } from '@/services/vehicleFilters';
 import type { Position } from '@/types';
 import { retentionLabel } from '@/types';
 
@@ -45,9 +47,22 @@ const RANGES = [
   { label: '30 d', hours: 24 * 30 },
 ] as const;
 
+/**
+ * A página do veículo. Trocar de veículo (pelo seletor do topo) remonta a
+ * página: o outro começa ao vivo, sem o histórico escolhido no anterior.
+ */
 export function VehicleDetailsPage() {
   const { id } = useParams<{ id: string }>();
+  return <VehicleDetails key={id} />;
+}
+
+function VehicleDetails() {
+  const { id } = useParams<{ id: string }>();
   const { data: vehicle, isLoading, error } = useVehicle(id);
+  const navigate = useNavigate();
+  // Os veículos que a pessoa vê, na ordem da lista: o anterior, o próximo e a busca.
+  const fleet = useVehicles();
+  const ordered = useMemo(() => sortVehicles(fleet.data ?? []), [fleet.data]);
   const { isCustomer, canOperateAccount, canManage } = useAuth();
   const backTo = isCustomer ? '/meus-veiculos' : '/dashboard';
   // Aberto pelo alerta de bateria desconectada ou de movimento sem ignição.
@@ -121,7 +136,8 @@ export function VehicleDetailsPage() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+          <div className={styles.headerActions}>
+            <VehicleSwitcher vehicles={ordered} currentId={vehicle.id} onSelect={(next) => navigate(`/veiculos/${next}`)} />
             <Badge
               tone={
                 device?.status === 'ONLINE'

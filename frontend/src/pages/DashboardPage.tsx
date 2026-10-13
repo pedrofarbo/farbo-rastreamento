@@ -11,10 +11,11 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { TelemetryBar } from '@/components/vehicle/TelemetryBar';
 import { VehicleList } from '@/components/vehicle/VehicleList';
+import { VehicleSwitcher } from '@/components/vehicle/VehicleSwitcher';
 import fieldStyles from '@/components/ui/Field.module.css';
 import { useFleet } from '@/hooks/useFleet';
 import { useVehicles } from '@/hooks/useVehicles';
-import { NO_GROUP, inGroup } from '@/services/vehicleFilters';
+import { NO_GROUP, inGroup, sortVehicles } from '@/services/vehicleFilters';
 
 import styles from './DashboardPage.module.css';
 
@@ -41,6 +42,8 @@ export function DashboardPage() {
   }, [vehicles, selectedId]);
 
   const selected = vehicles.find((vehicle) => vehicle.id === selectedId) ?? null;
+  // O anterior e o próximo seguem a ordem da lista ao lado.
+  const ordered = useMemo(() => sortVehicles(vehicles), [vehicles]);
   const online = vehicles.filter((vehicle) => vehicle.device?.status === 'ONLINE').length;
 
   if (isLoading) {
@@ -112,6 +115,7 @@ export function DashboardPage() {
                 </div>
               </div>
 
+              <VehicleSwitcher vehicles={ordered} currentId={selected.id} onSelect={setSelectedId} search={false} />
               <Link to={`/veiculos/${selected.id}`} className={styles.detailAction}>
                 <Button variant="primary" size="small">
                   Abrir veículo

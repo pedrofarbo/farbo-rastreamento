@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/stores/AuthContext';
 import { formatDeviceStatus, formatRelative, formatSpeed } from '@/services/format';
-import { matchesVehicle } from '@/services/vehicleFilters';
+import { matchesVehicle, sortVehicles } from '@/services/vehicleFilters';
 import type { DeviceStatus, VehicleView } from '@/types';
 
 import styles from './VehicleList.module.css';
@@ -36,9 +36,6 @@ function statusTone(status: DeviceStatus | undefined | null) {
  */
 export const PAGE_SIZE = 200;
 
-// Bem mais rápido que localeCompare a cada comparação (milhares por ordenação).
-const collator = new Intl.Collator('pt-BR');
-
 export function VehicleList({ vehicles, selectedId, onSelect }: VehicleListProps) {
   const { isCustomer } = useAuth();
   const [search, setSearch] = useState('');
@@ -46,14 +43,7 @@ export function VehicleList({ vehicles, selectedId, onSelect }: VehicleListProps
 
   const filtered = useMemo(() => {
     const matching = search.trim() ? vehicles.filter((vehicle) => matchesVehicle(vehicle, search)) : vehicles;
-
-    // Online primeiro: é o que o operador precisa ver sem rolar.
-    const rank: Record<string, number> = { ONLINE: 0, STALE: 1, OFFLINE: 2 };
-    return [...matching].sort((a, b) => {
-      const byStatus =
-        (rank[a.device?.status ?? 'OFFLINE'] ?? 3) - (rank[b.device?.status ?? 'OFFLINE'] ?? 3);
-      return byStatus !== 0 ? byStatus : collator.compare(a.name, b.name);
-    });
+    return sortVehicles(matching);
   }, [vehicles, search]);
 
   return (

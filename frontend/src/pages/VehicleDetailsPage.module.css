@@ -41,6 +41,15 @@
   font-size: var(--text-lg);
 }
 
+/* O seletor de veículo, o status e o Voltar. */
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .subtitle {
   margin-top: 2px;
   font-size: var(--text-xs);
