@@ -39,8 +39,11 @@ export function VehicleSwitcher({
     const outside = (event: MouseEvent | TouchEvent) => {
       if (!root.current?.contains(event.target as Node)) setOpen(false);
     };
+    // O Esc fecha a busca (e não o que está por baixo, como a tela cheia).
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setOpen(false);
     };
     document.addEventListener('mousedown', outside);
     document.addEventListener('touchstart', outside);

@@ -144,6 +144,17 @@ import { DevicesPage } from './DevicesPage';
 
 const flush = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 
+/**
+ * Espera o texto aparecer na página: o que os modais carregam (a configuração
+ * por SMS, por exemplo) pode levar mais de um ciclo, ainda mais com a suíte
+ * inteira rodando junto. Desiste em 3 s, e aí a conferência falha.
+ */
+async function waitForText(text: string) {
+  const deadline = Date.now() + 3000;
+  while (!document.body.textContent?.includes(text) && Date.now() < deadline) await flush();
+  expect(document.body.textContent).toContain(text);
+}
+
 async function render() {
   const host = document.createElement('div');
   document.body.appendChild(host);
@@ -202,8 +213,8 @@ describe('DevicesPage', () => {
     await flush();
 
     // Modal de importação em massa aberto
-    expect(document.body.textContent).toContain('Adicionar rastreadores em massa');
-    expect(document.body.textContent).toContain('Baixar modelo CSV');
+    await waitForText('Adicionar rastreadores em massa');
+    await waitForText('Baixar modelo CSV');
   });
 
   it('exibe botão "Ativar" para pendentes e "Reativar" para já ativados', async () => {
@@ -230,8 +241,8 @@ describe('DevicesPage', () => {
     });
     await flush();
 
-    expect(document.body.textContent).toContain('Ativar rastreador 869247061230022');
-    expect(document.body.textContent).toContain('Configurar por SMS');
+    await waitForText('Ativar rastreador 869247061230022');
+    await waitForText('Configurar por SMS');
   });
 
   it('permite filtrar por "Pendentes de ativação" e "Já ativados"', async () => {
@@ -287,7 +298,7 @@ describe('DevicesPage', () => {
     });
     await flush();
 
-    expect(document.body.textContent).toContain('Ativação de rastreadores em massa');
+    await waitForText('Ativação de rastreadores em massa');
     expect(document.body.textContent).toContain('869247061230011');
   });
 

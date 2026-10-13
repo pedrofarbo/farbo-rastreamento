@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { geofencesApi } from '@/api/resources';
+import { ExpandIcon } from '@/app/icons';
 import { Address } from '@/components/ui/Address';
 import { SuspendedNotice, isSuspendedError } from '@/components/billing/SuspendedNotice';
 import { FLEET_SIZE } from '@/components/map/fleet';
+import { FleetMapFullscreen, enterBrowserFullscreen } from '@/components/map/FleetMapFullscreen';
 import { TrackerMap } from '@/components/map/TrackerMap';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -32,6 +34,20 @@ export function DashboardPage() {
   });
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Tela cheia no endereço (?mapa=tela-cheia): o "voltar" do celular fecha.
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const fullscreen = params.get('mapa') === 'tela-cheia';
+  const openFullscreen = () => {
+    enterBrowserFullscreen();
+    navigate({ search: '?mapa=tela-cheia' }, { state: { fullscreenMap: true } });
+  };
+  const closeFullscreen = useCallback(() => {
+    if ((location.state as { fullscreenMap?: boolean } | null)?.fullscreenMap) navigate(-1);
+    else navigate({ search: '' }, { replace: true });
+  }, [location.state, navigate]);
 
   // Seleciona o primeiro veículo assim que a lista chega, para o painel não
   // abrir vazio. Numa frota, não: o mapa abre mostrando todos.
@@ -89,12 +105,24 @@ export function DashboardPage() {
 
       <section className={styles.main}>
         <div className={styles.mapArea}>
-          <TrackerMap
-            vehicles={vehicles}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            geofences={geofences}
-          />
+          {/* Na tela cheia, o mapa de baixo sai (a frota não é desenhada duas vezes). */}
+          {!fullscreen && (
+            <TrackerMap
+              vehicles={vehicles}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              geofences={geofences}
+            />
+          )}
+          <button
+            type="button"
+            className={styles.mapExpand}
+            onClick={openFullscreen}
+            aria-label="Ver o mapa em tela cheia"
+            title="Tela cheia"
+          >
+            <ExpandIcon />
+          </button>
         </div>
 
         {selected && (
@@ -131,6 +159,17 @@ export function DashboardPage() {
           </>
         )}
       </section>
+
+      {fullscreen && (
+        <FleetMapFullscreen
+          vehicles={ordered}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          geofences={geofences}
+          title={(group === NO_GROUP ? 'Sem grupo' : groups.find((g) => g.id === group)?.name) || 'Frota'}
+          onClose={closeFullscreen}
+        />
+      )}
     </div>
   );
 }

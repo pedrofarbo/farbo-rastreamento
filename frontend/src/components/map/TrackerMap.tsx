@@ -260,7 +260,8 @@ export function TrackerMap({
         detail={located.length > 1 && !track ? `posicionando ${vehiclesLabel(located.length)}` : ''}
       />
       {phase === 'offline' && (
-        <div className={styles.offline} role="status">
+        // map-offline: a tela cheia leva o aviso para cima (embaixo fica o cartão).
+        <div className={`map-offline ${styles.offline}`} role="status">
           Sem o mapa de fundo agora · os veículos seguem ao vivo
         </div>
       )}
