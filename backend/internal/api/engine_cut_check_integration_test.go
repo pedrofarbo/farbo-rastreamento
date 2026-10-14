@@ -39,7 +39,7 @@ func TestEngineCutCheckEndToEnd(t *testing.T) {
 	user("bia@corte.test", auth.RoleCustomer)
 	user("viewer@corte.test", auth.RoleViewer)
 
-	dev, err := env.devices.Create(ctx, devices.Input{IMEI: "869247061238001", Protocol: "gt06"})
+	dev, err := env.devices.Create(ctx, devices.Input{IMEIConfirmed: true, IMEI: "869247061238001", Protocol: "gt06"})
 	if err != nil {
 		t.Fatal(err)
 	}

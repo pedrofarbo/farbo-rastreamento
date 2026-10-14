@@ -4,6 +4,7 @@ import (
 	"errors"
 	"maps"
 	"net/http"
+	"time"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
@@ -119,7 +120,7 @@ func (s *Server) handleCreateDevice(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var validation devices.ValidationError
 		if errors.As(err, &validation) {
-			writeError(w, http.StatusBadRequest, validation.Message)
+			writeDeviceValidation(w, validation)
 			return
 		}
 		handleStoreError(w, err, "dispositivo não encontrado")
@@ -131,6 +132,28 @@ func (s *Server) handleCreateDevice(w http.ResponseWriter, r *http.Request) {
 		map[string]any{"imei": device.IMEI, "protocol": device.Protocol,
 			"credentials": credentialChanges(nil, device)})
 	writeJSON(w, http.StatusCreated, device.View(devices.AudienceAdmin))
+}
+
+// handleUnknownDevices: os rastreadores que tentaram conectar sem cadastro nos
+// últimos dias, cada um com o cadastro de IMEI parecido (o provável erro de
+// digitação), para a tela de rastreadores avisar.
+func (s *Server) handleUnknownDevices(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Devices.UnknownAttempts(r.Context(), time.Now().Add(-devices.UnknownWindow))
+	if err != nil {
+		handleStoreError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// writeDeviceValidation responde a recusa do cadastro; com código (o IMEI
+// suspeito), a tela mostra o aviso e deixa confirmar.
+func writeDeviceValidation(w http.ResponseWriter, v devices.ValidationError) {
+	if v.Code != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": v.Message, "code": v.Code})
+		return
+	}
+	writeError(w, http.StatusBadRequest, v.Message)
 }
 
 type bulkDevicesRequest struct {
@@ -232,7 +255,7 @@ func (s *Server) handleUpdateDevice(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var validation devices.ValidationError
 		if errors.As(err, &validation) {
-			writeError(w, http.StatusBadRequest, validation.Message)
+			writeDeviceValidation(w, validation)
 			return
 		}
 		handleStoreError(w, err, "dispositivo não encontrado")

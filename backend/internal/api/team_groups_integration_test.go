@@ -44,7 +44,7 @@ func TestTeamRestrictedToGroups(t *testing.T) {
 		t.Fatal(err)
 	}
 	newVehicle := func(imei, name string, group *vehicles.Group) *vehicles.Vehicle {
-		dev, err := env.devices.Create(ctx, devices.Input{IMEI: imei, Protocol: "gt06"})
+		dev, err := env.devices.Create(ctx, devices.Input{IMEIConfirmed: true, IMEI: imei, Protocol: "gt06"})
 		if err != nil {
 			t.Fatal(err)
 		}

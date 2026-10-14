@@ -491,7 +491,7 @@ func TestCredentialsNeverLeakEndToEnd(t *testing.T) {
 	port, interval := 5023, 30
 	var devA, devB devices.View
 	out := env.must(admin, http.MethodPost, "/api/devices", map[string]any{
-		"imei": "869247061230011", "model": "J16", "protocol": "gt06",
+		"imei": "869247061230011", "imeiConfirmed": true, "model": "J16", "protocol": "gt06",
 		"apn": "zap.vivo.com.br", "apnUser": apnUserA, "apnPassword": apnSecretA,
 		"serverHost": "rastreio.exemplo.com", "serverPort": port, "reportIntervalSeconds": interval,
 		"commandPassword":  cmdSecretA,
@@ -502,7 +502,7 @@ func TestCredentialsNeverLeakEndToEnd(t *testing.T) {
 		t.Fatalf("o admin deveria ver os indicadores de senha definida: %s", out)
 	}
 	out = env.must(admin, http.MethodPost, "/api/devices", map[string]any{
-		"imei": "869247061230022", "protocol": "gt06", "apnPassword": apnSecretB,
+		"imei": "869247061230022", "imeiConfirmed": true, "protocol": "gt06", "apnPassword": apnSecretB,
 		"commandPassword":  cmdSecretB,
 		"commandOverrides": map[string]string{"REBOOT": "RESET," + cmdSecretB + "#"},
 	}, http.StatusCreated)
@@ -702,7 +702,7 @@ func TestCredentialsNeverLeakEndToEnd(t *testing.T) {
 	// --- Escritas administrativas continuam restritas ----------------------
 	for _, role := range []string{auth.RoleOperator, auth.RoleViewer, auth.RoleCustomer} {
 		env.must(tokens[role], http.MethodPost, "/api/devices", map[string]any{"imei": "869247061230033"}, http.StatusForbidden)
-		env.must(tokens[role], http.MethodPatch, deviceA, map[string]any{"imei": "869247061230011", "commandPassword": "Troca1"}, http.StatusForbidden)
+		env.must(tokens[role], http.MethodPatch, deviceA, map[string]any{"imei": "869247061230011", "imeiConfirmed": true, "commandPassword": "Troca1"}, http.StatusForbidden)
 		env.must(tokens[role], http.MethodDelete, deviceA, nil, http.StatusForbidden)
 	}
 	if dev, _ := env.devices.Get(ctx, devA.ID); dev.CommandPassword != cmdSecretA {
@@ -712,7 +712,7 @@ func TestCredentialsNeverLeakEndToEnd(t *testing.T) {
 	// --- Edição pelo admin sem ler a senha ---------------------------------
 	// A tela manda o cadastro sem as senhas e sem os overrides: tudo fica.
 	out = env.must(admin, http.MethodPatch, deviceA, map[string]any{
-		"imei": "869247061230011", "model": "J16 v2", "protocol": "gt06",
+		"imei": "869247061230011", "imeiConfirmed": true, "model": "J16 v2", "protocol": "gt06",
 		"apn": "zap.vivo.com.br", "apnUser": apnUserA, "serverHost": "rastreio.exemplo.com",
 		"serverPort": port, "reportIntervalSeconds": interval,
 	}, http.StatusOK)
@@ -731,7 +731,7 @@ func TestCredentialsNeverLeakEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	env.must(admin, http.MethodPatch, deviceA, map[string]any{
-		"imei": "869247061230011", "protocol": "gt06", "commandOverrides": shown.CommandOverrides,
+		"imei": "869247061230011", "imeiConfirmed": true, "protocol": "gt06", "commandOverrides": shown.CommandOverrides,
 	}, http.StatusOK)
 	if dev, _ := env.devices.Get(ctx, devA.ID); dev.CommandOverrides["ENGINE_RESUME"] != "HFYD,"+cmdSecretA+"#" {
 		t.Fatalf("override redigido reenviado sem mudança deveria manter o original: %q",
@@ -744,7 +744,7 @@ func TestCredentialsNeverLeakEndToEnd(t *testing.T) {
 	}
 	// Apagar é explícito.
 	env.must(admin, http.MethodPatch, deviceB, map[string]any{
-		"imei": "869247061230022", "protocol": "gt06", "clearApnPassword": true,
+		"imei": "869247061230022", "imeiConfirmed": true, "protocol": "gt06", "clearApnPassword": true,
 	}, http.StatusOK)
 	if dev, _ := env.devices.Get(ctx, devB.ID); dev.APNPassword != "" || dev.CommandPassword != cmdSecretB {
 		t.Fatalf("clearApnPassword deveria apagar só a senha APN: %+v", dev)

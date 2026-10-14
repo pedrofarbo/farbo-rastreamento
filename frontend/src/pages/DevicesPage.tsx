@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/Card';
 import { DeviceActivationModal } from '@/components/devices/DeviceActivationModal';
 import { DeviceBulkActivationModal } from '@/components/devices/DeviceBulkActivationModal';
 import { DeviceBulkModal } from '@/components/devices/DeviceBulkModal';
+import { UnknownDevicesCard } from '@/components/devices/UnknownDevicesCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { fieldStyles, SelectField, TextField } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
@@ -18,6 +19,7 @@ import { SmsCounter } from '@/components/fulfillment/SmsCounter';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { isDeviceActivated } from '@/services/deviceBulk';
+import { imeiProblem } from '@/services/imei';
 import { formatDeviceStatus, formatPhoneInput, formatRelative } from '@/services/format';
 import { useAuth } from '@/stores/AuthContext';
 import type { Device } from '@/types';
@@ -150,6 +152,11 @@ export function DevicesPage() {
   const activatedCount = allDevices.filter(isDeviceActivated).length;
   const pendingCount = allDevices.length - activatedCount;
 
+  // IMEI fora do padrão: o aviso aparece já no formulário e o salvar pede a
+  // conferência na etiqueta (com ele errado, a configuração por SMS se perde).
+  const imeiIssue = deviceForm ? imeiProblem(deviceForm.imei) : '';
+  const imeiBlocked = Boolean(imeiIssue) && !deviceForm?.imeiConfirmed;
+
   const displayedDevices = useMemo(() => {
     if (activationFilter === 'pending') return allDevices.filter((d) => !isDeviceActivated(d));
     if (activationFilter === 'activated') return allDevices.filter(isDeviceActivated);
@@ -184,6 +191,14 @@ export function DevicesPage() {
         </header>
 
         {canOperate && <SmsCounter />}
+
+        <UnknownDevicesCard
+          devices={allDevices}
+          onRegister={(imei) => {
+            setEditing(null);
+            setDeviceForm({ ...EMPTY_DEVICE, imei });
+          }}
+        />
 
         {allDevices.length > 0 && (
           <div
@@ -451,6 +466,8 @@ export function DevicesPage() {
             <Button
               variant="primary"
               loading={saveDevice.isPending}
+              disabled={imeiBlocked}
+              title={imeiBlocked ? 'Confira o IMEI na etiqueta antes de salvar.' : undefined}
               onClick={() => deviceForm && saveDevice.mutate(deviceForm)}
             >
               Salvar
@@ -465,7 +482,12 @@ export function DevicesPage() {
                 label="IMEI"
                 value={deviceForm.imei}
                 hint="15 dígitos, impresso no aparelho."
-                onChange={(event) => setDeviceForm({ ...deviceForm, imei: event.target.value })}
+                error={
+                  imeiIssue
+                    ? `Este IMEI ${imeiIssue}. Confira na etiqueta: com o IMEI errado, o rastreador conecta e é recusado, e os SMS da ativação se perdem.`
+                    : undefined
+                }
+                onChange={(event) => setDeviceForm({ ...deviceForm, imei: event.target.value, imeiConfirmed: false })}
               />
               <TextField
                 label="Modelo"
@@ -474,6 +496,17 @@ export function DevicesPage() {
                 onChange={(event) => setDeviceForm({ ...deviceForm, model: event.target.value })}
               />
             </div>
+
+            {imeiIssue && (
+              <label style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(deviceForm.imeiConfirmed)}
+                  onChange={(event) => setDeviceForm({ ...deviceForm, imeiConfirmed: event.target.checked })}
+                />
+                Conferi na etiqueta: o IMEI está certo assim mesmo
+              </label>
+            )}
 
             <SelectField
               label="Protocolo"

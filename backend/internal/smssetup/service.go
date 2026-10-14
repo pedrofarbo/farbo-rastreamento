@@ -780,6 +780,17 @@ type Session struct {
 	ConnectedAt   *time.Time `json:"connectedAt"`
 	FinishedAt    *time.Time `json:"finishedAt"`
 	CreatedAt     time.Time  `json:"createdAt"`
+	// WrongIMEI: um rastreador com o IMEI parecido com o do cadastro está
+	// tentando conectar e sendo recusado — o IMEI do cadastro está errado.
+	WrongIMEI *WrongIMEI `json:"wrongImei"`
+}
+
+// WrongIMEI é o rastreador conectando com um IMEI diferente do cadastrado.
+type WrongIMEI struct {
+	Registered string    `json:"registered"`
+	Connecting string    `json:"connecting"`
+	LastSeenAt time.Time `json:"lastSeenAt"`
+	Attempts   int       `json:"attempts"`
 }
 
 // Session lê uma configuração com os SMS e as respostas.
@@ -830,7 +841,23 @@ func (s *Service) Session(ctx context.Context, id uuid.UUID) (*Session, error) {
 			out.Steps[step].Error = message
 		}
 	}
-	return &out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// O SMS pegou, mas o rastreador conecta com o IMEI de verdade e o do
+	// cadastro está errado: o servidor o recusa, e a tela mostra qual é.
+	if out.Status != StatusDone && out.Status != StatusCanceled {
+		if dev, err := s.devices.Get(ctx, out.DeviceID); err == nil {
+			attempt, err := s.devices.UnknownLike(ctx, dev.IMEI, out.CreatedAt.Add(-24*time.Hour))
+			if err != nil {
+				s.log.Warn("falha ao conferir o rastreador recusado", "session", out.ID, "err", err)
+			} else if attempt != nil {
+				out.WrongIMEI = &WrongIMEI{Registered: dev.IMEI, Connecting: attempt.IMEI,
+					LastSeenAt: attempt.LastSeenAt, Attempts: attempt.Attempts}
+			}
+		}
+	}
+	return &out, nil
 }
 
 // Latest é a última configuração do rastreador (nil se nunca houve).

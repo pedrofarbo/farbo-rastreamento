@@ -24,7 +24,7 @@ func TestLatestPositionsFor(t *testing.T) {
 
 	create := func(imei string) uuid.UUID {
 		t.Helper()
-		d, err := devs.Create(ctx, devices.Input{IMEI: imei, Protocol: "GT06"})
+		d, err := devs.Create(ctx, devices.Input{IMEIConfirmed: true, IMEI: imei, Protocol: "GT06"})
 		if err != nil {
 			t.Fatal(err)
 		}

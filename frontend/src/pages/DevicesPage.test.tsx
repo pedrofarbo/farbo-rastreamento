@@ -90,11 +90,22 @@ const MOCK_CUSTOMER: CustomerSummary = {
   suspended: false,
 };
 
+// Os rastreadores recusados por falta de cadastro, e o que foi salvo.
+let unknownAttempts: unknown[] = [];
+const saved: { op: string; id?: string; input: Record<string, unknown> }[] = [];
+
 vi.mock('@/api/resources', () => ({
   devicesApi: {
     list: async () => [MOCK_DEVICE, MOCK_PENDING_DEVICE],
-    create: async () => MOCK_DEVICE,
-    update: async () => MOCK_DEVICE,
+    create: async (input: Record<string, unknown>) => {
+      saved.push({ op: 'create', input });
+      return MOCK_DEVICE;
+    },
+    update: async (id: string, input: Record<string, unknown>) => {
+      saved.push({ op: 'update', id, input });
+      return MOCK_DEVICE;
+    },
+    unknown: async () => unknownAttempts,
     provisioning: async () => ({ device: MOCK_DEVICE, commands: [], warning: '' }),
   },
   vehiclesApi: {
@@ -174,7 +185,18 @@ async function render() {
 
 afterEach(() => {
   document.body.innerHTML = '';
+  unknownAttempts = [];
+  saved.length = 0;
+  vi.restoreAllMocks();
 });
+
+const typeInto = (input: HTMLInputElement, value: string) => {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+  setter.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+};
+const buttonNamed = (label: string) =>
+  Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.trim() === label) as HTMLButtonElement | undefined;
 
 describe('DevicesPage', () => {
   it('exibe colunas de Placa, Cliente e Número na listagem de rastreadores', async () => {
@@ -315,5 +337,67 @@ describe('DevicesPage', () => {
 
     expect(host.textContent).toContain('1 rastreador(es) selecionado(s)');
     expect(host.textContent).toContain('Ativar selecionados');
+  });
+
+  it('IMEI fora do padrão (o caso de 16 dígitos): o aviso aparece e o salvar pede a conferência', async () => {
+    await render();
+    act(() => buttonNamed('Novo rastreador')!.click());
+    await flush();
+    const imei = Array.from(document.querySelectorAll('label'))
+      .find((l) => l.textContent === 'IMEI')!
+      .parentElement!.querySelector('input') as HTMLInputElement;
+    act(() => typeInto(imei, '8658930088121639'));
+    await flush();
+    expect(document.body.textContent).toContain('Este IMEI tem 16 dígitos');
+    expect(buttonNamed('Salvar')!.disabled).toBe(true);
+    const confirm = Array.from(document.querySelectorAll('label'))
+      .find((l) => l.textContent?.includes('Conferi na etiqueta'))!
+      .querySelector('input') as HTMLInputElement;
+    act(() => confirm.click());
+    await flush();
+    expect(buttonNamed('Salvar')!.disabled).toBe(false);
+    act(() => buttonNamed('Salvar')!.click());
+    await flush();
+    expect(saved[0]).toEqual({ op: 'create', input: expect.objectContaining({ imei: '8658930088121639', imeiConfirmed: true }) });
+
+    // Corrigido para o IMEI certo, o aviso some.
+    act(() => buttonNamed('Novo rastreador')!.click());
+    await flush();
+    const again = Array.from(document.querySelectorAll('label'))
+      .find((l) => l.textContent === 'IMEI')!
+      .parentElement!.querySelector('input') as HTMLInputElement;
+    act(() => typeInto(again, '865893088121639'));
+    await flush();
+    expect(document.body.textContent).not.toContain('Este IMEI');
+    expect(buttonNamed('Salvar')!.disabled).toBe(false);
+  });
+
+  it('o rastreador recusado sem cadastro: corrige o cadastro parecido ou abre um novo', async () => {
+    unknownAttempts = [
+      {
+        imei: '869247061230019', protocol: 'gt06', remoteAddr: '187.32.97.125:58772', firstSeenAt: '2026-10-13T23:43:00Z',
+        lastSeenAt: new Date().toISOString(), attempts: 25, suggestion: { deviceId: 'dev-2', imei: '869247061230022' },
+      },
+      {
+        imei: '359710049095095', protocol: 'gt06', remoteAddr: '', firstSeenAt: '2026-10-13T23:43:00Z',
+        lastSeenAt: new Date().toISOString(), attempts: 3, suggestion: null,
+      },
+    ];
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await render();
+    await flush();
+    expect(document.body.textContent).toContain('Rastreadores tentando conectar sem cadastro');
+    expect(document.body.textContent).toContain('provável erro de digitação no cadastro');
+    act(() => buttonNamed('Corrigir para este IMEI')!.click());
+    await flush();
+    expect(saved[0]).toEqual({ op: 'update', id: 'dev-2', input: expect.objectContaining({ imei: '869247061230019', imeiConfirmed: true }) });
+
+    // Sem cadastro parecido: abre o cadastro com o IMEI.
+    act(() => buttonNamed('Cadastrar')!.click());
+    await flush();
+    const imei = Array.from(document.querySelectorAll('label'))
+      .find((l) => l.textContent === 'IMEI')!
+      .parentElement!.querySelector('input') as HTMLInputElement;
+    expect(imei.value).toBe('359710049095095');
   });
 });

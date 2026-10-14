@@ -110,8 +110,16 @@ func (i *Ingestor) HandleMessage(ctx context.Context, conn *tcp.DeviceConnection
 	if err != nil {
 		if errors.Is(err, database.ErrNotFound) {
 			// IMEI não cadastrado. Encerramos a sessão, mas o IMEI aparece no
-			// log (mascarado) para o operador saber o que cadastrar.
+			// log (mascarado) e fica anotado: a tela de rastreadores avisa,
+			// com o cadastro de IMEI parecido (o erro de digitação típico).
 			i.metrics.PacketsInvalid.WithLabelValues("unknown_device").Inc()
+			remote := ""
+			if conn != nil {
+				remote = conn.RemoteAddr()
+			}
+			if recErr := i.devices.RecordUnknown(ctx, msg.IMEI, msg.Protocol, remote); recErr != nil {
+				i.log.Warn("falha ao anotar o rastreador sem cadastro", "err", recErr)
+			}
 			return fmt.Errorf("%w: IMEI %s não está cadastrado",
 				tcp.ErrRejectSession, telemetry.IMEI(msg.IMEI))
 		}

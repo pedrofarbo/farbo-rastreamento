@@ -6,12 +6,12 @@ describe('deviceBulk', () => {
     const csv = templateTrackerCsv();
     expect(csv.startsWith('\uFEFF')).toBe(true);
     expect(csv).toContain('IMEI;Linha;Modelo;ICCID;Protocolo');
-    expect(csv).toContain('869247061230001');
+    expect(csv).toContain('869247061230014');
   });
 
   it('cleanImei strips non-digit characters', () => {
     expect(cleanImei('869247-06-1230001')).toBe('869247061230001');
-    expect(cleanImei('  869247061230001  ')).toBe('869247061230001');
+    expect(cleanImei('  869247061230014  ')).toBe('869247061230014');
   });
 
   it('cleanIccid removes SP suffix and non-digits', () => {
@@ -29,49 +29,57 @@ describe('deviceBulk', () => {
 
   it('parses raw text with one IMEI per line without headers', () => {
     const text = `
-      869247061230001
-      869247061230002
-      869247061230003
+      869247061230014
+      869247061230022
+      869247061230030
     `;
     const res = parseTrackerBatch(text);
     expect(res.rows.length).toBe(3);
     expect(res.validCount).toBe(3);
     expect(res.errorCount).toBe(0);
     expect(res.duplicateCount).toBe(0);
-    expect(res.rows[0].imei).toBe('869247061230001');
+    expect(res.rows[0].imei).toBe('869247061230014');
     expect(res.rows[0].status).toBe('valid');
+  });
+
+  it('IMEI com o verificador errado (um número trocado) não entra: confira na etiqueta', () => {
+    const res = parseTrackerBatch('865893088121639\n865893008812163');
+    expect(res.rows[0].status).toBe('valid');
+    expect(res.rows[1].status).toBe('error');
+    expect(res.rows[1].message).toContain('o último dígito (o verificador) não bate');
+    expect(res.validCount).toBe(1);
   });
 
   it('parses CSV with headers, phone formatting and model', () => {
     const csv = `
 IMEI;Linha;Modelo;ICCID;Protocolo
-869247061230001;34999990001;TK910;89553202100093795330;gt06
-869247061230002;1133334444;Coban;;
+869247061230014;34999990001;TK910;89553202100093795330;gt06
+869247061230022;1133334444;Coban;;
     `.trim();
 
     const res = parseTrackerBatch(csv);
     expect(res.rows.length).toBe(2);
     expect(res.validCount).toBe(2);
-    expect(res.rows[0].imei).toBe('869247061230001');
+    expect(res.rows[0].imei).toBe('869247061230014');
     expect(res.rows[0].phoneNumber).toBe('(34) 9-9999-0001');
     expect(res.rows[0].model).toBe('TK910');
     expect(res.rows[0].iccid).toBe('89553202100093795330');
     expect(res.rows[0].protocol).toBe('gt06');
 
-    expect(res.rows[1].imei).toBe('869247061230002');
+    expect(res.rows[1].imei).toBe('869247061230022');
     expect(res.rows[1].phoneNumber).toBe('(11) 3333-4444');
     expect(res.rows[1].model).toBe('Coban');
   });
 
   it('detects invalid IMEI and duplicate IMEIs', () => {
     const csv = `
-869247061230001
+869247061230014
 12345
-869247061230001
-869247061230099
+869247061230014
+869247061230998
     `.trim();
 
-    const existing = [{ imei: '869247061230099' }];
+    const existing = [{ imei: '869247061230998' }];
     const res = parseTrackerBatch(csv, existing);
 
     expect(res.rows.length).toBe(4);
@@ -91,13 +99,13 @@ IMEI;Linha;Modelo;ICCID;Protocolo
   it('detects invalid and duplicate ICCID', () => {
     const csv = `
 IMEI;ICCID
-869247061230001;123
-869247061230002;89553202100093795330
-869247061230003;89553202100093795330
-869247061230004;89553202100093795399
+869247061230014;123
+869247061230022;89553202100093795330
+869247061230030;89553202100093795330
+869247061230048;89553202100093795399
     `.trim();
 
-    const existing = [{ imei: '869247061230088', iccid: '89553202100093795399' }];
+    const existing = [{ imei: '869247061230881', iccid: '89553202100093795399' }];
     const res = parseTrackerBatch(csv, existing);
 
     expect(res.rows[0].status).toBe('error');

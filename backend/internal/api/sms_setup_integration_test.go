@@ -178,7 +178,7 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 		}
 		return d
 	}
-	j16 := newDevice("869999000000001", "(11) 99999-8888")
+	j16 := newDevice("869999000000011", "(11) 99999-8888")
 
 	// A prévia: os comandos redigidos; quem vê o painel sem operar, não.
 	env.must(env.login(auth.RoleViewer+"@sms.test"), http.MethodGet, "/api/devices/"+j16.ID.String()+"/sms-setup", nil, http.StatusForbidden)
@@ -194,7 +194,7 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 		view.Plan.Unlock.Text != "CMDLOCK,123456,0#" || view.Plan.Query.Text != "PARAM#" || len(view.Plan.Problems) != 0 || view.Session != nil {
 		t.Fatalf("prévia = %+v", view)
 	}
-	semChip := newDevice("869999000000002", "")
+	semChip := newDevice("869999000000029", "")
 	call(http.MethodGet, "/api/devices/"+semChip.ID.String()+"/sms-setup", nil, http.StatusOK, &view)
 	if len(view.Plan.Problems) == 0 || !strings.Contains(view.Plan.Problems[0], "número do chip") {
 		t.Errorf("sem chip = %+v", view.Plan)
@@ -286,14 +286,14 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 
 	// Recusa da SMS Market: a configuração falha na hora, com o motivo.
 	fake.fail = &smsmarket.APIError{HTTPStatus: http.StatusOK, Code: "300", Message: "SALDO INSUFICIENTE"}
-	recusado := newDevice("869999000000003", "(11) 98888-0000")
+	recusado := newDevice("869999000000037", "(11) 98888-0000")
 	call(http.MethodPost, "/api/devices/"+recusado.ID.String()+"/sms-setup", map[string]any{}, http.StatusCreated, &session)
 	if session.Status != smssetup.StatusFailed || !strings.Contains(session.Error, "SALDO INSUFICIENTE") || !strings.Contains(session.Error, "SMS Market") {
 		t.Fatalf("recusa = %+v", session)
 	}
 	// Sem resposta da SMS Market: tenta de novo, e desiste na terceira.
 	fake.fail = errors.New("SMS Market indisponível: timeout")
-	instavel := newDevice("869999000000004", "(11) 97777-0000")
+	instavel := newDevice("869999000000045", "(11) 97777-0000")
 	call(http.MethodPost, "/api/devices/"+instavel.ID.String()+"/sms-setup", map[string]any{}, http.StatusCreated, &session)
 	if session.Status != smssetup.StatusSending {
 		t.Fatalf("primeira falha de rede = %+v", session)
@@ -307,7 +307,7 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	fake.fail = nil
 
 	// SMS não entregue (o chip não recebe): falha com o motivo.
-	naoEntregue := newDevice("869999000000005", "(11) 96666-0000")
+	naoEntregue := newDevice("869999000000052", "(11) 96666-0000")
 	call(http.MethodPost, "/api/devices/"+naoEntregue.ID.String()+"/sms-setup", map[string]any{}, http.StatusCreated, &session)
 	fake.setStatus(fmt.Sprint(len(fake.bodies())), smsmarket.StatusFailed, "o número está na lista de bloqueio da SMS Market")
 	work(21 * time.Second)
@@ -318,7 +318,7 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	}
 
 	// Não conectou no prazo; e a que é cancelada.
-	mudo := newDevice("869999000000006", "(11) 95555-0000")
+	mudo := newDevice("869999000000060", "(11) 95555-0000")
 	call(http.MethodPost, "/api/devices/"+mudo.ID.String()+"/sms-setup", map[string]any{}, http.StatusCreated, &session)
 	for range 5 {
 		work(91 * time.Second)
@@ -372,8 +372,8 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	env.must(operator, http.MethodPost, "/api/devices/bulk/sms-setup",
 		map[string]any{"deviceIds": []string{}}, http.StatusBadRequest)
 
-	bulkDevice1 := newDevice("869999000000010", "(11) 94444-0000")
-	bulkDevice2 := newDevice("869999000000011", "") // sem chip
+	bulkDevice1 := newDevice("869999000000102", "(11) 94444-0000")
+	bulkDevice2 := newDevice("869999000000110", "") // sem chip
 
 	var bulkResp BulkSMSSetupResponse
 	call(http.MethodPost, "/api/devices/bulk/sms-setup",
@@ -417,5 +417,41 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	}
 	if u, err := off.Usage(ctx); err != nil || u.Enabled || u.Balance != nil || u.SentLast30Days != sent {
 		t.Errorf("contador desligado = %+v %v", u, err)
+	}
+
+	// IMEI suspeito no cadastro (o caso de 13/10: um zero a mais): nenhum SMS
+	// sai — o rastreador pegaria a configuração e seria recusado.
+	suspeito, err := devicesSvc.Create(ctx, devices.Input{
+		IMEI: "8658930088121639", IMEIConfirmed: true, Model: "J16", Protocol: "gt06", PhoneNumber: "(16) 99528-7689",
+		APN: "zap.vivo.com.br", APNUser: "vivo", APNPassword: "Senh4APN",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := len(fake.bodies())
+	if plan, err := sms.Plan(ctx, suspeito.ID); err != nil || len(plan.Problems) != 1 ||
+		!strings.Contains(plan.Problems[0], "O IMEI cadastrado (8658930088121639) tem 16 dígitos") {
+		t.Errorf("plano com IMEI suspeito = %+v %v", plan, err)
+	}
+	if _, err := sms.Start(ctx, suspeito.ID, nil, smssetup.Options{}, nil); err == nil || !strings.Contains(err.Error(), "Corrija o IMEI") {
+		t.Errorf("começar com IMEI suspeito = %v", err)
+	}
+	if len(fake.bodies()) != before {
+		t.Error("mandou SMS com o IMEI suspeito")
+	}
+
+	// IMEI válido, mas de outro rastreador (dois números errados): o SMS sai,
+	// o rastreador conecta com o IMEI de verdade e é recusado — a configuração
+	// mostra qual IMEI está chegando.
+	trocado := newDevice("865893088021631", "(16) 99528-7000")
+	if err := devicesSvc.RecordUnknown(ctx, "865893088121639", "gt06", "187.32.97.125:58772"); err != nil {
+		t.Fatal(err)
+	}
+	other, err := sms.Start(ctx, trocado.ID, nil, smssetup.Options{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := other.WrongIMEI; w == nil || w.Registered != "865893088021631" || w.Connecting != "865893088121639" || w.Attempts != 1 {
+		t.Errorf("rastreador conectando com outro IMEI = %+v", w)
 	}
 }

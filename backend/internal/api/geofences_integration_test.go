@@ -160,7 +160,7 @@ func TestCustomerGeofencesEndToEnd(t *testing.T) {
 	anaToken, biaToken, admin := env.login("ana@cercas.test"), env.login("bia@cercas.test"), env.login("admin@cercas.test")
 
 	vehicle := func(name, imei string, owner uuid.UUID) (*vehicles.Vehicle, *devices.Device) {
-		dev, err := env.devices.Create(ctx, devices.Input{IMEI: imei, Protocol: "gt06"})
+		dev, err := env.devices.Create(ctx, devices.Input{IMEIConfirmed: true, IMEI: imei, Protocol: "gt06"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -322,7 +322,7 @@ func TestPolygonAndScheduledFences(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := env.login("ana@area.test")
-	dev, err := env.devices.Create(ctx, devices.Input{IMEI: "869247061239101", Protocol: "gt06"})
+	dev, err := env.devices.Create(ctx, devices.Input{IMEIConfirmed: true, IMEI: "869247061239101", Protocol: "gt06"})
 	if err != nil {
 		t.Fatal(err)
 	}

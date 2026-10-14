@@ -8,7 +8,7 @@ import type { BadgeTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { formatTime } from '@/services/format';
+import { formatRelative, formatTime } from '@/services/format';
 import type { SmsSession, SmsStepView } from '@/types';
 
 import styles from './SmsSetup.module.css';
@@ -263,6 +263,15 @@ function SessionView({ session }: { session: SmsSession }) {
             </p>
           ))}
         </div>
+      )}
+      {session.wrongImei && (
+        <p className={styles.danger} role="alert">
+          O SMS pegou: o rastreador está conectando com o IMEI <strong>{session.wrongImei.connecting}</strong>, mas o
+          cadastro tem <strong>{session.wrongImei.registered}</strong>, e o servidor o recusa (
+          {session.wrongImei.attempts} {session.wrongImei.attempts === 1 ? 'tentativa' : 'tentativas'}, a última{' '}
+          {formatRelative(session.wrongImei.lastSeenAt)}). Corrija o IMEI em Rastreadores: não precisa mandar os SMS de
+          novo.
+        </p>
       )}
       {session.note && <p className={styles.ok}>{session.note}</p>}
       {session.error && <p className={styles.danger}>{session.error}</p>}

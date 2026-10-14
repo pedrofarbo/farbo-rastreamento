@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +18,11 @@ import (
 type Service struct {
 	repo     *Repository
 	registry *protocols.ProtocolRegistry
+
+	// As tentativas de rastreadores sem cadastro, até irem ao banco.
+	unknownMu     sync.Mutex
+	unknown       map[string]*pendingUnknown
+	unknownPruned time.Time
 }
 
 func NewService(repo *Repository, registry *protocols.ProtocolRegistry) *Service {
@@ -160,8 +166,12 @@ func (s *Service) SweepStatuses(ctx context.Context, stale, offline time.Duratio
 
 func (s *Service) CountOnline(ctx context.Context) (int, error) { return s.repo.CountOnline(ctx) }
 
-// ValidationError descreve um payload recusado.
-type ValidationError struct{ Message string }
+// ValidationError descreve um payload recusado. Code identifica as recusas
+// que a tela trata à parte (CodeIMEISuspect).
+type ValidationError struct {
+	Message string
+	Code    string
+}
 
 func (e ValidationError) Error() string { return e.Message }
 
@@ -173,6 +183,13 @@ func (s *Service) validate(in Input) (Input, error) {
 	in.IMEI = strings.TrimSpace(in.IMEI)
 	if err := protocols.ValidateIMEI(in.IMEI); err != nil {
 		return in, invalid("IMEI inválido: %v", err)
+	}
+	// Um número a mais ou a menos no IMEI e o rastreador conecta, é recusado
+	// como desconhecido, e os SMS da ativação se perdem: só passa conferido.
+	if problem := IMEIProblem(in.IMEI); problem != "" && !in.IMEIConfirmed {
+		return in, ValidationError{Code: CodeIMEISuspect, Message: "O IMEI " + in.IMEI + " " + problem +
+			". Confira na etiqueta do rastreador: com o IMEI errado, ele conecta e é recusado, e os SMS da ativação se perdem. " +
+			"Se estiver certo assim mesmo, confirme."}
 	}
 
 	iccid, err := NormalizeICCID(in.ICCID)

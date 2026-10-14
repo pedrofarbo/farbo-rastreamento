@@ -113,6 +113,12 @@ func buildSteps(dev *devices.Device, d Defaults, opts Options) (steps []built, p
 	case !safeValue.MatchString(apn) || !safeValue.MatchString(user) || !safeValue.MatchString(pass):
 		problems = append(problems, "O APN, o usuário ou a senha do APN têm caracteres que o SMS não aceita (vírgula, #, espaço).")
 	}
+	// Com o IMEI do cadastro errado, o rastreador pega a configuração,
+	// conecta e é recusado: os SMS se perdem.
+	if problem := devices.IMEIProblem(dev.IMEI); problem != "" {
+		problems = append(problems, fmt.Sprintf("O IMEI cadastrado (%s) %s. Corrija o IMEI no cadastro do rastreador "+
+			"(confira na etiqueta) antes de mandar os SMS: com ele errado, o rastreador conecta e é recusado.", dev.IMEI, problem))
+	}
 	if host == "" || port <= 0 || port > 65535 || !safeValue.MatchString(host) {
 		problems = append(problems, "Falta o endereço do servidor (TRACKER_PUBLIC_HOST e a porta).")
 	}

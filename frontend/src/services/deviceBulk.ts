@@ -1,6 +1,7 @@
 import type { BulkSmsSetupResponse, DeviceInput } from '@/api/resources';
 import { normalizeHeader, parseCsv } from '@/services/fleetImport';
 import { formatPhoneInput } from '@/services/format';
+import { luhnValid } from '@/services/imei';
 
 export interface ParsedTrackerRow {
   lineNumber: number;
@@ -35,8 +36,8 @@ const HEADER_MAP: Record<TrackerColumnKey, string[]> = {
 /** Modelo de CSV para download com cabeçalho e exemplos. */
 export function templateTrackerCsv(): string {
   const headers = ['IMEI', 'Linha', 'Modelo', 'ICCID', 'Protocolo'];
-  const row1 = ['869247061230001', '(34) 99999-0001', 'TK910', '89553202100093795330', ''];
-  const row2 = ['869247061230002', '(34) 99999-0002', 'TK910', '', 'gt06'];
+  const row1 = ['869247061230014', '(34) 99999-0001', 'TK910', '89553202100093795330', ''];
+  const row2 = ['869247061230022', '(34) 99999-0002', 'TK910', '', 'gt06'];
   return '\uFEFF' + [headers.join(';'), row1.join(';'), row2.join(';')].join('\r\n') + '\r\n';
 }
 
@@ -164,6 +165,11 @@ export function parseTrackerBatch(
     } else if (imei.length !== 15) {
       status = 'error';
       message = `IMEI deve ter 15 dígitos (encontrado: ${imei.length || rawImei.length})`;
+    } else if (!luhnValid(imei)) {
+      // Com o IMEI errado, o rastreador conecta e é recusado (e os SMS da
+      // ativação se perdem): o cadastro um a um deixa confirmar se estiver certo.
+      status = 'error';
+      message = 'IMEI não confere: o último dígito (o verificador) não bate. Confira na etiqueta';
     } else if (seenImeisInBatch.has(imei)) {
       status = 'duplicate';
       message = 'IMEI repetido nesta lista';

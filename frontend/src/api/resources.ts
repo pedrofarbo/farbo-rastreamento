@@ -125,6 +125,7 @@ import type {
   ReportVehicle,
   FleetSettings,
   VehicleGroup,
+  UnknownAttempt,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -421,6 +422,8 @@ export const sharesApi = {
  */
 export interface DeviceInput {
   imei: string;
+  /** Conferido na etiqueta: o IMEI suspeito (16 dígitos, verificador que não bate) está certo. */
+  imeiConfirmed?: boolean;
   model?: string;
   manufacturer?: string;
   protocol?: string;
@@ -489,6 +492,8 @@ export const devicesApi = {
     api.post<DeviceBulkResult>('/api/devices/bulk', { devices }),
   update: (id: string, input: DeviceInput) => api.patch<Device>(`/api/devices/${id}`, input),
   remove: (id: string) => api.delete<void>(`/api/devices/${id}`),
+  /** Os rastreadores que tentaram conectar sem cadastro nos últimos dias. */
+  unknown: () => api.get<UnknownAttempt[]>('/api/devices/unknown'),
   status: (id: string) =>
     api.get<{
       deviceId: string;

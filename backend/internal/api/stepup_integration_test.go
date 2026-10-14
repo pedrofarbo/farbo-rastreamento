@@ -30,7 +30,7 @@ func TestEngineCutNeedsStepUpForCustomer(t *testing.T) {
 	if _, err := authSvc.CreateUser(ctx, "admin@stepup-api.test", "Admin", auth.RoleAdmin, userPassword); err != nil {
 		t.Fatal(err)
 	}
-	dev, err := env.devices.Create(ctx, devices.Input{IMEI: "869247061237001", Protocol: "gt06"})
+	dev, err := env.devices.Create(ctx, devices.Input{IMEIConfirmed: true, IMEI: "869247061237001", Protocol: "gt06"})
 	if err != nil {
 		t.Fatal(err)
 	}

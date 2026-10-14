@@ -123,6 +123,18 @@ describe('SmsSetupPanel', () => {
     expect(button('Mandar de novo')).toBeTruthy();
   });
 
+  it('o SMS pegou, mas o rastreador conecta com outro IMEI: diz qual, e que não precisa mandar de novo', async () => {
+    view = { enabled: true, from: 'SMS Market', plan: PLAN, session: session({
+      status: 'WAITING', waitingSince: '2026-10-06T12:03:00Z',
+      wrongImei: { registered: '8658930088121639', connecting: '865893088121639', lastSeenAt: new Date().toISOString(), attempts: 25 },
+    }) };
+    const host = await render();
+    expect(host.textContent).toContain('o rastreador está conectando com o IMEI 865893088121639');
+    expect(host.textContent).toContain('o cadastro tem 8658930088121639');
+    expect(host.textContent).toContain('25 tentativas');
+    expect(host.textContent).toContain('não precisa mandar os SMS de novo');
+  });
+
   it('formatos', () => {
     expect(phoneLabel('+5511999998888')).toBe('(11) 99999-8888');
     expect(phoneLabel('+551133334444')).toBe('(11) 3333-4444');

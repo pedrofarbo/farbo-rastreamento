@@ -1990,6 +1990,26 @@ export interface SmsStepView extends SmsStep {
  * enviados, esperando o rastreador conectar; DONE: conectou; FAILED: um SMS
  * não saiu ou não chegou; TIMEOUT: não conectou a tempo; CANCELED.
  */
+/** Um rastreador que tentou conectar sem estar cadastrado (o servidor o recusa). */
+export interface UnknownAttempt {
+  imei: string;
+  protocol: string;
+  remoteAddr: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  attempts: number;
+  /** O cadastro de IMEI parecido: o provável erro de digitação. */
+  suggestion: { deviceId: string; imei: string } | null;
+}
+
+/** O rastreador conectando com um IMEI diferente do cadastrado (o cadastro está errado). */
+export interface WrongImei {
+  registered: string;
+  connecting: string;
+  lastSeenAt: string;
+  attempts: number;
+}
+
 export interface SmsSession {
   id: string;
   deviceId: string;
@@ -2002,6 +2022,8 @@ export interface SmsSession {
   replies: { body: string; at: string }[];
   waitingSince: string | null;
   connectedAt: string | null;
+  /** O rastreador está conectando com outro IMEI e sendo recusado. */
+  wrongImei?: WrongImei | null;
   finishedAt: string | null;
   createdAt: string;
 }

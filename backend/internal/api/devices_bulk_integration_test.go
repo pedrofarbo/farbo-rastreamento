@@ -40,13 +40,13 @@ func TestDevicesBulk(t *testing.T) {
 	out := env.must(admin, http.MethodPost, "/api/devices/bulk", map[string]any{
 		"devices": []map[string]any{
 			{
-				"imei":        "869247061230011",
+				"imei": "869247061230011", "imeiConfirmed": true,
 				"phoneNumber": "(34) 99999-0011",
 				"model":       "TK910",
 				"protocol":    "gt06",
 			},
 			{
-				"imei":        "869247061230022",
+				"imei": "869247061230022", "imeiConfirmed": true,
 				"phoneNumber": "(34) 99999-0022",
 				"model":       "Coban",
 			},
@@ -70,10 +70,10 @@ func TestDevicesBulk(t *testing.T) {
 	out2 := env.must(admin, http.MethodPost, "/api/devices/bulk", map[string]any{
 		"devices": []map[string]any{
 			{
-				"imei": "869247061230011", // já existe
+				"imei": "869247061230011", "imeiConfirmed": true, // já existe
 			},
 			{
-				"imei":        "869247061230033", // novo
+				"imei": "869247061230033", "imeiConfirmed": true, // novo
 				"phoneNumber": "34999990033",
 			},
 			{

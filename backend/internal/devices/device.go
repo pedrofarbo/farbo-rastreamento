@@ -165,7 +165,10 @@ func Views(list []*Device, audience Audience) []*View {
 // ClearCommandPassword apagam. CommandOverrides ausente (nulo) também mantém
 // os textos atuais; um objeto vazio apaga todos.
 type Input struct {
-	IMEI                     string            `json:"imei"`
+	IMEI string `json:"imei"`
+	// IMEIConfirmed: quem cadastra conferiu na etiqueta que o IMEI suspeito
+	// (16 dígitos, dígito verificador que não bate) está certo assim mesmo.
+	IMEIConfirmed            bool              `json:"imeiConfirmed"`
 	Model                    string            `json:"model"`
 	Manufacturer             string            `json:"manufacturer"`
 	Protocol                 string            `json:"protocol"`

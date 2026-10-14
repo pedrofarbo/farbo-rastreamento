@@ -37,7 +37,7 @@ func TestDeviceICCID(t *testing.T) {
 
 	var dev devices.View
 	_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/devices", map[string]any{
-		"imei": "869247061230033", "protocol": "gt06", "phoneNumber": "+5534999990000", "iccid": "89553202100093795330SP",
+		"imei": "869247061230033", "imeiConfirmed": true, "protocol": "gt06", "phoneNumber": "+5534999990000", "iccid": "89553202100093795330SP",
 	}, http.StatusCreated), &dev)
 	if dev.ICCID != "89553202100093795330" {
 		t.Fatalf("ICCID gravado = %q", dev.ICCID)
@@ -45,20 +45,20 @@ func TestDeviceICCID(t *testing.T) {
 
 	// Dígito errado: recusado, com o motivo.
 	if out := env.must(admin, http.MethodPost, "/api/devices", map[string]any{
-		"imei": "869247061230044", "iccid": "89553202100093795331",
+		"imei": "869247061230044", "imeiConfirmed": true, "iccid": "89553202100093795331",
 	}, http.StatusBadRequest); !strings.Contains(string(out), "último dígito não confere") {
 		t.Errorf("dígito errado: %s", out)
 	}
 	// O mesmo chip em outro rastreador: recusado, dizendo onde está.
 	if out := env.must(admin, http.MethodPost, "/api/devices", map[string]any{
-		"imei": "869247061230044", "iccid": "8955 3202 1000 9379 5330",
+		"imei": "869247061230044", "imeiConfirmed": true, "iccid": "8955 3202 1000 9379 5330",
 	}, http.StatusBadRequest); !strings.Contains(string(out), "já está no rastreador de IMEI 869247061230033") {
 		t.Errorf("chip repetido: %s", out)
 	}
 	// Editar o próprio rastreador com o mesmo chip continua valendo.
 	path := "/api/devices/" + dev.ID.String()
 	_ = json.Unmarshal(env.must(admin, http.MethodPatch, path, map[string]any{
-		"imei": "869247061230033", "protocol": "gt06", "phoneNumber": "+5534999990000", "iccid": "89553202100093795330",
+		"imei": "869247061230033", "imeiConfirmed": true, "protocol": "gt06", "phoneNumber": "+5534999990000", "iccid": "89553202100093795330",
 		"notes": "chip da Algar",
 	}, http.StatusOK), &dev)
 	if dev.ICCID != "89553202100093795330" || dev.Notes != "chip da Algar" {
@@ -83,9 +83,9 @@ func TestDeviceICCID(t *testing.T) {
 	}
 
 	// Sem ICCID, o chip fica livre para outro rastreador.
-	env.must(admin, http.MethodPatch, path, map[string]any{"imei": "869247061230033", "iccid": ""}, http.StatusOK)
+	env.must(admin, http.MethodPatch, path, map[string]any{"imei": "869247061230033", "imeiConfirmed": true, "iccid": ""}, http.StatusOK)
 	_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/devices", map[string]any{
-		"imei": "869247061230044", "iccid": "89553202100093795330",
+		"imei": "869247061230044", "imeiConfirmed": true, "iccid": "89553202100093795330",
 	}, http.StatusCreated), &dev)
 	if dev.ICCID != "89553202100093795330" {
 		t.Errorf("chip reaproveitado = %q", dev.ICCID)
