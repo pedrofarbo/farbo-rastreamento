@@ -6,6 +6,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom
 import { ContractGate } from '@/components/contract/ContractGate';
 import { Spinner } from '@/components/ui/Spinner';
 import { ToastProvider } from '@/components/ui/Toast';
+import { SUPPORT_SCREEN } from '@/config/contact';
 import { RealtimeProvider } from '@/hooks/useRealtime';
 import { LandingPage } from '@/pages/LandingPage';
 import { AuthProvider, useAuth } from '@/stores/AuthContext';
@@ -131,7 +132,7 @@ export function App() {
 
                     <Route element={<RequireOperator />}>
                       <Route path="pedidos" element={<OrdersPage />} />
-                      <Route path="atendimento" element={<SupportPage />} />
+                      <Route path="atendimento" element={SUPPORT_SCREEN ? <SupportPage /> : <Navigate to="/dashboard" replace />} />
                     </Route>
 
                     <Route element={<RequireAdmin />}>

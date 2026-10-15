@@ -5,6 +5,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
 import { financeApi, leadsApi, meApi, whatsappApi } from '@/api/resources';
 import { Spinner } from '@/components/ui/Spinner';
+import { SUPPORT_SCREEN } from '@/config/contact';
 import { useRealtime } from '@/hooks/useRealtime';
 import { ROLE_LABELS } from '@/services/roles';
 import { useAuth } from '@/stores/AuthContext';
@@ -87,7 +88,7 @@ export function AppShell() {
   const whatsapp = useQuery({
     queryKey: ['whatsapp', 'status'],
     queryFn: whatsappApi.status,
-    enabled: canOperate,
+    enabled: canOperate && SUPPORT_SCREEN,
     refetchInterval: 30_000,
   });
   const waiting = whatsapp.data?.attention ?? 0;
@@ -261,15 +262,17 @@ export function AppShell() {
                     <Icon name="package" />
                     Pedidos
                   </NavLink>
-                  <NavLink to="/atendimento" className={navClass}>
-                    <Icon name="chat" />
-                    Atendimento
-                    {waiting > 0 && (
-                      <span className={styles.navBadge} title={`${waiting} conversa(s) esperando a equipe`}>
-                        {waiting}
-                      </span>
-                    )}
-                  </NavLink>
+                  {SUPPORT_SCREEN && (
+                    <NavLink to="/atendimento" className={navClass}>
+                      <Icon name="chat" />
+                      Atendimento
+                      {waiting > 0 && (
+                        <span className={styles.navBadge} title={`${waiting} conversa(s) esperando a equipe`}>
+                          {waiting}
+                        </span>
+                      )}
+                    </NavLink>
+                  )}
                 </>
               )}
               {canManage && (

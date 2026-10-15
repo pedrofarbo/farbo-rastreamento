@@ -22,6 +22,14 @@ export const WHATSAPP_NUMBER = '551151946470';
  */
 export const HIRE_VIA_WHATSAPP = false;
 
+/**
+ * A tela de Atendimento da central (as conversas do WhatsApp com o
+ * assistente). Escondida enquanto o WhatsApp não está ligado: false tira o
+ * item do menu (e a consulta do aviso dele) e manda /atendimento para o
+ * painel; true volta tudo.
+ */
+export const SUPPORT_SCREEN = false;
+
 /** A primeira mensagem de quem chama pelo site. */
 export const WHATSAPP_GREETING = 'Olá! Vim pelo site da Farbo Rastreadores e quero saber mais sobre o rastreador.';
 

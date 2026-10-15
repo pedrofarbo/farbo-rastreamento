@@ -17,6 +17,7 @@ const staff = {
   canSeeBilling: false,
 };
 let auth: Record<string, unknown> = staff;
+const whatsappStatus = vi.hoisted(() => vi.fn(async () => ({ attention: 0 })));
 vi.mock('@/stores/AuthContext', () => ({ useAuth: () => ({ logout: vi.fn(), ...auth }) }));
 vi.mock('@/hooks/useRealtime', () => ({ useRealtime: () => ({ connected: true }) }));
 vi.mock('@/hooks/useTheme', () => ({ useTheme: () => ({ theme: 'dark', toggle: vi.fn() }) }));
@@ -24,7 +25,7 @@ vi.mock('@/api/resources', () => ({
   financeApi: { alerts: async () => ({ overdue: 1, dueToday: 1 }) },
   leadsApi: { stats: async () => ({ new: 0 }) },
   meApi: { account: async () => ({ overdueInvoices: 0 }) },
-  whatsappApi: { status: async () => ({ attention: 0 }) },
+  whatsappApi: { status: whatsappStatus },
 }));
 
 import { AppShell } from './AppShell';
@@ -91,6 +92,9 @@ describe('menu do painel', () => {
     expect(labels).toEqual(
       expect.arrayContaining(['Painel', 'Clientes', 'Empresa2', 'Usuários', 'Segurança da conta', '☾Tema claro', 'Sair']),
     );
+    // O Atendimento está escondido (SUPPORT_SCREEN), sem consultar o aviso dele.
+    expect(labels).not.toContain('Atendimento');
+    expect(whatsappStatus).not.toHaveBeenCalled();
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Fechar o menu');
 
     await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
