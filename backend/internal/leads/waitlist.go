@@ -47,6 +47,9 @@ type WaitlistInput struct {
 	City string
 	// AffiliateID: o afiliado do link de indicação (o primeiro fica).
 	AffiliateID *uuid.UUID
+	// Plan: o plano que a pessoa escolheu na tela ("Sou integrante do Insanos
+	// MC" vira o do Insanos); vai para o pré-cliente. Vazio: nenhum.
+	Plan string
 }
 
 // maxEvent: o nome do evento no link do QR Code.
@@ -90,6 +93,10 @@ func normalizeWaitlist(in WaitlistInput) (WaitlistInput, error) {
 	in.Phone = strings.TrimSpace(in.Phone)
 	in.Event = EventSlug(in.Event)
 	in.City = strings.Join(strings.Fields(in.City), " ")
+	in.Plan = strings.TrimSpace(in.Plan)
+	if utf8.RuneCountInString(in.Plan) > 120 {
+		return in, ValidationError{"plano longo demais"}
+	}
 	if utf8.RuneCountInString(in.Name) > 120 {
 		return in, ValidationError{"nome longo demais"}
 	}
@@ -213,16 +220,17 @@ func ensureLeadFor(ctx context.Context, tx pgx.Tx, in WaitlistInput) error {
 				city = COALESCE(NULLIF($5, ''), l.city),
 				event = COALESCE(NULLIF(l.event, ''), $4),
 				affiliate_id = COALESCE(l.affiliate_id, $6),
+				plan = COALESCE(NULLIF($8, ''), l.plan),
 				updated_at = NOW()
 			FROM latest WHERE l.id = latest.id
 			RETURNING l.id
 		), customer AS (
 			SELECT id FROM users WHERE lower(email) = lower($2) AND role = 'customer' LIMIT 1
 		)
-		INSERT INTO leads (name, email, phone, city, event, affiliate_id, source, status, customer_id, consent_at)
+		INSERT INTO leads (name, email, phone, city, event, affiliate_id, source, status, customer_id, consent_at, plan)
 		SELECT $1, $2, $3, $5, $4, $6, $7,
-			CASE WHEN EXISTS (SELECT 1 FROM customer) THEN 'CONVERTED' ELSE 'NEW' END, (SELECT id FROM customer), NOW()
+			CASE WHEN EXISTS (SELECT 1 FROM customer) THEN 'CONVERTED' ELSE 'NEW' END, (SELECT id FROM customer), NOW(), $8
 		WHERE NOT EXISTS (SELECT 1 FROM latest)`,
-		in.Name, in.Email, in.Phone, in.Event, in.City, in.AffiliateID, source)
+		in.Name, in.Email, in.Phone, in.Event, in.City, in.AffiliateID, source, in.Plan)
 	return err
 }

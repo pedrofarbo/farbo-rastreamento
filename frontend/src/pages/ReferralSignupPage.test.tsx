@@ -68,6 +68,8 @@ describe('ReferralSignupPage', () => {
     expect(host.textContent).toContain('R$34,90/mês');
     expect(host.textContent).toContain('ou 10x de R$ 12,00 sem juros no Pix, direto na mensalidade');
     expect(host.textContent).not.toContain('Preço exclusivo Insanos MC');
+    // O link de indicação lembra o preço do Insanos MC e deixa marcar.
+    expect(host.textContent).toContain('Sou integrante do Insanos MC');
 
     const inputs = () => Array.from(host.querySelectorAll('input')) as HTMLInputElement[];
     const field = (t: string) => inputs().find((i) => i.type === t && i.name !== 'website') as HTMLInputElement;
@@ -77,7 +79,10 @@ describe('ReferralSignupPage', () => {
       type(inputs().find((i) => i.autocomplete === 'address-level2')!, 'Campinas - SP');
       type(field('email'), 'bia@cliente.test');
     });
-    await act(async () => field('checkbox').click());
+    const consent = Array.from(host.querySelectorAll('label'))
+      .find((l) => l.textContent?.includes('Aceito receber o aviso'))!
+      .querySelector('input') as HTMLInputElement;
+    await act(async () => consent.click());
     await act(async () => (host.querySelector('button[type=submit]') as HTMLButtonElement).click());
     await flush();
     expect(sent).toEqual([

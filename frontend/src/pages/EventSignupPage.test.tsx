@@ -67,6 +67,10 @@ describe('EventSignupPage', () => {
     const field = (type: string) => inputs().find((i) => i.type === type && i.name !== 'website') as HTMLInputElement;
     const city = () => inputs().find((i) => i.autocomplete === 'address-level2') as HTMLInputElement;
     const submit = () => host.querySelector('button[type=submit]') as HTMLButtonElement;
+    const checkbox = (label: string) =>
+      Array.from(host.querySelectorAll('label'))
+        .find((l) => l.textContent?.includes(label))!
+        .querySelector('input') as HTMLInputElement;
     expect(host.textContent).toContain('Garanta o preço de pré-lançamento');
     // O destaque é o preço do Insanos MC.
     expect(host.textContent).toContain('Preço exclusivo Insanos MC');
@@ -81,7 +85,9 @@ describe('EventSignupPage', () => {
       type(field('email'), 'ana@cliente.test');
     });
     expect(field('tel').value).toBe('(11) 9-8765-4321');
-    await act(async () => field('checkbox').click());
+    // É do Insanos MC: marca (a conta nasce no plano deles).
+    await act(async () => checkbox('Sou integrante do Insanos MC').click());
+    await act(async () => checkbox('Aceito receber o aviso').click());
     expect(submit().disabled).toBe(true); // falta a cidade
     await act(async () => type(city(), 'São Paulo - SP'));
     expect(submit().disabled).toBe(false);
@@ -91,7 +97,7 @@ describe('EventSignupPage', () => {
     expect(sent).toEqual([
       {
         name: 'Ana Souza', email: 'ana@cliente.test', phone: '(11) 9-8765-4321', consent: true, website: '',
-        event: 'encontro-insanos-mc', city: 'São Paulo - SP',
+        event: 'encontro-insanos-mc', city: 'São Paulo - SP', insanos: true,
       },
     ]);
     expect(host.textContent).toContain('Pronto, Ana!');
@@ -102,7 +108,8 @@ describe('EventSignupPage', () => {
     await act(async () => again.click());
     expect(field('text').value).toBe('');
     expect(city().value).toBe('');
-    expect(field('checkbox').checked).toBe(false);
+    expect(checkbox('Aceito receber o aviso').checked).toBe(false);
+    expect(checkbox('Sou integrante do Insanos MC').checked).toBe(false);
     expect(submit().disabled).toBe(true);
   });
 

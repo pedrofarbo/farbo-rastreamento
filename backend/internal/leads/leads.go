@@ -245,6 +245,13 @@ func (r *Repository) Get(ctx context.Context, id uuid.UUID) (*Lead, error) {
 	return scan(r.db.QueryRow(ctx, selectLead+` WHERE id = $1`, id))
 }
 
+// LatestWithPlan é o pré-cliente mais recente com o e-mail que escolheu um
+// plano (database.ErrNotFound se não há).
+func (r *Repository) LatestWithPlan(ctx context.Context, email string) (*Lead, error) {
+	return scan(r.db.QueryRow(ctx, selectLead+` WHERE lower(email) = lower($1) AND plan <> ''
+		ORDER BY created_at DESC LIMIT 1`, strings.TrimSpace(email)))
+}
+
 // CountNew é o número no menu do painel.
 func (r *Repository) CountNew(ctx context.Context) (int, error) {
 	var n int

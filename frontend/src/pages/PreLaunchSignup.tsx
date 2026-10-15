@@ -55,6 +55,9 @@ export function PreLaunchSignup({
   const [city, setCity] = useState('');
   const [email, setEmail] = useState('');
   const [consent, setConsent] = useState(false);
+  // Integrante do Insanos MC: a conta nasce no plano deles (a central confere).
+  const [insanosMember, setInsanosMember] = useState(false);
+  const askInsanos = highlight === 'insanos' || mentionInsanos;
   const [website, setWebsite] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -76,6 +79,7 @@ export function PreLaunchSignup({
     try {
       await publicApi.joinLaunch({
         name, email, phone, consent, website, event, city, ...(referral ? { ref: referral } : {}),
+        ...(askInsanos && insanosMember ? { insanos: true } : {}),
       });
       track('waitlist_submit', campaign || source);
       setDone({ name: name.trim().split(' ')[0], email: email.trim() });
@@ -99,6 +103,7 @@ export function PreLaunchSignup({
     setCity('');
     setEmail('');
     setConsent(false);
+    setInsanosMember(false);
     setDone(null);
     setError('');
     window.scrollTo({ top: 0 });
@@ -273,6 +278,16 @@ export function PreLaunchSignup({
                 <input type="text" name="website" tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} />
               </label>
             </div>
+
+            {askInsanos && (
+              <label className={styles.consent}>
+                <input type="checkbox" checked={insanosMember} onChange={(e) => setInsanosMember(e.target.checked)} />
+                <span>
+                  <strong>Sou integrante do Insanos MC</strong> (mensalidade de{' '}
+                  <span className={styles.nowrap}>{LAUNCH_OFFER.insanosMonthly}</span> na promoção)
+                </span>
+              </label>
+            )}
 
             <label className={styles.consent}>
               <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />

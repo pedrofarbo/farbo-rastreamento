@@ -1390,6 +1390,8 @@ export interface WaitlistInput {
   event?: string;
   /** A cidade da instalação (a tela do evento pede). */
   city?: string;
+  /** Marcou "Sou integrante do Insanos MC": a conta nasce no plano deles. */
+  insanos?: boolean;
   /** O código do link de indicação do afiliado. */
   ref?: string;
 }

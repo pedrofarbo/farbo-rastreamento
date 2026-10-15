@@ -20,6 +20,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/dunning"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/mail"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
@@ -287,8 +288,10 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 			s.Log.Error("cliente cadastrado, mas o pré-cliente não foi marcado como convertido",
 				"lead", *req.LeadID, "customer", user.ID, "err", err)
 		}
-		s.applyLeadPlan(r, user.ID, *req.LeadID)
 	}
+	// O plano escolhido no pré-cadastro (o dos Insanos): pelo pré-cliente de
+	// onde a conta veio ou, sem ele, pelo e-mail.
+	s.applyLeadPlan(r, user.ID, user.Email, req.LeadID)
 	// Veio pelo link de um afiliado (o pré-cadastro, ou o e-mail na lista de
 	// lançamento): o cliente fica indicado por ele.
 	if s.Affiliates != nil {
@@ -688,16 +691,31 @@ func (s *Server) transitionInvoice(
 	writeJSON(w, http.StatusOK, inv)
 }
 
-// applyLeadPlan: quem escolheu o plano dos Insanos no pré-cadastro já nasce
-// com ele na conta. Sem isso, o pedido feito pelo app antes de a central
-// definir o plano saía no plano padrão (e com a promoção dos demais).
-func (s *Server) applyLeadPlan(r *http.Request, customerID, leadID uuid.UUID) {
-	if s.Orders == nil {
+// applyLeadPlan: quem escolheu o plano dos Insanos no pré-cadastro (na
+// landing ou marcando "Sou integrante do Insanos MC" na página pública) já
+// nasce com ele na conta. Sem isso, o pedido feito pelo app antes de a
+// central definir o plano saía no plano padrão (e com a promoção dos demais).
+// O pré-cliente é o de onde a conta veio (leadID) ou, sem ele, o mais recente
+// com o mesmo e-mail que escolheu um plano.
+func (s *Server) applyLeadPlan(r *http.Request, customerID uuid.UUID, email string, leadID *uuid.UUID) {
+	if s.Orders == nil || s.Leads == nil {
 		return
 	}
-	lead, err := s.Leads.Repo().Get(r.Context(), leadID)
+	var lead *leads.Lead
+	var err error
+	if leadID != nil {
+		lead, err = s.Leads.Repo().Get(r.Context(), *leadID)
+	}
+	// Sem o pré-cliente (ou ele sem plano): o mais recente do e-mail que
+	// escolheu um (a inscrição na página pública, por exemplo).
+	if leadID == nil || (err == nil && lead.Plan == "") {
+		lead, err = s.Leads.Repo().LatestWithPlan(r.Context(), email)
+		if errors.Is(err, database.ErrNotFound) {
+			return
+		}
+	}
 	if err != nil {
-		s.Log.Warn("cliente cadastrado; o plano do pré-cadastro não foi conferido", "lead", leadID, "err", err)
+		s.Log.Warn("cliente cadastrado; o plano do pré-cadastro não foi conferido", "customer", customerID, "err", err)
 		return
 	}
 	catalog := s.Orders.Catalog()
@@ -714,6 +732,6 @@ func (s *Server) applyLeadPlan(r *http.Request, customerID, leadID uuid.UUID) {
 	}
 	s.recordBillingAudit(r, audit.ActionCustomerUpdated, map[string]any{
 		"customerId": customerID, "plan": plan.PlanName, "priceCents": plan.PriceCents, "dueDay": plan.DueDay,
-		"origin": "pré-cadastro", "leadId": leadID,
+		"origin": "pré-cadastro", "leadId": lead.ID,
 	})
 }

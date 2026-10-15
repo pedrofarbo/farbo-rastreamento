@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"mime"
 	"net/http"
 	"strings"
@@ -118,6 +119,9 @@ type publicWaitlistRequest struct {
 	City string `json:"city"`
 	// Ref: o código do link de indicação do afiliado.
 	Ref string `json:"ref"`
+	// Insanos: marcou "Sou integrante do Insanos MC" — o pré-cliente fica
+	// com o plano deles (e a conta nasce nele).
+	Insanos bool `json:"insanos"`
 }
 
 // handlePublicJoinWaitlist: "me avise quando lançar", da landing ou da tela
@@ -136,12 +140,30 @@ func (s *Server) handlePublicJoinWaitlist(w http.ResponseWriter, r *http.Request
 	}
 	if _, err := s.Leads.JoinWaitlist(r.Context(), leads.WaitlistInput{
 		Name: req.Name, Email: req.Email, Phone: req.Phone, Consent: req.Consent, Event: req.Event, City: req.City,
-		AffiliateID: s.referralFor(r, req.Ref),
+		AffiliateID: s.referralFor(r, req.Ref), Plan: s.insanosLeadPlan(req.Insanos),
 	}); err != nil {
 		writeLeadError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "ok"})
+}
+
+// insanosLeadPlan é o plano do pré-cliente que marcou "Sou integrante do
+// Insanos MC": o mesmo texto da opção da landing ("Preço Especial Insanos MC
+// - R$ 39,90"), que o cadastro do cliente reconhece. Vazio se não marcou.
+func (s *Server) insanosLeadPlan(insanos bool) string {
+	if !insanos || s.Orders == nil {
+		return ""
+	}
+	p := s.Orders.Catalog().LaunchPromo
+	if p.InsanosPlanName == "" {
+		return ""
+	}
+	plan := "Preço " + p.InsanosPlanName
+	if p.InsanosPlanCents > 0 {
+		plan += fmt.Sprintf(" - R$ %d,%02d", p.InsanosPlanCents/100, p.InsanosPlanCents%100)
+	}
+	return plan
 }
 
 func (s *Server) handleListWaitlist(w http.ResponseWriter, r *http.Request) {
