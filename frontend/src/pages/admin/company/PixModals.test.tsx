@@ -100,7 +100,7 @@ describe('PixPayModal', () => {
     await act(async () => button(/Para enviar R\$\s450,00 por Pix/).click());
     await flush();
     expect(sent).toEqual([['e1', 'comprovante-1']]);
-    expect(text()).toContain('Pix enviado: R$ 450,00 para o fornecedor');
+    expect(text()).toContain('Pix enviado: R$ 450,00 para Silva Contabilidade');
     expect(text()).toContain('tarifa de R$ 0,80');
     expect(text()).not.toContain('a menos que a conta');
     expect(document.querySelector('a[href="https://app.abacatepay.com/receipt/tran_1"]')).not.toBeNull();

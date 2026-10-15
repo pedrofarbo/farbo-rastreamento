@@ -1929,6 +1929,10 @@ export interface AffiliatePayout {
   status: 'OPEN' | 'PAID' | 'MISSING';
   dueDate: string | null;
   paidOn: string | null;
+  /** O último Pix pela AbacatePay da conta ('' sem nenhum; SENDING ou UNKNOWN: a conferir em Empresa). */
+  pixStatus: '' | PixTransfer['status'];
+  /** O comprovante do Pix que saiu. */
+  receiptUrl: string;
   createdAt: string;
 }
 

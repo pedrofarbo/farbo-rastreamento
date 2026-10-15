@@ -60,7 +60,7 @@ export function PixPayModal({
   onClose,
   onSent,
 }: {
-  entry: FinanceEntry;
+  entry: Pick<FinanceEntry, 'id' | 'description'>;
   onClose: () => void;
   /** Avisado quando o Pix sai (quem abriu acompanha o que vem depois). */
   onSent?: (transfer: PixTransfer) => void;
@@ -70,6 +70,8 @@ export function PixPayModal({
   const [step, setStep] = useState<'review' | 'confirm' | 'done'>('review');
   const [error, setError] = useState('');
   const [result, setResult] = useState<PixTransfer | null>(null);
+  // Para quem foi (o plano some depois do envio: a conta já está paga).
+  const [sentTo, setSentTo] = useState('');
   const plan = useQuery({ queryKey: [...financeKey, 'pix-plan', entry.id], queryFn: () => financeApi.entryPix(entry.id) });
   const info = useQuery({ queryKey: [...financeKey, 'pix-info'], queryFn: financeApi.pixInfo });
 
@@ -133,7 +135,9 @@ export function PixPayModal({
           <Spinner label="Conferindo" />
         ) : step === 'done' && result ? (
           <div className={styles.pixDone} role="status">
-            <strong>Pix enviado: {formatMoney(result.deliveredCents || result.amountCents)} para o fornecedor</strong>
+            <strong>
+              Pix enviado: {formatMoney(result.deliveredCents || result.amountCents)} para {sentTo || 'o fornecedor'}
+            </strong>
             <span>
               A conta foi baixada como paga
               {result.feeCents > 0 ? ` e a tarifa de ${formatMoney(result.feeCents)} entrou nas contas pagas` : ''}.
@@ -211,6 +215,7 @@ export function PixPayModal({
                   action={`Para enviar ${formatMoney(p.amountCents)} por Pix`}
                   onGrant={(token) => {
                     setError('');
+                    setSentTo(p.source === 'code' ? p.recipient || p.supplierName : p.supplierName);
                     send.mutate(token);
                   }}
                 />

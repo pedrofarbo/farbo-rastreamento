@@ -172,22 +172,37 @@ func (s *Service) Create(ctx context.Context, in Input) (*Affiliate, error) {
 }
 
 // Update muda o cadastro. O valor novo vale para as comissões que ainda vão
-// nascer; as geradas ficam com o valor de quando nasceram.
+// nascer; as geradas ficam com o valor de quando nasceram. A chave Pix nova
+// vai também para o fornecedor do afiliado na Empresa, que é para onde o Pix
+// do fechamento sai (o tipo da chave volta a ser detectado).
 func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Affiliate, error) {
 	in, err := in.Normalize()
 	if err != nil {
 		return nil, err
 	}
-	tag, err := s.db.Exec(ctx, `
-		UPDATE affiliates SET name = $2, handle = $3, code = $4, commission_cents = COALESCE($5, commission_cents),
-			email = $6, phone = $7, pix_key = $8, notes = $9, active = $10, updated_at = NOW()
-		WHERE id = $1`,
-		id, in.Name, in.Handle, in.Code, in.CommissionCents, in.Email, in.Phone, in.PixKey, in.Notes, in.Active)
+	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		var oldKey string
+		var supplier *uuid.UUID
+		if err := tx.QueryRow(ctx, `SELECT pix_key, supplier_id FROM affiliates WHERE id = $1 FOR UPDATE`, id).
+			Scan(&oldKey, &supplier); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE affiliates SET name = $2, handle = $3, code = $4, commission_cents = COALESCE($5, commission_cents),
+				email = $6, phone = $7, pix_key = $8, notes = $9, active = $10, updated_at = NOW()
+			WHERE id = $1`,
+			id, in.Name, in.Handle, in.Code, in.CommissionCents, in.Email, in.Phone, in.PixKey, in.Notes, in.Active); err != nil {
+			return err
+		}
+		if supplier == nil || oldKey == in.PixKey {
+			return nil
+		}
+		_, err := tx.Exec(ctx, `UPDATE suppliers SET pix_key = $2, pix_key_type = '', updated_at = NOW() WHERE id = $1`,
+			*supplier, in.PixKey)
+		return err
+	})
 	if err != nil {
 		return nil, conflictMessage(err)
-	}
-	if tag.RowsAffected() == 0 {
-		return nil, database.ErrNotFound
 	}
 	return s.Get(ctx, id)
 }
@@ -565,19 +580,27 @@ type Payout struct {
 	EntryID       *uuid.UUID `json:"entryId"`
 	// Status: OPEN (a pagar), PAID (paga) ou MISSING (a conta foi excluída
 	// ou cancelada na Empresa).
-	Status    string        `json:"status"`
-	DueDate   *billing.Date `json:"dueDate"`
-	PaidOn    *billing.Date `json:"paidOn"`
-	CreatedAt time.Time     `json:"createdAt"`
+	Status  string        `json:"status"`
+	DueDate *billing.Date `json:"dueDate"`
+	PaidOn  *billing.Date `json:"paidOn"`
+	// PixStatus é o último Pix pela AbacatePay da conta ("" sem nenhum;
+	// SENDING ou UNKNOWN: a conferir em Empresa); ReceiptURL, o comprovante.
+	PixStatus  string    `json:"pixStatus"`
+	ReceiptURL string    `json:"receiptUrl"`
+	CreatedAt  time.Time `json:"createdAt"`
 }
 
 func (s *Service) payouts(ctx context.Context, where string, args ...any) ([]*Payout, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT p.id, p.affiliate_id, a.name, to_char(p.month, 'YYYY-MM'), p.amount_cents, p.commissions,
-			p.finance_entry_id, COALESCE(e.status, ''), e.due_date, e.paid_on, p.created_at
+			p.finance_entry_id, COALESCE(e.status, ''), e.due_date, e.paid_on, COALESCE(t.status, ''), COALESCE(t.receipt_url, ''),
+			p.created_at
 		FROM affiliate_payouts p
 		JOIN affiliates a ON a.id = p.affiliate_id
-		LEFT JOIN finance_entries e ON e.id = p.finance_entry_id `+where+`
+		LEFT JOIN finance_entries e ON e.id = p.finance_entry_id
+		LEFT JOIN LATERAL (
+			SELECT x.status, x.receipt_url FROM finance_pix_transfers x
+			WHERE x.entry_id = p.finance_entry_id ORDER BY x.created_at DESC LIMIT 1) t ON TRUE `+where+`
 		ORDER BY p.created_at DESC, a.name LIMIT 200`, args...)
 	if err != nil {
 		return nil, database.MapError(err)
@@ -589,7 +612,7 @@ func (s *Service) payouts(ctx context.Context, where string, args ...any) ([]*Pa
 		var status string
 		var due, paid *time.Time
 		if err := rows.Scan(&p.ID, &p.AffiliateID, &p.AffiliateName, &p.Month, &p.AmountCents, &p.Commissions,
-			&p.EntryID, &status, &due, &paid, &p.CreatedAt); err != nil {
+			&p.EntryID, &status, &due, &paid, &p.PixStatus, &p.ReceiptURL, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		switch status {
@@ -632,6 +655,19 @@ func (s *Service) UndoPayout(ctx context.Context, id uuid.UUID) error {
 			return invalid("A conta deste fechamento já foi paga: reabra a conta na Empresa antes de desfazer.")
 		}
 		if entry != nil {
+			// Um Pix vivo segura a conta (o dinheiro pode ter saído); as
+			// tentativas recusadas saem junto com ela.
+			var live bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM finance_pix_transfers WHERE entry_id = $1 AND status <> 'FAILED')`,
+				*entry).Scan(&live); err != nil {
+				return err
+			}
+			if live {
+				return invalid("A conta deste fechamento tem um Pix pela AbacatePay: confira o Pix em Empresa → Contas a pagar antes de desfazer.")
+			}
+			if _, err := tx.Exec(ctx, `DELETE FROM finance_pix_transfers WHERE entry_id = $1`, *entry); err != nil {
+				return err
+			}
 			if _, err := tx.Exec(ctx, `DELETE FROM finance_entries WHERE id = $1`, *entry); err != nil {
 				return err
 			}

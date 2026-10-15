@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 
-import { affiliatesApi } from '@/api/resources';
+import { affiliatesApi, financeApi } from '@/api/resources';
 import billing from '@/components/billing/Billing.module.css';
 import { Badge } from '@/components/ui/Badge';
 import type { BadgeTone } from '@/components/ui/Badge';
@@ -18,6 +18,8 @@ import type { Affiliate, AffiliatePayout } from '@/types';
 
 import styles from '../../Page.module.css';
 import company from '../company/Company.module.css';
+import { financeKey } from '../company/EntryModals';
+import { PixPayModal } from '../company/PixModals';
 import { AffiliateModal } from './AffiliateModal';
 import local from './Affiliates.module.css';
 
@@ -71,8 +73,8 @@ export function AffiliatesTab() {
         (padrão {formatMoney(defaultCents)}) <strong>por veículo ativo, em cada mês em que a mensalidade dele é paga</strong>{' '}
         — o cliente com dois veículos rende duas comissões.
         No fechamento do mês, as comissões viram contas a pagar em{' '}
-        <Link to="/empresa?aba=pagar">Empresa → Contas a pagar</Link>; pagar a conta paga as comissões. O afiliado
-        acompanha os números pela página dele, sem ver dados de ninguém.
+        <Link to="/empresa?aba=pagar">Empresa → Contas a pagar</Link>; pagar a conta paga as comissões — por Pix
+        aqui mesmo, no fechamento, ou lá. O afiliado acompanha os números pela página dele, sem ver dados de ninguém.
       </div>
 
       <div className={billing.tiles}>
@@ -269,6 +271,10 @@ function ClosingCard() {
     enabled: /^\d{4}-\d{2}$/.test(month),
   });
   const payouts = useQuery({ queryKey: ['affiliates', 'payouts'], queryFn: affiliatesApi.payouts });
+  // Pagar por Pix pela AbacatePay: a conta do fechamento é baixada na Empresa.
+  const pixInfo = useQuery({ queryKey: [...financeKey, 'pix-info'], queryFn: financeApi.pixInfo, staleTime: 60_000 });
+  const pixOn = pixInfo.data?.enabled === true;
+  const [paying, setPaying] = useState<AffiliatePayout | null>(null);
   const lines = preview.data ?? [];
   const total = lines.reduce((sum, l) => sum + l.amountCents, 0);
 
@@ -283,7 +289,7 @@ function ClosingCard() {
       notify({
         tone: 'success',
         title: `${created.length} ${created.length === 1 ? 'conta a pagar criada' : 'contas a pagar criadas'}`,
-        description: 'Estão em Empresa → Contas a pagar. Pagar a conta paga as comissões.',
+        description: 'Pague cada uma por Pix na lista do fechamento ou em Empresa → Contas a pagar.',
       });
     },
     onError: (err: Error) => notify({ tone: 'error', title: 'Não foi possível fechar', description: err.message }),
@@ -357,37 +363,72 @@ function ClosingCard() {
                 </tr>
               </thead>
               <tbody>
-                {payouts.data!.map((p) => (
-                  <tr key={p.id}>
-                    <td data-label="Fechamento">até {monthLabel(p.month)}</td>
-                    <td data-label="Afiliado">
-                      {p.affiliateName}
-                      <div className={company.muted}>
-                        {p.commissions} {p.commissions === 1 ? 'comissão' : 'comissões'}
-                      </div>
-                    </td>
-                    <td data-label="Valor" className={company.right}>
-                      {formatMoney(p.amountCents)}
-                    </td>
-                    <td data-label="Vencimento">{p.dueDate ? formatDateOnly(p.dueDate) : '—'}</td>
-                    <td data-label="Situação">
-                      <Badge tone={PAYOUT_STATUS[p.status].tone}>{PAYOUT_STATUS[p.status].label}</Badge>
-                      {p.paidOn && <div className={company.muted}>em {formatDateOnly(p.paidOn)}</div>}
-                    </td>
-                    <td className={company.right}>
-                      {p.status !== 'PAID' && (
-                        <Button size="small" variant="ghost" loading={undo.isPending && undo.variables === p.id} onClick={() => undo.mutate(p.id)}>
-                          Desfazer
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {payouts.data!.map((p) => {
+                  // Um Pix sem resposta ou em andamento: confere-se em Empresa.
+                  const pixLive = p.pixStatus === 'SENDING' || p.pixStatus === 'UNKNOWN';
+                  return (
+                    <tr key={p.id}>
+                      <td data-label="Fechamento">até {monthLabel(p.month)}</td>
+                      <td data-label="Afiliado">
+                        {p.affiliateName}
+                        <div className={company.muted}>
+                          {p.commissions} {p.commissions === 1 ? 'comissão' : 'comissões'}
+                        </div>
+                      </td>
+                      <td data-label="Valor" className={company.right}>
+                        {formatMoney(p.amountCents)}
+                      </td>
+                      <td data-label="Vencimento">{p.dueDate ? formatDateOnly(p.dueDate) : '—'}</td>
+                      <td data-label="Situação">
+                        <Badge tone={PAYOUT_STATUS[p.status].tone}>{PAYOUT_STATUS[p.status].label}</Badge>
+                        {p.paidOn && (
+                          <div className={company.muted}>
+                            {p.pixStatus === 'COMPLETE' ? 'por Pix ' : ''}em {formatDateOnly(p.paidOn)}
+                          </div>
+                        )}
+                      </td>
+                      <td className={company.right}>
+                        <span className={local.actions}>
+                          {p.status === 'OPEN' && pixLive && (
+                            <Link to="/empresa?aba=pagar" className={company.muted}>
+                              Pix a conferir
+                            </Link>
+                          )}
+                          {p.status === 'OPEN' && !pixLive && pixOn && p.entryId && (
+                            <Button size="small" variant="primary" onClick={() => setPaying(p)}>
+                              Pagar por Pix
+                            </Button>
+                          )}
+                          {p.status === 'PAID' && p.receiptUrl && (
+                            <a href={p.receiptUrl} target="_blank" rel="noopener noreferrer">
+                              Comprovante
+                            </a>
+                          )}
+                          {p.status !== 'PAID' && !pixLive && (
+                            <Button size="small" variant="ghost" loading={undo.isPending && undo.variables === p.id} onClick={() => undo.mutate(p.id)}>
+                              Desfazer
+                            </Button>
+                          )}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
+      {paying?.entryId && (
+        <PixPayModal
+          entry={{ id: paying.entryId, description: `Comissão de afiliado: ${paying.affiliateName}` }}
+          onClose={() => {
+            setPaying(null);
+            refresh();
+          }}
+          onSent={refresh}
+        />
+      )}
     </Card>
   );
 }
