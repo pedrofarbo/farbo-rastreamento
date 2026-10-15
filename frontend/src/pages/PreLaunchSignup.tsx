@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { ApiError } from '@/api/client';
 import { publicApi } from '@/api/resources';
 import { INSTAGRAM_HANDLE, INSTAGRAM_URL } from '@/config/contact';
-import { INSANOS_MONTHLY, LAUNCH_OFFER, priceParts } from '@/config/landing';
+import { INSANOS_MONTHLY, LAUNCH_OFFER, installmentsPhrase, priceParts } from '@/config/landing';
 import { PRIVACY_PATH } from '@/config/legal';
 import { track, trackPageview } from '@/services/analytics';
 import { formatPhoneInput, isPhoneComplete } from '@/services/format';
@@ -179,7 +179,7 @@ export function PreLaunchSignup({
                     </span>
                   </div>
                   <p className={styles.offerNote}>
-                    Para os {LAUNCH_OFFER.slots} primeiros da lista, 1 veículo por pessoa.
+                    Para os {LAUNCH_OFFER.slots} primeiros da lista, em quantos veículos quiser.
                   </p>
                 </div>
               </>
@@ -196,7 +196,7 @@ export function PreLaunchSignup({
                 </div>
                 <div className={styles.offer}>
                   <p className={styles.offerNote}>
-                    Para os {LAUNCH_OFFER.slots} primeiros da lista, 1 veículo por pessoa.
+                    Para os {LAUNCH_OFFER.slots} primeiros da lista, em quantos veículos quiser.
                     {mentionInsanos && (
                       <>
                         {' '}
@@ -320,6 +320,7 @@ function Equipment() {
     <p className={styles.insanosEquipment}>
       Rastreador: <s className={styles.nowrap}>{LAUNCH_OFFER.equipmentRegular}</s>{' '}
       <strong className={styles.nowrap}>{LAUNCH_OFFER.equipment}</strong>
+      <span className={styles.installments}>ou {installmentsPhrase(LAUNCH_OFFER.equipmentCents)}</span>
     </p>
   );
 }

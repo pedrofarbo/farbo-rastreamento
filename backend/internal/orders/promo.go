@@ -11,9 +11,10 @@ import (
 )
 
 // Promoção de pré-lançamento: quem está na lista de lançamento (pelo e-mail
-// da conta) — ou foi liberado pela central — paga menos no primeiro
-// rastreador e na mensalidade dele por alguns meses. Uma vaga por cliente,
-// para os primeiros a contratar.
+// da conta) — ou foi liberado pela central — paga menos no rastreador e na
+// mensalidade por alguns meses, em todos os veículos que contratar. As vagas
+// são de clientes: os primeiros a contratar; quem já tem a vaga põe quantos
+// veículos quiser.
 
 // promoLockKey serializa as reservas de vaga: duas contratações ao mesmo
 // tempo não passam do limite.
@@ -38,12 +39,12 @@ type PromoOffer struct {
 
 // PromoStatus diz se o cliente tem direito e, se não, por quê. OnList: o
 // e-mail está na lista de lançamento; GrantedAt: a central liberou (nulo se
-// não); Claimed: já usou a vaga.
+// não); Claimed: já tem a vaga (contratou com a promoção ao menos um veículo).
 type PromoStatus struct {
 	Eligible bool   `json:"eligible"`
 	Reason   string `json:"reason"`
-	// Code é o motivo sem o texto: ENDED, CLAIMED, NOT_ON_LIST ou NO_SLOTS
-	// (vazio: tem direito). Com NOT_ON_LIST, a central pode liberar.
+	// Code é o motivo sem o texto: ENDED, NOT_ON_LIST ou NO_SLOTS (vazio: tem
+	// direito). Com NOT_ON_LIST, a central pode liberar.
 	Code      string     `json:"code"`
 	Offer     PromoOffer `json:"offer"`
 	OnList    bool       `json:"onList"`
@@ -66,7 +67,8 @@ func readPromoFacts(ctx context.Context, q database.Querier, customerID uuid.UUI
 			EXISTS (SELECT 1 FROM users u JOIN launch_waitlist w ON lower(w.email) = lower(u.email) WHERE u.id = $1),
 			(SELECT created_at FROM launch_promo_grants WHERE customer_id = $1),
 			EXISTS (SELECT 1 FROM launch_promo_claims WHERE customer_id = $1),
-			(SELECT COUNT(*) FROM launch_promo_claims)`, customerID).Scan(&f.onList, &f.grantedAt, &f.claimed, &f.used)
+			(SELECT COUNT(DISTINCT customer_id) FROM launch_promo_claims)`, customerID).
+		Scan(&f.onList, &f.grantedAt, &f.claimed, &f.used)
 	return f, database.MapError(err)
 }
 
@@ -76,17 +78,16 @@ func (f promoFacts) reason(p config.LaunchPromo) (code, text string) {
 	switch {
 	case !p.Enabled:
 		return "ENDED", "a promoção de pré-lançamento foi encerrada"
-	case f.claimed:
-		return "CLAIMED", "a promoção de pré-lançamento já foi usada por este cliente (vale para 1 veículo)"
 	case !f.onList && f.grantedAt == nil:
 		return "NOT_ON_LIST", "o e-mail da conta não está na lista de lançamento"
-	case f.used >= p.Slots:
+	case !f.claimed && f.used >= p.Slots:
+		// Quem já tem a vaga continua: a promoção vale para todos os veículos dele.
 		return "NO_SLOTS", "as vagas da promoção de pré-lançamento acabaram"
 	}
 	return "", ""
 }
 
-// PromoUsage é a contagem de vagas.
+// PromoUsage é a contagem de vagas (clientes).
 type PromoUsage struct {
 	Enabled bool       `json:"enabled"`
 	Slots   int        `json:"slots"`
@@ -140,10 +141,11 @@ func (s *Service) RevokePromo(ctx context.Context, customerID uuid.UUID) error {
 	return database.MapError(err)
 }
 
-// PromoUsage conta as vagas usadas.
+// PromoUsage conta as vagas usadas: os clientes que contrataram com a
+// promoção (cada um com quantos veículos quiser).
 func (s *Service) PromoUsage(ctx context.Context) (PromoUsage, error) {
 	p := s.catalog.LaunchPromo
 	out := PromoUsage{Enabled: p.Enabled, Slots: p.Slots, Offer: offerOf(p)}
-	err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM launch_promo_claims`).Scan(&out.Used)
+	err := s.db.QueryRow(ctx, `SELECT COUNT(DISTINCT customer_id) FROM launch_promo_claims`).Scan(&out.Used)
 	return out, database.MapError(err)
 }

@@ -148,6 +148,14 @@
   font-size: 1.0625rem;
 }
 
+/* O parcelamento do rastreador, na linha de baixo. */
+.installments {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: 0.875rem;
+  color: #a7f3d0;
+}
+
 .offer {
   display: flex;
   flex-direction: column;

@@ -9,6 +9,7 @@ import {
   LAUNCH_OFFER,
   PRE_LAUNCH,
   installmentsOf,
+  installmentsPhrase,
   priceParts,
 } from '@/config/landing';
 
@@ -54,12 +55,12 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
               <span className={styles.launchBannerTag}>Preço de pré-lançamento</span>
               <strong>
                 Cadastre-se na lista e pague {LAUNCH_OFFER.monthly}/mês nos {LAUNCH_OFFER.months} primeiros meses e{' '}
-                {LAUNCH_OFFER.equipment} no rastreador, ou {installmentsOf(LAUNCH_OFFER.equipmentCents)} sem juros.
+                {LAUNCH_OFFER.equipment} no rastreador, ou {installmentsPhrase(LAUNCH_OFFER.equipmentCents)}.
               </strong>
               <span>
                 Só para quem está na lista de pré-lançamento · integrantes do Insanos MC pagam{' '}
-                {LAUNCH_OFFER.insanosMonthly}/mês · limitado aos {LAUNCH_OFFER.slots} primeiros clientes · 1 veículo
-                por cliente.
+                {LAUNCH_OFFER.insanosMonthly}/mês · limitado aos {LAUNCH_OFFER.slots} primeiros clientes · em quantos
+                veículos quiser.
               </span>
             </div>
             <a className={styles.launchBannerBtn} href={LAUNCH_ANCHOR} data-analytics="planos-banner">
@@ -341,7 +342,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
                 <div className={styles.priceSub}>
                   à vista, ou {installmentsOf(LAUNCH_OFFER.equipmentCents)}
                   <br />
-                  sem juros no Pix
+                  sem juros no Pix, direto na mensalidade
                 </div>
               </>
             ) : (
@@ -354,7 +355,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
                 <div className={styles.priceSub}>
                   à vista, ou {installmentsOf(LAUNCH_OFFER.equipmentRegularCents)}
                   <br />
-                  sem juros no Pix
+                  sem juros no Pix, direto na mensalidade
                 </div>
               </>
             )}

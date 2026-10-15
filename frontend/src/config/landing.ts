@@ -45,6 +45,15 @@ export function installmentsOf(cents: number, n: number = EQUIPMENT_INSTALLMENTS
   return `${n}x de R$ ${Math.floor(parcel / 100)},${String(parcel % 100).padStart(2, '0')}`;
 }
 
+/**
+ * "10x de R$ 12,00 sem juros no Pix, direto na mensalidade": o rastreador
+ * parcelado como as páginas públicas dizem (as parcelas vêm somadas às
+ * mensalidades, uma por mês).
+ */
+export function installmentsPhrase(cents: number): string {
+  return `${installmentsOf(cents)} sem juros no Pix, direto na mensalidade`;
+}
+
 /** O endereço público do site: o QR Code dos eventos aponta para ele. */
 export const SITE_URL = 'https://farborastreadores.com.br';
 

@@ -71,6 +71,8 @@ describe('EventSignupPage', () => {
     // O destaque é o preço do Insanos MC.
     expect(host.textContent).toContain('Preço exclusivo Insanos MC');
     expect(host.textContent).toContain('R$27,90/mês');
+    // O rastreador: à vista ou parcelado direto na mensalidade.
+    expect(host.textContent).toContain('ou 10x de R$ 12,00 sem juros no Pix, direto na mensalidade');
     expect(submit().disabled).toBe(true);
 
     await act(async () => {
@@ -119,6 +121,7 @@ describe('EventSignupPage', () => {
     );
     expect(host.textContent).toContain('Preço de pré-lançamento');
     expect(host.textContent).toContain('R$34,90/mês');
+    expect(host.textContent).toContain('ou 10x de R$ 12,00 sem juros no Pix, direto na mensalidade');
     expect(host.textContent).not.toContain('Insanos');
   });
 });

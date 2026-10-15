@@ -116,7 +116,7 @@ const SECTIONS: LegalSection[] = [
           <>
             <h3>Promoção de pré-lançamento</h3>
             <p>
-              Quem se inscreve na lista de pré-lançamento contrata o primeiro rastreador por{' '}
+              Quem se inscreve na lista de pré-lançamento contrata cada rastreador por{' '}
               {LAUNCH_OFFER.equipment} e paga {LAUNCH_OFFER.monthly} de mensalidade nos {LAUNCH_OFFER.months}{' '}
               primeiros meses. Para os integrantes do Insanos MC, a mensalidade da promoção é{' '}
               {LAUNCH_OFFER.insanosMonthly}.
@@ -127,7 +127,7 @@ const SECTIONS: LegalSection[] = [
             </p>
             <p>Regras da promoção:</p>
             <ul>
-              <li>vale para um veículo por Cliente;</li>
+              <li>vale para todos os veículos do Cliente, quantos ele quiser;</li>
               <li>é limitada aos {LAUNCH_OFFER.slots} primeiros Clientes da lista a contratar;</li>
               <li>exige que a conta use o mesmo e-mail da inscrição.</li>
             </ul>

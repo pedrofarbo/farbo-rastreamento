@@ -5,7 +5,7 @@ import { PRIVACY_PATH } from '@/config/legal';
 import { track } from '@/services/analytics';
 import { currentReferral } from '@/services/referral';
 import { CONTACT_EMAIL } from '@/config/contact';
-import { INSANOS_MONTHLY, LAUNCH_OFFER, installmentsOf } from '@/config/landing';
+import { INSANOS_MONTHLY, LAUNCH_OFFER, installmentsPhrase } from '@/config/landing';
 import { formatPhoneInput, isPhoneComplete } from '@/services/format';
 
 import styles from './LaunchSection.module.css';
@@ -69,7 +69,7 @@ export const LaunchSection: React.FC = () => {
                     <strong className={styles.offerPrice}>{LAUNCH_OFFER.equipment}</strong>
                   </span>
                   <span className={styles.offerInstallments}>
-                    ou {installmentsOf(LAUNCH_OFFER.equipmentCents)} sem juros no Pix
+                    ou {installmentsPhrase(LAUNCH_OFFER.equipmentCents)}
                   </span>
                 </div>
                 <div className={styles.offerItem}>
@@ -81,7 +81,7 @@ export const LaunchSection: React.FC = () => {
                 </div>
               </div>
               <p className={styles.offerNote}>
-                Limitado aos {LAUNCH_OFFER.slots} primeiros clientes da lista, 1 veículo por cliente. Integrantes do
+                Limitado aos {LAUNCH_OFFER.slots} primeiros clientes da lista, em quantos veículos quiserem. Integrantes do
                 Insanos MC pagam <span className={styles.nowrap}>{LAUNCH_OFFER.insanosMonthly}</span> nos{' '}
                 {LAUNCH_OFFER.months} meses. Depois deles, a mensalidade passa a{' '}
                 <span className={styles.nowrap}>{LAUNCH_OFFER.monthlyRegular}</span> (

@@ -66,6 +66,7 @@ describe('ReferralSignupPage', () => {
     // O destaque é o preço da promoção (não o do Insanos MC).
     expect(host.textContent).toContain('Preço de pré-lançamento');
     expect(host.textContent).toContain('R$34,90/mês');
+    expect(host.textContent).toContain('ou 10x de R$ 12,00 sem juros no Pix, direto na mensalidade');
     expect(host.textContent).not.toContain('Preço exclusivo Insanos MC');
 
     const inputs = () => Array.from(host.querySelectorAll('input')) as HTMLInputElement[];

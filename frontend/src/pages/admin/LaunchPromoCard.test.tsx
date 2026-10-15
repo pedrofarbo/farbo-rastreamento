@@ -49,7 +49,10 @@ describe('a promoção de pré-lançamento na ficha do cliente', () => {
     );
     expect(promoSummary(granted)).toContain('Liberada pela central em 09/10/2026');
     expect(promoSummary(outside)).toContain('Fora da lista de lançamento');
-    expect(promoSummary({ ...granted, claimed: true, eligible: false, code: 'CLAIMED' })).toContain('Já usada');
+    // Já contratou com ela: continua valendo para os próximos veículos.
+    expect(promoSummary({ ...granted, claimed: true })).toBe(
+      'Em uso: o cliente já contratou com a promoção, e ela vale também para os próximos veículos dele.',
+    );
     expect(promoSummary({ ...outside, code: 'ENDED', reason: 'a promoção de pré-lançamento foi encerrada' })).toBe(
       'Sem direito: a promoção de pré-lançamento foi encerrada.',
     );

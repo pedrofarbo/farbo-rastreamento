@@ -83,7 +83,7 @@ export function flyerOffer(preLaunch = PRE_LAUNCH): FlyerOffer {
         { text: ` ou ${installmentsOf(LAUNCH_OFFER.equipmentCents)} sem juros no Pix` },
       ],
       cta: 'e garanta o seu preço',
-      fine: `Promoção para os ${LAUNCH_OFFER.slots} primeiros da lista, 1 veículo por pessoa.`,
+      fine: `Promoção para os ${LAUNCH_OFFER.slots} primeiros da lista, em quantos veículos quiser.`,
     };
   }
   return {

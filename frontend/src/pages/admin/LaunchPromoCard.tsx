@@ -19,7 +19,9 @@ function offerText(s: PromoStatus): string {
 
 /** O que a ficha diz da promoção do cliente. */
 export function promoSummary(s: PromoStatus): string {
-  if (s.claimed) return 'Já usada: o cliente contratou com a promoção (vale para 1 veículo).';
+  if (s.claimed && s.eligible) {
+    return 'Em uso: o cliente já contratou com a promoção, e ela vale também para os próximos veículos dele.';
+  }
   const since = s.grantedAt ? new Date(s.grantedAt).toLocaleDateString('pt-BR') : '';
   if (s.eligible) {
     return s.onList
@@ -27,7 +29,7 @@ export function promoSummary(s: PromoStatus): string {
       : `Liberada pela central em ${since}: o cliente pode contratar com ela, pelo app ou pela central.`;
   }
   if (s.code === 'NOT_ON_LIST') {
-    return 'Fora da lista de lançamento. Libere para ele contratar com a promoção, pelo app ou pela central (vale 1 das vagas).';
+    return 'Fora da lista de lançamento. Libere para ele contratar com a promoção, pelo app ou pela central (ocupa 1 das vagas; vale para todos os veículos dele).';
   }
   return s.grantedAt ? `Liberada pela central em ${since}, mas ${s.reason}.` : `Sem direito: ${s.reason}.`;
 }
@@ -58,7 +60,7 @@ export function LaunchPromoCard({ customerId }: { customerId: string }) {
   const s = status.data;
   if (!s) return null;
   const canGrant = s.code === 'NOT_ON_LIST';
-  const canRevoke = s.grantedAt !== null && !s.claimed;
+  const canRevoke = s.grantedAt !== null;
   return (
     <Card
       title="Promoção de pré-lançamento"

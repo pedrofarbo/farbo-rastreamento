@@ -51,7 +51,7 @@ const STEPS: Step[] = [
     art: 'pedido',
     title: 'Peça o rastreador pelo painel',
     description:
-      'Cadastre o endereço de entrega e, em "Novo veículo", informe o carro ou a moto: rastreador e assinatura saem no mesmo pedido. O pagamento é por Pix, no próprio painel, e a mensalidade conta a partir do pedido.',
+      'Cadastre o endereço de entrega e, em "Novo veículo", informe o carro ou a moto: rastreador e assinatura saem no mesmo pedido. O pagamento é por Pix, no próprio painel: o rastreador à vista ou em até 10x sem juros, direto na mensalidade, que conta a partir do pedido.',
   },
   {
     actor: 'farbo',

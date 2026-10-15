@@ -84,7 +84,7 @@ describe('pré-clientes', () => {
       [
         hello,
         'Recebemos o seu pré-cadastro no nosso site. Vi que você tem interesse no preço especial do Insanos MC para 2 motos, com instalação em Campinas - SP.',
-        'Como você está na nossa lista de lançamento, tem direito à promoção de pré-lançamento: o primeiro rastreador sai por R$ 120,00, com mensalidade de R$ 27,90 nos 12 primeiros meses, enquanto houver vagas.',
+        'Como você está na nossa lista de lançamento, tem direito à promoção de pré-lançamento: cada rastreador sai por R$ 120,00, com mensalidade de R$ 27,90 nos 12 primeiros meses, enquanto houver vagas.',
         close,
       ].join('\n\n'),
     );
@@ -93,7 +93,7 @@ describe('pré-clientes', () => {
       [
         hello,
         'Você deixou seu contato no nosso site.',
-        'Como você está na nossa lista de lançamento, tem direito à promoção de pré-lançamento: o primeiro rastreador sai por R$ 120,00, com mensalidade de R$ 34,90 nos 12 primeiros meses, enquanto houver vagas.',
+        'Como você está na nossa lista de lançamento, tem direito à promoção de pré-lançamento: cada rastreador sai por R$ 120,00, com mensalidade de R$ 34,90 nos 12 primeiros meses, enquanto houver vagas.',
         close,
       ].join('\n\n'),
     );

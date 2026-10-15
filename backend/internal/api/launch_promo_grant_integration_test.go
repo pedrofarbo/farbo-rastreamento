@@ -17,7 +17,7 @@ import (
 
 // A central libera a promoção de pré-lançamento para quem não se inscreveu
 // na lista: o cliente passa a vê-la no próprio catálogo e contrata com ela
-// (a vaga e o limite de 1 por cliente continuam); retirar a liberação não
+// (conta 1 das vagas, e vale para todos os veículos dele); retirar a liberação não
 // desfaz o que já foi contratado. Precisa de FARBO_TEST_DATABASE_URL.
 func TestLaunchPromoGrant(t *testing.T) {
 	env, _ := newLeadsEnv(t)
@@ -80,13 +80,15 @@ func TestLaunchPromoGrant(t *testing.T) {
 		t.Fatalf("pedido com a promoção = %+v", result)
 	}
 
-	// Usada: sem direito a outra; retirar a liberação não desfaz a usada.
+	// Usada: continua com direito (a promoção vale para todos os veículos
+	// dele); retirar a liberação tira o direito nos próximos, sem desfazer o
+	// que já foi contratado.
 	_ = json.Unmarshal(env.must(admin, http.MethodGet, path, nil, http.StatusOK), &status)
-	if status.Eligible || !status.Claimed || status.GrantedAt == nil || status.Code != "CLAIMED" {
+	if !status.Eligible || !status.Claimed || status.GrantedAt == nil || status.Code != "" {
 		t.Errorf("depois de usar = %+v", status)
 	}
 	_ = json.Unmarshal(env.must(admin, http.MethodDelete, path+"/grant", nil, http.StatusOK), &status)
-	if status.GrantedAt != nil || !status.Claimed {
+	if status.GrantedAt != nil || !status.Claimed || status.Eligible || status.Code != "NOT_ON_LIST" {
 		t.Errorf("retirada = %+v", status)
 	}
 	var claims, granted, revoked int

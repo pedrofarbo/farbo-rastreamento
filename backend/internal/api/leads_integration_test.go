@@ -482,14 +482,16 @@ func TestLaunchPromoEndToEnd(t *testing.T) {
 		t.Fatalf("mensalidades = %v, quer 12 × 3490 e depois 6990", amounts)
 	}
 
-	// Segundo veículo da Ana: sem promoção (1 por cliente).
-	out := order("ana@lista.test", "PRO2B22", true, http.StatusConflict)
-	if !strings.Contains(string(out), "PROMO_UNAVAILABLE") {
-		t.Errorf("segundo veículo com promoção: %s", out)
+	// Segundo veículo da Ana: a promoção vale para todos os veículos dela.
+	_ = json.Unmarshal(order("ana@lista.test", "PRO2B22", true, http.StatusCreated), &result)
+	if result.SetupInvoice == nil || result.SetupInvoice.AmountCents != 12000 || result.Subscription.PromoPriceCents == nil ||
+		*result.Subscription.PromoPriceCents != 3490 {
+		t.Errorf("segundo veículo com a promoção = %+v", result)
 	}
-	_ = json.Unmarshal(order("ana@lista.test", "PRO2B22", false, http.StatusCreated), &result)
+	// Sem pedir a promoção, o preço normal.
+	_ = json.Unmarshal(order("ana@lista.test", "PRO3C33", false, http.StatusCreated), &result)
 	if result.SetupInvoice.AmountCents != 15000 || result.Subscription.PromoPriceCents != nil {
-		t.Errorf("segundo veículo = %+v", result)
+		t.Errorf("veículo sem a promoção = %+v", result)
 	}
 
 	// Bia contrata no plano do Insanos: a promoção dela é a do Insanos, e
@@ -500,10 +502,16 @@ func TestLaunchPromoEndToEnd(t *testing.T) {
 		t.Fatalf("Insanos com promoção = %+v / %+v", s, result.SetupInvoice)
 	}
 
-	// Duda está na lista, mas as duas vagas já foram.
-	out = orderPlan("duda@lista.test", "INS2C22", insanosPlan, true, http.StatusConflict)
+	// Duda está na lista, mas as duas vagas (de clientes: Ana e Bia) já foram.
+	out := orderPlan("duda@lista.test", "INS2C22", insanosPlan, true, http.StatusConflict)
 	if !strings.Contains(string(out), "vagas") {
 		t.Errorf("sem vaga: %s", out)
+	}
+	// A Ana já tem a vaga: continua com a promoção nos próximos veículos.
+	result.Subscription.PromoPriceCents = nil
+	_ = json.Unmarshal(order("ana@lista.test", "PRO4D44", true, http.StatusCreated), &result)
+	if result.Subscription.PromoPriceCents == nil || *result.Subscription.PromoPriceCents != 3490 {
+		t.Errorf("Ana depois das vagas acabarem = %+v", result)
 	}
 
 	var usage orders.PromoUsage
@@ -517,6 +525,10 @@ func TestLaunchPromoEndToEnd(t *testing.T) {
 	for _, e := range list {
 		if e.CustomerID == nil {
 			t.Errorf("%s é cliente e veio sem customerId", e.Email)
+		}
+		// Uma linha por inscrito, com quantos veículos ele tiver na promoção.
+		if _, twice := claimed[e.Email]; twice {
+			t.Errorf("%s repetido na lista", e.Email)
 		}
 		claimed[e.Email] = e.PromoClaimed
 	}

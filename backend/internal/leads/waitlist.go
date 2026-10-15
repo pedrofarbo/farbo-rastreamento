@@ -156,11 +156,11 @@ func (s *Service) joinWaitlist(ctx context.Context, in WaitlistInput, ensureLead
 // Waitlist traz a lista inteira, as inscrições mais recentes primeiro.
 func (r *Repository) Waitlist(ctx context.Context) ([]*WaitlistEntry, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT w.id, w.name, w.email, w.phone, w.event, w.city, w.consent_at, w.created_at, w.updated_at, u.id, c.customer_id IS NOT NULL,
+		SELECT w.id, w.name, w.email, w.phone, w.event, w.city, w.consent_at, w.created_at, w.updated_at, u.id,
+			EXISTS (SELECT 1 FROM launch_promo_claims c WHERE c.customer_id = u.id),
 			w.affiliate_id, COALESCE(`+ReferrerLabel+`, '')
 		FROM launch_waitlist w
 		LEFT JOIN users u ON lower(u.email) = lower(w.email) AND u.role = 'customer'
-		LEFT JOIN launch_promo_claims c ON c.customer_id = u.id
 		LEFT JOIN affiliates a ON a.id = w.affiliate_id
 		ORDER BY w.created_at DESC`)
 	if err != nil {

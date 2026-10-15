@@ -110,6 +110,7 @@ describe('LeadModal (pré-cadastro)', () => {
     const launch = byId<HTMLInputElement>(host, 'lead-launch');
     expect(launch.checked).toBe(true);
     expect(host.textContent).toContain('R$ 34,90/mês');
+    expect(host.textContent).toContain('rastreador por R$ 120 (ou 10x de R$ 12,00 sem juros no Pix, direto na mensalidade)');
 
     type(byId(host, 'lead-name'), 'Carla');
     type(byId(host, 'lead-email'), 'carla@exemplo.com.br');

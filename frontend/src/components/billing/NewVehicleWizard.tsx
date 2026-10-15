@@ -485,7 +485,10 @@ export function NewVehicleWizard({
                       {formatMoney(promoStatus.data.offer.monthlyCents)} (
                       {formatMoney(promoStatus.data.offer.insanosMonthlyCents)} no plano{' '}
                       {promoStatus.data.offer.insanosPlanName}) nos {promoStatus.data.offer.months} primeiros meses
-                      (depois, o plano escolhido). O cliente está na lista de lançamento; usa 1 das vagas.
+                      (depois, o plano escolhido).{' '}
+                      {promoStatus.data.claimed
+                        ? 'O cliente já tem a vaga: a promoção vale para todos os veículos dele.'
+                        : 'O cliente está na lista de lançamento; ocupa 1 das vagas (e vale para todos os veículos dele).'}
                     </span>
                   </label>
                 ) : (

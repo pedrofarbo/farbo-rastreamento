@@ -76,9 +76,10 @@ describe.runIf(PRE_LAUNCH)('landing em pré-lançamento', () => {
     expect(text).toContain('De R$ 39,90');
     expect(text).toContain('depois, R$ 39,90/mês por veículo');
     expect(text).not.toContain('Quero meu desconto');
-    // O rastreador: à vista ou em até 10x sem juros no Pix (no lugar de "Pagamento único").
-    expect(text).toContain('R$ 120 no rastreador, ou 10x de R$ 12,00 sem juros.');
-    expect(text).toContain('à vista, ou 10x de R$ 12,00sem juros no Pix');
+    // O rastreador: à vista ou em até 10x sem juros no Pix, direto na
+    // mensalidade (no lugar de "Pagamento único").
+    expect(text).toContain('R$ 120 no rastreador, ou 10x de R$ 12,00 sem juros no Pix, direto na mensalidade.');
+    expect(text).toContain('à vista, ou 10x de R$ 12,00sem juros no Pix, direto na mensalidade');
     expect(text).not.toContain('Pagamento único');
   });
 

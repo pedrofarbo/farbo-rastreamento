@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { publicApi } from '@/api/resources';
 import { CONTACT_EMAIL, WHATSAPP_NUMBER, whatsappDisplay, whatsappUrl } from '@/config/contact';
 import { PRIVACY_PATH } from '@/config/legal';
-import { LAUNCH_OFFER, PRE_LAUNCH } from '@/config/landing';
+import { LAUNCH_OFFER, PRE_LAUNCH, installmentsPhrase } from '@/config/landing';
 import { track } from '@/services/analytics';
 import { currentReferral } from '@/services/referral';
 import { formatPhoneInput, isPhoneComplete } from '@/services/format';
@@ -347,7 +347,8 @@ export const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, defaultPl
                   />
                   <span>
                     <strong>Entrar também na lista de pré-lançamento</strong>: promoção para os {LAUNCH_OFFER.slots}{' '}
-                    primeiros — rastreador por {LAUNCH_OFFER.equipment} e{' '}
+                    primeiros — rastreador por {LAUNCH_OFFER.equipment} (ou{' '}
+                    {installmentsPhrase(LAUNCH_OFFER.equipmentCents)}) e{' '}
                     {plan === INSANOS_PLAN ? LAUNCH_OFFER.insanosMonthly : LAUNCH_OFFER.monthly}/mês por{' '}
                     {LAUNCH_OFFER.months} meses.
                   </span>

@@ -228,7 +228,8 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 			return err
 		}
 		if o.LaunchPromo {
-			// A vaga fica com o cliente (e com esta assinatura).
+			// A vaga fica com o cliente; a linha, com esta assinatura (a
+			// promoção vale para todos os veículos dele).
 			if _, err := tx.Exec(ctx, `INSERT INTO launch_promo_claims (customer_id, subscription_id) VALUES ($1, $2)`,
 				customerID, result.Subscription.ID); err != nil {
 				return err
