@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 import { formatMoney } from '@/services/format';
 import { monthLabel } from '@/services/referral';
-import type { MRR } from '@/types';
+import type { MRR, MRRForecast } from '@/types';
 
 import styles from '../Page.module.css';
 
@@ -13,6 +13,22 @@ import styles from '../Page.module.css';
 export function signedMoney(cents: number): string {
   if (cents === 0) return '—';
   return `${cents > 0 ? '+' : '−'}${formatMoney(Math.abs(cents))}`;
+}
+
+/** A previsão do mês que vem, num quadro: o total e a divisão. */
+export function ForecastTile({ forecast }: { forecast: MRRForecast | null | undefined }) {
+  return (
+    <div className={billing.tile}>
+      <span className={billing.tileLabel}>Previsão {forecast ? monthLabel(forecast.month) : 'do mês que vem'}</span>
+      <span className={billing.tileValue}>{forecast ? formatMoney(forecast.totalCents) : '—'}</span>
+      <span className={billing.tileHint}>
+        {forecast
+          ? `${formatMoney(forecast.monthlyCents)} em ${forecast.monthlies} ${forecast.monthlies === 1 ? 'mensalidade' : 'mensalidades'}` +
+            (forecast.installmentsCents > 0 ? ` + ${formatMoney(forecast.installmentsCents)} parcelas` : '')
+          : 'o que vai ser cobrado'}
+      </span>
+    </div>
+  );
 }
 
 /**

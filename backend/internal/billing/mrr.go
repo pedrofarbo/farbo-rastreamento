@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 )
 
@@ -47,6 +49,8 @@ type MRR struct {
 	InstallmentsCents int64      `json:"installmentsCents"`
 	TotalCents        int64      `json:"totalCents"`
 	Months            []MRRMonth `json:"months"`
+	// Forecast: o que vai ser cobrado no mês que vem.
+	Forecast *MRRForecast `json:"forecast"`
 }
 
 // mrrSub é o que o cálculo precisa de cada assinatura.
@@ -158,6 +162,9 @@ func (s *Service) MRR(ctx context.Context, months int) (*MRR, error) {
 		m.TotalCents = m.MRRCents + m.InstallmentsCents
 	}
 	out.InstallmentsCents, out.TotalCents = out.Months[0].InstallmentsCents, out.Months[0].TotalCents
+	if out.Forecast, err = s.Forecast(ctx); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -237,4 +244,148 @@ func (r *Repository) mrrSubscriptions(ctx context.Context, from time.Time) ([]mr
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+// MRRForecast é a previsão do mês que vem: o que vai ser cobrado nele, as
+// mensalidades e as parcelas do rastreador das faturas que vencem no mês —
+// as já geradas e as que o gerador ainda vai gerar, pela mesma regra de datas,
+// preços e parcelas. Sem as grátis (mensalidade zero) e sem as faturas
+// avulsas (o equipamento à vista, o frete).
+type MRRForecast struct {
+	// Month: AAAA-MM.
+	Month string `json:"month"`
+	// MonthlyCents e Monthlies: as mensalidades e quantas são.
+	MonthlyCents      int64 `json:"monthlyCents"`
+	Monthlies         int   `json:"monthlies"`
+	InstallmentsCents int64 `json:"installmentsCents"`
+	TotalCents        int64 `json:"totalCents"`
+}
+
+// forecastSub é uma assinatura ativa com o que o gerador vai fazer dela.
+type forecastSub struct {
+	id uuid.UUID
+	mrrSub
+	dueDay  int
+	next    Date
+	pending []int64 // as parcelas por cobrar, em ordem
+}
+
+// forecastInvoice é uma mensalidade já gerada que vence no mês.
+type forecastInvoice struct {
+	subscription uuid.UUID
+	due          Date
+	monthly      int64
+	installment  int64
+}
+
+// computeForecast monta a previsão do mês [start, end).
+func computeForecast(subs []forecastSub, generated []forecastInvoice, start, end Date) MRRForecast {
+	out := MRRForecast{Month: start.Format("2006-01")}
+	add := func(monthly, installment int64) {
+		if monthly > 0 {
+			out.MonthlyCents += monthly
+			out.Monthlies++
+		}
+		out.InstallmentsCents += installment
+	}
+	exists := map[uuid.UUID]map[Date]bool{}
+	for _, inv := range generated {
+		add(inv.monthly, inv.installment)
+		if exists[inv.subscription] == nil {
+			exists[inv.subscription] = map[Date]bool{}
+		}
+		exists[inv.subscription][inv.due] = true
+	}
+	for _, s := range subs {
+		// As que o gerador ainda vai fazer, desde a próxima: cada uma leva a
+		// próxima parcela (a que já existe no mesmo dia não sai de novo).
+		parcel := 0
+		for d, i := s.next, 0; d.Before(end) && i < maxCatchUp; d, i = followingDue(d, s.dueDay), i+1 {
+			if exists[s.id][d] {
+				continue
+			}
+			var installment int64
+			if parcel < len(s.pending) {
+				installment = s.pending[parcel]
+				parcel++
+			}
+			if !d.Before(start) {
+				add(int64(s.priceOn(d)), installment)
+			}
+		}
+	}
+	out.TotalCents = out.MonthlyCents + out.InstallmentsCents
+	return out
+}
+
+// Forecast é a previsão do mês seguinte ao de hoje.
+func (s *Service) Forecast(ctx context.Context) (*MRRForecast, error) {
+	today := s.Today()
+	start := NewDate(today.Year(), today.Month()+1, 1)
+	end := NewDate(today.Year(), today.Month()+2, 1)
+	subs, generated, err := s.repo.forecastData(ctx, start, end)
+	if err != nil {
+		return nil, err
+	}
+	out := computeForecast(subs, generated, start, end)
+	return &out, nil
+}
+
+// forecastData: as assinaturas ativas de clientes com mensalidade a gerar
+// antes de end e as mensalidades já geradas que vencem em [start, end).
+func (r *Repository) forecastData(ctx context.Context, start, end Date) ([]forecastSub, []forecastInvoice, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT s.id, s.due_day, s.next_due_date, s.price_cents, s.promo_price_cents, s.promo_until, s.next_price_cents, s.next_price_from,
+			COALESCE((SELECT array_agg(e.amount_cents::bigint ORDER BY e.number) FROM equipment_installments e
+				WHERE e.subscription_id = s.id AND e.invoice_id IS NULL AND e.waived_at IS NULL), '{}')
+		FROM subscriptions s JOIN users u ON u.id = s.customer_id
+		WHERE s.status = 'ACTIVE' AND u.role = 'customer' AND s.next_due_date < $1::date`, end.String())
+	if err != nil {
+		return nil, nil, database.MapError(err)
+	}
+	var subs []forecastSub
+	for rows.Next() {
+		var f forecastSub
+		var next time.Time
+		var promoUntil, nextFrom *time.Time
+		if err := rows.Scan(&f.id, &f.dueDay, &next, &f.priceCents, &f.promoCents, &promoUntil, &f.nextCents, &nextFrom, &f.pending); err != nil {
+			rows.Close()
+			return nil, nil, err
+		}
+		f.next = Date{next}
+		if promoUntil != nil {
+			f.promoUntil = &Date{*promoUntil}
+		}
+		if nextFrom != nil {
+			f.nextFrom = &Date{*nextFrom}
+		}
+		subs = append(subs, f)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, nil, database.MapError(err)
+	}
+
+	rows, err = r.db.Query(ctx, `
+		SELECT i.subscription_id, i.due_date, i.amount_cents::bigint - p.cents, p.cents
+		FROM invoices i
+		JOIN users u ON u.id = i.customer_id
+		CROSS JOIN LATERAL (SELECT COALESCE(sum(e.amount_cents), 0)::bigint AS cents FROM equipment_installments e WHERE e.invoice_id = i.id) p
+		WHERE i.subscription_id IS NOT NULL AND i.status <> 'CANCELED' AND u.role = 'customer'
+			AND i.due_date >= $1::date AND i.due_date < $2::date`, start.String(), end.String())
+	if err != nil {
+		return nil, nil, database.MapError(err)
+	}
+	defer rows.Close()
+	var generated []forecastInvoice
+	for rows.Next() {
+		var f forecastInvoice
+		var due time.Time
+		if err := rows.Scan(&f.subscription, &due, &f.monthly, &f.installment); err != nil {
+			return nil, nil, err
+		}
+		f.due = Date{due}
+		generated = append(generated, f)
+	}
+	return subs, generated, database.MapError(rows.Err())
 }

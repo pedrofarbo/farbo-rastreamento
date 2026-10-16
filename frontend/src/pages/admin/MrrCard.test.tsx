@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { MRR } from '@/types';
 
-import { MrrCard, signedMoney } from './MrrCard';
+import { ForecastTile, MrrCard, signedMoney } from './MrrCard';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const text = (el: Element) => (el.textContent ?? '').replace(/ /g, ' ');
@@ -28,6 +28,7 @@ describe('MRR', () => {
       subscriptions: 4,
       installmentsCents: 2200,
       totalCents: 19670,
+      forecast: null,
       months: [
         { month: '2026-10', mrrCents: 17470, subscriptions: 4, newCents: 6990, newCount: 2, churnCents: 3990, churnCount: 1, changeCents: 6500, otherCents: 3500,
           installmentsCents: 2200, installmentsPaidCents: 1200, totalCents: 19670 },
@@ -56,5 +57,20 @@ describe('MRR', () => {
     expect(rows[1]).not.toContain('pagas');
     expect(rows[1]).toContain('set/2026');
     expect(rows[1]).not.toContain('até hoje');
+  });
+
+  it('a previsão do mês que vem: o total e a divisão', async () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    await act(async () =>
+      createRoot(host).render(
+        <ForecastTile
+          forecast={{ month: '2026-11', monthlyCents: 13950, monthlies: 5, installmentsCents: 15600, totalCents: 29550 }}
+        />,
+      ),
+    );
+    expect(text(host)).toContain('Previsão nov/2026');
+    expect(text(host)).toContain('R$ 295,50');
+    expect(text(host)).toContain('R$ 139,50 em 5 mensalidades + R$ 156,00 parcelas');
   });
 });

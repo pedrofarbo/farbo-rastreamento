@@ -21,7 +21,7 @@ import type { Lead } from '@/types';
 import styles from '../Page.module.css';
 import { AffiliatesTab } from './affiliates/AffiliatesTab';
 import { LeadsTab } from './LeadsTab';
-import { MrrCard, signedMoney } from './MrrCard';
+import { ForecastTile, MrrCard, signedMoney } from './MrrCard';
 import { SiteAnalyticsTab } from './SiteAnalyticsTab';
 
 interface CustomerDraft {
@@ -197,7 +197,7 @@ export function CustomersPage() {
           />
         ) : (
           <>
-            <div className={billing.tiles}>
+            <div className={`${billing.tiles} ${billing.tilesSix}`}>
               <div className={billing.tile}>
                 <span className={billing.tileLabel}>Clientes</span>
                 <span className={billing.tileValue}>{customers.data?.length ?? '—'}</span>
@@ -220,6 +220,7 @@ export function CustomersPage() {
                       : `mensalidades, ${thisMonth ? signedMoney(thisMonth.changeCents) : '—'} no mês`}
                 </span>
               </div>
+              <ForecastTile forecast={mrr.data?.forecast} />
               <div className={billing.tile}>
                 <span className={billing.tileLabel}>A receber</span>
                 <span className={billing.tileValue}>{formatMoney(totals.open)}</span>

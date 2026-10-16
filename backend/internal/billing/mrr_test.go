@@ -3,6 +3,8 @@ package billing
 import (
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func TestComputeMRR(t *testing.T) {
@@ -50,5 +52,49 @@ func TestComputeMRR(t *testing.T) {
 	}
 	if got.CurrentCents != 17470 || got.Subscriptions != 4 {
 		t.Errorf("hoje = %d (%d assinaturas)", got.CurrentCents, got.Subscriptions)
+	}
+}
+
+func TestComputeForecast(t *testing.T) {
+	cents := func(v int) *int { return &v }
+	date := func(y int, m time.Month, d int) Date { return NewDate(y, m, d) }
+	until := func(y int, m time.Month, d int) *Date { v := date(y, m, d); return &v }
+	parcels := func(n int, v int64) []int64 {
+		out := make([]int64, n)
+		for i := range out {
+			out[i] = v
+		}
+		return out
+	}
+	insanos := func(next Date, day int, pending []int64) forecastSub {
+		return forecastSub{id: uuid.New(), dueDay: day, next: next, pending: pending,
+			mrrSub: mrrSub{priceCents: 3990, promoCents: cents(2790), promoUntil: until(2027, 10, 14)}}
+	}
+	victor2 := insanos(date(2026, 12, 20), 20, []int64{6000})
+	subs := []forecastSub{
+		insanos(date(2026, 11, 20), 20, parcels(9, 1200)), // Anderson
+		insanos(date(2026, 11, 10), 10, parcels(9, 1200)), // a 1ª moto do Jair
+		insanos(date(2026, 12, 10), 10, parcels(9, 1200)), // as outras duas: a 2ª só em dezembro
+		insanos(date(2026, 12, 10), 10, parcels(9, 1200)),
+		{id: uuid.New(), dueDay: 10, next: date(2026, 11, 10), mrrSub: mrrSub{priceCents: 0}}, // grátis
+		insanos(date(2026, 11, 20), 20, parcels(9, 1200)),                                     // Pedro Mauricio
+		insanos(date(2026, 11, 20), 20, []int64{6000}),                                        // a 1ª do Victor
+		victor2, // a 2ª: a de novembro já saiu
+		// Ainda vai sair a de 28/10 (com a 1ª parcela); a de novembro leva a 2ª.
+		{id: uuid.New(), dueDay: 28, next: date(2026, 10, 28), pending: []int64{500, 400}, mrrSub: mrrSub{priceCents: 4990}},
+	}
+	// Já gerada no mesmo dia em que a simulação cairia: não conta duas vezes.
+	dup := insanos(date(2026, 11, 5), 5, parcels(2, 300))
+	subs = append(subs, dup)
+	generated := []forecastInvoice{
+		{subscription: victor2.id, due: date(2026, 11, 20), monthly: 2790, installment: 6000},
+		{subscription: dup.id, due: date(2026, 11, 5), monthly: 2790, installment: 300},
+	}
+
+	got := computeForecast(subs, generated, date(2026, 11, 1), date(2026, 12, 1))
+	want := MRRForecast{Month: "2026-11", MonthlyCents: 2790*6 + 4990, Monthlies: 7,
+		InstallmentsCents: 1200*3 + 6000*2 + 400 + 300, TotalCents: 2790*6 + 4990 + 1200*3 + 6000*2 + 400 + 300}
+	if got != want {
+		t.Errorf("previsão = %+v, quer %+v", got, want)
 	}
 }

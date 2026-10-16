@@ -265,6 +265,20 @@ func changeDueDay(ctx context.Context, tx pgx.Tx, sub *Subscription, day int, to
 	if next.Before(today) {
 		next = nextMonthly(next, day)
 	}
+	// Nunca mais longe que a regra no dia novo: a seguinte à última fatura.
+	// A 2ª mensalidade de uma 1ª fora do dia da conta foi empurrada pela regra
+	// do dia antigo (1ª em 20/11 com a conta no dia 10: a 2ª em 10/01); no dia
+	// 20, ela é 20/12 — só trocar o dia deixaria dezembro sem mensalidade.
+	var last *time.Time
+	if err := tx.QueryRow(ctx, `SELECT max(due_date) FROM invoices WHERE subscription_id = $1 AND status <> 'CANCELED'`,
+		sub.ID).Scan(&last); err != nil {
+		return nil, err
+	}
+	if last != nil {
+		if rule := followingDue(Date{*last}, day); rule.Before(next) && !rule.Before(today) {
+			next = rule
+		}
+	}
 	shift := func(d *Date) *time.Time {
 		if d == nil {
 			return nil
@@ -272,10 +286,28 @@ func changeDueDay(ctx context.Context, tx pgx.Tx, sub *Subscription, day int, to
 		moved := withDay(*d, day)
 		return &moved.Time
 	}
+	// A permanência vai até a mensalidade que leva a última parcela: com
+	// parcelas por cobrar, a k-ésima das próximas.
+	commitment := shift(sub.CommitmentUntil)
+	if sub.Installments > 0 {
+		var pending int
+		if err := tx.QueryRow(ctx, `
+			SELECT count(*) FROM equipment_installments WHERE subscription_id = $1 AND invoice_id IS NULL AND waived_at IS NULL`,
+			sub.ID).Scan(&pending); err != nil {
+			return nil, err
+		}
+		if pending > 0 {
+			end := next
+			for i := 1; i < pending; i++ {
+				end = followingDue(end, day)
+			}
+			commitment = &end.Time
+		}
+	}
 	return scanSubscription(tx.QueryRow(ctx, `
 		UPDATE subscriptions SET due_day = $2, next_due_date = $3, promo_until = $4, commitment_until = $5, updated_at = NOW()
 		WHERE id = $1 RETURNING `+subscriptionColumns,
-		sub.ID, day, next.Time, shift(sub.PromoUntil), shift(sub.CommitmentUntil)))
+		sub.ID, day, next.Time, shift(sub.PromoUntil), commitment))
 }
 
 // moneyText: 15000 → "R$ 150,00".

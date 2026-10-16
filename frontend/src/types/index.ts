@@ -704,6 +704,20 @@ export interface MRRMonth {
   totalCents: number;
 }
 
+/**
+ * A previsão do mês que vem: o que vai ser cobrado nele (as mensalidades e as
+ * parcelas do rastreador das faturas que vencem no mês, já geradas ou não).
+ */
+export interface MRRForecast {
+  /** AAAA-MM. */
+  month: string;
+  monthlyCents: number;
+  /** Quantas mensalidades (sem as grátis). */
+  monthlies: number;
+  installmentsCents: number;
+  totalCents: number;
+}
+
 /** O MRR: a soma das mensalidades das assinaturas ativas pagas (sem as grátis), e ao lado as parcelas do rastreador. */
 export interface MRR {
   currentCents: number;
@@ -713,6 +727,7 @@ export interface MRR {
   totalCents: number;
   /** Do mês atual para trás. */
   months: MRRMonth[];
+  forecast: MRRForecast | null;
 }
 
 export interface CustomerSummary {

@@ -78,4 +78,9 @@ func TestMRRInstallments(t *testing.T) {
 	if mrr.CurrentCents != 3490 || mrr.InstallmentsCents != 2200 || mrr.TotalCents != 5690 {
 		t.Errorf("hoje = %+v", mrr)
 	}
+	// A previsão do mês que vem: a mensalidade do dia 28 dele, com a parcela
+	// seguinte à que vai na deste mês (a 5ª, de R$ 9,00).
+	if f := mrr.Forecast; f == nil || f.Monthlies != 1 || f.MonthlyCents != 3490 || f.InstallmentsCents != 900 || f.TotalCents != 4390 {
+		t.Errorf("previsão = %+v", mrr.Forecast)
+	}
 }

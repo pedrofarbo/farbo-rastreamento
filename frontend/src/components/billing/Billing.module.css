@@ -987,3 +987,20 @@
   border-color: var(--accent) !important;
   background: var(--accent-soft);
 }
+
+/* Seis quadros (a lista de clientes): duas linhas de três; no celular, três de dois. */
+@media (min-width: 900px) {
+  .tilesSix {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .tilesSix > :first-child {
+    grid-column: auto;
+  }
+
+  .tilesSix > :first-child .tileValue {
+    font-size: var(--text-lg);
+  }
+}
