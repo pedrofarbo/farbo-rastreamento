@@ -21,6 +21,7 @@ import type { Lead } from '@/types';
 import styles from '../Page.module.css';
 import { AffiliatesTab } from './affiliates/AffiliatesTab';
 import { LeadsTab } from './LeadsTab';
+import { MrrCard, signedMoney } from './MrrCard';
 import { SiteAnalyticsTab } from './SiteAnalyticsTab';
 
 interface CustomerDraft {
@@ -105,6 +106,10 @@ export function CustomersPage() {
       leadId: draft.lead?.id,
     });
   };
+
+  // A receita recorrente (só na aba de clientes).
+  const mrr = useQuery({ queryKey: ['customers', 'mrr'], queryFn: customersApi.mrr, enabled: !showLeads && !showVisits && !showAffiliates });
+  const thisMonth = mrr.data?.months[0];
 
   // As assinaturas contam sem as grátis (mensalidade zero).
   const totals = (customers.data ?? []).reduce(
@@ -205,6 +210,13 @@ export function CustomersPage() {
                 </span>
               </div>
               <div className={billing.tile}>
+                <span className={billing.tileLabel}>MRR</span>
+                <span className={billing.tileValue}>{mrr.data ? formatMoney(mrr.data.currentCents) : '—'}</span>
+                <span className={billing.tileHint}>
+                  {thisMonth ? `${signedMoney(thisMonth.changeCents)} no mês` : 'receita recorrente mensal'}
+                </span>
+              </div>
+              <div className={billing.tile}>
                 <span className={billing.tileLabel}>A receber</span>
                 <span className={billing.tileValue}>{formatMoney(totals.open)}</span>
                 <span className={billing.tileHint}>faturas em aberto</span>
@@ -293,6 +305,7 @@ export function CustomersPage() {
               )}
             </Card>
 
+            <MrrCard mrr={mrr} />
             <PriceAdjustmentCard />
           </>
         )}

@@ -109,6 +109,7 @@ import type {
   Lead,
   LeadInput,
   LeadStatus,
+  MRR,
   WaitlistEntry,
   WaitlistInput,
   PromoStatus,
@@ -676,6 +677,8 @@ export type EquipmentBalance = 'CHARGE' | 'WAIVE';
 
 /** Administração (perfil admin). */
 export const customersApi = {
+  /** O MRR de hoje e dos últimos meses. */
+  mrr: () => api.get<MRR>('/api/customers/mrr'),
   /** A equipe da conta empresa do cliente (só leitura, para a central). */
   team: (id: string) => api.get<AccountMember[]>(`/api/customers/${id}/team`),
   /** A organização da frota do cliente: grupos e campos personalizados. */

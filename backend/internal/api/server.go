@@ -659,6 +659,7 @@ func (s *Server) routes() chi.Router {
 					r.Route("/customers", func(r chi.Router) {
 						r.Get("/", s.handleListCustomers)
 						r.Post("/", s.handleCreateCustomer)
+						r.Get("/mrr", s.handleCustomersMRR)
 						r.Route("/{id}", func(r chi.Router) {
 							r.Get("/", s.handleGetCustomer)
 							r.Patch("/", s.handleUpdateCustomer)

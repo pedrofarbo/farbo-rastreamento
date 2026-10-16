@@ -1,0 +1,92 @@
+import type { UseQueryResult } from '@tanstack/react-query';
+
+import billing from '@/components/billing/Billing.module.css';
+import { Card } from '@/components/ui/Card';
+import { Spinner } from '@/components/ui/Spinner';
+import { formatMoney } from '@/services/format';
+import { monthLabel } from '@/services/referral';
+import type { MRR } from '@/types';
+
+import styles from '../Page.module.css';
+
+/** +R$ 10,00 / −R$ 10,00, e — no zero. */
+export function signedMoney(cents: number): string {
+  if (cents === 0) return '—';
+  return `${cents > 0 ? '+' : '−'}${formatMoney(Math.abs(cents))}`;
+}
+
+/**
+ * O MRR mês a mês: no fim de cada mês (o atual, hoje), o que entrou com as
+ * assinaturas novas, o que saiu com as encerradas e o resto da variação (fim
+ * de promoção, reajuste).
+ */
+export function MrrCard({ mrr }: { mrr: UseQueryResult<MRR> }) {
+  return (
+    <Card
+      flush
+      title="MRR mês a mês"
+      subtitle="A receita recorrente: a soma das mensalidades das assinaturas ativas, pelo preço do mês (o da promoção enquanto vale). Sem as grátis e sem as parcelas do rastreador."
+    >
+      {mrr.isLoading ? (
+        <Spinner label="Calculando o MRR" />
+      ) : !mrr.data ? (
+        <p className={billing.muted} style={{ padding: 'var(--space-4)' }}>
+          Não deu para calcular o MRR.
+        </p>
+      ) : (
+        <div className={styles.tableWrap}>
+          <table className={`${styles.table} ${styles.stackTable}`}>
+            <thead>
+              <tr>
+                <th>Mês</th>
+                <th>MRR</th>
+                <th>Novas</th>
+                <th>Encerradas</th>
+                <th>Outras mudanças</th>
+                <th>Variação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mrr.data.months.map((m, i) => (
+                <tr key={m.month}>
+                  <td data-label="Mês">
+                    <strong>{monthLabel(m.month)}</strong>
+                    {i === 0 && <div className={billing.muted}>até hoje</div>}
+                  </td>
+                  <td data-label="MRR">
+                    <strong>{formatMoney(m.mrrCents)}</strong>
+                    <div className={billing.muted}>
+                      {m.subscriptions} {m.subscriptions === 1 ? 'assinatura' : 'assinaturas'}
+                    </div>
+                  </td>
+                  <td data-label="Novas">
+                    {signedMoney(m.newCents)}
+                    {m.newCount > 0 && (
+                      <div className={billing.muted}>
+                        {m.newCount} {m.newCount === 1 ? 'nova' : 'novas'}
+                      </div>
+                    )}
+                  </td>
+                  <td data-label="Encerradas">
+                    {signedMoney(-m.churnCents)}
+                    {m.churnCount > 0 && (
+                      <div className={billing.muted}>
+                        {m.churnCount} {m.churnCount === 1 ? 'encerrada' : 'encerradas'}
+                      </div>
+                    )}
+                  </td>
+                  <td data-label="Outras mudanças" title="Fim de promoção ou reajuste">
+                    {signedMoney(m.otherCents)}
+                  </td>
+                  <td data-label="Variação">
+                    <strong>{signedMoney(m.changeCents)}</strong>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}

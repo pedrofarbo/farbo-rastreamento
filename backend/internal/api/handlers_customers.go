@@ -209,6 +209,16 @@ func (s *Server) handleListCustomers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
+// handleCustomersMRR: a receita recorrente mensal de hoje e dos últimos meses.
+func (s *Server) handleCustomersMRR(w http.ResponseWriter, r *http.Request) {
+	mrr, err := s.Billing.MRR(r.Context(), 6)
+	if err != nil {
+		handleStoreError(w, err, "MRR não encontrado")
+		return
+	}
+	writeJSON(w, http.StatusOK, mrr)
+}
+
 func (s *Server) handleGetCustomer(w http.ResponseWriter, r *http.Request) {
 	id, err := urlUUID(r, "id")
 	if err != nil {

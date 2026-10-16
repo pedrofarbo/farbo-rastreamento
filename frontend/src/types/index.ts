@@ -681,6 +681,32 @@ export interface PixPayment extends PixCharge {
 }
 
 /** Linha da lista de clientes da central. */
+/** Um mês do MRR (receita recorrente mensal). */
+export interface MRRMonth {
+  /** AAAA-MM. */
+  month: string;
+  /** No fim do mês (no atual, hoje). */
+  mrrCents: number;
+  subscriptions: number;
+  /** As assinaturas que começaram no mês. */
+  newCents: number;
+  newCount: number;
+  /** As encerradas no mês. */
+  churnCents: number;
+  churnCount: number;
+  /** A variação sobre o mês anterior; otherCents, o que ela tem além de novas e encerradas (fim de promoção, reajuste). */
+  changeCents: number;
+  otherCents: number;
+}
+
+/** O MRR: a soma das mensalidades das assinaturas ativas pagas (sem as grátis e sem as parcelas do rastreador). */
+export interface MRR {
+  currentCents: number;
+  subscriptions: number;
+  /** Do mês atual para trás. */
+  months: MRRMonth[];
+}
+
 export interface CustomerSummary {
   id: string;
   name: string;

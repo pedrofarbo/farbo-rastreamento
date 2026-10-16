@@ -16,8 +16,9 @@ import (
 )
 
 // As assinaturas grátis (mensalidade zero, como as de cortesia): a lista de
-// clientes da central as traz à parte, para não contá-las; o cliente continua
-// vendo todas as ativas na conta dele. Precisa de FARBO_TEST_DATABASE_URL.
+// clientes da central as traz à parte, para não contá-las, e o MRR não as
+// soma; o cliente continua vendo todas as ativas na conta dele. Precisa de
+// FARBO_TEST_DATABASE_URL.
 func TestFreeSubscriptionsCount(t *testing.T) {
 	env, _ := newLeadsEnv(t)
 	ctx := context.Background()
@@ -49,6 +50,14 @@ func TestFreeSubscriptionsCount(t *testing.T) {
 	}
 	if row == nil || row.ActiveSubscriptions != 3 || row.FreeSubscriptions != 1 {
 		t.Fatalf("na lista da central = %+v", row)
+	}
+
+	// O MRR: só as pagas ativas (a encerrada e a grátis ficam de fora); só o admin.
+	env.must(env.login(auth.RoleOperator+"@leads.test"), http.MethodGet, "/api/customers/mrr", nil, http.StatusForbidden)
+	var mrr billing.MRR
+	_ = json.Unmarshal(env.must(env.login(auth.RoleAdmin+"@leads.test"), http.MethodGet, "/api/customers/mrr", nil, http.StatusOK), &mrr)
+	if mrr.CurrentCents != 8480 || mrr.Subscriptions != 2 || len(mrr.Months) != 6 || mrr.Months[0].NewCents != 8480 || mrr.Months[0].NewCount != 2 {
+		t.Errorf("MRR = %+v", mrr)
 	}
 
 	var account billing.Account
