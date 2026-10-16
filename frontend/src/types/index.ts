@@ -685,10 +685,10 @@ export interface PixPayment extends PixCharge {
 export interface MRRMonth {
   /** AAAA-MM. */
   month: string;
-  /** No fim do mês (no atual, hoje). */
+  /** As mensalidades das faturas que vencem no mês (no atual, também as que ainda vão sair) e quantas são. */
   mrrCents: number;
   subscriptions: number;
-  /** As assinaturas que começaram no mês. */
+  /** As assinaturas com a 1ª mensalidade no mês. */
   newCents: number;
   newCount: number;
   /** As encerradas no mês. */
@@ -718,7 +718,7 @@ export interface MRRForecast {
   totalCents: number;
 }
 
-/** O MRR: a soma das mensalidades das assinaturas ativas pagas (sem as grátis), e ao lado as parcelas do rastreador. */
+/** O MRR pelo que é cobrado: as mensalidades das faturas do mês (sem as grátis), e ao lado as parcelas do rastreador. */
 export interface MRR {
   currentCents: number;
   subscriptions: number;

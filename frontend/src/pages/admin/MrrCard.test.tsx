@@ -41,7 +41,7 @@ describe('MRR', () => {
     await act(async () => createRoot(host).render(<MrrCard mrr={{ data, isLoading: false } as UseQueryResult<MRR>} />));
     const rows = Array.from(host.querySelectorAll('tbody tr')).map(text);
     expect(rows[0]).toContain('out/2026');
-    expect(rows[0]).toContain('até hoje');
+    expect(rows[0]).toContain('este mês');
     expect(rows[0]).toContain('R$ 174,70');
     expect(rows[0]).toContain('4 assinaturas');
     expect(rows[0]).toContain('+R$ 69,90');
@@ -56,7 +56,7 @@ describe('MRR', () => {
     expect(rows[0]).toContain('R$ 196,70');
     expect(rows[1]).not.toContain('pagas');
     expect(rows[1]).toContain('set/2026');
-    expect(rows[1]).not.toContain('até hoje');
+    expect(rows[1]).not.toContain('este mês');
   });
 
   it('a previsão do mês que vem: o total e a divisão', async () => {

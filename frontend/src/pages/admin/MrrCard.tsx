@@ -32,16 +32,18 @@ export function ForecastTile({ forecast }: { forecast: MRRForecast | null | unde
 }
 
 /**
- * O MRR mês a mês: no fim de cada mês (o atual, hoje), o que entrou com as
+ * O MRR mês a mês, pelo que é cobrado: as mensalidades das faturas que vencem
+ * em cada mês (no atual, também as que ainda vão sair), o que entrou com as
  * assinaturas novas, o que saiu com as encerradas e o resto da variação (fim
- * de promoção, reajuste); depois, as parcelas do rastreador do mês e o total.
+ * de promoção, reajuste, mês sem cobrança); depois, as parcelas do rastreador
+ * do mês e o total.
  */
 export function MrrCard({ mrr }: { mrr: UseQueryResult<MRR> }) {
   return (
     <Card
       flush
       title="MRR mês a mês"
-      subtitle="Mensalidades: a soma das assinaturas ativas no fim do mês, pelo preço do mês (o da promoção enquanto vale), sem as grátis. Parcelas: as do rastreador que vencem no mês (no atual, também as que ainda vão ser cobradas). Total: as duas."
+      subtitle="Pelo que é cobrado: as mensalidades e as parcelas do rastreador das faturas que vencem em cada mês (no atual, também as que ainda vão sair), sem as grátis. A assinatura entra no mês da 1ª mensalidade. Total: as duas."
     >
       {mrr.isLoading ? (
         <Spinner label="Calculando o MRR" />
@@ -69,7 +71,7 @@ export function MrrCard({ mrr }: { mrr: UseQueryResult<MRR> }) {
                 <tr key={m.month}>
                   <td data-label="Mês">
                     <strong>{monthLabel(m.month)}</strong>
-                    {i === 0 && <div className={billing.muted}>até hoje</div>}
+                    {i === 0 && <div className={billing.muted}>este mês</div>}
                   </td>
                   <td data-label="Mensalidades">
                     <strong>{formatMoney(m.mrrCents)}</strong>

@@ -28,15 +28,26 @@ func TestFreeSubscriptionsCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Duas pagas, uma grátis e uma grátis encerrada.
+	// Duas pagas, uma grátis e uma grátis encerrada; as ativas com a
+	// mensalidade deste mês já gerada (uma paga) e a próxima no mês que vem.
 	for _, sub := range []struct {
-		cents  int
-		status string
-	}{{4990, "ACTIVE"}, {3490, "ACTIVE"}, {0, "ACTIVE"}, {0, "CANCELED"}} {
-		if _, err := env.db.Exec(ctx, `
+		cents   int
+		status  string
+		invoice string
+	}{{4990, "ACTIVE", "PAID"}, {3490, "ACTIVE", "OPEN"}, {0, "ACTIVE", "PAID"}, {0, "CANCELED", ""}} {
+		var id string
+		if err := env.db.QueryRow(ctx, `
 			INSERT INTO subscriptions (customer_id, plan_name, price_cents, due_day, next_due_date, status)
-			VALUES ($1, 'Plano', $2, 10, CURRENT_DATE + 30, $3)`, ana.ID, sub.cents, sub.status); err != nil {
+			VALUES ($1, 'Plano', $2, 10, (date_trunc('month', CURRENT_DATE) + interval '1 month 9 days')::date, $3)
+			RETURNING id`, ana.ID, sub.cents, sub.status).Scan(&id); err != nil {
 			t.Fatal(err)
+		}
+		if sub.invoice != "" {
+			if _, err := env.db.Exec(ctx, `
+				INSERT INTO invoices (customer_id, subscription_id, description, amount_cents, due_date, status)
+				VALUES ($1, $2, 'Mensalidade', $3, CURRENT_DATE, $4)`, ana.ID, id, sub.cents, sub.invoice); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 
@@ -52,7 +63,8 @@ func TestFreeSubscriptionsCount(t *testing.T) {
 		t.Fatalf("na lista da central = %+v", row)
 	}
 
-	// O MRR: só as pagas ativas (a encerrada e a grátis ficam de fora); só o admin.
+	// O MRR: as mensalidades deste mês (a grátis fica de fora), as duas a 1ª da
+	// assinatura; só o admin.
 	env.must(env.login(auth.RoleOperator+"@leads.test"), http.MethodGet, "/api/customers/mrr", nil, http.StatusForbidden)
 	var mrr billing.MRR
 	_ = json.Unmarshal(env.must(env.login(auth.RoleAdmin+"@leads.test"), http.MethodGet, "/api/customers/mrr", nil, http.StatusOK), &mrr)

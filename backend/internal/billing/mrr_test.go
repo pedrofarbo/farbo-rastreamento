@@ -7,40 +7,24 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestComputeMRR(t *testing.T) {
-	loc, err := time.LoadLocation("America/Sao_Paulo")
-	if err != nil {
-		t.Fatal(err)
+func TestAssembleMRR(t *testing.T) {
+	billed := map[string]mrrBill{
+		"2026-08": {monthly: 3490, monthlies: 1, newCents: 3490, newCount: 1},
+		"2026-09": {monthly: 7480, monthlies: 2, newCents: 3990, newCount: 1, parcels: 1200, parcelsPaid: 1200},
+		// Outubro, só as faturas já geradas.
+		"2026-10": {monthly: 2790, monthlies: 1, newCents: 2790, newCount: 1, parcels: 6000},
 	}
-	at := func(y int, m time.Month, d, h, min int) time.Time { return time.Date(y, m, d, h, min, 0, 0, loc) }
-	cents := func(v int) *int { return &v }
-	date := func(y int, m time.Month, d int) *Date { v := NewDate(y, m, d); return &v }
-	canceled := func(s mrrSub, when time.Time) mrrSub { s.canceled, s.isCanceled = when, true; return s }
+	// Outubro inteiro: com a que ainda vai sair (R$ 34,90, com a parcela de R$ 12,00).
+	current := MRRForecast{Month: "2026-10", MonthlyCents: 6280, Monthlies: 2, InstallmentsCents: 7200}
+	churn := map[string]mrrChurn{"2026-10": {cents: 3990, count: 1}}
 
-	subs := []mrrSub{
-		// Na promoção o tempo todo.
-		{priceCents: 6990, promoCents: cents(3490), promoUntil: date(2027, 10, 1), created: at(2026, 8, 5, 10, 0)},
-		// Começou em setembro e foi encerrada em outubro.
-		canceled(mrrSub{priceCents: 3990, created: at(2026, 9, 10, 10, 0)}, at(2026, 10, 3, 9, 0)),
-		// Grátis: nunca conta.
-		{priceCents: 0, created: at(2026, 7, 1, 10, 0)},
-		// A promoção acabou em 10/10: em outubro sobe para o preço cheio.
-		{priceCents: 6990, promoCents: cents(3490), promoUntil: date(2026, 10, 10), created: at(2025, 10, 1, 10, 0)},
-		// Nova em outubro.
-		{priceCents: 4990, created: at(2026, 10, 15, 10, 0)},
-		// 1º de outubro, 00:30 em Brasília (03:30 UTC): é de outubro.
-		{priceCents: 2000, created: at(2026, 10, 1, 0, 30)},
-		// Encerrada em 30/09 às 23:30 em Brasília (já 1º/10 em UTC): é de setembro.
-		canceled(mrrSub{priceCents: 1000, created: at(2026, 8, 1, 10, 0)}, at(2026, 9, 30, 23, 30)),
-	}
-	got := computeMRR(subs, at(2026, 10, 16, 12, 0), loc, 3)
-
+	got := assembleMRR(billed, current, churn, NewDate(2026, 10, 1), 3)
 	want := []MRRMonth{
-		{Month: "2026-10", MRRCents: 17470, Subscriptions: 4, NewCents: 6990, NewCount: 2, ChurnCents: 3990, ChurnCount: 1,
-			ChangeCents: 6500, OtherCents: 3500},
-		{Month: "2026-09", MRRCents: 10970, Subscriptions: 3, NewCents: 3990, NewCount: 1, ChurnCents: 1000, ChurnCount: 1,
-			ChangeCents: 2990, OtherCents: 0},
-		{Month: "2026-08", MRRCents: 7980, Subscriptions: 3, NewCents: 4490, NewCount: 2, ChangeCents: 4490},
+		{Month: "2026-10", MRRCents: 6280, Subscriptions: 2, NewCents: 2790, NewCount: 1, ChurnCents: 3990, ChurnCount: 1,
+			ChangeCents: -1200, OtherCents: 0, InstallmentsCents: 7200, TotalCents: 13480},
+		{Month: "2026-09", MRRCents: 7480, Subscriptions: 2, NewCents: 3990, NewCount: 1, ChangeCents: 3990,
+			InstallmentsCents: 1200, InstallmentsPaidCents: 1200, TotalCents: 8680},
+		{Month: "2026-08", MRRCents: 3490, Subscriptions: 1, NewCents: 3490, NewCount: 1, ChangeCents: 3490, TotalCents: 3490},
 	}
 	if len(got.Months) != len(want) {
 		t.Fatalf("meses = %+v", got.Months)
@@ -50,8 +34,27 @@ func TestComputeMRR(t *testing.T) {
 			t.Errorf("mês %d = %+v, quer %+v", i, got.Months[i], want[i])
 		}
 	}
-	if got.CurrentCents != 17470 || got.Subscriptions != 4 {
-		t.Errorf("hoje = %d (%d assinaturas)", got.CurrentCents, got.Subscriptions)
+	if got.CurrentCents != 6280 || got.Subscriptions != 2 || got.InstallmentsCents != 7200 || got.TotalCents != 13480 {
+		t.Errorf("o mês atual = %+v", got)
+	}
+}
+
+func TestChurnByMonth(t *testing.T) {
+	loc, err := time.LoadLocation("America/Sao_Paulo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	promo := 2790
+	until := NewDate(2027, 10, 1)
+	got := churnByMonth([]mrrSub{
+		// 30/09 às 23:30 em Brasília (já 1º/10 em UTC): é de setembro, pelo preço da promoção.
+		{priceCents: 3990, promoCents: &promo, promoUntil: &until, isCanceled: true, canceled: time.Date(2026, 9, 30, 23, 30, 0, 0, loc)},
+		{priceCents: 4990, isCanceled: true, canceled: time.Date(2026, 10, 3, 9, 0, 0, 0, loc)},
+		{priceCents: 0, isCanceled: true, canceled: time.Date(2026, 10, 4, 9, 0, 0, 0, loc)}, // grátis
+		{priceCents: 4990}, // ativa
+	}, loc)
+	if len(got) != 2 || got["2026-09"] != (mrrChurn{cents: 2790, count: 1}) || got["2026-10"] != (mrrChurn{cents: 4990, count: 1}) {
+		t.Errorf("encerradas = %+v", got)
 	}
 }
 

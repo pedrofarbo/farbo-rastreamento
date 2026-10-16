@@ -15,10 +15,10 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
 )
 
-// As parcelas do rastreador no resumo do MRR: por mês de vencimento, as das
-// faturas (a cancelada não conta) e, no mês atual, a próxima de cada
-// assinatura que ainda vai entrar numa mensalidade do mês; quanto já foi
-// pago; e o total com as mensalidades. Precisa de FARBO_TEST_DATABASE_URL.
+// O MRR pelo que é cobrado: em cada mês, as mensalidades e as parcelas do
+// rastreador das faturas que vencem nele (a cancelada não conta) e, no mês
+// atual, também as que ainda vão sair; quanto das parcelas já foi pago; o
+// total; e a previsão do mês que vem. Precisa de FARBO_TEST_DATABASE_URL.
 func TestMRRInstallments(t *testing.T) {
 	env, _ := newLeadsEnv(t)
 	ctx := context.Background()
@@ -68,14 +68,18 @@ func TestMRRInstallments(t *testing.T) {
 	if len(mrr.Months) != 6 {
 		t.Fatalf("MRR = %+v", mrr)
 	}
+	// Este mês: a mensalidade já gerada (a fatura paga, menos a parcela) e a
+	// do dia 28, que ainda vai sair; a cancelada não conta. O mês passado só
+	// teve a parcela (a fatura era só ela: nenhuma mensalidade).
 	cur, prev := mrr.Months[0], mrr.Months[1]
-	if cur.MRRCents != 3490 || cur.InstallmentsCents != 2200 || cur.InstallmentsPaidCents != 1200 || cur.TotalCents != 5690 {
+	if cur.MRRCents != 6980 || cur.Subscriptions != 2 || cur.InstallmentsCents != 2200 || cur.InstallmentsPaidCents != 1200 ||
+		cur.TotalCents != 9180 || cur.NewCount != 0 {
 		t.Errorf("este mês = %+v", cur)
 	}
-	if prev.InstallmentsCents != 1500 || prev.InstallmentsPaidCents != 1500 || prev.TotalCents != prev.MRRCents+1500 {
+	if prev.MRRCents != 0 || prev.InstallmentsCents != 1500 || prev.InstallmentsPaidCents != 1500 || prev.TotalCents != 1500 {
 		t.Errorf("mês passado = %+v", prev)
 	}
-	if mrr.CurrentCents != 3490 || mrr.InstallmentsCents != 2200 || mrr.TotalCents != 5690 {
+	if mrr.CurrentCents != 6980 || mrr.InstallmentsCents != 2200 || mrr.TotalCents != 9180 {
 		t.Errorf("hoje = %+v", mrr)
 	}
 	// A previsão do mês que vem: a mensalidade do dia 28 dele, com a parcela
