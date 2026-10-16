@@ -211,9 +211,13 @@ export function CustomersPage() {
               </div>
               <div className={billing.tile}>
                 <span className={billing.tileLabel}>MRR</span>
-                <span className={billing.tileValue}>{mrr.data ? formatMoney(mrr.data.currentCents) : '—'}</span>
+                <span className={billing.tileValue}>{mrr.data ? formatMoney(mrr.data.totalCents) : '—'}</span>
                 <span className={billing.tileHint}>
-                  {thisMonth ? `${signedMoney(thisMonth.changeCents)} no mês` : 'receita recorrente mensal'}
+                  {!mrr.data
+                    ? 'receita recorrente mensal'
+                    : mrr.data.installmentsCents > 0
+                      ? `${formatMoney(mrr.data.currentCents)} mensalidades + ${formatMoney(mrr.data.installmentsCents)} parcelas`
+                      : `mensalidades, ${thisMonth ? signedMoney(thisMonth.changeCents) : '—'} no mês`}
                 </span>
               </div>
               <div className={billing.tile}>

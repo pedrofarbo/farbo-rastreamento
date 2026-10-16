@@ -9,10 +9,10 @@ import (
 
 // O MRR (receita recorrente mensal): a soma das mensalidades das assinaturas
 // ativas, pelo preço que a fatura do dia teria (o da promoção enquanto vale,
-// o do reajuste depois que começa). As grátis não somam nada nem contam; as
-// parcelas do rastreador ficam de fora (são o equipamento, não recorrência).
-// Os meses passados usam os preços gravados hoje: uma mensalidade editada
-// à mão não volta no tempo.
+// o do reajuste depois que começa). As grátis não somam nada nem contam. Os
+// meses passados usam os preços gravados hoje: uma mensalidade editada à mão
+// não volta no tempo. Ao lado, as parcelas do rastreador que vencem em cada
+// mês (o equipamento parcelado na mensalidade) e o total das duas.
 
 // MRRMonth é um mês do resumo.
 type MRRMonth struct {
@@ -31,13 +31,22 @@ type MRRMonth struct {
 	// tem além de novas e encerradas (fim de promoção, reajuste).
 	ChangeCents int64 `json:"changeCents"`
 	OtherCents  int64 `json:"otherCents"`
+	// As parcelas do rastreador das faturas que vencem no mês (no atual,
+	// também as das mensalidades que ainda vão ser geradas) e quanto delas já
+	// foi pago. TotalCents: mensalidades + parcelas.
+	InstallmentsCents     int64 `json:"installmentsCents"`
+	InstallmentsPaidCents int64 `json:"installmentsPaidCents"`
+	TotalCents            int64 `json:"totalCents"`
 }
 
 // MRR é o resumo: o de hoje e os meses, do atual para trás.
 type MRR struct {
-	CurrentCents  int64      `json:"currentCents"`
-	Subscriptions int        `json:"subscriptions"`
-	Months        []MRRMonth `json:"months"`
+	CurrentCents  int64 `json:"currentCents"`
+	Subscriptions int   `json:"subscriptions"`
+	// As parcelas do rastreador do mês atual e o total (mensalidades + parcelas).
+	InstallmentsCents int64      `json:"installmentsCents"`
+	TotalCents        int64      `json:"totalCents"`
+	Months            []MRRMonth `json:"months"`
 }
 
 // mrrSub é o que o cálculo precisa de cada assinatura.
@@ -129,7 +138,72 @@ func (s *Service) MRR(ctx context.Context, months int) (*MRR, error) {
 	if err != nil {
 		return nil, err
 	}
-	return computeMRR(subs, now, s.loc, months), nil
+	out := computeMRR(subs, now, s.loc, months)
+	if len(out.Months) == 0 {
+		return out, nil
+	}
+	first, err := time.Parse("2006-01", out.Months[len(out.Months)-1].Month)
+	if err != nil {
+		return nil, err
+	}
+	billed, err := s.repo.mrrInstallments(ctx, first, s.Today())
+	if err != nil {
+		return nil, err
+	}
+	for i := range out.Months {
+		m := &out.Months[i]
+		if b, ok := billed[m.Month]; ok {
+			m.InstallmentsCents, m.InstallmentsPaidCents = b.cents, b.paid
+		}
+		m.TotalCents = m.MRRCents + m.InstallmentsCents
+	}
+	out.InstallmentsCents, out.TotalCents = out.Months[0].InstallmentsCents, out.Months[0].TotalCents
+	return out, nil
+}
+
+type monthInstallments struct{ cents, paid int64 }
+
+// mrrInstallments soma as parcelas do rastreador por mês de vencimento, desde
+// o mês de from: as das faturas (menos as canceladas) e, no mês de today, as
+// que ainda vão entrar nas mensalidades dele (a próxima de cada assinatura
+// ativa que vence no mês e ainda não tem fatura).
+func (r *Repository) mrrInstallments(ctx context.Context, from time.Time, today Date) (map[string]monthInstallments, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT to_char(i.due_date, 'YYYY-MM'), sum(e.amount_cents)::bigint,
+			COALESCE(sum(e.amount_cents) FILTER (WHERE i.status = 'PAID'), 0)::bigint
+		FROM equipment_installments e
+		JOIN invoices i ON i.id = e.invoice_id
+		JOIN users u ON u.id = i.customer_id
+		WHERE i.status <> 'CANCELED' AND i.due_date >= $1::date AND u.role = 'customer'
+		GROUP BY 1
+		UNION ALL
+		SELECT to_char($2::date, 'YYYY-MM'), COALESCE(sum(p.amount_cents), 0)::bigint, 0::bigint
+		FROM subscriptions s
+		JOIN users u ON u.id = s.customer_id
+		JOIN LATERAL (
+			SELECT e.amount_cents FROM equipment_installments e
+			WHERE e.subscription_id = s.id AND e.invoice_id IS NULL AND e.waived_at IS NULL
+			ORDER BY e.number LIMIT 1) p ON TRUE
+		WHERE s.status = 'ACTIVE' AND u.role = 'customer'
+			AND date_trunc('month', s.next_due_date) = date_trunc('month', $2::date)`,
+		from.Format(time.DateOnly), today.String())
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	defer rows.Close()
+	out := map[string]monthInstallments{}
+	for rows.Next() {
+		var month string
+		var cents, paid int64
+		if err := rows.Scan(&month, &cents, &paid); err != nil {
+			return nil, err
+		}
+		m := out[month]
+		m.cents += cents
+		m.paid += paid
+		out[month] = m
+	}
+	return out, rows.Err()
 }
 
 // mrrSubscriptions: as assinaturas de clientes ativas ou encerradas desde from.

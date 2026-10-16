@@ -697,12 +697,20 @@ export interface MRRMonth {
   /** A variação sobre o mês anterior; otherCents, o que ela tem além de novas e encerradas (fim de promoção, reajuste). */
   changeCents: number;
   otherCents: number;
+  /** As parcelas do rastreador que vencem no mês (no atual, também as que ainda vão ser cobradas) e quanto já foi pago. */
+  installmentsCents: number;
+  installmentsPaidCents: number;
+  /** Mensalidades + parcelas. */
+  totalCents: number;
 }
 
-/** O MRR: a soma das mensalidades das assinaturas ativas pagas (sem as grátis e sem as parcelas do rastreador). */
+/** O MRR: a soma das mensalidades das assinaturas ativas pagas (sem as grátis), e ao lado as parcelas do rastreador. */
 export interface MRR {
   currentCents: number;
   subscriptions: number;
+  /** As parcelas do rastreador do mês atual e o total (mensalidades + parcelas). */
+  installmentsCents: number;
+  totalCents: number;
   /** Do mês atual para trás. */
   months: MRRMonth[];
 }

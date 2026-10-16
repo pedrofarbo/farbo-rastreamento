@@ -22,13 +22,17 @@ describe('MRR', () => {
     expect(signedMoney(0)).toBe('—');
   });
 
-  it('mês a mês: o MRR, as novas, as encerradas, o resto e a variação', async () => {
+  it('mês a mês: as mensalidades, as novas, as encerradas, o resto, a variação, as parcelas e o total', async () => {
     const data: MRR = {
       currentCents: 17470,
       subscriptions: 4,
+      installmentsCents: 2200,
+      totalCents: 19670,
       months: [
-        { month: '2026-10', mrrCents: 17470, subscriptions: 4, newCents: 6990, newCount: 2, churnCents: 3990, churnCount: 1, changeCents: 6500, otherCents: 3500 },
-        { month: '2026-09', mrrCents: 10970, subscriptions: 3, newCents: 3990, newCount: 1, churnCents: 0, churnCount: 0, changeCents: 3990, otherCents: 0 },
+        { month: '2026-10', mrrCents: 17470, subscriptions: 4, newCents: 6990, newCount: 2, churnCents: 3990, churnCount: 1, changeCents: 6500, otherCents: 3500,
+          installmentsCents: 2200, installmentsPaidCents: 1200, totalCents: 19670 },
+        { month: '2026-09', mrrCents: 10970, subscriptions: 3, newCents: 3990, newCount: 1, churnCents: 0, churnCount: 0, changeCents: 3990, otherCents: 0,
+          installmentsCents: 0, installmentsPaidCents: 0, totalCents: 10970 },
       ],
     };
     const host = document.createElement('div');
@@ -45,6 +49,11 @@ describe('MRR', () => {
     expect(rows[0]).toContain('−R$ 39,90');
     expect(rows[0]).toContain('+R$ 35,00');
     expect(rows[0]).toContain('+R$ 65,00');
+    // As parcelas do rastreador (quanto já foi pago) e o total.
+    expect(rows[0]).toContain('R$ 22,00');
+    expect(rows[0]).toContain('R$ 12,00 pagas');
+    expect(rows[0]).toContain('R$ 196,70');
+    expect(rows[1]).not.toContain('pagas');
     expect(rows[1]).toContain('set/2026');
     expect(rows[1]).not.toContain('até hoje');
   });
