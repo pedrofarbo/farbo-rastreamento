@@ -82,6 +82,7 @@ const MOCK_CUSTOMER: CustomerSummary = {
   active: true,
   createdAt: '2026-08-01T12:00:00Z',
   activeSubscriptions: 1,
+  freeSubscriptions: 0,
   vehicleCount: 1,
   sharedVehicles: 0,
   openInvoices: 0,

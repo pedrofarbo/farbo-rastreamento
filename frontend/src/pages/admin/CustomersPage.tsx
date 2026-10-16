@@ -106,13 +106,16 @@ export function CustomersPage() {
     });
   };
 
+  // As assinaturas contam sem as grátis (mensalidade zero).
   const totals = (customers.data ?? []).reduce(
     (acc, c) => ({
       open: acc.open + c.openAmountCents,
       overdue: acc.overdue + (c.overdueInvoices > 0 ? 1 : 0),
       suspended: acc.suspended + (c.suspended ? 1 : 0),
+      subscriptions: acc.subscriptions + c.activeSubscriptions - c.freeSubscriptions,
+      free: acc.free + c.freeSubscriptions,
     }),
-    { open: 0, overdue: 0, suspended: 0 },
+    { open: 0, overdue: 0, suspended: 0, subscriptions: 0, free: 0 },
   );
 
   return (
@@ -195,6 +198,13 @@ export function CustomersPage() {
                 <span className={billing.tileValue}>{customers.data?.length ?? '—'}</span>
               </div>
               <div className={billing.tile}>
+                <span className={billing.tileLabel}>Assinaturas ativas</span>
+                <span className={billing.tileValue}>{customers.data ? totals.subscriptions : '—'}</span>
+                <span className={billing.tileHint}>
+                  {totals.free > 0 ? `sem contar ${totals.free} grátis` : 'pagas, sem as grátis'}
+                </span>
+              </div>
+              <div className={billing.tile}>
                 <span className={billing.tileLabel}>A receber</span>
                 <span className={billing.tileValue}>{formatMoney(totals.open)}</span>
                 <span className={billing.tileHint}>faturas em aberto</span>
@@ -263,7 +273,12 @@ export function CustomersPage() {
                               </div>
                             )}
                           </td>
-                          <td>{customer.activeSubscriptions}</td>
+                          <td>
+                            {customer.activeSubscriptions - customer.freeSubscriptions}
+                            {customer.freeSubscriptions > 0 && (
+                              <div className={billing.muted}>+ {customer.freeSubscriptions} grátis</div>
+                            )}
+                          </td>
                           <td className={billing.amount}>
                             {customer.openInvoices > 0 ? formatMoney(customer.openAmountCents) : '—'}
                           </td>

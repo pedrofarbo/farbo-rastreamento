@@ -167,7 +167,9 @@ export function CustomerDetailsPage() {
     return <EmptyState title="Cliente não encontrado" description={<Link to="/clientes">Voltar aos clientes</Link>} />;
   }
 
-  const activeSubs = data.subscriptions.filter((s) => s.status === 'ACTIVE').length;
+  // As grátis (mensalidade zero) não contam como assinatura.
+  const activeSubs = data.subscriptions.filter((s) => s.status === 'ACTIVE' && s.priceCents > 0).length;
+  const freeSubs = data.subscriptions.filter((s) => s.status === 'ACTIVE' && s.priceCents === 0).length;
   const byVehicle = subscriptionsByVehicle(data.subscriptions);
   const withoutVehicle = subscriptionsWithoutVehicle(data.subscriptions);
   const awaitingInstall = data.vehicles.filter((v) => !v.device?.lastSeenAt).length;
@@ -286,6 +288,7 @@ export function CustomerDetailsPage() {
           <div className={billing.tile}>
             <span className={billing.tileLabel}>Assinaturas ativas</span>
             <span className={billing.tileValue}>{activeSubs}</span>
+            {freeSubs > 0 && <span className={billing.tileHint}>sem contar {freeSubs} grátis</span>}
           </div>
           <div className={billing.tile}>
             <span className={billing.tileLabel}>Veículos</span>

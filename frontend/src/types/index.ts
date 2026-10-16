@@ -690,6 +690,8 @@ export interface CustomerSummary {
   active: boolean;
   createdAt: string;
   activeSubscriptions: number;
+  /** Das ativas, as grátis (mensalidade zero): a central não as conta. */
+  freeSubscriptions: number;
   vehicleCount: number;
   /** Veículos de outros clientes que ele acompanha (acesso de terceiro). */
   sharedVehicles: number;
