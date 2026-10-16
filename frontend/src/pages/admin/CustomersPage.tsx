@@ -237,6 +237,7 @@ export function CustomersPage() {
                         <th>Cliente</th>
                         <th>Contato</th>
                         <th>Veículos</th>
+                        <th>Assinaturas ativas</th>
                         <th>Em aberto</th>
                         <th>Situação</th>
                       </tr>
@@ -262,6 +263,7 @@ export function CustomersPage() {
                               </div>
                             )}
                           </td>
+                          <td>{customer.activeSubscriptions}</td>
                           <td className={billing.amount}>
                             {customer.openInvoices > 0 ? formatMoney(customer.openAmountCents) : '—'}
                           </td>
