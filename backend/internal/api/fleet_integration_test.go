@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -86,6 +87,28 @@ func TestFleetGroupsAndCustomFields(t *testing.T) {
 	}
 	env.must(customer, http.MethodPatch, path, map[string]any{"name": "Van 01", "groupId": "não-é-id"}, http.StatusBadRequest)
 	env.must(customer, http.MethodPatch, path, map[string]any{"name": "Van 01", "custom1": strings.Repeat("x", 101)}, http.StatusBadRequest)
+
+	// A central edita o veículo do cliente pela ficha (o corpo inteiro, como a
+	// tela manda): os dados mudam, o dono e o rastreador continuam; o grupo é
+	// o da conta do cliente. O operador não edita.
+	env.must(env.login(auth.RoleOperator+"@leads.test"), http.MethodPatch, path, map[string]any{"name": "Van X"}, http.StatusForbidden)
+	_ = json.Unmarshal(env.must(admin, http.MethodPatch, path, map[string]any{
+		"name": "Van Diretoria", "kind": "CAR", "plate": "grp9z99", "brand": "Fiat", "model": "Ducato", "year": 2024, "color": "Branca",
+		"speedLimitKmh": 90, "deviceId": nil, "groupId": zonaSul.ID.String(), "custom1": "PMSP-2026/0099", "custom2": "CC-12",
+	}, http.StatusOK), &edited)
+	if edited.Name != "Van Diretoria" || edited.Plate != "GRP9Z99" || edited.Model != "Ducato" || edited.SpeedLimitKmh == nil ||
+		*edited.SpeedLimitKmh != 90 || edited.OwnerID == nil || *edited.OwnerID != frota.ID || edited.GroupID == nil ||
+		*edited.GroupID != zonaSul.ID || edited.Custom1 != "PMSP-2026/0099" {
+		t.Errorf("a edição da central = %+v", edited)
+	}
+	var mine []vehicles.Vehicle
+	_ = json.Unmarshal(env.must(customer, http.MethodGet, "/api/vehicles", nil, http.StatusOK), &mine)
+	if len(mine) != 2 || !slices.ContainsFunc(mine, func(v vehicles.Vehicle) bool { return v.Name == "Van Diretoria" && v.Plate == "GRP9Z99" }) {
+		t.Errorf("o cliente vê = %+v", mine)
+	}
+	// Volta ao que o resto do teste espera.
+	env.must(admin, http.MethodPatch, path, map[string]any{"name": "Van 01", "plate": "GRP1A11", "groupId": diretoria.ID.String(),
+		"custom1": "", "custom2": "CC-12"}, http.StatusOK)
 
 	// A conta vê os grupos (com quantos veículos) e os nomes dos campos.
 	var fleet struct {

@@ -98,6 +98,8 @@ export function CustomerDetailsPage() {
   const [importing, setImporting] = useState(false);
   // Assinatura antiga sem veículo: a central informa qual é.
   const [attach, setAttach] = useState<{ subscription: Subscription; input: VehicleInput } | null>(null);
+  // Os dados de um veículo do cliente (o rastreador continua o mesmo: troca-se na tabela).
+  const [editing, setEditing] = useState<{ vehicle: VehicleView; input: VehicleInput } | null>(null);
   const [following, setFollowing] = useState<string | null>(null);
   const [editingAddress, setEditingAddress] = useState(false);
   // O link do convite, para a central mandar por fora do e-mail.
@@ -143,6 +145,7 @@ export function CustomerDetailsPage() {
       setProfile(null);
       setReactivate(null);
       setAttach(null);
+      setEditing(null);
       setEditSubscription(null);
       setPayment(null);
       setNewInvoice(null);
@@ -527,6 +530,13 @@ export function CustomerDetailsPage() {
                         </td>
                         <td>
                           <div className={styles.actions}>
+                            <Button
+                              size="small"
+                              variant="ghost"
+                              onClick={() => openModal(() => setEditing({ vehicle, input: vehicleInputFrom(vehicle) }))}
+                            >
+                              Editar veículo
+                            </Button>
                             {active && sub ? (
                               <>
                                 <Button
@@ -958,6 +968,46 @@ export function CustomerDetailsPage() {
       />
 
       <FulfillmentAdminModal fulfillmentId={following} onClose={() => { setFollowing(null); refresh(); }} />
+
+      {/* Os dados do veículo do cliente */}
+      <Modal
+        open={editing !== null}
+        title={editing ? `Editar veículo · ${editing.vehicle.name}` : ''}
+        onClose={() => setEditing(null)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEditing(null)}>Cancelar</Button>
+            <Button
+              variant="primary"
+              loading={action.isPending}
+              disabled={!editing?.input.name.trim()}
+              onClick={() => editing && run('Veículo atualizado', () => vehiclesApi.update(editing.vehicle.id, editing.input))}
+            >
+              Salvar
+            </Button>
+          </>
+        }
+      >
+        {editing && (
+          <div className={styles.form}>
+            {formError && <div className={styles.note}>{formError}</div>}
+            <VehicleFields value={editing.input} onChange={(input) => setEditing({ ...editing, input })} fleet={fleet} autoFocus />
+            <TextField
+              label="Alerta de velocidade (km/h)"
+              type="number"
+              hint="Opcional. O cliente é avisado quando o veículo passar deste limite."
+              value={editing.input.speedLimitKmh ?? ''}
+              onChange={(event) =>
+                setEditing({
+                  ...editing,
+                  input: { ...editing.input, speedLimitKmh: event.target.value ? Number(event.target.value) : null },
+                })
+              }
+            />
+            <p className={billing.muted}>O cliente vê a mudança na hora. O rastreador do veículo se troca na tabela.</p>
+          </div>
+        )}
+      </Modal>
 
       {/* Assinatura antiga sem veículo */}
       <Modal
