@@ -8,6 +8,7 @@ import { useAuth } from '@/stores/AuthContext';
 
 import { BellIcon, CarIcon, MapIcon, ReceiptIcon, UserIcon } from './icons';
 import { InstallButton } from './InstallButton';
+import { notificationsKey } from './screens/NotificationsScreen';
 import { applyUpdate, usePwa } from './pwa';
 import { PULL_THRESHOLD, usePullToRefresh } from './usePullToRefresh';
 import styles from './AppLayout.module.css';
@@ -38,10 +39,14 @@ function useOnline(): boolean {
   return online;
 }
 
-/** Profundidade da tela: as abas são 0; veículo e cercas, telas de dentro. */
+/**
+ * Profundidade da tela: as abas são 0; veículo e configurar alertas, telas de
+ * dentro; as cercas, mais uma (abertas de lá).
+ */
 function depth(path: string): number {
-  if (path.startsWith('/cercas/')) return 2;
-  if (path === '/cercas' || path.startsWith('/veiculos/')) return 1;
+  if (path.startsWith('/cercas/')) return 3;
+  if (path === '/cercas') return 2;
+  if (path.startsWith('/veiculos/') || path === '/alertas/configurar') return 1;
   return 0;
 }
 
@@ -57,9 +62,13 @@ function transitionFor(path: string, previous: string | null, navigation: string
   return 'fade';
 }
 
-/** As cercas moram dentro da aba Alertas; manutenção e relatórios, na Conta. */
+/** As cercas e a configuração moram dentro da aba Alertas; manutenção e relatórios, na Conta. */
 const tabOf = (path: string) =>
-  path.startsWith('/cercas') ? '/alertas' : path === '/manutencao' || path === '/relatorios' ? '/conta' : path;
+  path.startsWith('/cercas') || path.startsWith('/alertas')
+    ? '/alertas'
+    : path === '/manutencao' || path === '/relatorios'
+      ? '/conta'
+      : path;
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -76,6 +85,9 @@ export function AppLayout() {
   const { canSeeBilling } = useAuth();
   const tabs = canSeeBilling ? TABS : TABS.filter((tab) => tab.to !== '/faturas');
   const overdue = account.data?.overdueInvoices ?? 0;
+  // As notificações não lidas: o número na aba Alertas.
+  const inbox = useQuery({ queryKey: notificationsKey, queryFn: meApi.notifications, refetchInterval: 60_000 });
+  const unread = inbox.data?.unread ?? 0;
   const live = online && connected;
   const liveLabel = live ? 'Ao vivo' : online ? 'Conectando…' : 'Offline';
 
@@ -193,6 +205,11 @@ export function AppLayout() {
               <Icon />
               {to === '/faturas' && overdue > 0 && (
                 <span className={styles.dot} aria-label={`${overdue} fatura(s) vencida(s)`} />
+              )}
+              {to === '/alertas' && unread > 0 && (
+                <span className={styles.count} aria-label={`${unread} notificação(ões) não lida(s)`}>
+                  {unread > 9 ? '9+' : unread}
+                </span>
               )}
             </span>
             <span className={styles.tabLabel}>{label}</span>

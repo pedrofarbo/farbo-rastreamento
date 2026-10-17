@@ -337,6 +337,25 @@
   border: 2px solid var(--surface-sunken);
 }
 
+/* O número de notificações não lidas, no canto do ícone. */
+.count {
+  position: absolute;
+  top: -2px;
+  right: 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--danger);
+  border: 2px solid var(--surface-sunken);
+  color: #fff;
+  font-size: 0.625rem;
+  font-weight: 800;
+  line-height: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .tabLabel {
   font-size: 0.6875rem;
   font-weight: 600;

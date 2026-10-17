@@ -1316,6 +1316,24 @@ export interface PushDevice {
   endpoint: string;
 }
 
+/** Uma notificação na área do app: um alerta, um lembrete de fatura, um aviso da conta. */
+export interface AppNotification {
+  id: number;
+  title: string;
+  body: string;
+  /** Para onde leva no app (/app/veiculos/..., /app/faturas). */
+  url: string;
+  severity: '' | 'info' | 'warning' | 'critical';
+  readAt: string | null;
+  createdAt: string;
+}
+
+/** As notificações mais recentes e quantas ainda não foram lidas. */
+export interface NotificationInbox {
+  items: AppNotification[];
+  unread: number;
+}
+
 export interface PushStatus {
   /** Push ligado no servidor. */
   enabled: boolean;

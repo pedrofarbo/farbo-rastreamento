@@ -232,9 +232,18 @@ func (s *Service) Devices(ctx context.Context, userID uuid.UUID) ([]Device, erro
 	return out, rows.Err()
 }
 
-// Notify entrega a notificação a todos os aparelhos do usuário e devolve em
-// quantos chegou ao serviço de push. Inscrição morta é apagada.
+// Notify guarda a notificação na área do app (mesmo com o push desligado ou
+// sem aparelho inscrito), entrega a todos os aparelhos do usuário e devolve
+// em quantos chegou ao serviço de push. Inscrição morta é apagada.
 func (s *Service) Notify(ctx context.Context, userID uuid.UUID, n Notification) (int, error) {
+	if err := s.record(ctx, userID, n); err != nil {
+		s.log.Warn("falha ao guardar a notificação na área do app", "user", userID, "err", err)
+	}
+	return s.deliver(ctx, userID, n)
+}
+
+// deliver entrega a notificação aos aparelhos do usuário.
+func (s *Service) deliver(ctx context.Context, userID uuid.UUID, n Notification) (int, error) {
 	if !s.enabled {
 		return 0, nil
 	}
@@ -299,7 +308,8 @@ func (s *Service) SendTest(ctx context.Context, userID uuid.UUID, url string) (i
 	}
 	s.lastTest[userID] = s.now()
 	s.mu.Unlock()
-	return s.Notify(ctx, userID, Notification{
+	// O teste vai só para o celular: não é um aviso para guardar.
+	return s.deliver(ctx, userID, Notification{
 		Title: "Notificações ligadas", Body: "É assim que os alertas dos seus veículos vão chegar neste celular.",
 		URL: url, Tag: "teste", Severity: "info", Urgency: webpush.UrgencyNormal, TTL: 10 * time.Minute,
 	})

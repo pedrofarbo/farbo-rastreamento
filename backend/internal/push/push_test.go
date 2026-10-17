@@ -235,3 +235,83 @@ func TestSubscriptionsAndDelivery(t *testing.T) {
 		t.Errorf("usuário sem aparelhos: 0 entregas, sem erro: %d %v", n, err)
 	}
 }
+
+// A área de notificações do app: o Notify guarda (até com o push desligado),
+// o teste não; a lista vem da mais nova para a mais velha, com as não lidas;
+// marcar uma ou todas como lidas só mexe nas da pessoa; as de mais de 90
+// dias saem na limpeza.
+func TestInbox(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	off, err := NewService(ctx, db, config.Push{Enabled: false}, []byte("segredo-jwt-de-teste-com-mais-de-32-bytes"), quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	on, err := NewService(ctx, db, config.Push{Enabled: true, VAPIDSubject: "mailto:x@farbo.test"}, []byte("segredo-jwt-de-teste-com-mais-de-32-bytes"), quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	on.sender = &fakeSender{status: map[string]error{}}
+	ana, bia := newUser(t, db, "ana@inbox.test"), newUser(t, db, "bia@inbox.test")
+
+	// Com o push desligado e sem aparelho: não entrega, mas guarda.
+	if n, err := off.Notify(ctx, ana, Notification{Title: "Ignição ligada", Body: "Moto da Ana", URL: "/app/veiculos/1", Severity: "info"}); err != nil || n != 0 {
+		t.Fatalf("push desligado: %d %v", n, err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	if _, err := on.Notify(ctx, ana, Notification{Title: "SOS", Body: "Moto da Ana", URL: "/app/veiculos/1", Severity: "critical"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := on.Subscribe(ctx, ana, subscription(t, "https://push.test/ana"), ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := on.SendTest(ctx, ana, "/app/alertas"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := on.Notify(ctx, bia, Notification{Title: "Fatura vence amanhã", URL: "/app/faturas", Severity: "warning"}); err != nil {
+		t.Fatal(err)
+	}
+
+	inbox, err := on.Inbox(ctx, ana)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inbox.Unread != 2 || len(inbox.Items) != 2 || inbox.Items[0].Title != "SOS" || inbox.Items[0].Severity != "critical" ||
+		inbox.Items[1].Title != "Ignição ligada" || inbox.Items[1].URL != "/app/veiculos/1" || inbox.Items[0].ReadAt != nil {
+		t.Fatalf("a área da Ana (sem o teste) = %+v", inbox)
+	}
+
+	// A Bia não marca as da Ana; a Ana marca uma e depois todas.
+	if err := on.MarkRead(ctx, bia, &inbox.Items[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := on.Inbox(ctx, ana); again.Unread != 2 {
+		t.Errorf("a Bia marcou uma da Ana: %+v", again)
+	}
+	if err := on.MarkRead(ctx, ana, &inbox.Items[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := on.Inbox(ctx, ana); again.Unread != 1 || again.Items[0].ReadAt == nil || again.Items[1].ReadAt != nil {
+		t.Errorf("depois de ler o SOS = %+v", again)
+	}
+	if err := on.MarkRead(ctx, ana, nil); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := on.Inbox(ctx, ana); again.Unread != 0 {
+		t.Errorf("depois de ler todas = %+v", again)
+	}
+	if other, _ := on.Inbox(ctx, bia); other.Unread != 1 || len(other.Items) != 1 {
+		t.Errorf("a área da Bia = %+v", other)
+	}
+
+	// A limpeza: só as de mais de 90 dias.
+	if _, err := db.Exec(ctx, `UPDATE user_notifications SET created_at = NOW() - interval '91 days' WHERE title = 'Ignição ligada'`); err != nil {
+		t.Fatal(err)
+	}
+	if removed, err := on.PruneInbox(ctx); err != nil || removed != 1 {
+		t.Fatalf("limpeza: %d %v", removed, err)
+	}
+	if again, _ := on.Inbox(ctx, ana); len(again.Items) != 1 || again.Items[0].Title != "SOS" {
+		t.Errorf("depois da limpeza = %+v", again)
+	}
+}

@@ -86,3 +86,31 @@ func (s *Server) handleMyPushTest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]int{"delivered": delivered})
 	}
 }
+
+// handleMyNotifications: a área de notificações do app (as da pessoa).
+func (s *Server) handleMyNotifications(w http.ResponseWriter, r *http.Request) {
+	inbox, err := s.Push.Inbox(r.Context(), personOf(r))
+	if err != nil {
+		handleStoreError(w, err, "usuário não encontrado")
+		return
+	}
+	writeJSON(w, http.StatusOK, inbox)
+}
+
+// handleMyNotificationsRead marca como lida uma notificação (id) ou todas.
+func (s *Server) handleMyNotificationsRead(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID *int64 `json:"id"`
+	}
+	if r.ContentLength != 0 {
+		if err := decodeJSON(w, r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "corpo inválido")
+			return
+		}
+	}
+	if err := s.Push.MarkRead(r.Context(), personOf(r), req.ID); err != nil {
+		handleStoreError(w, err, "usuário não encontrado")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

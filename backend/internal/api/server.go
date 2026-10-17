@@ -510,6 +510,9 @@ func (s *Server) routes() chi.Router {
 				r.Post("/push/subscriptions", s.handleMyPushSubscribe)
 				r.Post("/push/unsubscribe", s.handleMyPushUnsubscribe)
 				r.Post("/push/test", s.handleMyPushTest)
+				// A área de notificações do app: o que foi avisado, lido ou não.
+				r.Get("/notifications", s.handleMyNotifications)
+				r.Post("/notifications/read", s.handleMyNotificationsRead)
 
 				// Acessos de terceiros aos veículos do cliente.
 				if s.Shares != nil {

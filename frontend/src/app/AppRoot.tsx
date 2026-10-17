@@ -19,6 +19,7 @@ import { ProfileScreen } from './screens/ProfileScreen';
 import { TeamScreen } from './screens/TeamScreen';
 import { SecurityScreen } from './screens/SecurityScreen';
 import { AlertsScreen } from './screens/AlertsScreen';
+import { NotificationsScreen } from './screens/NotificationsScreen';
 import { FenceScreen } from './screens/FenceScreen';
 import { FencesScreen } from './screens/FencesScreen';
 import { LoginScreen } from './screens/LoginScreen';
@@ -94,7 +95,8 @@ export function AppRoot() {
                   {/* Manutenção e Relatórios abrem pela Conta: o voltar leva a ela. */}
                   <Route path="relatorios" element={<ReportsPage backTo="/conta" />} />
                   <Route path="manutencao" element={<MaintenancePage backTo="/conta" />} />
-                  <Route path="alertas" element={<AlertsScreen />} />
+                  <Route path="alertas" element={<NotificationsScreen />} />
+                  <Route path="alertas/configurar" element={<AlertsScreen />} />
                   <Route path="cercas" element={<FencesScreen />} />
                   <Route path="cercas/nova" element={<FenceScreen />} />
                   <Route path="cercas/:id" element={<FenceScreen />} />

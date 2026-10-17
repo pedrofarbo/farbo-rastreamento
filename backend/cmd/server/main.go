@@ -327,9 +327,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("notificações no celular: %w", err)
 	}
-	if pushSvc.Enabled() {
-		alertEngine.SetPusher(pushSvc)
-	}
+	alertEngine.SetPusher(pushSvc)
 
 	// Visitas da landing page, sem cookies.
 	analyticsSvc := analytics.NewService(db, log)
@@ -371,9 +369,7 @@ func run() error {
 	// requisição.
 	accountsSvc := accounts.NewService(db, authSvc, mail.NewTeamMailer(mailer, cfg.Mail.AppURL), log)
 	authSvc.SetMemberships(accountsSvc.Lookup)
-	if pushSvc.Enabled() {
-		sharesSvc.SetPusher(pushSvc)
-	}
+	sharesSvc.SetPusher(pushSvc)
 
 	// O contrato que o cliente aceita no primeiro acesso (com o CPF).
 	contractDoc, err := contract.Render(contract.Params{
@@ -396,9 +392,7 @@ func run() error {
 		SuspendAfterDays: cfg.Billing.SuspendAfterDays, Location: billingLoc, FromHour: 9, ToHour: 20,
 		AppURL: cfg.Mail.AppURL, LinkSecret: []byte(cfg.Auth.JWTSecret),
 	}, log)
-	if pushSvc.Enabled() {
-		dunningSvc.SetPusher(pushSvc)
-	}
+	dunningSvc.SetPusher(pushSvc)
 	// Reajuste anual pelo IPCA: aviso em 1º de julho, vale em agosto.
 	adjustmentSvc := adjustment.NewService(db, adjustment.NewBCB(cfg.Billing.IPCAURL),
 		mail.NewPriceAdjustmentMailer(mailer, cfg.Mail.AppURL), adjustment.Config{
@@ -418,9 +412,7 @@ func run() error {
 			AppURL: cfg.Mail.AppURL, LinkSecret: []byte(cfg.Auth.JWTSecret),
 		}, log)
 	theftSvc.SetTexter(smsSvc)
-	if pushSvc.Enabled() {
-		theftSvc.SetPusher(pushSvc)
-	}
+	theftSvc.SetPusher(pushSvc)
 
 	// Relatórios da frota: o resumo de cada dia de cada rastreador, calculado
 	// em segundo plano a partir das posições novas.
@@ -524,7 +516,7 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, theftSvc, dunningSvc, adjustmentSvc, contractSvc, log)
+		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, theftSvc, dunningSvc, adjustmentSvc, contractSvc, pushSvc, log)
 	}()
 
 	log.Info("plataforma no ar",
@@ -565,6 +557,7 @@ func runWorkers(
 	dunningSvc *dunning.Service,
 	adjustmentSvc *adjustment.Service,
 	contractSvc *contract.Service,
+	pushSvc *push.Service,
 	log *slog.Logger,
 ) {
 	statusTicker := time.NewTicker(cfg.Tracking.StatusSweepInterval)
@@ -674,6 +667,11 @@ func runWorkers(
 
 		case <-cleanupTicker.C:
 			authSvc.CleanupExpiredTokens(ctx)
+			if removed, err := pushSvc.PruneInbox(ctx); err != nil {
+				log.Warn("falha ao apagar as notificações antigas do app", "err", err)
+			} else if removed > 0 {
+				log.Info("notificações antigas do app removidas", "count", removed)
+			}
 			if removed, err := infraSvc.Cleanup(ctx); err != nil {
 				log.Warn("falha ao limpar os registros antigos de erros", "err", err)
 			} else if removed > 0 {

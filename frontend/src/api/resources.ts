@@ -110,6 +110,7 @@ import type {
   LeadInput,
   LeadStatus,
   MRR,
+  NotificationInbox,
   WaitlistEntry,
   WaitlistInput,
   PromoStatus,
@@ -1067,6 +1068,10 @@ export const meApi = {
   subscribePush: (subscription: PushSubscriptionJSON) => api.post<void>('/api/me/push/subscriptions', subscription),
   unsubscribePush: (endpoint: string) => api.post<void>('/api/me/push/unsubscribe', { endpoint }),
   testPush: () => api.post<{ delivered: number }>('/api/me/push/test'),
+  /** A área de notificações do app. */
+  notifications: () => api.get<NotificationInbox>('/api/me/notifications'),
+  /** Marca como lida uma notificação (id) ou todas. */
+  readNotifications: (id?: number) => api.post<void>('/api/me/notifications/read', id === undefined ? undefined : { id }),
 };
 
 /** As operações que a janela de pagamento usa (cliente ou central). */

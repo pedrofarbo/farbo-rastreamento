@@ -10,6 +10,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import type { AlertSettings, AlertSettingsInput } from '@/types';
 
+import { BackIcon } from '../icons';
 import { currentSubscription, pushSupport, subscribePush, unsubscribePush } from '../pwa';
 import { fencesKey } from './FencesScreen';
 import styles from './Screen.module.css';
@@ -162,8 +163,9 @@ function FencesCard() {
   );
 }
 
-/** Alertas: notificações no celular e as escolhas que valem para e-mail e celular. */
+/** Configurar alertas: notificações no celular e as escolhas que valem para e-mail e celular. */
 export function AlertsScreen() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { notify } = useToast();
   const settings = useQuery({ queryKey: alertsKey, queryFn: meApi.alerts });
@@ -185,12 +187,27 @@ export function AlertsScreen() {
     onError: (error: Error) => notify({ tone: 'error', title: 'E-mail de teste não saiu', description: error.message }),
   });
 
+  // Aberto direto (link ou recarregar), não há tela anterior no app.
+  const goBack = () => {
+    const state = window.history.state as { idx?: number } | null;
+    if (state?.idx) navigate(-1);
+    else navigate('/alertas', { replace: true });
+  };
+
   return (
     <div className={styles.screen}>
-      <div>
-        <h1 className={styles.title}>Alertas</h1>
-        <p className={styles.lead}>Os alertas escolhidos abaixo chegam por e-mail e, com as notificações ligadas, neste celular.</p>
+      <div className={styles.navbar}>
+        <button type="button" className={styles.back} onClick={goBack} aria-label="Voltar">
+          <BackIcon />
+        </button>
+        <div className={styles.navTitle}>
+          <h1>Configurar alertas</h1>
+        </div>
       </div>
+      <p className={styles.lead}>
+        Os alertas escolhidos abaixo chegam por e-mail, na área de notificações e, com as notificações ligadas, neste
+        celular.
+      </p>
       <PushCard />
       <FencesCard />
       {settings.isLoading ? (
