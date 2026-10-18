@@ -8,7 +8,7 @@ import { meGroupPixApi } from '@/components/billing/groupPix';
 import { InvoiceDayRows } from '@/components/billing/InvoiceDayRows';
 import { InvoiceLines } from '@/components/billing/InvoiceLines';
 import { InvoiceStatus } from '@/components/billing/InvoiceStatus';
-import { MonthlyPrice } from '@/components/billing/MonthlyPrice';
+import { MonthlyPrice, isFree } from '@/components/billing/MonthlyPrice';
 import { CardSettings } from '@/components/billing/CardSettings';
 import { PixPaymentModal } from '@/components/billing/PixPaymentModal';
 import { Badge } from '@/components/ui/Badge';
@@ -300,7 +300,9 @@ export function InvoicesPage() {
                       <td data-label="Valor mensal">
                         <MonthlyPrice sub={subscription} />
                       </td>
-                      <td data-label="Vencimento">todo dia {subscription.dueDay}</td>
+                      <td data-label="Vencimento">
+                        {isFree(subscription) ? 'sem cobrança' : `todo dia ${subscription.dueDay}`}
+                      </td>
                       <td data-label="Situação">
                         {subscription.status === 'ACTIVE' ? (
                           <Badge tone="success" dot>

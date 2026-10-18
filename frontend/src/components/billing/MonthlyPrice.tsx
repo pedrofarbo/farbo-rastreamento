@@ -12,6 +12,11 @@ export function promoActive(sub: Priced): boolean {
   return sub.promoPriceCents !== null && sub.promoUntil !== null && sub.nextDueDate < sub.promoUntil;
 }
 
+/** Assinatura grátis (cortesia): mensalidade zero, sem promoção, sem cobrança. */
+export function isFree(sub: Priced): boolean {
+  return sub.priceCents === 0 && !promoActive(sub) && !sub.nextPriceCents;
+}
+
 /** A mensalidade da promoção de pré-lançamento no plano: o do Insanos MC tem a sua. */
 export function promoMonthlyFor(offer: PromoOffer, planName: string): number {
   const insanos = offer.insanosPlanName.trim().toLowerCase();
@@ -20,7 +25,9 @@ export function promoMonthlyFor(offer: PromoOffer, planName: string): number {
 
 /**
  * A mensalidade como o cliente paga agora: com a promoção de pré-lançamento,
- * o valor dela e quando passa ao do plano.
+ * o valor dela e quando passa ao do plano; a de valor zero, "Grátis". Sai num
+ * elemento só, para a linha da tabela no celular não separar o valor do
+ * "/mês".
  */
 export function MonthlyPrice({ sub, staff = false }: { sub: Priced; staff?: boolean }) {
   // O reajuste anual já avisado: o valor novo e desde quando. A equipe vê
@@ -32,19 +39,22 @@ export function MonthlyPrice({ sub, staff = false }: { sub: Priced; staff?: bool
         (reajuste anual pelo IPCA: {formatMoney(sub.nextPriceCents)} a partir de {formatDateOnly(sub.nextPriceFrom)})
       </span>
     ) : null;
+  if (isFree(sub)) {
+    return <span className={styles.amount}>Grátis</span>;
+  }
   if (!promoActive(sub)) {
     return (
-      <>
+      <span>
         <span className={styles.amount}>{formatMoney(sub.priceCents)}</span>/mês{adjustment}
-      </>
+      </span>
     );
   }
   return (
-    <>
+    <span>
       <span className={styles.amount}>{formatMoney(sub.promoPriceCents as number)}</span>/mês{' '}
       <span className={styles.muted}>
         (pré-lançamento; a partir de {formatDateOnly(sub.promoUntil)}, {formatMoney(sub.priceCents)})
       </span>
-    </>
+    </span>
   );
 }

@@ -7,7 +7,7 @@ import type { VehicleInput } from '@/api/resources';
 import { AddressModal } from '@/components/address/AddressModal';
 import { DeliveryBox } from '@/components/address/DeliveryBox';
 import billing from '@/components/billing/Billing.module.css';
-import { MonthlyPrice } from '@/components/billing/MonthlyPrice';
+import { MonthlyPrice, isFree } from '@/components/billing/MonthlyPrice';
 import { installmentProgress } from '@/components/billing/installments';
 import { meGroupPixApi } from '@/components/billing/groupPix';
 import { NewVehicleWizard } from '@/components/billing/NewVehicleWizard';
@@ -303,7 +303,13 @@ export function MyVehiclesPage() {
                   <div>
                     <div className={billing.vehicleName}>Assinatura sem veículo</div>
                     <div className={billing.subscriptionLine}>
-                      {sub.planName} · <MonthlyPrice sub={sub} /> · vence dia {sub.dueDay}
+                      {isFree(sub) ? (
+                        <>{sub.planName} · sem cobrança</>
+                      ) : (
+                        <>
+                          {sub.planName} · <MonthlyPrice sub={sub} /> · vence dia {sub.dueDay}
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className={billing.vehicleMeta}>
@@ -621,8 +627,13 @@ function VehicleCard({
         {subscription?.status === 'ACTIVE' ? (
           <>
             <div className={billing.subscriptionLine}>
-              {subscription.planName} · <MonthlyPrice sub={subscription} /> · vence dia{' '}
-              {subscription.dueDay}
+              {isFree(subscription) ? (
+                <>{subscription.planName} · sem cobrança</>
+              ) : (
+                <>
+                  {subscription.planName} · <MonthlyPrice sub={subscription} /> · vence dia {subscription.dueDay}
+                </>
+              )}
             </div>
             {installmentProgress(subscription) && (
               <div className={billing.vehicleMeta}>{installmentProgress(subscription)}</div>
