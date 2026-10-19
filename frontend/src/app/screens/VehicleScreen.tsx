@@ -13,6 +13,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { CommandPanel } from '@/components/vehicle/CommandPanel';
+import { EngineHistory } from '@/components/vehicle/EngineHistory';
 import { TheftPanel } from '@/components/vehicle/TheftPanel';
 import { useVehicle } from '@/hooks/useVehicles';
 import { useAuth } from '@/stores/AuthContext';
@@ -301,6 +302,13 @@ export function VehicleScreen() {
               )
             )}
           </section>
+
+          {vehicle.device && (
+            <section className={styles.section}>
+              <h2 className={styles.sectionTitle}>Bloqueios e desbloqueios</h2>
+              <EngineHistory vehicleId={vehicle.id} />
+            </section>
+          )}
 
           <VehicleMaintenance vehicle={vehicle} canEdit={canOperateAccount} />
 

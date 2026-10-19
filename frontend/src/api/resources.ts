@@ -110,6 +110,7 @@ import type {
   LeadInput,
   LeadStatus,
   MRR,
+  EngineHistoryItem,
   AuthSession,
   NotificationInbox,
   WaitlistEntry,
@@ -331,6 +332,8 @@ export const vehiclesApi = {
     return api.get<VehicleEvent[]>(`/api/vehicles/${id}/events?${query}`);
   },
 
+  /** O rastreio de bloqueio e desbloqueio do veículo. */
+  engineHistory: (id: string) => api.get<EngineHistoryItem[]>(`/api/vehicles/${id}/engine-history`),
   commands: (id: string, limit = 50) =>
     api.get<DeviceCommand[]>(`/api/vehicles/${id}/commands?limit=${limit}`),
 };

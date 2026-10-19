@@ -363,6 +363,8 @@ func (s *Server) routes() chi.Router {
 					r.Get("/positions", s.handleVehiclePositions)
 					r.Get("/events", s.handleVehicleEvents)
 					r.Get("/commands", s.handleVehicleCommands)
+					// O rastreio de bloqueio e desbloqueio (quem, de qual aparelho, como confirmou).
+					r.Get("/engine-history", s.handleEngineHistory)
 					// O hodômetro e a manutenção: a leitura, quem mexe na conta.
 					if s.Maintenance != nil {
 						r.Get("/maintenance", s.handleVehicleMaintenance)

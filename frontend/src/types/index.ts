@@ -70,6 +70,22 @@ export interface AccountMember {
   groups: string[] | null;
 }
 
+/** Um bloqueio ou desbloqueio no rastreio do app: quem pediu, de qual aparelho e como confirmou. */
+export interface EngineHistoryItem {
+  id: string;
+  command: 'ENGINE_CUT' | 'ENGINE_RESUME';
+  status: CommandStatus;
+  requestedAt: string;
+  acknowledgedAt: string | null;
+  error: string;
+  /** "Você", o nome de alguém da conta ou de quem tem acesso compartilhado, "Central Farbo" ou "Sistema". */
+  who: string;
+  whoKind: 'you' | 'account' | 'shared' | 'central' | 'system';
+  /** O navegador de onde saiu (vazio: não registrado, ou a central). */
+  userAgent: string;
+  confirmedWith: '' | 'biometric' | 'password';
+}
+
 /** Um aparelho com a conta aberta. */
 export interface AuthSession {
   id: string;

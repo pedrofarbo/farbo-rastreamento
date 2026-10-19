@@ -26,10 +26,11 @@ func (s *Server) handleEngineCut(w http.ResponseWriter, r *http.Request) {
 	if !ok || !canBlock(w, share) {
 		return
 	}
-	if !s.requireStepUp(w, r, stepup.PurposeEngineCut) {
+	method, ok := s.stepUpMethod(w, r, stepup.PurposeEngineCut)
+	if !ok {
 		return
 	}
-	if !s.dispatchCommand(w, r, vehicle, device, protocols.CommandEngineCut, nil) || share == nil {
+	if !s.dispatchCommand(w, r, vehicle, device, protocols.CommandEngineCut, nil, method) || share == nil {
 		return
 	}
 	s.recordAudit(r, audit.ActionSharedEngineCut, &vehicle.ID, &device.ID,
@@ -67,10 +68,11 @@ func (s *Server) handleEngineResume(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.requireStepUp(w, r, stepup.PurposeEngineResume) {
+	method, ok := s.stepUpMethod(w, r, stepup.PurposeEngineResume)
+	if !ok {
 		return
 	}
-	s.dispatchCommand(w, r, vehicle, device, protocols.CommandEngineResume, nil)
+	s.dispatchCommand(w, r, vehicle, device, protocols.CommandEngineResume, nil, method)
 }
 
 // handleRequestPosition: pedir uma posição nova também vale para quem
@@ -80,7 +82,7 @@ func (s *Server) handleRequestPosition(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.dispatchCommand(w, r, vehicle, device, protocols.CommandRequestPosition, nil)
+	s.dispatchCommand(w, r, vehicle, device, protocols.CommandRequestPosition, nil, "")
 }
 
 func (s *Server) handleRequestStatus(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +90,7 @@ func (s *Server) handleRequestStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.dispatchCommand(w, r, vehicle, device, protocols.CommandRequestStatus, nil)
+	s.dispatchCommand(w, r, vehicle, device, protocols.CommandRequestStatus, nil, "")
 }
 
 type genericCommandRequest struct {
@@ -126,13 +128,14 @@ func (s *Server) handleGenericCommand(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.dispatchCommand(w, r, vehicle, device, cmdType, &req)
+	s.dispatchCommand(w, r, vehicle, device, cmdType, &req, "")
 }
 
 // dispatchCommand envia o comando ao rastreador do veículo e responde. Diz
 // se o comando saiu (mesmo que a confirmação do aparelho ainda venha).
+// confirmedWith: como o cliente confirmou (biometric ou password).
 func (s *Server) dispatchCommand(w http.ResponseWriter, r *http.Request, vehicle *vehicles.Vehicle, device *devices.Device,
-	cmdType protocols.CommandType, extra *genericCommandRequest) bool {
+	cmdType protocols.CommandType, extra *genericCommandRequest, confirmedWith string) bool {
 	var userID *uuid.UUID
 	if principal, found := auth.FromContext(r.Context()); found {
 		userID = &principal.UserID
@@ -144,6 +147,9 @@ func (s *Server) dispatchCommand(w http.ResponseWriter, r *http.Request, vehicle
 		Type:      cmdType,
 		UserID:    userID,
 		IP:        clientIP(r),
+		// De qual aparelho e como confirmou: o rastreio de bloqueio no app.
+		UserAgent:     r.UserAgent(),
+		ConfirmedWith: confirmedWith,
 	}
 	if extra != nil {
 		req.Params = extra.Params

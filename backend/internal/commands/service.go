@@ -64,6 +64,7 @@ type Store interface {
 	FindOpenByCorrelation(ctx context.Context, deviceID uuid.UUID, key uint32) (*Command, error)
 	FindOldestOpen(ctx context.Context, deviceID uuid.UUID) (*Command, error)
 	ExpireTimedOut(ctx context.Context) ([]*Command, error)
+	EngineHistory(ctx context.Context, deviceID uuid.UUID, limit int) ([]*EngineEntry, error)
 }
 
 // EventRecorder e AuditRecorder são as fatias que o serviço usa de events e
@@ -118,6 +119,10 @@ type Request struct {
 	RawOverride string
 	UserID      *uuid.UUID
 	IP          string
+	// UserAgent: o navegador de quem pediu; ConfirmedWith: biometric ou
+	// password, quando o pedido teve a confirmação extra.
+	UserAgent     string
+	ConfirmedWith string
 }
 
 // Send executa o fluxo completo do §14: valida, grava, envia e audita.
@@ -166,6 +171,8 @@ func (s *Service) Send(ctx context.Context, req Request) (*Command, error) {
 		Status:         StatusPending,
 		CorrelationKey: key,
 		RequestedBy:    req.UserID,
+		UserAgent:      truncateUA(req.UserAgent),
+		ConfirmedWith:  req.ConfirmedWith,
 	}
 	if err := s.repo.Create(ctx, cmd); err != nil {
 		return nil, err
@@ -307,6 +314,8 @@ func (s *Service) reject(ctx context.Context, req Request, reason string) (*Comm
 		Status:         StatusRejected,
 		CorrelationKey: newCorrelationKey(),
 		RequestedBy:    req.UserID,
+		UserAgent:      truncateUA(req.UserAgent),
+		ConfirmedWith:  req.ConfirmedWith,
 		Error:          reason,
 	}
 	if err := s.repo.Create(ctx, cmd); err != nil {
@@ -526,4 +535,18 @@ func printable(payload []byte) string {
 		out = append(out, []byte(fmt.Sprintf("\\x%02X", b))...)
 	}
 	return string(out)
+}
+
+// EngineHistory são os últimos bloqueios e desbloqueios do rastreador, com
+// as credenciais do aparelho trocadas por ***.
+func (s *Service) EngineHistory(ctx context.Context, dev *devices.Device, limit int) ([]*EngineEntry, error) {
+	list, err := s.repo.EngineHistory(ctx, dev.ID, limit)
+	if err != nil {
+		return nil, err
+	}
+	secrets := dev.Secrets()
+	for _, e := range list {
+		e.Redact(secrets)
+	}
+	return list, nil
 }

@@ -667,3 +667,17 @@ func contains(values []string, want string) bool {
 	}
 	return false
 }
+
+func (m *memoryStore) EngineHistory(_ context.Context, deviceID uuid.UUID, _ int) ([]*EngineEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := []*EngineEntry{}
+	for i := len(m.order) - 1; i >= 0; i-- {
+		cmd := m.commands[m.order[i]]
+		if cmd.DeviceID == deviceID && (cmd.Command == "ENGINE_CUT" || cmd.Command == "ENGINE_RESUME") {
+			copied := *cmd
+			out = append(out, &EngineEntry{Command: &copied})
+		}
+	}
+	return out, nil
+}

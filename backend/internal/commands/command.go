@@ -51,6 +51,11 @@ type Command struct {
 
 	RequestedBy *uuid.UUID `json:"requestedBy"`
 	RequestedAt time.Time  `json:"requestedAt"`
+	// UserAgent é o navegador da sessão que pediu (de qual aparelho saiu);
+	// ConfirmedWith, como a pessoa confirmou (biometric ou password; vazio
+	// para a central e os comandos sem confirmação).
+	UserAgent     string `json:"userAgent"`
+	ConfirmedWith string `json:"confirmedWith"`
 
 	SentAt         *time.Time `json:"sentAt"`
 	AcknowledgedAt *time.Time `json:"acknowledgedAt"`
@@ -71,7 +76,7 @@ func (c *Command) Redact(secrets []string) {
 }
 
 const columns = `id, device_id, command, COALESCE(payload, ''), status, correlation_key,
-	requested_by, requested_at, sent_at, acknowledged_at, timeout_at,
+	requested_by, requested_at, user_agent, confirmed_with, sent_at, acknowledged_at, timeout_at,
 	COALESCE(response, ''), COALESCE(error, ''), created_at`
 
 type Repository struct{ db *database.DB }
@@ -82,7 +87,7 @@ func scan(row database.Scanner) (*Command, error) {
 	var c Command
 	var correlation int64
 	err := row.Scan(&c.ID, &c.DeviceID, &c.Command, &c.Payload, &c.Status, &correlation,
-		&c.RequestedBy, &c.RequestedAt, &c.SentAt, &c.AcknowledgedAt, &c.TimeoutAt,
+		&c.RequestedBy, &c.RequestedAt, &c.UserAgent, &c.ConfirmedWith, &c.SentAt, &c.AcknowledgedAt, &c.TimeoutAt,
 		&c.Response, &c.Error, &c.CreatedAt)
 	if err != nil {
 		return nil, database.MapError(err)
@@ -93,10 +98,10 @@ func scan(row database.Scanner) (*Command, error) {
 
 func (r *Repository) Create(ctx context.Context, c *Command) error {
 	return database.MapError(r.db.QueryRow(ctx, `
-		INSERT INTO device_commands (device_id, command, payload, status, correlation_key, requested_by)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO device_commands (device_id, command, payload, status, correlation_key, requested_by, user_agent, confirmed_with)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, requested_at, created_at`,
-		c.DeviceID, c.Command, c.Payload, c.Status, int64(c.CorrelationKey), c.RequestedBy,
+		c.DeviceID, c.Command, c.Payload, c.Status, int64(c.CorrelationKey), c.RequestedBy, c.UserAgent, c.ConfirmedWith,
 	).Scan(&c.ID, &c.RequestedAt, &c.CreatedAt))
 }
 

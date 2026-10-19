@@ -282,9 +282,16 @@ func (s *Server) requireTeamStepUp(w http.ResponseWriter, r *http.Request, purpo
 // senha) para a ação. A equipe da central segue como antes. Devolve false se
 // já respondeu.
 func (s *Server) requireStepUp(w http.ResponseWriter, r *http.Request, purpose string) bool {
+	_, ok := s.stepUpMethod(w, r, purpose)
+	return ok
+}
+
+// stepUpMethod é o requireStepUp que também diz como o cliente confirmou
+// (biometric ou password; vazio para a equipe da central).
+func (s *Server) stepUpMethod(w http.ResponseWriter, r *http.Request, purpose string) (string, bool) {
 	_, isCustomer := customerOf(r)
 	if !isCustomer || s.StepUp == nil {
-		return true
+		return "", true
 	}
 	// A confirmação é de quem está logado (alguém da equipe confirma com a
 	// própria senha ou biometria, não com as do titular).
@@ -293,11 +300,11 @@ func (s *Server) requireStepUp(w http.ResponseWriter, r *http.Request, purpose s
 		if !errors.Is(err, stepup.ErrNoGrant) {
 			s.Log.Error("falha ao conferir a confirmação extra", "err", err)
 			writeError(w, http.StatusInternalServerError, "erro interno")
-			return false
+			return "", false
 		}
 		writeCode(w, http.StatusForbidden, "confirme com a biometria ou a senha para continuar", codeStepUpRequired)
-		return false
+		return "", false
 	}
 	s.Log.Info("ação confirmada", "purpose", purpose, "method", method)
-	return true
+	return method, true
 }
