@@ -66,6 +66,10 @@ describe('a senha nova pela central', () => {
     await act(async () => button('Gerar senha').click());
     const input = document.querySelector('input') as HTMLInputElement;
     expect(input.value).toHaveLength(12);
+    // Escondida, com o olhinho para mostrar.
+    expect(input.type).toBe('password');
+    await act(async () => (document.querySelector('button[aria-label="Mostrar senha"]') as HTMLButtonElement).click());
+    expect(input.type).toBe('text');
     expect(button('Continuar').disabled).toBe(false);
 
     await act(async () => button('Continuar').click());

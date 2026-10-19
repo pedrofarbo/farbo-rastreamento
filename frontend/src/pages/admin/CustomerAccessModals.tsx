@@ -195,6 +195,7 @@ export function CustomerPasswordModal({
             {error && <div className={styles.note}>{error}</div>}
             <TextField
               label="Senha nova"
+              type="password"
               value={password}
               autoComplete="new-password"
               disabled={step === 'confirm'}
