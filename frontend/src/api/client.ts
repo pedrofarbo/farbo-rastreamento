@@ -43,6 +43,12 @@ class TokenStore {
     safeWrite(REFRESH_KEY, tokens.refreshToken);
   }
 
+  /** Só o token de acesso novo: a sessão (o refresh token) continua a mesma. */
+  saveAccess(accessToken: string): void {
+    this.access = accessToken;
+    safeWrite(ACCESS_KEY, accessToken);
+  }
+
   clear(): void {
     this.access = null;
     safeRemove(ACCESS_KEY);

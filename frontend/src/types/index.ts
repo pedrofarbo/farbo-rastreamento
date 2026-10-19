@@ -70,6 +70,18 @@ export interface AccountMember {
   groups: string[] | null;
 }
 
+/** Um aparelho com a conta aberta. */
+export interface AuthSession {
+  id: string;
+  /** O navegador que abriu a sessão (ver deviceLabel). */
+  userAgent: string;
+  /** A última renovação (o app renova ao abrir e a cada 15 minutos de uso). */
+  lastSeenAt: string;
+  expiresAt: string;
+  /** É este aparelho. */
+  current: boolean;
+}
+
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;

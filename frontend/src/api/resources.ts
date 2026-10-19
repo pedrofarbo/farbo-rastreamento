@@ -1,7 +1,7 @@
 import type { FleetImportRow } from '@/services/fleetImport';
 import type { TeamRole } from '@/services/roles';
 
-import { api, apiUrl, download, fetchBlob, request } from './client';
+import { api, apiUrl, download, fetchBlob, request, tokens } from './client';
 import type {
   AccountMember,
   FleetImportResult,
@@ -110,6 +110,7 @@ import type {
   LeadInput,
   LeadStatus,
   MRR,
+  AuthSession,
   NotificationInbox,
   WaitlistEntry,
   WaitlistInput,
@@ -147,6 +148,14 @@ export const authApi = {
   logout: (refreshToken: string) =>
     request<void>('/api/auth/logout', { method: 'POST', body: { refreshToken }, anonymous: true }),
   me: () => api.get<User>('/api/auth/me'),
+  /** Os aparelhos com a conta aberta. */
+  sessions: () => api.get<{ sessions: AuthSession[] }>('/api/auth/sessions'),
+  /** Sai dos outros aparelhos; este ganha um token de acesso novo (o antigo é de antes do corte). */
+  signOutOthers: async () => {
+    const out = await api.post<{ accessToken: string; expiresAt: string; signedOut: number }>('/api/auth/sessions/sign-out-others');
+    tokens.saveAccess(out.accessToken);
+    return out;
+  },
 
   // Redefinição de senha: rotas públicas, sem sessão (anonymous evita mandar
   // um token velho e disparar a renovação de sessão num 401).
@@ -696,6 +705,13 @@ export const customersApi = {
   invite: (id: string) => api.post<{ message: string }>(`/api/customers/${id}/invite`),
   /** O link do convite, para mandar sem o e-mail; derruba o anterior. */
   inviteLink: (id: string) => api.post<{ url: string; expiresAt: string }>(`/api/customers/${id}/invite-link`),
+  /** Os aparelhos com a conta do cliente aberta. */
+  sessions: (id: string) => api.get<{ sessions: AuthSession[] }>(`/api/customers/${id}/sessions`),
+  /** Desconecta todas as sessões do cliente (na hora). */
+  signOut: (id: string) => api.post<{ signedOut: number }>(`/api/customers/${id}/sessions/sign-out`),
+  /** A senha nova definida pela central (com a confirmação de quem faz): as sessões dele caem. */
+  setPassword: (id: string, password: string, stepUpToken: string) =>
+    request<void>(`/api/customers/${id}/password`, { method: 'POST', body: { password }, headers: withStepUp(stepUpToken) }),
   saveAddress: (id: string, input: DeliveryAddress) =>
     api.put<DeliveryAddress>(`/api/customers/${id}/address`, input),
   /** Prazo do histórico de todos os veículos do cliente (nulo = padrão da central). */

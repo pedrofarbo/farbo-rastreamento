@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -37,6 +38,9 @@ const dummyHash = "$2a$12$TfwVGhu.uQbVoziiu/9kLu85osKWoyO8pkR1ho7GQ.nHGiwQ67idW"
 type Claims struct {
 	Role  string `json:"role"`
 	Email string `json:"email"`
+	// SessionID é a sessão (o refresh token) de onde o token saiu: "este
+	// aparelho" na lista de sessões.
+	SessionID string `json:"sid,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -72,6 +76,11 @@ type Service struct {
 	// memberships acha a conta empresa de quem é da equipe de um cliente
 	// (SetMemberships); nil: todo cliente é titular.
 	memberships MembershipLookup
+
+	// cutoffs guarda por uns segundos o corte dos tokens de cada usuário
+	// (sessions_valid_after), para o middleware não ir ao banco a cada
+	// requisição.
+	cutoffs sync.Map
 }
 
 // SetSessionGuard liga a regra que decide se uma sessão pode renovar.
@@ -81,17 +90,20 @@ func NewService(repo *Repository, cfg config.Auth, notifier Notifier, log *slog.
 	if cfg.BcryptCost < bcrypt.MinCost || cfg.BcryptCost > bcrypt.MaxCost {
 		cfg.BcryptCost = bcrypt.DefaultCost
 	}
-	return &Service{
+	s := &Service{
 		repo:     repo,
-		users:    repo,
-		sessions: repo,
-		resets:   repo,
 		notifier: notifier,
 		cfg:      cfg,
 		log:      log.With("component", "auth"),
 		keyID:    signingKeyID(cfg.JWTSecret),
 		runAsync: func(f func()) { go f() },
 	}
+	// Sem banco (os testes que só assinam tokens), os guardas ficam nulos de
+	// verdade, e não um *Repository nulo dentro da interface.
+	if repo != nil {
+		s.users, s.sessions, s.resets = repo, repo, repo
+	}
+	return s
 }
 
 // userStore é o que o cadastro e o primeiro acesso precisam do banco. O
@@ -105,9 +117,12 @@ type userStore interface {
 // implementa; os testes usam um dublê em memória.
 type sessionStore interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*User, error)
-	StoreRefreshToken(ctx context.Context, userID uuid.UUID, tokenHash, keyID string, expiresAt time.Time, userAgent string) error
+	StoreRefreshToken(ctx context.Context, userID uuid.UUID, tokenHash, keyID string, expiresAt time.Time, userAgent string) (uuid.UUID, error)
 	ConsumeRefreshToken(ctx context.Context, tokenHash, keyID string) (*refreshRecord, error)
 	RevokeRefreshTokensNotSignedBy(ctx context.Context, keyID string) (int64, error)
+	ActiveSessions(ctx context.Context, userID uuid.UUID, keyID string) ([]Session, error)
+	CutSessions(ctx context.Context, userID uuid.UUID, keep *uuid.UUID) (time.Time, int64, error)
+	SessionsValidAfter(ctx context.Context, userID uuid.UUID) (*time.Time, error)
 }
 
 // signingKeyID identifica o JWT_SECRET sem revelá-lo: é um HMAC com o
@@ -233,7 +248,6 @@ func (s *Service) Logout(ctx context.Context, refreshToken string) error {
 }
 
 func (s *Service) issue(ctx context.Context, user *User, userAgent string) (*Tokens, error) {
-	expiresAt := time.Now().Add(s.cfg.AccessTokenTTL)
 	// A tela já entra sabendo se a pessoa é da equipe de um cliente.
 	if user.Role == RoleCustomer {
 		membership, err := s.Membership(ctx, user.ID)
@@ -243,37 +257,48 @@ func (s *Service) issue(ctx context.Context, user *User, userAgent string) (*Tok
 		user.Membership = membership
 	}
 
-	claims := Claims{
-		Role:  user.Role,
-		Email: user.Email,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   user.ID.String(),
-			Issuer:    issuer,
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(expiresAt),
-			ID:        uuid.NewString(),
-		},
-	}
-	access, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.cfg.JWTSecret)
-	if err != nil {
-		return nil, fmt.Errorf("assinando token: %w", err)
-	}
-
 	refresh, err := newOpaqueToken()
 	if err != nil {
 		return nil, err
 	}
-	if err := s.sessions.StoreRefreshToken(ctx, user.ID, hashToken(refresh), s.keyID,
-		time.Now().Add(s.cfg.RefreshTokenTTL), userAgent); err != nil {
+	sessionID, err := s.sessions.StoreRefreshToken(ctx, user.ID, hashToken(refresh), s.keyID,
+		time.Now().Add(s.cfg.RefreshTokenTTL), userAgent)
+	if err != nil {
 		return nil, err
 	}
-
+	access, expiresAt, err := s.accessToken(user, sessionID)
+	if err != nil {
+		return nil, err
+	}
 	return &Tokens{
 		AccessToken:  access,
 		RefreshToken: refresh,
 		ExpiresAt:    expiresAt,
 		User:         user,
 	}, nil
+}
+
+// accessToken assina o token de acesso da sessão.
+func (s *Service) accessToken(user *User, sessionID uuid.UUID) (string, time.Time, error) {
+	now := time.Now()
+	expiresAt := now.Add(s.cfg.AccessTokenTTL)
+	claims := Claims{
+		Role:      user.Role,
+		Email:     user.Email,
+		SessionID: sessionID.String(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   user.ID.String(),
+			Issuer:    issuer,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			ID:        uuid.NewString(),
+		},
+	}
+	access, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.cfg.JWTSecret)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("assinando token: %w", err)
+	}
+	return access, expiresAt, nil
 }
 
 // Parse valida o access token.

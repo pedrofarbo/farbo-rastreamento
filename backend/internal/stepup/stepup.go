@@ -46,6 +46,9 @@ const (
 	// PurposeTeamMember é pôr alguém na equipe da conta: quem pega o celular
 	// do titular por um instante não dá a si mesmo o acesso à frota.
 	PurposeTeamMember = "team_member"
+	// PurposeCustomerPassword é a central definir a senha nova de um cliente:
+	// quem senta no computador da central não entra na conta de ninguém.
+	PurposeCustomerPassword = "customer_password"
 )
 
 // Métodos de confirmação (no comprovante e na auditoria).
@@ -70,7 +73,7 @@ const (
 )
 
 var purposes = []string{PurposeEngineCut, PurposeEngineResume, PurposeVehicleShare, PurposeSupplierPix, PurposeTheftEnd,
-	PurposeTeamMember}
+	PurposeTeamMember, PurposeCustomerPassword}
 
 var (
 	ErrWrongPassword      = errors.New("senha incorreta")

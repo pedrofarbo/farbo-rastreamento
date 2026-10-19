@@ -29,6 +29,8 @@ const (
 	ActionStepUpFailed     = "AUTH_STEP_UP_FAILED"
 	ActionBiometricAdded   = "AUTH_BIOMETRIC_ADDED"
 	ActionBiometricRemoved = "AUTH_BIOMETRIC_REMOVED"
+	// A pessoa saiu dos outros aparelhos.
+	ActionSignedOutOthers = "AUTH_SIGNED_OUT_OTHERS"
 
 	ActionCommandRequested = "COMMAND_REQUESTED"
 	ActionCommandSent      = "COMMAND_SENT"
@@ -62,6 +64,9 @@ const (
 	ActionCustomerCreated = "CUSTOMER_CREATED"
 	ActionCustomerUpdated = "CUSTOMER_UPDATED"
 	ActionCustomerInvited = "CUSTOMER_INVITED"
+	// A central desconectou todas as sessões de um cliente ou definiu a senha nova dele.
+	ActionCustomerSignedOut   = "CUSTOMER_SIGNED_OUT"
+	ActionCustomerPasswordSet = "CUSTOMER_PASSWORD_SET"
 	// ActionLaunchPromoGranted / Revoked: a central liberou (ou retirou) a
 	// promoção de pré-lançamento para um cliente fora da lista de lançamento.
 	ActionLaunchPromoGranted   = "LAUNCH_PROMO_GRANTED"

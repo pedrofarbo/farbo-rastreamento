@@ -26,18 +26,21 @@ type memorySessionStore struct {
 	mu       sync.Mutex
 	users    map[uuid.UUID]*User
 	sessions map[string]*memorySession
+	cutoffs  map[uuid.UUID]time.Time
 	created  int
 }
 
 type memorySession struct {
+	id        uuid.UUID
 	userID    uuid.UUID
 	keyID     string
 	expiresAt time.Time
 	revoked   bool
+	userAgent string
 }
 
 func newMemorySessionStore(users ...*User) *memorySessionStore {
-	m := &memorySessionStore{users: map[uuid.UUID]*User{}, sessions: map[string]*memorySession{}}
+	m := &memorySessionStore{users: map[uuid.UUID]*User{}, sessions: map[string]*memorySession{}, cutoffs: map[uuid.UUID]time.Time{}}
 	for _, u := range users {
 		m.users[u.ID] = u
 	}
@@ -68,11 +71,48 @@ func (m *memorySessionStore) GetByID(_ context.Context, id uuid.UUID) (*User, er
 	return nil, database.ErrNotFound
 }
 
-func (m *memorySessionStore) StoreRefreshToken(_ context.Context, userID uuid.UUID, tokenHash, keyID string, expiresAt time.Time, _ string) error {
+func (m *memorySessionStore) StoreRefreshToken(_ context.Context, userID uuid.UUID, tokenHash, keyID string, expiresAt time.Time, userAgent string) (uuid.UUID, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.sessions[tokenHash] = &memorySession{userID: userID, keyID: keyID, expiresAt: expiresAt}
-	return nil
+	id := uuid.New()
+	m.sessions[tokenHash] = &memorySession{id: id, userID: userID, keyID: keyID, expiresAt: expiresAt, userAgent: userAgent}
+	return id, nil
+}
+
+func (m *memorySessionStore) ActiveSessions(_ context.Context, userID uuid.UUID, keyID string) ([]Session, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := []Session{}
+	for _, s := range m.sessions {
+		if s.userID == userID && s.keyID == keyID && !s.revoked && s.expiresAt.After(time.Now()) {
+			out = append(out, Session{ID: s.id, UserAgent: s.userAgent, ExpiresAt: s.expiresAt})
+		}
+	}
+	return out, nil
+}
+
+func (m *memorySessionStore) CutSessions(_ context.Context, userID uuid.UUID, keep *uuid.UUID) (time.Time, int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for _, s := range m.sessions {
+		if s.userID == userID && !s.revoked && (keep == nil || s.id != *keep) {
+			s.revoked = true
+			n++
+		}
+	}
+	at := time.Now().Truncate(time.Second)
+	m.cutoffs[userID] = at
+	return at, n, nil
+}
+
+func (m *memorySessionStore) SessionsValidAfter(_ context.Context, userID uuid.UUID) (*time.Time, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if at, ok := m.cutoffs[userID]; ok {
+		return &at, nil
+	}
+	return nil, nil
 }
 
 func (m *memorySessionStore) ConsumeRefreshToken(_ context.Context, tokenHash, keyID string) (*refreshRecord, error) {
@@ -83,7 +123,7 @@ func (m *memorySessionStore) ConsumeRefreshToken(_ context.Context, tokenHash, k
 		return nil, database.ErrNotFound
 	}
 	s.revoked = true
-	return &refreshRecord{UserID: s.userID}, nil
+	return &refreshRecord{ID: s.id, UserID: s.userID}, nil
 }
 
 func (m *memorySessionStore) RevokeRefreshTokensNotSignedBy(_ context.Context, keyID string) (int64, error) {
@@ -223,7 +263,7 @@ func TestRevokeSessionsFromOldKeys(t *testing.T) {
 		}
 	}
 	// Sessão de antes desta versão: sem chave gravada.
-	_ = store.StoreRefreshToken(context.Background(), user.ID, "legado", "", time.Now().Add(time.Hour), "")
+	_, _ = store.StoreRefreshToken(context.Background(), user.ID, "legado", "", time.Now().Add(time.Hour), "")
 
 	after := serviceWithSecret(t, newSecret, store)
 	kept, err := after.issue(context.Background(), user, "teste")

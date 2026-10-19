@@ -57,6 +57,7 @@ import { CustomerReferralCard } from './affiliates/CustomerReferralCard';
 import { CustomerPlanCard } from './CustomerPlanCard';
 import { CustomerTeamCard } from './CustomerTeamCard';
 import { InviteLinkModal } from './InviteLinkModal';
+import { CustomerPasswordModal, CustomerSessionsModal } from './CustomerAccessModals';
 import { InvoiceAdjustModal } from './InvoiceAdjustModal';
 import { LaunchPromoCard } from './LaunchPromoCard';
 
@@ -102,6 +103,9 @@ export function CustomerDetailsPage() {
   const [editing, setEditing] = useState<{ vehicle: VehicleView; input: VehicleInput } | null>(null);
   const [following, setFollowing] = useState<string | null>(null);
   const [editingAddress, setEditingAddress] = useState(false);
+  // As sessões do cliente (ver e desconectar todas) e a senha nova pela central.
+  const [showSessions, setShowSessions] = useState(false);
+  const [settingPassword, setSettingPassword] = useState(false);
   // O link do convite, para a central mandar por fora do e-mail.
   const inviteLink = useMutation({
     mutationFn: () => customersApi.inviteLink(id),
@@ -243,6 +247,21 @@ export function CustomerDetailsPage() {
               onClick={() => inviteLink.mutate()}
             >
               Link do convite
+            </Button>
+            <Button
+              variant="secondary"
+              title="Os aparelhos com a conta do cliente aberta; dá para desconectar todos."
+              onClick={() => setShowSessions(true)}
+            >
+              Sessões
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!data.active}
+              title="Define a senha nova do cliente (as sessões dele caem)."
+              onClick={() => setSettingPassword(true)}
+            >
+              Definir senha
             </Button>
             {data.twoFactor?.enabled && (
               <Button
@@ -1256,6 +1275,8 @@ export function CustomerDetailsPage() {
       </Modal>
 
       <InviteLinkModal link={inviteLink.data ?? null} name={data.name} phone={data.phone} onClose={() => inviteLink.reset()} />
+      <CustomerSessionsModal customerId={id} name={data.name} open={showSessions} onClose={() => setShowSessions(false)} />
+      <CustomerPasswordModal customerId={id} name={data.name} open={settingPassword} onClose={() => setSettingPassword(false)} />
 
       {adjusting && (
         <InvoiceAdjustModal

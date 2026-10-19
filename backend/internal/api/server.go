@@ -244,6 +244,9 @@ func (s *Server) routes() chi.Router {
 			r.With(resetLimiter.middleware).Post("/reset-password", s.handleResetPassword)
 			r.With(resetLimiter.middleware).Post("/reset-password/validate", s.handleCheckResetToken)
 			r.With(s.Auth.Middleware).Get("/me", s.handleMe)
+			// Os aparelhos com a conta aberta e sair dos outros.
+			r.With(s.Auth.Middleware).Get("/sessions", s.handleMySessions)
+			r.With(s.Auth.Middleware).Post("/sessions/sign-out-others", s.handleSignOutOthers)
 		})
 
 		// Notificações de pagamento da AbacatePay: sem login, autenticadas
@@ -680,6 +683,10 @@ func (s *Server) routes() chi.Router {
 							r.Put("/alerts", s.handleSaveCustomerAlerts)
 							r.Post("/invite", s.handleInviteCustomer)
 							r.Post("/invite-link", s.handleCustomerInviteLink)
+							// As sessões do cliente: ver, desconectar todas e a senha nova.
+							r.Get("/sessions", s.handleCustomerSessions)
+							r.Post("/sessions/sign-out", s.handleCustomerSignOut)
+							r.Post("/password", s.handleSetCustomerPassword)
 							r.Post("/invoices", s.handleCreateInvoice)
 							r.Post("/trackers", s.handleAdminOrderTracker)
 							r.Post("/trackers/import", s.handleAdminImportFleet)

@@ -243,12 +243,78 @@ func (r *Repository) Count(ctx context.Context) (int, error) {
 // ---------------------------------------------------------------------------
 
 // StoreRefreshToken guarda apenas o hash: o valor em claro fica só no cliente.
-// keyID identifica o JWT_SECRET em uso (ver signingKeyID).
-func (r *Repository) StoreRefreshToken(ctx context.Context, userID uuid.UUID, tokenHash, keyID string, expiresAt time.Time, userAgent string) error {
-	_, err := r.db.Exec(ctx, `
+// keyID identifica o JWT_SECRET em uso (ver signingKeyID). Devolve o id da
+// sessão, que vai no token de acesso (é "este aparelho").
+func (r *Repository) StoreRefreshToken(ctx context.Context, userID uuid.UUID, tokenHash, keyID string, expiresAt time.Time, userAgent string) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := r.db.QueryRow(ctx, `
 		INSERT INTO refresh_tokens (user_id, token_hash, key_id, expires_at, user_agent)
-		VALUES ($1, $2, $3, $4, $5)`, userID, tokenHash, keyID, expiresAt, userAgent)
-	return database.MapError(err)
+		VALUES ($1, $2, $3, $4, $5) RETURNING id`, userID, tokenHash, keyID, expiresAt, userAgent).Scan(&id)
+	return id, database.MapError(err)
+}
+
+// ActiveSessions são as sessões abertas do usuário (uma por aparelho: a
+// renovação troca a linha), com o JWT_SECRET atual, da mais recente.
+func (r *Repository) ActiveSessions(ctx context.Context, userID uuid.UUID, keyID string) ([]Session, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, user_agent, created_at, expires_at FROM refresh_tokens
+		WHERE user_id = $1 AND key_id = $2 AND revoked_at IS NULL AND expires_at > NOW()
+		ORDER BY created_at DESC`, userID, keyID)
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	defer rows.Close()
+	out := []Session{}
+	for rows.Next() {
+		var s Session
+		if err := rows.Scan(&s.ID, &s.UserAgent, &s.LastSeenAt, &s.ExpiresAt); err != nil {
+			return nil, database.MapError(err)
+		}
+		out = append(out, s)
+	}
+	return out, database.MapError(rows.Err())
+}
+
+// CutSessions encerra as sessões do usuário (menos keep, se houver) e recusa
+// dali em diante todo token de acesso emitido antes (sessions_valid_after,
+// no segundo cheio: o token novo de quem fica tem o segundo dele). Devolve o
+// instante do corte e quantas sessões caíram.
+func (r *Repository) CutSessions(ctx context.Context, userID uuid.UUID, keep *uuid.UUID) (time.Time, int64, error) {
+	var cutoff time.Time
+	var revoked int64
+	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			UPDATE refresh_tokens SET revoked_at = NOW()
+			WHERE user_id = $1 AND revoked_at IS NULL AND ($2::uuid IS NULL OR id <> $2)`, userID, keep)
+		if err != nil {
+			return err
+		}
+		revoked = tag.RowsAffected()
+		return tx.QueryRow(ctx, `
+			UPDATE users SET sessions_valid_after = date_trunc('second', NOW()) WHERE id = $1
+			RETURNING sessions_valid_after`, userID).Scan(&cutoff)
+	})
+	return cutoff, revoked, database.MapError(err)
+}
+
+// SessionsValidAfter é o corte dos tokens de acesso do usuário (nil: nenhum).
+func (r *Repository) SessionsValidAfter(ctx context.Context, userID uuid.UUID) (*time.Time, error) {
+	var at *time.Time
+	err := r.db.QueryRow(ctx, `SELECT sessions_valid_after FROM users WHERE id = $1`, userID).Scan(&at)
+	return at, database.MapError(err)
+}
+
+// SetPassword grava a senha nova (já com o hash) de um usuário ativo.
+func (r *Repository) SetPassword(ctx context.Context, userID uuid.UUID, passwordHash string) error {
+	tag, err := r.db.Exec(ctx, `UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1 AND active`,
+		userID, passwordHash)
+	if err != nil {
+		return database.MapError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return database.ErrNotFound
+	}
+	return nil
 }
 
 type refreshRecord struct {

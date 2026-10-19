@@ -83,8 +83,12 @@ func (r *Repository) ResetPassword(ctx context.Context, tokenHash, passwordHash 
 			`DELETE FROM password_reset_tokens WHERE user_id = $1 AND used_at IS NULL`, userID); err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx,
-			`UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`, userID)
+		if _, err := tx.Exec(ctx,
+			`UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`, userID); err != nil {
+			return err
+		}
+		// E na hora: o token de acesso de quem estava logado também cai.
+		_, err = tx.Exec(ctx, `UPDATE users SET sessions_valid_after = date_trunc('second', NOW()) WHERE id = $1`, userID)
 		return err
 	})
 	return userID, database.MapError(err)

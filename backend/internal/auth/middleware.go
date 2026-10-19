@@ -19,6 +19,8 @@ type Principal struct {
 	UserID uuid.UUID
 	Email  string
 	Role   string
+	// SessionID: a sessão do token (zero nos tokens de antes dela existir).
+	SessionID uuid.UUID
 	// Membership: quem é da equipe de um cliente enxerga a conta do titular,
 	// com o papel que ele deu. Nulo para o próprio titular e para a equipe da
 	// central.
@@ -112,7 +114,20 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// Desconectado (saiu dos outros aparelhos, a central encerrou as
+		// sessões, senha nova): o token emitido antes do corte não vale mais.
+		switch valid, err := s.issuedAfterCut(r.Context(), userID, claims); {
+		case err != nil:
+			s.log.Error("falha ao conferir as sessões encerradas", "user", userID, "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro interno"})
+			return
+		case !valid:
+			writeUnauthorized(w, "sessão encerrada")
+			return
+		}
+
 		principal := &Principal{UserID: userID, Email: claims.Email, Role: claims.Role}
+		principal.SessionID, _ = uuid.Parse(claims.SessionID)
 		// Quem é da equipe de um cliente: conferido a cada requisição, para a
 		// remoção (ou a troca de papel) valer na hora.
 		if claims.Role == RoleCustomer {
