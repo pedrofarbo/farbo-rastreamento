@@ -21,11 +21,17 @@ type Sheet struct {
 	// a conta deu aos campos personalizados (vazios: a coluna não sai).
 	Groups         map[uuid.UUID]string
 	Label1, Label2 string
+	// Owners: a planilha da associação ou seguradora, com o associado no
+	// lugar do grupo e dos campos personalizados (que são de cada conta).
+	Owners bool
 }
 
 // ExtraHeader e ExtraCells: o grupo e os campos personalizados que a conta
-// nomeou.
+// nomeou (na planilha da organização, o associado).
 func (s Sheet) ExtraHeader() []string {
+	if s.Owners {
+		return []string{"Associado"}
+	}
 	out := []string{"Grupo"}
 	if s.Label1 != "" {
 		out = append(out, s.Label1)
@@ -37,6 +43,9 @@ func (s Sheet) ExtraHeader() []string {
 }
 
 func (s Sheet) ExtraCells(v Vehicle) []string {
+	if s.Owners {
+		return []string{v.OwnerName}
+	}
 	group := ""
 	if v.GroupID != nil {
 		group = s.Groups[*v.GroupID]
@@ -68,7 +77,11 @@ func (s Sheet) Summary(rows []SummaryRow, vehicles []Vehicle) [][]string {
 // Overspeeds é a planilha dos excessos de velocidade.
 func (s Sheet) Overspeeds(rows []Overspeed, vehicles []Vehicle) [][]string {
 	byID := vehicleIndex(vehicles)
-	out := [][]string{{"Veículo", "Placa", "Início", "Fim", "Duração", "Velocidade máxima (km/h)", "Limite (km/h)", "Local (lat, lon)"}}
+	header := []string{"Veículo", "Placa", "Início", "Fim", "Duração", "Velocidade máxima (km/h)", "Limite (km/h)", "Local (lat, lon)"}
+	if s.Owners {
+		header = append(header[:2:2], append([]string{"Associado"}, header[2:]...)...)
+	}
+	out := [][]string{header}
 	for _, o := range rows {
 		v := byID[o.VehicleID]
 		duration, limit, where := "", "", ""
@@ -81,8 +94,11 @@ func (s Sheet) Overspeeds(rows []Overspeed, vehicles []Vehicle) [][]string {
 		if o.Latitude != nil && o.Longitude != nil {
 			where = Coords(*o.Latitude, *o.Longitude)
 		}
-		out = append(out, []string{v.Name, v.Plate, s.When(&o.Start), s.When(o.End), duration,
-			Decimal(o.MaxSpeedKmh, 0), limit, where})
+		row := []string{v.Name, v.Plate, s.When(&o.Start), s.When(o.End), duration, Decimal(o.MaxSpeedKmh, 0), limit, where}
+		if s.Owners {
+			row = append(row[:2:2], append([]string{v.OwnerName}, row[2:]...)...)
+		}
+		out = append(out, row)
 	}
 	return out
 }

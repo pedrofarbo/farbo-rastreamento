@@ -100,6 +100,19 @@ func (e *Engine) describe(kind string, c candidate, vehicle string, s Settings) 
 		return "Rastreador sem sinal com o veículo em movimento",
 			fmt.Sprintf("O rastreador do veículo %s parou de se comunicar às %s com a ignição ligada ou em movimento. Pode ser uma área sem cobertura — ou um bloqueador de sinal.", vehicle, clock),
 			mail.SeverityWarning
+	case KindCarBattery:
+		text := fmt.Sprintf("Com o veículo %s desligado, a tensão da bateria caiu às %s: ele pode não dar partida.", vehicle, clock)
+		if c.voltage != nil {
+			text = fmt.Sprintf("Com o veículo %s desligado, a bateria caiu para %s às %s: ele pode não dar partida. Vale ligar o veículo para carregar ou checar a bateria.",
+				vehicle, strings.Replace(fmt.Sprintf("%.1f V", *c.voltage), ".", ",", 1), clock)
+		}
+		return "Bateria do veículo fraca", text, mail.SeverityWarning
+	case KindImpact:
+		text := fmt.Sprintf("O rastreador do veículo %s sentiu um impacto às %s com ele em movimento. Pode ter sido uma colisão: confira se está tudo bem.", vehicle, clock)
+		if c.speed != nil {
+			text = fmt.Sprintf("O rastreador do veículo %s sentiu um impacto às %s, a %.0f km/h. Pode ter sido uma colisão: confira se está tudo bem.", vehicle, clock, *c.speed)
+		}
+		return "Possível colisão", text, mail.SeverityCritical
 	case KindLowBattery:
 		return "Bateria do rastreador fraca",
 			fmt.Sprintf("A bateria interna do rastreador do veículo %s está acabando (%s). Isso costuma acontecer quando ele fica sem a energia do veículo.", vehicle, clock),

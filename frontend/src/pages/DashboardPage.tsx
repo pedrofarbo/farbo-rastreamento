@@ -24,8 +24,8 @@ import styles from './DashboardPage.module.css';
 
 export function DashboardPage() {
   const { data: all = [], isLoading, error } = useVehicles();
-  // O admin abre a ficha do cliente pelo nome dele.
-  const { canManage } = useAuth();
+  // O admin abre a ficha do cliente pelo nome dele; a associação, a do associado.
+  const { canManage, isOrgMember } = useAuth();
   // O grupo escolhido filtra a lista e o mapa.
   const { groups } = useFleet();
   const [group, setGroup] = useState('');
@@ -34,6 +34,8 @@ export function DashboardPage() {
     queryKey: ['geofences'],
     queryFn: geofencesApi.list,
     staleTime: 5 * 60_000,
+    // As cercas são do cliente e da central; a associação não tem.
+    enabled: !isOrgMember,
   });
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -139,6 +141,8 @@ export function DashboardPage() {
                       <span className={styles.detailSep}> · </span>
                       {canManage && selected.ownerId ? (
                         <Link to={`/clientes/${selected.ownerId}`}>{selected.ownerName}</Link>
+                      ) : isOrgMember && selected.ownerId ? (
+                        <Link to={`/associados/${selected.ownerId}`}>{selected.ownerName}</Link>
                       ) : (
                         selected.ownerName
                       )}

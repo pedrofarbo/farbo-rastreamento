@@ -8,6 +8,11 @@
 // tantos km, horas de motor e/ou meses, contando da última vez que foi
 // feita — o que vier primeiro —, e fica em dia, perto ou vencida. Uma vez por dia, quem
 // cuida da conta recebe por e-mail as que ficaram perto ou venceram.
+//
+// Os documentos (IPVA, licenciamento, seguro, CNH) entram aqui também, só
+// por data: vencem a cada tantos meses contando do vencimento anterior, e
+// renovar passa para o vencimento seguinte (o calendário do documento não
+// muda porque se pagou adiantado ou atrasado).
 package maintenance
 
 import (
@@ -37,10 +42,19 @@ const (
 	StatusUnknown = "unknown"
 )
 
+// Tipos de item.
 const (
-	SoonKm             = 500
-	SoonHours          = 25
-	SoonDays           = 15
+	KindService  = "service"
+	KindDocument = "document"
+)
+
+const (
+	SoonKm    = 500
+	SoonHours = 25
+	SoonDays  = 15
+	// SoonDocumentDays: documento avisa com mais antecedência (dá tempo de
+	// juntar o dinheiro do IPVA, agendar a vistoria).
+	SoonDocumentDays   = 30
 	MaxNameLength      = 60
 	MaxNotesLength     = 300
 	MaxItemsPerVehicle = 20
@@ -80,13 +94,15 @@ type Item struct {
 	VehicleName string     `json:"vehicleName"`
 	Plate       string     `json:"plate"`
 	GroupID     *uuid.UUID `json:"groupId"`
-	Name        string     `json:"name"`
-	EveryKm     *int       `json:"everyKm"`
-	EveryMonths *int       `json:"everyMonths"`
-	EveryHours  *int       `json:"everyHours"`
-	LastKm      *float64   `json:"lastKm"`
-	LastHours   *float64   `json:"lastHours"`
-	LastDate    string     `json:"lastDate"`
+	// Kind: service (manutenção) ou document (documento, só por data).
+	Kind        string   `json:"kind"`
+	Name        string   `json:"name"`
+	EveryKm     *int     `json:"everyKm"`
+	EveryMonths *int     `json:"everyMonths"`
+	EveryHours  *int     `json:"everyHours"`
+	LastKm      *float64 `json:"lastKm"`
+	LastHours   *float64 `json:"lastHours"`
+	LastDate    string   `json:"lastDate"`
 	// Calculados: o próximo km, as próximas horas e a próxima data, quanto
 	// falta (negativo: passou) e a situação.
 	NextKm         *float64 `json:"nextKm"`
@@ -115,9 +131,12 @@ type Record struct {
 }
 
 // ItemInput é o pedido de uma manutenção. LastDate vazio é hoje; LastKm e
-// LastHours nulos, o hodômetro e o horímetro de agora (de cada veículo).
+// LastHours nulos, o hodômetro e o horímetro de agora (de cada veículo). Num
+// documento, vale DueDate (o próximo vencimento) no lugar de LastDate.
 type ItemInput struct {
+	Kind        string   `json:"kind"`
 	Name        string   `json:"name"`
+	DueDate     string   `json:"dueDate"`
 	EveryKm     *int     `json:"everyKm"`
 	EveryMonths *int     `json:"everyMonths"`
 	EveryHours  *int     `json:"everyHours"`
@@ -268,7 +287,7 @@ func (s *Service) SetEngineHours(ctx context.Context, vehicleID uuid.UUID, hours
 // Manutenções
 // ---------------------------------------------------------------------------
 
-const itemColumns = `i.id, i.vehicle_id, v.name, COALESCE(v.plate, ''), v.group_id, v.owner_id, i.name, i.every_km,
+const itemColumns = `i.id, i.vehicle_id, v.name, COALESCE(v.plate, ''), v.group_id, v.owner_id, i.kind, i.name, i.every_km,
 	i.every_months, i.every_hours, i.last_km, i.last_hours, i.last_date, i.notified`
 
 func (s *Service) items(ctx context.Context, where string, args ...any) ([]*Item, error) {
@@ -285,7 +304,7 @@ func (s *Service) items(ctx context.Context, where string, args ...any) ([]*Item
 		var it Item
 		var owner *uuid.UUID
 		var last time.Time
-		if err := rows.Scan(&it.ID, &it.VehicleID, &it.VehicleName, &it.Plate, &it.GroupID, &owner, &it.Name,
+		if err := rows.Scan(&it.ID, &it.VehicleID, &it.VehicleName, &it.Plate, &it.GroupID, &owner, &it.Kind, &it.Name,
 			&it.EveryKm, &it.EveryMonths, &it.EveryHours, &it.LastKm, &it.LastHours, &last, &it.notified); err != nil {
 			return nil, database.MapError(err)
 		}
@@ -360,10 +379,14 @@ func (it *Item) evaluate(o Odometer, today time.Time) {
 		days := int(next.Sub(today).Hours() / 24)
 		it.NextDate, it.RemainingDays = &nextDay, &days
 		measured = true
+		soon := SoonDays
+		if it.Kind == KindDocument {
+			soon = SoonDocumentDays
+		}
 		switch {
 		case days <= 0:
 			worst(StatusDue)
-		case days <= SoonDays:
+		case days <= soon:
 			worst(StatusSoon)
 		}
 	}
@@ -438,7 +461,15 @@ func SortByUrgency(list []*Item) {
 
 func (s *Service) checkInput(in *ItemInput) error {
 	in.Name = strings.Join(strings.Fields(in.Name), " ")
+	if in.Kind == "" {
+		in.Kind = KindService
+	}
+	if in.Kind == KindDocument {
+		return s.checkDocument(in)
+	}
 	switch {
+	case in.Kind != KindService:
+		return &InputError{"tipo inválido: manutenção ou documento"}
 	case in.Name == "" || utf8.RuneCountInString(in.Name) > MaxNameLength:
 		return &InputError{fmt.Sprintf("dê um nome à manutenção (até %d caracteres)", MaxNameLength)}
 	case in.EveryKm == nil && in.EveryMonths == nil && in.EveryHours == nil:
@@ -462,6 +493,44 @@ func (s *Service) checkInput(in *ItemInput) error {
 		return &InputError{"a data da última vez precisa ser hoje ou antes"}
 	}
 	return nil
+}
+
+// MaxDocumentYears: até quantos anos à frente vai o vencimento de um documento.
+const MaxDocumentYears = 10
+
+// checkDocument confere um documento: só por meses, com o próximo
+// vencimento; a "última vez" é o vencimento anterior.
+func (s *Service) checkDocument(in *ItemInput) error {
+	switch {
+	case in.Name == "" || utf8.RuneCountInString(in.Name) > MaxNameLength:
+		return &InputError{fmt.Sprintf("dê um nome ao documento (até %d caracteres)", MaxNameLength)}
+	case in.EveryKm != nil || in.EveryHours != nil || in.LastKm != nil || in.LastHours != nil:
+		return &InputError{"documento vence só por data: sem km nem horas de motor"}
+	case in.EveryMonths == nil:
+		return &InputError{"informe de quantos em quantos meses o documento vence (12 para o IPVA)"}
+	case *in.EveryMonths < 1 || *in.EveryMonths > 120:
+		return &InputError{"a cada quantos meses: de 1 a 120"}
+	}
+	due, err := time.Parse(time.DateOnly, in.DueDate)
+	if err != nil {
+		return &InputError{"informe a data do próximo vencimento"}
+	}
+	today := s.today()
+	if due.Before(today.AddDate(-1, 0, 0)) || due.After(today.AddDate(MaxDocumentYears, 0, 0)) {
+		return &InputError{fmt.Sprintf("o vencimento vai de um ano atrás até daqui a %d anos", MaxDocumentYears)}
+	}
+	in.LastDate = documentStart(due, *in.EveryMonths).Format(time.DateOnly)
+	return nil
+}
+
+// documentStart é o vencimento anterior: due menos months meses, sem passar
+// de due na volta (31/03 menos um mês não vira 03/03).
+func documentStart(due time.Time, months int) time.Time {
+	last := due.AddDate(0, -months, 0)
+	for last.AddDate(0, months, 0).After(due) {
+		last = last.AddDate(0, 0, -1)
+	}
+	return last
 }
 
 // Create põe a manutenção em cada veículo pedido. Sem o km da última vez,
@@ -502,9 +571,9 @@ func (s *Service) Create(ctx context.Context, vehicleIDs []uuid.UUID, in ItemInp
 		}
 	}
 	tag, err := s.db.Exec(ctx, `
-		INSERT INTO maintenance_items (vehicle_id, name, every_km, every_months, every_hours, last_km, last_hours, last_date)
-		SELECT v, $2, $3, $4, $5, k, h, $6 FROM unnest($1::uuid[], $7::float8[], $8::float8[]) AS t(v, k, h)`,
-		vehicleIDs, in.Name, in.EveryKm, in.EveryMonths, in.EveryHours, in.LastDate, lastKm, lastHours)
+		INSERT INTO maintenance_items (vehicle_id, kind, name, every_km, every_months, every_hours, last_km, last_hours, last_date)
+		SELECT v, $9, $2, $3, $4, $5, k, h, $6 FROM unnest($1::uuid[], $7::float8[], $8::float8[]) AS t(v, k, h)`,
+		vehicleIDs, in.Name, in.EveryKm, in.EveryMonths, in.EveryHours, in.LastDate, lastKm, lastHours, in.Kind)
 	if err != nil {
 		return 0, database.MapError(err)
 	}
@@ -517,9 +586,9 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in ItemInput) error 
 		return err
 	}
 	tag, err := s.db.Exec(ctx, `
-		UPDATE maintenance_items SET name = $2, every_km = $3, every_months = $4, every_hours = $5, last_date = $6,
+		UPDATE maintenance_items SET kind = $9, name = $2, every_km = $3, every_months = $4, every_hours = $5, last_date = $6,
 			last_km = COALESCE($7, last_km), last_hours = COALESCE($8, last_hours), notified = NULL, updated_at = NOW()
-		WHERE id = $1`, id, in.Name, in.EveryKm, in.EveryMonths, in.EveryHours, in.LastDate, in.LastKm, in.LastHours)
+		WHERE id = $1`, id, in.Name, in.EveryKm, in.EveryMonths, in.EveryHours, in.LastDate, in.LastKm, in.LastHours, in.Kind)
 	if err != nil {
 		return database.MapError(err)
 	}
@@ -603,10 +672,14 @@ func (s *Service) Done(ctx context.Context, in DoneInput, by uuid.UUID) (int, er
 				VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, it.VehicleID, it.ID, it.Name, in.Date, km, hours, in.Notes, by); err != nil {
 				return err
 			}
+			last := in.Date
+			if it.Kind == KindDocument && it.EveryMonths != nil {
+				last = renewedStart(it.LastDate, *it.EveryMonths, in.Date)
+			}
 			if _, err := tx.Exec(ctx, `
 				UPDATE maintenance_items SET last_date = $2, last_km = COALESCE($3, last_km), last_hours = $4,
 					notified = NULL, updated_at = NOW()
-				WHERE id = $1`, it.ID, in.Date, km, hours); err != nil {
+				WHERE id = $1`, it.ID, last, km, hours); err != nil {
 				return err
 			}
 		}
@@ -616,6 +689,25 @@ func (s *Service) Done(ctx context.Context, in DoneInput, by uuid.UUID) (int, er
 		return 0, database.MapError(err)
 	}
 	return len(items), nil
+}
+
+// renewedStart é o começo do ciclo de um documento renovado em done: o
+// vencimento que foi pago (o seguinte ao que estava contando), avançando os
+// ciclos que ficaram para trás se ele foi renovado com muito atraso.
+func renewedStart(lastDate string, months int, done string) string {
+	last, err := time.Parse(time.DateOnly, lastDate)
+	if err != nil {
+		return done
+	}
+	day, err := time.Parse(time.DateOnly, done)
+	if err != nil {
+		return done
+	}
+	next := last.AddDate(0, months, 0)
+	for !next.AddDate(0, months, 0).After(day) {
+		next = next.AddDate(0, months, 0)
+	}
+	return next.Format(time.DateOnly)
 }
 
 // Records é o histórico do veículo, do mais recente.

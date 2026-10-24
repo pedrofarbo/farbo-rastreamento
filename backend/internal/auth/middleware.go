@@ -25,6 +25,9 @@ type Principal struct {
 	// com o papel que ele deu. Nulo para o próprio titular e para a equipe da
 	// central.
 	Membership *Membership
+	// Org: quem é da equipe de uma associação ou seguradora, com o papel
+	// nela. Nulo para os demais (e para quem saiu da equipe dela).
+	Org *OrgMembership
 }
 
 func (p *Principal) Is(roles ...string) bool {
@@ -38,6 +41,43 @@ func (p *Principal) Is(roles ...string) bool {
 
 // IsCustomer: cliente final, restrito aos próprios veículos e faturas.
 func (p *Principal) IsCustomer() bool { return p.Is(RoleCustomer) }
+
+// IsOrgMember: alguém da equipe de uma associação ou seguradora, restrito
+// aos veículos dos associados dela (e só às rotas do painel dela).
+func (p *Principal) IsOrgMember() bool { return p.Is(RoleOrgMember) }
+
+// IsStaff: a equipe da central.
+func (p *Principal) IsStaff() bool { return TeamRole(p.Role) }
+
+// Organization é a organização que a pessoa enxerga (zero: nenhuma).
+func (p *Principal) Organization() uuid.UUID {
+	if p.IsOrgMember() && p.Org != nil {
+		return p.Org.OrganizationID
+	}
+	return uuid.Nil
+}
+
+// CanOperateOrg: o Administrador e o Operador da organização cadastram
+// associados e veículos e bloqueiam; o Visualizador só acompanha.
+func (p *Principal) CanOperateOrg() bool {
+	return p.IsOrgMember() && p.Org != nil && (p.Org.Role == OrgAdmin || p.Org.Role == OrgOperator)
+}
+
+// IsOrgBroker: o corretor (vê só os associados dele).
+func (p *Principal) IsOrgBroker() bool {
+	return p.IsOrgMember() && p.Org != nil && p.Org.Role == OrgBroker
+}
+
+// CanRegisterOrg: quem cadastra associados e veículos (o Administrador, o
+// Operador e o corretor, para os dele).
+func (p *Principal) CanRegisterOrg() bool {
+	return p.CanOperateOrg() || p.IsOrgBroker()
+}
+
+// IsOrgAdmin: o Administrador da organização (a equipe e as faturas).
+func (p *Principal) IsOrgAdmin() bool {
+	return p.IsOrgMember() && p.Org != nil && p.Org.Role == OrgAdmin
+}
 
 // Account é a conta de cliente que a requisição enxerga: a do titular, para
 // quem é da equipe dele; a própria, para o titular.
@@ -133,6 +173,15 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 		if claims.Role == RoleCustomer {
 			if principal.Membership, err = s.Membership(r.Context(), userID); err != nil {
 				s.log.Error("falha ao conferir a conta empresa", "user", userID, "err", err)
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro interno"})
+				return
+			}
+		}
+		// Da equipe de uma organização: também a cada requisição (quem sai
+		// perde o acesso na hora).
+		if claims.Role == RoleOrgMember {
+			if principal.Org, err = s.OrgMembership(r.Context(), userID); err != nil {
+				s.log.Error("falha ao conferir a organização", "user", userID, "err", err)
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro interno"})
 				return
 			}

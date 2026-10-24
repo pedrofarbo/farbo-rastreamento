@@ -18,9 +18,14 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/affiliates"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/alerts"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/analytics"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/apikeys"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/appointments"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/busroutes"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/claims"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/closing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/commands"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/contract"
@@ -29,15 +34,19 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/dunning"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/events"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/finance"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fleet"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geocoding"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geofences"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/infra"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/inspections"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/installers"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/livelinks"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/maintenance"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/melhorenvio"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/organizations"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/push"
@@ -55,6 +64,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/twofactor"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/webhooks"
 	ws "github.com/pedrofarbo/farbo-rastreamento/backend/internal/websocket"
 )
 
@@ -95,6 +105,11 @@ type Deps struct {
 	Shares *shares.Service
 	// Accounts: a equipe da conta empresa de cada cliente.
 	Accounts *accounts.Service
+	// Organizations: as associações e seguradoras (o painel delas, os
+	// associados e a fatura do mês). Nil: rotas fora.
+	Organizations *organizations.Service
+	// Closing: o fechamento do mês e as notas fiscais. Nil: rotas fora.
+	Closing *closing.Service
 	// Analytics: visitas da landing page (sem cookies).
 	Analytics *analytics.Service
 	// Infra: a saúde do sistema (máquina, banco, backups, erros).
@@ -121,6 +136,23 @@ type Deps struct {
 	// Theft: o modo roubo (o cliente avisa; o rastreador acelera; o link
 	// público mostra a posição à polícia). Nil: rotas respondem 404.
 	Theft *theft.Service
+	// LiveLinks: a localização ao vivo por um tempo, pelo link. Nil: rotas fora.
+	LiveLinks *livelinks.Service
+	// Claims e Inspections: as ocorrências e as vistorias dos associados.
+	// Nil: rotas fora.
+	Claims      *claims.Service
+	Inspections *inspections.Service
+	// Fleet: a gestão da frota (motoristas, custos, multas, locações). Nil:
+	// rotas fora.
+	Fleet *fleet.Service
+	// APIKeys e Webhooks: as integrações (a API /api/v1 e os eventos por
+	// POST). Nil: rotas fora.
+	APIKeys  *apikeys.Service
+	Webhooks *webhooks.Service
+	// Appointments: a agenda de instalação e o link do instalador. Nil: rotas fora.
+	Appointments *appointments.Service
+	// BusRoutes: os itinerários (linhas de ônibus) e o link do passageiro. Nil: rotas fora.
+	BusRoutes *busroutes.Service
 	// StepUp: confirmação extra (biometria ou senha) antes de ações
 	// sensíveis. Nil desliga a exigência (só em testes).
 	StepUp       *stepup.Service
@@ -214,6 +246,8 @@ func (s *Server) routes() chi.Router {
 	// O link do modo roubo: a página pergunta a cada 10 s; numa delegacia,
 	// várias pessoas podem abrir pela mesma rede.
 	theftLinkLimiter := newRateLimiter(2, 60)
+	// A API de integração: 5 por segundo, com folga para rajadas.
+	apiLimiter := newRateLimiter(5, 60)
 	// O link de pagamento: a página pergunta o status do Pix a cada 4 s.
 	payLinkLimiter := newRateLimiter(1, 40)
 
@@ -294,6 +328,36 @@ func (s *Server) routes() chi.Router {
 		if s.Theft != nil {
 			r.With(theftLinkLimiter.middleware).Get("/public/theft/{token}", s.handlePublicTheft)
 		}
+		// A API de integração: lê os veículos, as posições e os eventos da
+		// conta da chave.
+		if s.APIKeys != nil {
+			r.Route("/v1", func(r chi.Router) {
+				r.Use(apiLimiter.middleware, s.requireAPIKey)
+				r.Get("/vehicles", s.handleAPIVehicles)
+				r.Get("/vehicles/{id}/positions", s.handleAPIPositions)
+				r.Get("/events", s.handleAPIEvents)
+			})
+		}
+		// O link do passageiro: onde o ônibus da linha está (sem login).
+		if s.BusRoutes != nil {
+			r.With(theftLinkLimiter.middleware).Get("/public/routes/{token}", s.handlePublicRoute)
+		}
+		// O link do instalador: o passo a passo da instalação (sem login).
+		if s.Appointments != nil {
+			r.Route("/public/install/{token}", func(r chi.Router) {
+				r.Use(theftLinkLimiter.middleware)
+				r.Get("/", s.handlePublicInstall)
+				r.Post("/arrive", s.handlePublicInstallArrive)
+				r.Post("/check", s.handlePublicInstallCheck)
+				r.Put("/photos/{slot}", s.handlePublicInstallPhoto)
+				r.Get("/photos/{slot}", s.handlePublicInstallPhotoFile)
+				r.Post("/complete", s.handlePublicInstallComplete)
+			})
+		}
+		// A localização ao vivo por um tempo, pelo link que o cliente mandou.
+		if s.LiveLinks != nil {
+			r.With(theftLinkLimiter.middleware).Get("/public/live/{token}", s.handlePublicLive)
+		}
 
 		// Melhor Envios: volta da autorização (o navegador, sem o token do
 		// painel; vale pelo state) e webhooks de etiqueta (assinatura HMAC).
@@ -307,6 +371,9 @@ func (s *Server) routes() chi.Router {
 
 		r.Group(func(r chi.Router) {
 			r.Use(s.Auth.Middleware)
+			// Quem é de uma associação ou seguradora só passa nas rotas do
+			// painel dela (ver orgGate).
+			r.Use(s.orgGate)
 
 			r.Get("/geocoding/reverse", s.handleReverseGeocode)
 			r.Get("/catalog", s.handleCatalog)
@@ -347,6 +414,7 @@ func (s *Server) routes() chi.Router {
 			r.Route("/vehicles", func(r chi.Router) {
 				r.Use(s.requireContract)
 				r.Use(s.requireActiveCustomer)
+				r.Use(s.requireActiveOrg)
 
 				r.Get("/", s.handleListVehicles)
 				// Só veículos da central; os de cliente entram pelo fluxo
@@ -376,9 +444,10 @@ func (s *Server) routes() chi.Router {
 					// operacional e o próprio dono do veículo, com a mesma
 					// trava de segurança do corte.
 					r.Group(func(r chi.Router) {
-						r.Use(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator, auth.RoleCustomer))
-						// Da equipe de uma conta, só o Gestor (o Visualizador acompanha).
-						r.Use(s.requireAccountOperator)
+						r.Use(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator, auth.RoleCustomer, auth.RoleOrgMember))
+						// Da equipe de uma conta, só o Gestor (o Visualizador acompanha);
+						// da organização, o Administrador e o Operador.
+						r.Use(s.requireAccountOperator, s.requireOrgOperator)
 						r.Post("/commands/engine-cut", s.handleEngineCut)
 						r.Get("/commands/engine-cut/check", s.handleEngineCutCheck)
 						r.Post("/commands/engine-resume", s.handleEngineResume)
@@ -391,8 +460,17 @@ func (s *Server) routes() chi.Router {
 					// Modo roubo: o dono e quem pode bloquear ligam; só o dono
 					// (com a biometria ou a senha) desliga.
 					r.Get("/theft", s.handleTheftStatus)
-					r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator, auth.RoleCustomer), s.requireAccountOperator).Post("/theft", s.handleTheftActivate)
+					r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator, auth.RoleCustomer, auth.RoleOrgMember),
+						s.requireAccountOperator, s.requireOrgOperator).Post("/theft", s.handleTheftActivate)
 					r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleCustomer), s.requireAccountOperator).Post("/theft/end", s.handleTheftEnd)
+
+					// A localização ao vivo por um tempo: o dono (e o Gestor da
+					// conta) gera e encerra; a central vê e encerra.
+					if s.LiveLinks != nil {
+						r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator, auth.RoleCustomer)).Get("/live-links", s.handleVehicleLiveLinks)
+						r.With(auth.RequireRole(auth.RoleCustomer), s.requireAccountOperator).Post("/live-links", s.handleCreateLiveLink)
+						r.With(auth.RequireRole(auth.RoleAdmin, auth.RoleCustomer), s.requireAccountOperator).Delete("/live-links/{linkId}", s.handleRevokeLiveLink)
+					}
 				})
 			})
 
@@ -418,10 +496,15 @@ func (s *Server) routes() chi.Router {
 			r.Route("/reports", func(r chi.Router) {
 				r.Use(s.requireContract)
 				r.Use(s.requireActiveCustomer)
+				r.Use(s.requireActiveOrg)
 				r.Get("/summary", s.handleReportSummary)
 				r.Get("/daily", s.handleReportDaily)
 				r.Get("/trips", s.handleReportTrips)
 				r.Get("/overspeed", s.handleReportOverspeed)
+				r.Get("/usage", s.handleReportUsage)
+				r.Get("/driving", s.handleReportDriving)
+				r.Get("/journey", s.handleReportJourney)
+				r.Get("/costs", s.handleReportCosts)
 			})
 
 			// Área do cliente: conta e faturas continuam acessíveis mesmo com
@@ -435,8 +518,39 @@ func (s *Server) routes() chi.Router {
 				// acompanha (sem faturas).
 				r.Get("/contract", s.handleMyContract)
 				r.With(s.requireAccountOwner).Post("/contract/accept", s.handleAcceptContract)
+				if s.Affiliates != nil {
+					// Indique e ganhe: o link do cliente e os créditos.
+					r.With(s.requireAccountOwner).Get("/referral", s.handleMyReferral)
+				}
+				// As integrações (chaves da API e webhooks): o titular.
+				if s.APIKeys != nil && s.Webhooks != nil {
+					r.Group(func(r chi.Router) {
+						r.Use(s.requireAccountOwner)
+						s.integrationRoutes(r)
+					})
+				}
 				r.Get("/account", s.handleMyAccount)
 				r.Get("/subscriptions", s.handleMySubscriptions)
+				if s.Appointments != nil {
+					r.Get("/installations", s.handleMyInstallations)
+				}
+				// O associado: as ocorrências e as vistorias (o handler confere
+				// que é associado e que é dele).
+				if s.Claims != nil {
+					r.Get("/claims", s.handleMyClaims)
+					r.Post("/claims", s.handleOpenClaim)
+					r.Get("/claims/{claimId}", s.handleGetClaim)
+					r.Post("/claims/{claimId}/files", s.handleAddClaimFile)
+					r.Get("/claims/{claimId}/files/{fileId}", s.handleClaimFile)
+					r.Post("/claims/{claimId}/notes", s.handleClaimNote)
+				}
+				if s.Inspections != nil {
+					r.Get("/inspections", s.handleMyInspections)
+					r.Get("/inspections/{inspectionId}", s.handleGetInspection)
+					r.Put("/inspections/{inspectionId}/photos/{slot}", s.handleSaveInspectionPhoto)
+					r.Get("/inspections/{inspectionId}/photos/{slot}", s.handleInspectionPhoto)
+					r.Post("/inspections/{inspectionId}/submit", s.handleSubmitInspection)
+				}
 				r.Group(func(r chi.Router) {
 					r.Use(s.requireAccountOperator)
 					// Da conta inteira: quem está restrito a grupos não vê.
@@ -457,6 +571,11 @@ func (s *Server) routes() chi.Router {
 					r.Post("/charges/{id}/simulate", s.handleMyChargeSimulate)
 					// Acompanhamento do chip e do rastreador até a casa dele.
 					r.Get("/fulfillments", s.handleMyFulfillments)
+					// As notas fiscais do fechamento de cada mês.
+					if s.Closing != nil {
+						r.Get("/fiscal-notes", s.handleMyFiscalNotes)
+						r.Get("/fiscal-notes/{id}/file", s.handleMyFiscalNoteFile)
+					}
 				})
 				r.Group(func(r chi.Router) {
 					r.Use(s.requireAccountOwner)
@@ -504,6 +623,41 @@ func (s *Server) routes() chi.Router {
 						r.Delete("/maintenance/{id}", s.handleDeleteMaintenance)
 					})
 				}
+				// A gestão da frota: motoristas, custos, multas e locações (cada
+				// um com os veículos que vê; lançar é de quem opera a conta).
+				if s.Fleet != nil {
+					r.Get("/drivers", s.handleDrivers)
+					r.Get("/expenses", s.handleExpenses)
+					r.Get("/fines", s.handleFines)
+					r.Get("/rentals", s.handleRentals)
+					if s.BusRoutes != nil {
+						r.Get("/routes", s.handleRoutes)
+						r.Get("/routes/{id}", s.handleGetRoute)
+						r.Get("/routes/{id}/day", s.handleRouteDay)
+						r.Group(func(r chi.Router) {
+							r.Use(s.requireAccountOperator)
+							r.Post("/routes", s.handleSaveRoute)
+							r.Put("/routes/{id}", s.handleSaveRoute)
+							r.Delete("/routes/{id}", s.handleDeleteRoute)
+							r.Post("/routes/{id}/trips", s.handleCreateTrips)
+							r.Post("/trips/{tripId}/cancel", s.handleCancelTrip)
+						})
+					}
+					r.Group(func(r chi.Router) {
+						r.Use(s.requireAccountOperator)
+						r.Post("/drivers", s.handleCreateDriver)
+						r.Patch("/drivers/{id}", s.handleUpdateDriver)
+						r.Put("/vehicles/{vehicleId}/driver", s.handleAssignDriver)
+						r.Post("/expenses", s.handleCreateExpense)
+						r.Delete("/expenses/{id}", s.handleDeleteExpense)
+						r.Post("/fines", s.handleCreateFine)
+						r.Patch("/fines/{id}", s.handleUpdateFine)
+						r.Delete("/fines/{id}", s.handleDeleteFine)
+						r.Post("/rentals", s.handleCreateRental)
+						r.Post("/rentals/{id}/return", s.handleReturnRental)
+						r.Post("/rentals/{id}/extend", s.handleExtendRental)
+					})
+				}
 				// Os relatórios da frota por e-mail (semanal ou mensal).
 				if s.ReportMail != nil {
 					r.Get("/report-schedules", s.handleMyReportSchedules)
@@ -527,6 +681,88 @@ func (s *Server) routes() chi.Router {
 					r.Delete("/shares/{id}", s.handleRemoveShare)
 				}
 			})
+
+			// O painel da associação ou seguradora: os associados, a equipe e
+			// as faturas (o mapa e os veículos vêm de /vehicles, filtrados).
+			if s.Organizations != nil {
+				r.Route("/org", func(r chi.Router) {
+					r.Use(auth.RequireRole(auth.RoleOrgMember), s.requireOrgMember)
+					r.Get("/", s.handleOrgOverview)
+					r.Group(func(r chi.Router) {
+						r.Use(s.requireActiveOrg)
+						// Os associados: o corretor vê e cadastra só os dele.
+						r.Get("/associates", s.handleOrgAssociates)
+						r.Get("/associates/{associateId}", s.handleOrgAssociate)
+						r.Group(func(r chi.Router) {
+							r.Use(s.requireOrgRegistrar)
+							r.Post("/associates", s.handleOrgCreateAssociate)
+							r.Patch("/associates/{associateId}", s.handleOrgUpdateAssociate)
+							r.Post("/associates/{associateId}/invite", s.handleOrgInviteAssociate)
+							r.Post("/associates/{associateId}/vehicles", s.handleOrgRegisterVehicle)
+						})
+						// O resto do painel é da equipe (não do corretor).
+						r.Group(func(r chi.Router) {
+							r.Use(s.requireOrgStaff)
+							r.Get("/recoveries", s.handleOrgRecoveries)
+							r.Get("/announcements", s.handleOrgAnnouncements)
+							if s.Appointments != nil {
+								r.Get("/installations", s.handleOrgInstallations)
+							}
+							if s.Claims != nil {
+								r.Get("/claims", s.handleOrgClaims)
+								r.Get("/claims/{claimId}", s.handleGetClaim)
+								r.Get("/claims/{claimId}/files/{fileId}", s.handleClaimFile)
+							}
+							if s.Inspections != nil {
+								r.Get("/inspections", s.handleOrgInspections)
+								r.Get("/inspections/{inspectionId}", s.handleGetInspection)
+								r.Get("/inspections/{inspectionId}/photos/{slot}", s.handleInspectionPhoto)
+							}
+						})
+						r.Group(func(r chi.Router) {
+							r.Use(s.requireOrgOperator)
+							r.Post("/associates/import", s.handleOrgImportAssociates)
+							// O pedido de desinstalação (a central agenda a retirada).
+							if s.Appointments != nil {
+								r.Post("/vehicles/{vehicleId}/uninstall", s.handleOrgRequestUninstall)
+								r.Delete("/vehicles/{vehicleId}/uninstall", s.handleOrgCancelUninstall)
+							}
+							r.Post("/announcements", s.handleOrgAnnounce)
+							if s.Claims != nil {
+								r.Post("/claims/{claimId}/status", s.handleOrgClaimStatus)
+								r.Post("/claims/{claimId}/notes", s.handleClaimNote)
+								r.Post("/claims/{claimId}/files", s.handleAddClaimFile)
+							}
+							if s.Inspections != nil {
+								r.Post("/inspections", s.handleOrgRequestInspection)
+								r.Post("/inspections/{inspectionId}/review", s.handleOrgReviewInspection)
+							}
+						})
+					})
+					// A equipe e as faturas: o Administrador (pagar continua
+					// aberto com o painel suspenso).
+					r.Group(func(r chi.Router) {
+						r.Use(s.requireOrgAdmin)
+						if s.APIKeys != nil && s.Webhooks != nil {
+							r.With(s.requireActiveOrg).Group(s.integrationRoutes)
+						}
+						r.Get("/team", s.handleOrgTeam)
+						r.With(s.requireActiveOrg).Post("/team", s.handleOrgAddMember)
+						r.Patch("/team/{userId}", s.handleOrgSetMemberRole)
+						r.Delete("/team/{userId}", s.handleOrgRemoveMember)
+						r.Post("/team/{userId}/invite", s.handleOrgInviteMember)
+						r.Get("/invoices", s.handleOrgInvoices)
+						r.Post("/invoices/{id}/pix", s.handleOrgInvoicePix)
+						r.Post("/invoices/{id}/boleto", s.handleOrgInvoiceBoleto)
+						r.Get("/charges/{id}", s.handleOrgCharge)
+						r.Post("/charges/{id}/simulate", s.handleOrgChargeSimulate)
+						if s.Closing != nil {
+							r.Get("/fiscal-notes", s.handleOrgFiscalNotes)
+							r.Get("/fiscal-notes/{id}/file", s.handleOrgFiscalNoteFile)
+						}
+					})
+				})
+			}
 
 			// Daqui para baixo, só a equipe da central.
 			r.Group(func(r chi.Router) {
@@ -696,6 +932,10 @@ func (s *Server) routes() chi.Router {
 							r.Get("/launch-promo", s.handleCustomerLaunchPromo)
 							r.Post("/launch-promo/grant", s.handleGrantLaunchPromo)
 							r.Put("/plan", s.handleSetCustomerPlan)
+							// A associação ou seguradora que paga o rastreamento do cliente.
+							if s.Organizations != nil {
+								r.Put("/organization", s.handleSetCustomerOrganization)
+							}
 							r.Delete("/plan", s.handleClearCustomerPlan)
 							// O cartão salvo: a central só desliga o débito ou apaga.
 							r.Put("/card/auto-debit", s.handleCustomerCardAutoDebit)
@@ -706,6 +946,37 @@ func (s *Server) routes() chi.Router {
 							}
 							r.Post("/subscriptions/{subscriptionId}/vehicle", s.handleAdminAttachVehicle)
 							r.Post("/vehicles/{vehicleId}/subscription", s.handleReactivateSubscription)
+						})
+					})
+					// O fechamento do mês e as notas fiscais.
+					r.Route("/closing", func(r chi.Router) {
+						if s.Closing == nil {
+							return
+						}
+						r.Get("/", s.handleClosing)
+						r.Get("/export.csv", s.handleClosingCSV)
+						r.Post("/notes", s.handleSaveFiscalNote)
+						r.Delete("/notes/{id}", s.handleDeleteFiscalNote)
+						r.Get("/notes/{id}/file", s.handleFiscalNoteFile)
+					})
+					// As associações e seguradoras.
+					r.Route("/organizations", func(r chi.Router) {
+						if s.Organizations == nil {
+							return
+						}
+						r.Get("/", s.handleListOrganizations)
+						r.Post("/", s.handleCreateOrganization)
+						r.Route("/{orgId}", func(r chi.Router) {
+							r.Get("/", s.handleGetOrganization)
+							r.Patch("/", s.handleUpdateOrganization)
+							r.Post("/members", s.handleAdminOrgAddMember)
+							r.Patch("/members/{userId}", s.handleAdminOrgSetMemberRole)
+							r.Delete("/members/{userId}", s.handleAdminOrgRemoveMember)
+							r.Post("/members/{userId}/invite", s.handleAdminOrgInviteMember)
+							r.Post("/associates", s.handleAdminOrgCreateAssociate)
+							r.Post("/associates/import", s.handleAdminOrgImportAssociates)
+							r.Post("/associates/{associateId}/vehicles", s.handleAdminOrgRegisterVehicle)
+							r.Post("/invoices/generate", s.handleGenerateOrgInvoice)
 						})
 					})
 					r.Route("/leads", func(r chi.Router) {
@@ -781,6 +1052,20 @@ func (s *Server) routes() chi.Router {
 					r.Put("/conversations/{id}/mode", s.handleSetConversationMode)
 				})
 
+				// A agenda de instalação: a equipe operacional agenda e acompanha.
+				if s.Appointments != nil {
+					r.Route("/installations", func(r chi.Router) {
+						r.Use(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator))
+						r.Get("/", s.handleInstallations)
+						r.Get("/awaiting", s.handleAwaitingInstall)
+						r.Get("/awaiting-uninstall", s.handleAwaitingUninstall)
+						r.Post("/", s.handleCreateInstallation)
+						r.Patch("/{id}", s.handleRescheduleInstallation)
+						r.Post("/{id}/close", s.handleCloseInstallation)
+						r.Get("/{id}/photos/{slot}", s.handleInstallationPhoto)
+					})
+				}
+
 				r.Route("/installers", func(r chi.Router) {
 					r.Use(auth.RequireRole(auth.RoleAdmin))
 					r.Get("/", s.handleListInstallers)
@@ -802,7 +1087,7 @@ func (s *Server) routes() chi.Router {
 	// O WebSocket autentica pelo mesmo middleware, lendo ?token= porque o
 	// navegador não permite header na abertura da conexão.
 	// Cliente suspenso também não recebe o tempo real.
-	r.With(s.Auth.Middleware, s.requireActiveCustomer).Handle("/ws", s.WS)
+	r.With(s.Auth.Middleware, s.requireActiveCustomer, s.requireActiveOrg).Handle("/ws", s.WS)
 
 	return r
 }

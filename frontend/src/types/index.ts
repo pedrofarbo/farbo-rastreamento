@@ -27,8 +27,11 @@ export type CommandType =
   | 'REBOOT'
   | 'CUSTOM';
 
-/** admin, operator e viewer são a equipe da central; customer é o cliente final. */
-export type UserRole = 'admin' | 'operator' | 'viewer' | 'customer';
+/**
+ * admin, operator e viewer são a equipe da central; customer é o cliente
+ * final; org_member é quem é da equipe de uma associação ou seguradora.
+ */
+export type UserRole = 'admin' | 'operator' | 'viewer' | 'customer' | 'org_member';
 
 export interface User {
   id: string;
@@ -41,6 +44,196 @@ export interface User {
   createdAt: string;
   /** Quem é da equipe da conta de um cliente (conta empresa): a conta e o papel. */
   membership?: Membership | null;
+  /** Quem é da equipe de uma associação ou seguradora: a organização e o papel. */
+  organization?: OrgMembership | null;
+  /** O associado: a organização paga o rastreamento (o app esconde as faturas e o pedido de veículo). */
+  paidByOrganization?: boolean;
+}
+
+/** Associação ou seguradora. */
+export type OrgKind = 'association' | 'insurer';
+/** O papel na organização: Administrador (tudo), Operador (associados, veículos, bloqueio) e Visualizador. */
+export type OrgRole = 'admin' | 'operator' | 'viewer' | 'broker';
+
+/** O vínculo de quem é da equipe de uma organização. */
+export interface OrgMembership {
+  organizationId: string;
+  name: string;
+  kind: OrgKind;
+  role: OrgRole;
+}
+
+/** O rastreador dos associados (comodato ou venda) e as taxas, definidos pela central. */
+export interface OrgTerms {
+  equipmentMode: 'loan' | 'sale';
+  equipmentCents: number;
+  installFeeCents: number;
+  uninstallFeeCents: number;
+}
+
+/** A associação ou seguradora, com os números do painel. */
+export interface Organization extends OrgTerms {
+  id: string;
+  kind: OrgKind;
+  name: string;
+  document: string;
+  /** O contato de cobrança (o pagador das faturas). */
+  email: string;
+  phone: string;
+  priceCents: number;
+  dueDay: number;
+  notes: string;
+  active: boolean;
+  createdAt: string;
+  associates: number;
+  vehicles: number;
+  /** Os veículos com rastreador (os que entram na fatura). */
+  installed: number;
+  members: number;
+  openInvoices: number;
+  overdueInvoices: number;
+}
+
+export interface OrganizationInput extends OrgTerms {
+  kind: OrgKind;
+  name: string;
+  document: string;
+  email: string;
+  phone: string;
+  priceCents: number;
+  dueDay: number;
+  notes: string;
+  active?: boolean;
+}
+
+/** Alguém da equipe da organização. */
+export interface OrgMember {
+  userId: string;
+  name: string;
+  email: string;
+  role: OrgRole;
+  active: boolean;
+  createdAt: string;
+  lastSeenAt: string | null;
+}
+
+/** O associado: o cliente cujo rastreamento a organização paga. */
+export interface Associate {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  document: string;
+  active: boolean;
+  createdAt: string;
+  vehicles: number;
+  installed: number;
+  /** A última vez que entrou no app (nulo: ainda não entrou). */
+  lastSeenAt: string | null;
+  /** O corretor do associado (nulo: nenhum). */
+  brokerId: string | null;
+  brokerName: string;
+}
+
+export interface AssociateDetail extends Associate {
+  vehicleList: VehicleView[];
+  /** A instalação ou a desinstalação marcada (em aberto). */
+  appointments: InstallationAppointment[];
+  /** Os pedidos de desinstalação em aberto, pelo id do veículo. */
+  uninstallRequests: Record<string, UninstallRequest>;
+}
+
+export interface AssociateInput {
+  name: string;
+  email?: string;
+  phone: string;
+  document: string;
+  active?: boolean;
+  /** O corretor ("" tira; ausente mantém). */
+  brokerId?: string;
+}
+
+/** Uma linha do extrato da fatura da organização. */
+export interface OrgInvoiceItem {
+  kind: 'monthly' | 'prorata' | 'install' | 'equipment' | 'uninstall';
+  vehicleId: string | null;
+  name: string;
+  plate: string;
+  ownerName: string;
+  amountCents: number;
+  days?: number;
+}
+
+/** A fatura da organização, com o extrato (vazio na avulsa). */
+export interface OrgInvoice extends Invoice {
+  vehicles: number;
+  priceCents: number;
+  items: OrgInvoiceItem[];
+}
+
+/** A próxima fatura, simulada com o que conta hoje. */
+export interface OrgEstimate {
+  dueDate: DateOnly;
+  vehicles: number;
+  priceCents: number;
+  amountCents: number;
+  items: OrgInvoiceItem[];
+}
+
+/** A nota fiscal do fechamento de um mês (emitida fora; a central registra o número e o arquivo). */
+export interface FiscalNote {
+  id: string;
+  customerId: string;
+  /** AAAA-MM: o mês de competência. */
+  month: string;
+  number: string;
+  issuedOn: DateOnly;
+  amountCents: number;
+  filename: string;
+  hasFile: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Um pagador no fechamento do mês: o cliente ou a associação/seguradora. */
+export interface ClosingLine {
+  payerId: string;
+  kind: 'customer' | 'organization';
+  name: string;
+  document: string;
+  email: string;
+  /** As linhas de fatura que vencem no mês (sem as canceladas). */
+  invoices: number;
+  amountCents: number;
+  paidCents: number;
+  note: FiscalNote | null;
+}
+
+/** O fechamento de um mês: o faturado de cada pagador e as notas. */
+export interface ClosingMonth {
+  month: string;
+  lines: ClosingLine[];
+  amountCents: number;
+  paidCents: number;
+  notes: number;
+  missingNotes: number;
+}
+
+/** O começo do painel da organização. */
+export interface OrgOverview {
+  organization: Organization;
+  role: OrgRole;
+  online: number;
+  awaitingInstall: number;
+  estimate?: OrgEstimate;
+}
+
+/** A ficha da organização na central. */
+export interface OrganizationDetail extends Organization {
+  memberList: OrgMember[];
+  associateList: Associate[];
+  invoices: OrgInvoice[];
+  estimate: OrgEstimate;
 }
 
 /** O papel na equipe da conta: Gestor opera tudo menos a conta; Visualizador só acompanha. */
@@ -78,9 +271,9 @@ export interface EngineHistoryItem {
   requestedAt: string;
   acknowledgedAt: string | null;
   error: string;
-  /** "Você", o nome de alguém da conta ou de quem tem acesso compartilhado, "Central Farbo" ou "Sistema". */
+  /** "Você", o nome de alguém da conta, de quem tem acesso compartilhado, da associação, "Central Farbo" ou "Sistema". */
   who: string;
-  whoKind: 'you' | 'account' | 'shared' | 'central' | 'system';
+  whoKind: 'you' | 'account' | 'shared' | 'organization' | 'central' | 'system';
   /** O navegador de onde saiu (vazio: não registrado, ou a central). */
   userAgent: string;
   confirmedWith: '' | 'biometric' | 'password';
@@ -369,6 +562,349 @@ export interface PublicTheftView {
   online: boolean;
 }
 
+export type ClaimKind = 'collision' | 'theft' | 'robbery' | 'glass' | 'natural' | 'other';
+export type ClaimStatus = 'open' | 'analyzing' | 'approved' | 'denied' | 'closed';
+
+/** Uma ocorrência aberta pelo associado. */
+export interface Claim {
+  id: string;
+  organizationId: string;
+  associateId: string;
+  associateName: string;
+  vehicleId: string | null;
+  vehicleName: string;
+  plate: string;
+  kind: ClaimKind;
+  occurredAt: string;
+  place: string;
+  description: string;
+  policeReport: string;
+  status: ClaimStatus;
+  photos: number;
+  createdAt: string;
+  updatedAt: string;
+  files?: ClaimFile[];
+  updates?: ClaimUpdate[];
+}
+
+export interface ClaimFile {
+  id: string;
+  kind: 'photo' | 'police_report' | 'document';
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+export interface ClaimUpdate {
+  id: number;
+  authorName: string;
+  authorKind: 'associate' | 'organization';
+  status: ClaimStatus | '';
+  note: string;
+  createdAt: string;
+}
+
+export interface ClaimInput {
+  vehicleId: string | null;
+  kind: ClaimKind;
+  occurredAt: string;
+  place: string;
+  description: string;
+  policeReport: string;
+}
+
+export type InspectionSlot = 'front' | 'rear' | 'left' | 'right' | 'dashboard' | 'chassis';
+export type InspectionStatus = 'pending' | 'submitted' | 'approved' | 'rejected';
+
+/** Uma vistoria digital (o associado tira as fotos pelo app). */
+export interface Inspection {
+  id: string;
+  organizationId: string;
+  associateId: string;
+  associateName: string;
+  vehicleId: string;
+  vehicleName: string;
+  plate: string;
+  status: InspectionStatus;
+  requestNote: string;
+  reviewNote: string;
+  requestedByName: string;
+  reviewedByName: string;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  photos: { slot: InspectionSlot; sizeBytes: number; latitude: number | null; longitude: number | null; takenAt: string }[];
+}
+
+/** O indique e ganhe do cliente. */
+export interface ReferralProgram {
+  program: {
+    code: string;
+    rewardCents: number;
+    signups: number;
+    customers: number;
+    earnedCents: number;
+    openCents: number;
+    credits: { referredName: string; amountCents: number; remainingCents: number; createdAt: string }[];
+  };
+  url: string;
+}
+
+/** Um motorista da frota, com o veículo que dirige agora. */
+export interface FleetDriver {
+  id: string;
+  name: string;
+  phone: string;
+  document: string;
+  licenseNumber: string;
+  licenseCategory: string;
+  licenseExpires: string | null;
+  active: boolean;
+  notes: string;
+  vehicleId: string | null;
+  vehicleName: string;
+  since: string | null;
+  createdAt: string;
+}
+
+export interface FleetDriverInput {
+  name: string;
+  phone: string;
+  document: string;
+  licenseNumber: string;
+  licenseCategory: string;
+  licenseExpires: string;
+  notes: string;
+  active?: boolean;
+}
+
+export type ExpenseKind = 'fuel' | 'maintenance' | 'toll' | 'parking' | 'insurance' | 'tax' | 'wash' | 'fine' | 'other';
+
+/** Um custo de um veículo. */
+export interface FleetExpense {
+  id: string;
+  vehicleId: string;
+  vehicleName: string;
+  plate: string;
+  kind: ExpenseKind;
+  spentOn: string;
+  amountCents: number;
+  liters: number | null;
+  odometerKm: number | null;
+  fullTank: boolean;
+  description: string;
+  createdAt: string;
+}
+
+export interface FleetExpenseInput {
+  vehicleId: string;
+  kind: ExpenseKind;
+  spentOn: string;
+  amountCents: number;
+  liters: number | null;
+  odometerKm: number | null;
+  fullTank: boolean;
+  description: string;
+}
+
+/** O custo de um veículo no período (com o custo por km e o consumo). */
+export interface FleetCostRow {
+  vehicleId: string;
+  totalCents: number;
+  byKind: Partial<Record<ExpenseKind, number>>;
+  distanceKm: number;
+  centsPerKm: number | null;
+  liters: number;
+  kmPerLiter: number | null;
+  fuelEntries: number;
+}
+
+export type FineStatus = 'pending' | 'paid' | 'appealed' | 'canceled';
+
+/** Uma multa de um veículo, com o motorista da hora. */
+export interface TrafficFine {
+  id: string;
+  vehicleId: string;
+  vehicleName: string;
+  plate: string;
+  driverId: string | null;
+  driverName: string;
+  occurredAt: string;
+  place: string;
+  description: string;
+  code: string;
+  amountCents: number;
+  points: number;
+  dueOn: string | null;
+  status: FineStatus;
+  driverIndicated: boolean;
+  notes: string;
+  createdAt: string;
+}
+
+export interface TrafficFineInput {
+  vehicleId: string;
+  driverId: string | null;
+  occurredAt: string;
+  place: string;
+  description: string;
+  code: string;
+  amountCents: number;
+  points: number;
+  dueOn: string;
+  status: FineStatus;
+  driverIndicated: boolean;
+  notes: string;
+}
+
+/** Uma locação. */
+export interface Rental {
+  id: string;
+  vehicleId: string;
+  vehicleName: string;
+  plate: string;
+  renterName: string;
+  renterPhone: string;
+  renterDocument: string;
+  startsAt: string;
+  endsAt: string;
+  returnedAt: string | null;
+  kmStart: number | null;
+  kmEnd: number | null;
+  notes: string;
+  overdue: boolean;
+  createdAt: string;
+}
+
+export interface RentalInput {
+  vehicleId: string;
+  renterName: string;
+  renterPhone: string;
+  renterDocument: string;
+  startsAt: string;
+  endsAt: string;
+  kmStart: number | null;
+  notes: string;
+}
+
+/** Uma jornada (Lei 13.103) de um veículo, com o motorista. */
+export interface JourneyRow {
+  vehicleId: string;
+  driverId: string | null;
+  driverName: string;
+  day: string;
+  start: string;
+  end: string;
+  trips: number;
+  drivingSeconds: number;
+  longestSeconds: number;
+  restBeforeSeconds: number | null;
+  distanceKm: number;
+  violations: ('continuous' | 'daily' | 'interjourney')[];
+}
+
+/** Uma chave da API de integração (o segredo só aparece na criação). */
+export interface ApiKey {
+  id: string;
+  name: string;
+  prefix: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+
+/** Um webhook (o segredo só aparece na criação). */
+export interface Webhook {
+  id: string;
+  url: string;
+  events: string[];
+  active: boolean;
+  lastStatus: number | null;
+  lastError: string;
+  lastSentAt: string | null;
+  failures: number;
+  createdAt: string;
+  secret?: string;
+}
+
+/** Um comunicado da organização aos associados. */
+export interface OrgAnnouncement {
+  id: string;
+  title: string;
+  body: string;
+  email: boolean;
+  recipients: number;
+  /** Quantos receberam na área do app. */
+  delivered: number;
+  emailed: number;
+  finishedAt: string | null;
+  createdByName: string;
+  createdAt: string;
+}
+
+export interface OrgAnnouncements {
+  announcements: OrgAnnouncement[];
+  maxTitle: number;
+  maxBody: number;
+  maxPerDay: number;
+}
+
+/** Um modo roubo de veículo de associado (o painel de recuperação da organização). */
+export interface OrgTheftCase {
+  id: string;
+  vehicleId: string;
+  vehicleName: string;
+  plate: string;
+  associateId: string;
+  associateName: string;
+  activatedByName: string;
+  activatedAt: string;
+  expiresAt: string;
+  endedAt: string | null;
+  /** Vazio enquanto está ligado. */
+  outcome: '' | 'RECOVERED' | 'CANCELLED' | 'EXPIRED';
+}
+
+export interface OrgRecoveries {
+  since: string;
+  total: number;
+  active: number;
+  recovered: number;
+  cancelled: number;
+  expired: number;
+  /** Recuperados sobre os que terminaram de verdade (0 a 100); nulo sem nenhum. */
+  recoveryRate: number | null;
+  medianRecoveryMinutes: number | null;
+  cases: OrgTheftCase[];
+}
+
+/** Um link de localização ao vivo por um tempo (o cliente manda para alguém). */
+export interface LiveLink {
+  id: string;
+  vehicleId: string;
+  label: string;
+  createdByName: string;
+  createdAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  views: number;
+  lastViewedAt: string | null;
+  url?: string;
+}
+
+export interface LiveLinksView {
+  links: LiveLink[];
+  /** Os prazos que dá para escolher, em horas. */
+  durations: number[];
+  maxActive: number;
+}
+
+/** O que o link ao vivo mostra (sem login): o veículo, onde está e quem mandou. */
+export interface PublicLiveView extends Omit<PublicTheftView, 'activatedAt'> {
+  sharedBy: string;
+}
+
 export interface SharedAccess {
   shareId: string;
   ownerName: string;
@@ -598,6 +1134,9 @@ export interface Subscription {
    */
   installments: number;
   commitmentUntil: DateOnly | null;
+  /** O rastreador vendido ou em comodato; no comodato, a desinstalação cobrada no encerramento. */
+  equipmentMode: 'sale' | 'loan';
+  uninstallFeeCents: number;
   equipmentCents: number;
   installmentCents: number;
   installmentsPaid: number;
@@ -654,7 +1193,7 @@ export interface Invoice {
   daysOverdue: number;
   paidAt: string | null;
   /** Como foi quitada: MANUAL (baixa da central), PIX, BOLETO ou CARD (confirmados no provedor). */
-  paidVia: '' | 'MANUAL' | 'PIX' | 'BOLETO' | 'CARD';
+  paidVia: '' | 'MANUAL' | 'PIX' | 'BOLETO' | 'CARD' | 'CREDIT';
   /** A cobrança (Pix ou boleto) que quitou a fatura, quando paga pelo provedor. */
   paidChargeId: string | null;
   paymentUrl: string;
@@ -776,6 +1315,9 @@ export interface CustomerSummary {
   overdueInvoices: number;
   openAmountCents: number;
   suspended: boolean;
+  /** A associação ou seguradora que paga o rastreamento (o associado). */
+  organizationId: string | null;
+  organizationName: string;
 }
 
 export type ChipStatus = 'REQUESTED' | 'SHIPPED' | 'AT_BASE' | 'SEPARATED';
@@ -972,11 +1514,22 @@ export interface ContractBlock {
  * O plano que a central definiu para o cliente (ex.: o Especial Insanos MC):
  * todo veículo novo dele sai nesse plano, pelo app ou pela central.
  */
-export interface AccountPlan {
+export interface AccountPlan extends EquipmentTerms {
   planName: string;
   priceCents: number;
   dueDay: number;
   updatedAt: string;
+}
+
+/**
+ * O rastreador do cliente e as taxas, no plano dele: vendido (o padrão) ou em
+ * comodato, com a instalação na fatura da contratação e a desinstalação no
+ * encerramento.
+ */
+export interface EquipmentTerms {
+  equipmentMode: 'sale' | 'loan';
+  installFeeCents: number;
+  uninstallFeeCents: number;
 }
 
 /** Uma cláusula do contrato ("6. Permanência mínima e multa"). */
@@ -1071,6 +1624,11 @@ export interface Catalog {
   equipmentMaxInstallments: number;
   /** O cliente pode contratar com a promoção de pré-lançamento (nulo: não pode). */
   launchPromo?: PromoOffer | null;
+  /** Para o cliente: o rastreador dele e as taxas, e a fatura em que um veículo contratado hoje entra. */
+  equipmentMode?: 'sale' | 'loan';
+  installFeeCents?: number;
+  uninstallFeeCents?: number;
+  chargeDate?: DateOnly;
 }
 
 /**
@@ -1136,9 +1694,15 @@ export interface Installer extends PublicInstaller {
 export interface TrackerOrderResult {
   vehicle: Vehicle;
   subscription: Subscription;
-  /** Fatura do equipamento (com o frete); nula quando nada foi cobrado. */
+  /** O vencimento da fatura do mês em que a contratação entra (nada é cobrado na hora). */
+  chargeDate: DateOnly;
+  /** A linha do equipamento (com o frete); nula quando nada foi cobrado. */
   setupInvoice: Invoice | null;
-  /** A 1ª mensalidade, que vence com o pedido e se paga junto com ele. */
+  /** A instalação no comodato (nula sem taxa). */
+  installInvoice: Invoice | null;
+  /** Os dias de hoje até o vencimento. */
+  prorataInvoice: Invoice | null;
+  /** A 1ª mensalidade, na mesma fatura. */
   firstInvoice: Invoice | null;
   /** O frete cobrado; nulo se o pedido saiu sem frete. */
   shipping: ShippingChoice | null;
@@ -1165,12 +1729,16 @@ export interface Odometer {
   hoursSetAt: string | null;
 }
 
+/** service: manutenção (km, horas, meses); document: documento, só por data (IPVA, CNH). */
+export type MaintenanceKind = 'service' | 'document';
+
 export interface MaintenanceItem {
   id: string;
   vehicleId: string;
   vehicleName: string;
   plate: string;
   groupId: string | null;
+  kind: MaintenanceKind;
   name: string;
   everyKm: number | null;
   everyMonths: number | null;
@@ -1228,9 +1796,13 @@ export interface FleetImportResult {
   installed: number;
   /** Os grupos que a planilha cria na conta. */
   newGroups: string[] | null;
-  /** O total da fatura do equipamento. */
+  /** O total do equipamento. */
   equipmentCents: number;
   setupInvoice: Invoice | null;
+  installInvoice?: Invoice | null;
+  prorataInvoice?: Invoice | null;
+  /** O vencimento da fatura do mês em que a frota entra. */
+  chargeDate?: DateOnly;
   dryRun: boolean;
 }
 
@@ -1269,7 +1841,9 @@ export type AlertKind =
   | 'SIGNAL_LOST'
   | 'LOW_BATTERY'
   | 'ENGINE_BLOCK'
-  | 'IGNITION';
+  | 'IGNITION'
+  | 'CAR_BATTERY'
+  | 'IMPACT';
 
 export interface AlertKindInfo {
   kind: AlertKind;
@@ -1832,7 +2406,7 @@ export interface GatewayBalance {
 }
 
 /** Como a fatura do cliente foi paga: MANUAL é a baixa da central. */
-export type CustomerPaymentMethod = 'PIX' | 'BOLETO' | 'CARD' | 'MANUAL';
+export type CustomerPaymentMethod = 'PIX' | 'BOLETO' | 'CARD' | 'MANUAL' | 'CREDIT';
 
 /** Uma fatura de cliente paga: o que entrou no caixa. */
 export interface CustomerPayment {
@@ -1983,6 +2557,8 @@ export interface AffiliateInput {
 export interface AffiliateSettings {
   defaultCommissionCents: number;
   categoryId: string | null;
+  /** O crédito do indique e ganhe dos clientes (zero desliga). */
+  customerRewardCents: number;
 }
 
 /** O afiliado como a tela de cadastro mostra ("Indicado por @fulano"). */
@@ -2164,6 +2740,9 @@ export interface ReportVehicle {
   id: string;
   name: string;
   plate: string;
+  /** O associado, nos relatórios da associação ou seguradora. */
+  ownerId?: string;
+  ownerName?: string;
 }
 
 /** O resumo de um veículo no período. */
@@ -2171,6 +2750,8 @@ export interface ReportSummaryRow {
   vehicleId: string;
   name: string;
   plate: string;
+  /** O associado, nos relatórios da associação ou seguradora. */
+  ownerName?: string;
   groupId: string | null;
   custom1: string;
   custom2: string;
@@ -2184,6 +2765,40 @@ export interface ReportSummaryRow {
   activeDays: number;
   firstMoveAt: string | null;
   lastMoveAt: string | null;
+}
+
+/** A direção de um veículo no período: a nota e o que pesou nela. */
+export interface ReportDrivingRow {
+  vehicleId: string;
+  name: string;
+  plate: string;
+  groupId: string | null;
+  ownerName?: string;
+  distanceKm: number;
+  movingSeconds: number;
+  activeDays: number;
+  maxSpeedKmh: number;
+  overspeeds: number;
+  highSpeedSeconds: number;
+  harshBrakes: number;
+  harshAccels: number;
+  nightKm: number;
+  nightPercent: number;
+  /** De 0 a 100; nulo com poucos km. */
+  score: number | null;
+  penalties: { overspeed: number; highSpeed: number; harsh: number; night: number };
+}
+
+/** A utilização de um veículo no período: dias parados e a ociosidade. */
+export interface ReportUsageRow extends ReportSummaryRow {
+  /** Os dias do período em que o veículo já estava no sistema (até hoje). */
+  periodDays: number;
+  stoppedDays: number;
+  /** Dias com movimento sobre periodDays (0 a 100). */
+  usePercent: number;
+  /** Parado ligado sobre o tempo ligado (0 a 100). */
+  idlePercent: number;
+  kmPerActiveDay: number;
 }
 
 /** Um dia de um veículo (só os dias com posições). */
@@ -2260,4 +2875,204 @@ export interface CardPayInput {
   useSaved?: boolean;
   save?: boolean;
   autoDebit?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// A agenda de instalação e desinstalação e o link do instalador
+// ---------------------------------------------------------------------------
+
+export type InstallationKind = 'install' | 'uninstall';
+export type InstallationStatus = 'scheduled' | 'arrived' | 'done' | 'canceled' | 'no_show';
+export type InstallationSlot = 'tracker' | 'vehicle' | 'dashboard';
+
+export interface InstallationAppointment {
+  id: string;
+  kind: InstallationKind;
+  vehicleId: string;
+  vehicleName: string;
+  plate: string;
+  vehicleDetails: string;
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  organizationName: string;
+  installerId: string | null;
+  installerName: string;
+  scheduledFor: string;
+  durationMin: number;
+  address: string;
+  notes: string;
+  status: InstallationStatus;
+  arrivedAt: string | null;
+  deviceId: string | null;
+  /** O instalado (instalação concluída) ou o que está no veículo (desinstalação). */
+  imei: string;
+  completedAt: string | null;
+  installerNote: string;
+  photos: InstallationSlot[];
+  createdAt: string;
+  /** O link do instalador (só para a central). */
+  url?: string;
+}
+
+export interface InstallationInput {
+  kind: InstallationKind;
+  vehicleId: string;
+  installerId: string | null;
+  installerName: string;
+  scheduledFor: string;
+  durationMin: number;
+  address: string;
+  notes: string;
+}
+
+/** O veículo à espera da instalação (sem rastreador). */
+export interface AwaitingInstall {
+  vehicleId: string;
+  vehicleName: string;
+  plate: string;
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  organizationName: string;
+  address: string;
+  /** Já agendado (para quando). */
+  scheduledFor: string | null;
+  createdAt: string;
+}
+
+/** Um veículo de associado à espera da retirada do rastreador. */
+export interface AwaitingUninstall {
+  vehicleId: string;
+  vehicleName: string;
+  plate: string;
+  imei: string;
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  organizationName: string;
+  address: string;
+  /** requested: a associação pediu; inactive: o associado foi desligado. */
+  reason: 'requested' | 'inactive';
+  note: string;
+  requestedAt: string | null;
+  scheduledFor: string | null;
+}
+
+/** O pedido de desinstalação da associação, em aberto. */
+export interface UninstallRequest {
+  requestedAt: string;
+  note: string;
+}
+
+/** O que o instalador vê pelo link (na desinstalação, o IMEI é o do rastreador a retirar). */
+export interface PublicInstallView {
+  kind: InstallationKind;
+  vehicleName: string;
+  plate: string;
+  vehicleDetails: string;
+  customerName: string;
+  customerPhone: string;
+  installerName: string;
+  scheduledFor: string;
+  address: string;
+  notes: string;
+  status: InstallationStatus;
+  imei: string;
+  completedAt: string | null;
+  photos: InstallationSlot[];
+}
+
+/** O teste do rastreador pelo IMEI. */
+export interface InstallCheck {
+  found: boolean;
+  otherVehicle: boolean;
+  online: boolean;
+  lastPosition: string | null;
+  ready: boolean;
+  message: string;
+}
+
+// ---------------------------------------------------------------------------
+// Os itinerários (linhas de ônibus)
+// ---------------------------------------------------------------------------
+
+export interface BusStop {
+  id: string;
+  seq: number;
+  name: string;
+  latitude: number;
+  longitude: number;
+  radiusM: number;
+  /** Os minutos previstos desde a saída. */
+  offsetMin: number;
+}
+
+export interface BusRoute {
+  id: string;
+  name: string;
+  color: string;
+  deviationM: number;
+  public: boolean;
+  active: boolean;
+  stops: BusStop[];
+  createdAt: string;
+  /** O link do passageiro (só com public). */
+  publicUrl?: string;
+}
+
+export interface BusRouteInput {
+  name: string;
+  color: string;
+  deviationM: number;
+  public: boolean;
+  active: boolean;
+  stops: Omit<BusStop, 'id' | 'seq'>[];
+}
+
+export interface BusTrip {
+  id: string;
+  routeId: string;
+  vehicleId: string;
+  vehicleName: string;
+  departsAt: string;
+  canceled: boolean;
+}
+
+export type TripStatus = 'scheduled' | 'running' | 'finished' | 'canceled';
+
+export interface StopProgress {
+  seq: number;
+  name: string;
+  planned: string;
+  arrivedAt: string | null;
+  delayMin: number | null;
+  eta: string | null;
+}
+
+export interface TripProgress {
+  tripId: string;
+  vehicleId: string;
+  vehicleName: string;
+  departsAt: string;
+  status: TripStatus;
+  stops: StopProgress[];
+  nextSeq: number | null;
+  delayMin: number | null;
+  offRoute: boolean;
+  position: { at: string; latitude: number; longitude: number; speedKmh: number } | null;
+}
+
+export interface RouteDay {
+  route: BusRoute;
+  trips: TripProgress[];
+}
+
+/** O que o passageiro vê: a linha, os pontos e os ônibus rodando (ou que saem na próxima hora). */
+export interface PublicRouteView {
+  name: string;
+  color: string;
+  stops: BusStop[];
+  trips: TripProgress[];
+  updatedAt: string;
 }

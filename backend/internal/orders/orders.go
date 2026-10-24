@@ -48,14 +48,16 @@ type ValidationError struct{ Message string }
 func (e ValidationError) Error() string { return e.Message }
 
 // Order é o fluxo completo: veículo, rastreador (equipamento e entrega) e
-// assinatura.
+// assinatura. Nada é cobrado na hora: tudo entra na próxima fatura do mês da
+// conta (ver billing.ChargeDate), com o proporcional dos dias até ela.
 type Order struct {
 	Vehicle vehicles.Input
-	// EquipmentCents é o valor do aparelho; zero não gera fatura (aparelho do
-	// cliente, cortesia).
+	// EquipmentCents é o valor do aparelho; zero não cobra (aparelho do
+	// cliente, cortesia, comodato).
 	EquipmentCents int
-	// SetupDueDate é o vencimento dessa fatura; nulo usa o prazo do catálogo.
-	SetupDueDate *billing.Date
+	// Terms: o rastreador vendido ou em comodato e as taxas (o comodato
+	// cobra a instalação na fatura e a desinstalação no encerramento).
+	Terms Terms
 	// RequireAddress recusa o pedido se o cliente não tiver endereço de
 	// entrega. Vale para o pedido do cliente; a central pode lançar sem ele
 	// (aparelho instalado na hora, entregue em mãos).
@@ -76,15 +78,22 @@ type Order struct {
 	Installments int
 }
 
-// Result é o que a contratação criou.
+// Result é o que a contratação criou. Tudo vence em ChargeDate, na fatura do
+// mês da conta.
 type Result struct {
 	Vehicle      *vehicles.Vehicle     `json:"vehicle"`
 	Subscription *billing.Subscription `json:"subscription"`
-	// SetupInvoice é a fatura do equipamento (com o frete); nula quando nada
-	// foi cobrado (aparelho do cliente, cortesia, sem frete...).
+	// ChargeDate é o vencimento da fatura em que a contratação entra.
+	ChargeDate billing.Date `json:"chargeDate"`
+	// SetupInvoice é a linha do equipamento (com o frete); nula quando nada
+	// foi cobrado (aparelho do cliente, cortesia, comodato sem frete...).
 	SetupInvoice *billing.Invoice `json:"setupInvoice"`
-	// FirstInvoice é a 1ª mensalidade, que vence com o pedido e se paga junto
-	// com ele; nula se a geração falhar (a rotina de faturas a cria depois).
+	// InstallInvoice é a linha da instalação no comodato (nula sem taxa).
+	InstallInvoice *billing.Invoice `json:"installInvoice"`
+	// ProrataInvoice é a linha dos dias de hoje até o vencimento (nula sem dias).
+	ProrataInvoice *billing.Invoice `json:"prorataInvoice"`
+	// FirstInvoice é a linha da 1ª mensalidade; nula se a geração falhar (a
+	// rotina de faturas a cria depois).
 	FirstInvoice *billing.Invoice `json:"firstInvoice"`
 	// Shipping é a entrega escolhida (nula: sem frete).
 	Shipping *fulfillment.Choice `json:"shipping"`
@@ -124,6 +133,18 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 	if err != nil {
 		return nil, err
 	}
+	if err := o.Terms.check(); err != nil {
+		return nil, err
+	}
+	loan := o.Terms.EquipmentMode == billing.EquipmentLoan
+	if loan {
+		// O rastreador emprestado não é vendido nem parcelado.
+		if o.Installments > 1 {
+			return nil, ValidationError{"no comodato o rastreador não é vendido: não há o que parcelar"}
+		}
+		o.EquipmentCents = 0
+		sub.EquipmentMode, sub.UninstallFeeCents = billing.EquipmentLoan, o.Terms.UninstallFeeCents
+	}
 
 	var setup *billing.Invoice
 	if o.EquipmentCents < 0 {
@@ -139,10 +160,10 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 		}
 		return nil, ValidationError{fmt.Sprintf("o rastreador pode ser parcelado em até %d vezes", max)}
 	}
-	due := s.billing.Today().AddDays(s.catalog.SetupDueDays)
-	if o.SetupDueDate != nil {
-		due = *o.SetupDueDate
-	}
+	// O vencimento sai na transação (o dia da conta e a fatura do mês);
+	// aqui só a validação dos valores.
+	today := s.billing.Today()
+	due := today
 	if o.EquipmentCents > 0 {
 		setup, err = s.billing.NewInvoice(customerID, billing.InvoiceInput{
 			Description: s.catalog.EquipmentName,
@@ -163,11 +184,22 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 		if err := s.billing.AlignDueDay(ctx, tx, sub, o.Plan.FirstDueDate != nil); err != nil {
 			return err
 		}
-		// A 1ª mensalidade vence com o pedido: no dia da contratação (ou no
-		// que a central escolheu para a cobrança dele). A 2ª, no dia da conta,
-		// pelo menos um mês depois. Um 1º vencimento combinado prevalece.
+		// Nada é cobrado na hora: o equipamento, o frete, a instalação, o
+		// proporcional e a 1ª mensalidade entram na próxima fatura do mês da
+		// conta (a que ainda não foi paga). Um 1º vencimento combinado
+		// prevalece.
 		if o.Plan.FirstDueDate == nil {
+			var err error
+			if due, err = s.billing.ChargeDate(ctx, tx, customerID, sub.DueDay); err != nil {
+				return err
+			}
 			sub.NextDueDate = due
+		} else {
+			due = sub.NextDueDate
+		}
+		result.ChargeDate = due
+		if setup != nil {
+			setup.DueDate = due
 		}
 		if o.LaunchPromo {
 			var err error
@@ -249,10 +281,33 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 			}
 		}
 		if setup != nil {
-			// A fatura do equipamento é avulsa (sem assinatura): se tivesse a
-			// assinatura e caísse no mesmo dia da primeira mensalidade, a
-			// chave única (assinatura, vencimento) impediria a mensalidade.
+			// A linha do equipamento é avulsa (sem assinatura): se tivesse a
+			// assinatura, a chave única (assinatura, vencimento) impediria a
+			// mensalidade do mesmo dia.
 			if result.SetupInvoice, err = billing.InsertInvoice(ctx, tx, setup); err != nil {
+				return err
+			}
+		}
+		vehicleLabel := result.Vehicle.Name
+		if result.Vehicle.Plate != "" {
+			vehicleLabel += " · " + result.Vehicle.Plate
+		}
+		// O comodato: a instalação, na mesma fatura.
+		if loan && o.Terms.InstallFeeCents > 0 {
+			if result.InstallInvoice, err = billing.InsertInvoice(ctx, tx, &billing.Invoice{
+				CustomerID: customerID, Description: "Instalação do rastreador (comodato): " + vehicleLabel,
+				AmountCents: o.Terms.InstallFeeCents, DueDate: due,
+			}); err != nil {
+				return err
+			}
+		}
+		// Os dias de hoje até o vencimento, no preço do 1º mês.
+		if cents, days := billing.Prorata(result.Subscription.PriceOn(due), today, due); cents > 0 {
+			if result.ProrataInvoice, err = billing.InsertInvoice(ctx, tx, &billing.Invoice{
+				CustomerID:  customerID,
+				Description: billing.ProrataDescription(result.Subscription.PlanName, today, due, days) + ": " + vehicleLabel,
+				AmountCents: cents, DueDate: due,
+			}); err != nil {
 				return err
 			}
 		}
@@ -264,11 +319,14 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 	if err != nil {
 		return nil, database.MapError(err)
 	}
-	if result.SetupInvoice != nil {
-		s.billing.Decorate(result.SetupInvoice)
+	for _, inv := range []*billing.Invoice{result.SetupInvoice, result.InstallInvoice, result.ProrataInvoice} {
+		if inv != nil {
+			s.billing.Decorate(inv)
+		}
 	}
 
-	// A 1ª mensalidade sai na hora, para pagar junto com o pedido.
+	// A linha da 1ª mensalidade sai na hora (vence no dia da fatura), para o
+	// cliente já ver a fatura do mês com tudo.
 	s.billing.GenerateInvoices(ctx)
 	first, err := s.billing.FirstInvoice(ctx, result.Subscription.ID)
 	switch {
@@ -283,7 +341,8 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 	}
 	s.log.Info("rastreador contratado", "customer", customerID, "vehicle", result.Vehicle.ID,
 		"subscription", result.Subscription.ID, "equipment_cents", o.EquipmentCents, "promo", o.LaunchPromo,
-		"freight_cents", freightCents, "installments", o.Installments)
+		"freight_cents", freightCents, "installments", o.Installments, "equipment_mode", o.Terms.EquipmentMode,
+		"charge_date", result.ChargeDate.String())
 	return result, nil
 }
 
@@ -341,12 +400,20 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehic
 	if err != nil {
 		return Order{}, err
 	}
+	terms, err := s.CustomerTerms(ctx, customerID)
+	if err != nil {
+		return Order{}, err
+	}
+	equipment := s.catalog.EquipmentPriceCents
+	if terms.EquipmentMode == billing.EquipmentLoan {
+		equipment = 0
+	}
 
 	// O cliente não vincula aparelho nem escolhe dono.
 	vehicle.DeviceID, vehicle.OwnerID = nil, nil
 
 	return Order{
-		Vehicle: vehicle, EquipmentCents: s.catalog.EquipmentPriceCents, RequireAddress: true, Plan: plan,
+		Vehicle: vehicle, EquipmentCents: equipment, Terms: terms, RequireAddress: true, Plan: plan,
 		LaunchPromo: launchPromo,
 	}, nil
 }

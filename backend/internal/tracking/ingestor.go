@@ -386,6 +386,19 @@ func (i *Ingestor) emitStateEvents(ctx context.Context, dev *devices.Device, veh
 		i.recordEvent(ctx, dev, eventType, at, msg, nil)
 	}
 
+	// A bateria do veículo fraca: com a ignição desligada, a tensão cruzou
+	// para baixo do limite (o de 12 V ou o de 24 V). Só volta a avisar depois
+	// de subir de novo (BatteryRecoverMargin acima), para a oscilação em
+	// volta do limite não virar uma série de eventos.
+	if after.BatteryVoltage != nil && (after.ACC == nil || !*after.ACC) {
+		volts := *after.BatteryVoltage
+		if limit := BatteryLowLimit(volts); limit > 0 && volts < limit &&
+			(before.BatteryVoltage == nil || *before.BatteryVoltage >= limit+BatteryRecoverMargin) {
+			i.recordEvent(ctx, dev, events.VehicleBatteryLow, at, msg,
+				map[string]any{"voltage": volts, "limit": limit})
+		}
+	}
+
 	// Sinal GSM zerado é o que o aparelho reporta quando está sem cobertura
 	// utilizável; não é inferência nossa sobre a conexão.
 	if before.GSMLevel != nil && after.GSMLevel != nil {
@@ -747,4 +760,22 @@ func truncateHex(hexStr string) string {
 		return hexStr
 	}
 	return hexStr[:maxLen] + "..."
+}
+
+// BatteryRecoverMargin: quanto a tensão precisa subir acima do limite para o
+// alerta de bateria fraca voltar a valer.
+const BatteryRecoverMargin = 0.2
+
+// BatteryLowLimit é a tensão abaixo da qual a bateria do veículo, desligado,
+// costuma não dar partida: 11,8 V nos sistemas de 12 V e 23,6 V nos de 24 V
+// (caminhões e ônibus). Abaixo de 7 V não é bateria fraca, é falta de
+// energia (o alarme de corte avisa): zero.
+func BatteryLowLimit(volts float64) float64 {
+	switch {
+	case volts < 7:
+		return 0
+	case volts > 18:
+		return 23.6
+	}
+	return 11.8
 }

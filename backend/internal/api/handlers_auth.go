@@ -227,8 +227,10 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		handleStoreError(w, err, "usuário não encontrado")
 		return
 	}
-	// Quem é da equipe de um cliente: a tela mostra a conta e o papel.
+	// Quem é da equipe de um cliente (ou de uma organização): a tela mostra
+	// a conta e o papel.
 	user.Membership = principal.Membership
+	user.Organization = principal.Org
 	writeJSON(w, http.StatusOK, user)
 }
 

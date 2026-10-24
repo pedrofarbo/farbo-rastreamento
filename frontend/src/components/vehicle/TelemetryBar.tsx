@@ -1,4 +1,4 @@
-import { formatRelative, formatSpeed } from '@/services/format';
+import { formatRelative, formatSpeed, formatVoltage } from '@/services/format';
 import type { DeviceState, Position } from '@/types';
 
 import styles from './TelemetryBar.module.css';
@@ -51,11 +51,11 @@ export function TelemetryBar({ position, state, lastSeenAt }: TelemetryBarProps)
       <Cell label="Rede" small value={gsm === null ? '—' : `${gsm}/4`} />
 
       <Cell
-        label="Bateria"
+        label={voltage !== null ? 'Voltagem' : 'Bateria'}
         small
         value={
           voltage !== null
-            ? `${voltage.toFixed(1)} V`
+            ? formatVoltage(voltage)
             : battery !== null
               ? `${battery}%`
               : '—'

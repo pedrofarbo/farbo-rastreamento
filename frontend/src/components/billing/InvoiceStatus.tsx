@@ -13,7 +13,9 @@ export function InvoiceStatus({ invoice }: { invoice: Invoice }) {
             ? 'Paga via boleto'
             : invoice.paidVia === 'CARD'
               ? 'Paga no cartão'
-              : 'Paga'}
+              : invoice.paidVia === 'CREDIT'
+                ? 'Paga com crédito'
+                : 'Paga'}
       </Badge>
     );
   }

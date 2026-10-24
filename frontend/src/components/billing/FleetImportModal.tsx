@@ -4,7 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { ApiError } from '@/api/client';
 import { catalogApi, customersApi } from '@/api/resources';
 import type { FleetImportRequest } from '@/api/resources';
-import { addDays, suggestedPlan } from '@/components/billing/NewVehicleWizard';
+import { nextChargeDate, suggestedPlan } from '@/components/billing/NewVehicleWizard';
 import type { WizardAdmin } from '@/components/billing/NewVehicleWizard';
 import { SubscriptionFields, subscriptionFromDraft } from '@/components/billing/SubscriptionFields';
 import type { SubscriptionDraft } from '@/components/billing/SubscriptionFields';
@@ -29,7 +29,7 @@ const PREVIEW_ROWS = 8;
 const SHOWN_PROBLEMS = 40;
 
 /** O texto do arquivo: UTF-8 (o "CSV UTF-8" do Excel) ou, se não for, Windows-1252 (o CSV comum do Excel em português). */
-async function readSheet(file: File): Promise<string> {
+export async function readSheet(file: File): Promise<string> {
   const bytes = await file.arrayBuffer();
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
@@ -71,23 +71,25 @@ export function FleetImportModal({
   const [check, setCheck] = useState<FleetImportResult | null>(null);
   const [problems, setProblems] = useState<SheetProblem[]>([]);
   const [equipment, setEquipment] = useState<string | null>(null);
-  const [dueDate, setDueDate] = useState<string | null>(null);
   const [plan, setPlan] = useState<SubscriptionDraft | null>(null);
   const [error, setError] = useState('');
 
   const c = catalog.data;
   const planDraft =
     plan ?? (c ? suggestedPlan(c, admin.currentPlan, admin.accountPlan ?? null, admin.accountDueDay ?? null) : null);
-  const equipmentText = equipment ?? (c ? centsToInput(c.equipmentPriceCents) : '');
+  // No comodato (o plano do cliente), não há equipamento a cobrar.
+  const loan = admin.accountPlan?.equipmentMode === 'loan';
+  const equipmentText = loan ? '0' : (equipment ?? (c ? centsToInput(c.equipmentPriceCents) : ''));
   const equipmentCents = equipmentText.trim() === '' ? 0 : parseMoney(equipmentText);
-  const setupDue = dueDate ?? (c ? addDays(todayISO(), c.setupDueDays) : todayISO());
+  // Tudo entra na próxima fatura do mês da conta.
+  const chargeDate = nextChargeDate(planDraft?.dueDay ?? c?.defaultDueDay ?? 10, todayISO());
 
   /** O pedido com o plano e o equipamento da tela (a conferência usa os mesmos). */
   const request = (dryRun: boolean): FleetImportRequest => {
     const subscription = planDraft ? subscriptionFromDraft(planDraft) : 'Carregando o plano.';
     if (typeof subscription === 'string') throw new Error(subscription);
     if (equipmentCents === null) throw new Error('Valor do equipamento inválido. Use, por exemplo, 150,00 (ou 0 para não cobrar).');
-    return { rows: sheet?.rows ?? [], equipmentCents, setupDueDate: setupDue, plan: subscription, dryRun };
+    return { rows: sheet?.rows ?? [], equipmentCents, plan: subscription, dryRun };
   };
 
   // O problema do servidor vem pela posição do veículo; a tela mostra a linha da planilha.
@@ -140,7 +142,6 @@ export function FleetImportModal({
     setCheck(null);
     setProblems([]);
     setEquipment(null);
-    setDueDate(null);
     setPlan(null);
     setError('');
     if (fileRef.current) fileRef.current.value = '';
@@ -379,21 +380,23 @@ export function FleetImportModal({
 
           {step === 2 && check && planDraft && (
             <>
-              <div className={pageStyles.formRow}>
+              {loan ? (
+                <p className={pageStyles.note}>
+                  Rastreadores em comodato (o plano do cliente): sem equipamento a cobrar
+                  {admin.accountPlan!.installFeeCents > 0
+                    ? `; a instalação (${formatMoney(admin.accountPlan!.installFeeCents)} cada) entra na fatura`
+                    : ''}
+                  .
+                </p>
+              ) : (
                 <TextField
                   label="Equipamento (cada)"
-                  hint="Zero não cobra. Os aparelhos saem numa fatura só."
+                  hint={`Zero não cobra. Os aparelhos entram numa linha da fatura de ${formatDateOnly(chargeDate)}.`}
                   inputMode="decimal"
                   value={equipmentText}
                   onChange={(e) => setEquipment(e.target.value)}
                 />
-                <TextField
-                  label="Vencimento da fatura do equipamento"
-                  type="date"
-                  value={setupDue}
-                  onChange={(e) => setDueDate(e.target.value)}
-                />
-              </div>
+              )}
               <SubscriptionFields draft={planDraft} onChange={setPlan} lockedDueDay={admin.accountDueDay ?? null} />
               <div className={styles.orderSummary}>
                 <div className={styles.orderLine}>
@@ -403,12 +406,15 @@ export function FleetImportModal({
                 <div className={styles.orderLine}>
                   <span>
                     Equipamento{equipmentCents ? ` (${count} × ${formatMoney(equipmentCents)})` : ''}
-                    {equipmentCents ? `, vence em ${formatDateOnly(setupDue)}` : ''}
+                    {equipmentCents ? `, na fatura de ${formatDateOnly(chargeDate)}` : ''}
                   </span>
                   <span>{equipmentCents ? formatMoney(equipmentCents * count) : 'sem cobrança'}</span>
                 </div>
                 <div className={styles.orderLine}>
-                  <span>Mensalidade de cada veículo, todo dia {planDraft.dueDay}</span>
+                  <span>
+                    Mensalidade de cada veículo, todo dia {planDraft.dueDay} (a 1ª na fatura de{' '}
+                    {formatDateOnly(chargeDate)}, com o proporcional dos dias até lá)
+                  </span>
                   <span>{parseMoney(planDraft.price) !== null ? formatMoney(parseMoney(planDraft.price)!) : '—'}</span>
                 </div>
               </div>

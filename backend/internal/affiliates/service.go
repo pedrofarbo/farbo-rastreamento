@@ -48,12 +48,14 @@ func mapErr(err error) error {
 type Settings struct {
 	DefaultCommissionCents int        `json:"defaultCommissionCents"`
 	CategoryID             *uuid.UUID `json:"categoryId"`
+	// CustomerRewardCents: o crédito do indique e ganhe (zero desliga).
+	CustomerRewardCents int `json:"customerRewardCents"`
 }
 
 func (s *Service) Settings(ctx context.Context) (*Settings, error) {
 	var out Settings
-	err := s.db.QueryRow(ctx, `SELECT default_commission_cents, category_id FROM affiliate_settings`).
-		Scan(&out.DefaultCommissionCents, &out.CategoryID)
+	err := s.db.QueryRow(ctx, `SELECT default_commission_cents, category_id, customer_reward_cents FROM affiliate_settings`).
+		Scan(&out.DefaultCommissionCents, &out.CategoryID, &out.CustomerRewardCents)
 	return &out, database.MapError(err)
 }
 
@@ -68,7 +70,8 @@ func (s *Service) SaveSettings(ctx context.Context, defaultCents int, applyToAll
 			return err
 		}
 		if applyToAll {
-			_, err := tx.Exec(ctx, `UPDATE affiliates SET commission_cents = $1, updated_at = NOW()`, defaultCents)
+			// O link de indicação dos clientes não tem comissão (é o indique e ganhe).
+			_, err := tx.Exec(ctx, `UPDATE affiliates SET commission_cents = $1, updated_at = NOW() WHERE customer_id IS NULL`, defaultCents)
 			return err
 		}
 		return nil
@@ -116,7 +119,9 @@ func (s *Service) List(ctx context.Context) ([]*Affiliate, error) {
 	if _, _, err := s.Reconcile(ctx); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT `+columns+` FROM affiliates a ORDER BY a.active DESC, a.created_at DESC`)
+	// Os links dos clientes (indique e ganhe) ficam fora: não são parceiros.
+	rows, err := s.db.Query(ctx, `SELECT `+columns+` FROM affiliates a WHERE a.customer_id IS NULL
+		ORDER BY a.active DESC, a.created_at DESC`)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -239,7 +244,11 @@ func (s *Service) Lookup(ctx context.Context, code string) (*Public, *uuid.UUID,
 	}
 	var p Public
 	var id uuid.UUID
-	err := s.db.QueryRow(ctx, `SELECT id, name, handle, code FROM affiliates WHERE code = $1 AND active`, code).
+	// O link de um cliente vale enquanto ele for cliente ativo.
+	err := s.db.QueryRow(ctx, `
+		SELECT a.id, a.name, a.handle, a.code FROM affiliates a
+		WHERE a.code = $1 AND a.active AND (a.customer_id IS NULL OR EXISTS (
+			SELECT 1 FROM users u WHERE u.id = a.customer_id AND u.active AND u.organization_id IS NULL))`, code).
 		Scan(&id, &p.Name, &p.Handle, &p.Code)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, nil
@@ -398,6 +407,20 @@ func (s *Service) Work(ctx context.Context) {
 	}
 	if created > 0 || removed > 0 {
 		s.log.Info("comissões dos afiliados acertadas", "novas", created, "removidas", removed)
+	}
+	// Indique e ganhe: os créditos novos e o abatimento nas faturas.
+	rewarded, err := s.RewardReferrals(ctx)
+	if err != nil {
+		s.log.Error("falha ao dar os créditos de indicação", "err", err)
+		return
+	}
+	applied, err := s.ApplyCredits(ctx)
+	if err != nil {
+		s.log.Error("falha ao abater os créditos de indicação", "err", err)
+		return
+	}
+	if rewarded > 0 || applied > 0 {
+		s.log.Info("créditos de indicação", "novos", rewarded, "abatimentos", applied)
 	}
 }
 

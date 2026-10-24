@@ -56,6 +56,11 @@ func customerOf(r *http.Request) (uuid.UUID, bool) {
 }
 
 func (s *Server) handleListVehicles(w http.ResponseWriter, r *http.Request) {
+	// A organização: os veículos dos associados, com o nome de cada um.
+	if orgID, isOrg := orgOf(r); isOrg {
+		s.listOrgVehicles(w, r, orgID)
+		return
+	}
 	customerID, isCustomer := customerOf(r)
 
 	var list []*vehicles.Vehicle

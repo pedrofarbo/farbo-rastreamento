@@ -23,6 +23,20 @@ const (
 	MinTripMeters = 200.0
 )
 
+// A nota de direção. Brusca: a velocidade caiu (freada) ou subiu (arrancada)
+// mais que isso por segundo entre duas posições de até HarshMaxGap — só dá
+// para ver com o rastreador mandando a posição a cada poucos segundos (com
+// intervalos maiores, fica de fora). Alta velocidade: acima de HighSpeedKmh.
+// Noite: das NightFrom às NightUntil horas (no fuso do dia).
+const (
+	HarshBrakeKmhPerS = 12.0
+	HarshAccelKmhPerS = 10.0
+	HarshMaxGap       = 15 * time.Second
+	HighSpeedKmh      = 120.0
+	NightFrom         = 22
+	NightUntil        = 6
+)
+
 // Point é uma posição do rastreador, só com o que o cálculo usa.
 type Point struct {
 	At       time.Time
@@ -46,6 +60,18 @@ type Stats struct {
 	FirstMove *time.Time
 	LastMove  *time.Time
 	Points    int
+	// Para a nota de direção: os metros rodados à noite, as freadas e
+	// arrancadas bruscas e o tempo acima de HighSpeedKmh.
+	NightM      float64
+	HarshBrakes int
+	HarshAccels int
+	HighSpeedS  int
+}
+
+// night diz se o instante é de noite no fuso loc.
+func night(t time.Time, loc *time.Location) bool {
+	h := t.In(loc).Hour()
+	return h >= NightFrom || h < NightUntil
 }
 
 // Trip é uma viagem: de onde e quando saiu até onde e quando parou.
@@ -140,13 +166,29 @@ func DayStats(points []Point, from, to time.Time) Stats {
 			s.MaxSpeed = math.Max(s.MaxSpeed, p.SpeedKmh)
 		}
 		if prev != nil {
-			s.DistanceM += step(*prev, p)
+			d := step(*prev, p)
+			s.DistanceM += d
+			// À noite só o trecho todo de noite (um buraco desde a tarde não conta).
+			if night(prev.At, from.Location()) && night(p.At, from.Location()) {
+				s.NightM += d
+			}
 			if dt := p.At.Sub(prev.At); dt > 0 && dt <= MaxGap {
 				switch {
 				case moving(*prev) || moving(p):
 					s.MovingS += int(dt.Seconds())
 				case prev.Acc != nil && *prev.Acc:
 					s.IdleS += int(dt.Seconds())
+				}
+				if prev.SpeedKmh > HighSpeedKmh && p.SpeedKmh > HighSpeedKmh && p.SpeedKmh <= MaxKmh {
+					s.HighSpeedS += int(dt.Seconds())
+				}
+				if dt <= HarshMaxGap && prev.SpeedKmh <= MaxKmh && p.SpeedKmh <= MaxKmh {
+					switch rate := (p.SpeedKmh - prev.SpeedKmh) / dt.Seconds(); {
+					case rate <= -HarshBrakeKmhPerS:
+						s.HarshBrakes++
+					case rate >= HarshAccelKmhPerS:
+						s.HarshAccels++
+					}
 				}
 			}
 		}

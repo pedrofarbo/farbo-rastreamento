@@ -10,7 +10,7 @@ const calls: unknown[] = [];
 let odometerKm: number | null = null;
 let engineHours: number | null = null;
 const tires: MaintenanceItem = {
-  id: 'i1', vehicleId: 'v1', vehicleName: 'Van 01', plate: 'NOR1A11', groupId: null, name: 'Pneus', everyKm: 40000, everyMonths: null,
+  id: 'i1', vehicleId: 'v1', vehicleName: 'Van 01', plate: 'NOR1A11', groupId: null, kind: 'service', name: 'Pneus', everyKm: 40000, everyMonths: null,
   everyHours: null, lastKm: null, lastHours: 80, lastDate: '2026-09-01', nextKm: null, nextHours: null, nextDate: null, remainingKm: null,
   remainingHours: null, remainingDays: null, status: 'unknown',
 };

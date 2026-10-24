@@ -48,6 +48,12 @@ type Vehicle struct {
 	Custom1 string     `json:"custom1"`
 	Custom2 string     `json:"custom2"`
 
+	// OrganizationID: o dono é associado de uma associação ou seguradora,
+	// que acompanha o veículo pelo painel dela (nulo: não é).
+	OrganizationID *uuid.UUID `json:"-"`
+	// BrokerID: o corretor do associado dono (nulo: nenhum).
+	BrokerID *uuid.UUID `json:"-"`
+
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -77,7 +83,8 @@ type Input struct {
 
 const columns = `id, name, kind, COALESCE(plate, ''), COALESCE(brand, ''), COALESCE(model, ''), year,
 	COALESCE(color, ''), speed_limit_kmh, device_id, owner_id, history_retention_days, group_id, custom1, custom2,
-	created_at, updated_at`
+	(SELECT o.organization_id FROM users o WHERE o.id = vehicles.owner_id),
+	(SELECT o.broker_id FROM users o WHERE o.id = vehicles.owner_id), created_at, updated_at`
 
 type Repository struct{ db *database.DB }
 
@@ -87,7 +94,7 @@ func scan(row database.Scanner) (*Vehicle, error) {
 	var v Vehicle
 	err := row.Scan(&v.ID, &v.Name, &v.Kind, &v.Plate, &v.Brand, &v.Model, &v.Year, &v.Color,
 		&v.SpeedLimitKmh, &v.DeviceID, &v.OwnerID, &v.HistoryRetentionDays, &v.GroupID, &v.Custom1, &v.Custom2,
-		&v.CreatedAt, &v.UpdatedAt)
+		&v.OrganizationID, &v.BrokerID, &v.CreatedAt, &v.UpdatedAt)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -187,6 +194,12 @@ func (r *Repository) ListByOwner(ctx context.Context, ownerID uuid.UUID) ([]*Veh
 	return r.list(ctx, `SELECT `+columns+` FROM vehicles WHERE owner_id = $1 ORDER BY name`, ownerID)
 }
 
+// ListByOrganization: os veículos dos associados de uma organização.
+func (r *Repository) ListByOrganization(ctx context.Context, orgID uuid.UUID) ([]*Vehicle, error) {
+	return r.list(ctx, `SELECT `+columns+` FROM vehicles
+		WHERE owner_id IN (SELECT id FROM users WHERE organization_id = $1) ORDER BY name`, orgID)
+}
+
 func (r *Repository) list(ctx context.Context, query string, args ...any) ([]*Vehicle, error) {
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
@@ -213,6 +226,10 @@ func (s *Service) List(ctx context.Context) ([]*Vehicle, error) { return s.repo.
 
 func (s *Service) ListByOwner(ctx context.Context, ownerID uuid.UUID) ([]*Vehicle, error) {
 	return s.repo.ListByOwner(ctx, ownerID)
+}
+
+func (s *Service) ListByOrganization(ctx context.Context, orgID uuid.UUID) ([]*Vehicle, error) {
+	return s.repo.ListByOrganization(ctx, orgID)
 }
 
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Vehicle, error) {

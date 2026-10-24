@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatPhoneInput, isPhoneComplete } from './format';
+import { formatPhoneInput, formatVoltage, isPhoneComplete, vehicleVoltage } from './format';
 
 describe('formatPhoneInput', () => {
   it('formata enquanto digita', () => {
@@ -40,5 +40,19 @@ describe('isPhoneComplete', () => {
     expect(isPhoneComplete('(11) 3333-4444')).toBe(true);
     expect(isPhoneComplete('98888-7777')).toBe(false);
     expect(isPhoneComplete('')).toBe(false);
+  });
+});
+
+describe('a voltagem do rastreador', () => {
+  it('em português, com uma casa; sem leitura, o traço', () => {
+    expect(formatVoltage(12.43)).toBe('12,4 V');
+    expect(formatVoltage(4)).toBe('4,0 V');
+    expect(formatVoltage(null)).toBe('—');
+  });
+
+  it('a do estado do rastreador; sem ela, a da última posição', () => {
+    expect(vehicleVoltage({ state: { batteryVoltage: 12.6 }, lastPosition: { batteryVoltage: 11.9 } })).toBe(12.6);
+    expect(vehicleVoltage({ state: { batteryVoltage: null }, lastPosition: { batteryVoltage: 11.9 } })).toBe(11.9);
+    expect(vehicleVoltage({ state: null, lastPosition: null })).toBeNull();
   });
 });

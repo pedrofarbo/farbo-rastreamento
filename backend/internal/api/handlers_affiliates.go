@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -173,9 +174,17 @@ func (s *Server) handleSaveAffiliateSettings(w http.ResponseWriter, r *http.Requ
 		DefaultCommissionCents int `json:"defaultCommissionCents"`
 		// ApplyToAll: o valor novo vale também para os afiliados de agora.
 		ApplyToAll bool `json:"applyToAll"`
+		// CustomerRewardCents: o crédito do indique e ganhe (sem ele, fica).
+		CustomerRewardCents *int `json:"customerRewardCents"`
 	}
 	if !decodeOr400(w, r, &req) {
 		return
+	}
+	if req.CustomerRewardCents != nil {
+		if err := s.Affiliates.SaveCustomerReward(r.Context(), *req.CustomerRewardCents); err != nil {
+			affiliateError(w, err, "")
+			return
+		}
 	}
 	settings, err := s.Affiliates.SaveSettings(r.Context(), req.DefaultCommissionCents, req.ApplyToAll)
 	if err != nil {
@@ -184,8 +193,28 @@ func (s *Server) handleSaveAffiliateSettings(w http.ResponseWriter, r *http.Requ
 	}
 	s.auditAffiliate(r, "settings", map[string]any{
 		"defaultCommissionCents": req.DefaultCommissionCents, "applyToAll": req.ApplyToAll,
+		"customerRewardCents": settings.CustomerRewardCents,
 	})
 	writeJSON(w, http.StatusOK, settings)
+}
+
+// handleMyReferral: o indique e ganhe do cliente (o link, quem veio por ele
+// e os créditos). Só o titular, e não o associado (quem paga é a
+// organização).
+func (s *Server) handleMyReferral(w http.ResponseWriter, r *http.Request) {
+	customerID, _ := customerOf(r)
+	program, err := s.Affiliates.CustomerProgram(r.Context(), customerID)
+	if errors.Is(err, affiliates.ErrNotEligible) {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	if err != nil {
+		affiliateError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"program": program, "url": strings.TrimRight(s.Config.Mail.AppURL, "/") + "/indicacao/" + program.Code,
+	})
 }
 
 func (s *Server) handleAffiliateClosingPreview(w http.ResponseWriter, r *http.Request) {

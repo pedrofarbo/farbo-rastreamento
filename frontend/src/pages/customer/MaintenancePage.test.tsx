@@ -9,7 +9,7 @@ import type { MaintenanceItem } from '@/types';
 
 const calls: unknown[] = [];
 const item = (over: Partial<MaintenanceItem>): MaintenanceItem => ({
-  id: 'i', vehicleId: 'v1', vehicleName: 'Van 01', plate: 'NOR1A11', groupId: 'g1', name: 'Troca de óleo', everyKm: 10000,
+  id: 'i', vehicleId: 'v1', vehicleName: 'Van 01', plate: 'NOR1A11', groupId: 'g1', kind: 'service', name: 'Troca de óleo', everyKm: 10000,
   everyMonths: 6, everyHours: null, lastKm: 40000, lastHours: 900, lastDate: '2026-08-01', nextKm: 50000, nextHours: null,
   nextDate: '2027-02-01', remainingKm: 7000, remainingHours: null, remainingDays: 112, status: 'ok', ...over,
 });

@@ -2,6 +2,7 @@ import { useSearchParams } from 'react-router-dom';
 
 import pageStyles from '../../Page.module.css';
 import { CashFlowTab } from './CashFlowTab';
+import { ClosingTab } from './ClosingTab';
 import { EntriesTab } from './EntriesTab';
 import { GatewayBalanceCard } from './GatewayBalanceCard';
 import { OverviewTab } from './OverviewTab';
@@ -17,6 +18,7 @@ const TABS = [
   { id: 'receber', label: 'Receitas' },
   { id: 'caixa', label: 'Fluxo de caixa' },
   { id: 'resultado', label: 'Resultado do mês' },
+  { id: 'fechamento', label: 'Fechamento e notas' },
   { id: 'estoque', label: 'Estoque' },
   { id: 'cadastros', label: 'Cadastros' },
 ];
@@ -67,6 +69,8 @@ export function CompanyPage() {
           <CashFlowTab />
         ) : tab === 'resultado' ? (
           <ResultTab />
+        ) : tab === 'fechamento' ? (
+          <ClosingTab />
         ) : tab === 'estoque' ? (
           <StockTab />
         ) : tab === 'cadastros' ? (

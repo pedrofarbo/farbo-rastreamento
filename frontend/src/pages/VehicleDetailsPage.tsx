@@ -15,14 +15,26 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { CommandHistory } from '@/components/vehicle/CommandHistory';
 import { CommandPanel } from '@/components/vehicle/CommandPanel';
+import { EngineHistory } from '@/components/vehicle/EngineHistory';
 import { EventList } from '@/components/vehicle/EventList';
+import { LiveLinkPanel } from '@/components/vehicle/LiveLinkPanel';
 import { Playback } from '@/components/vehicle/Playback';
 import { TelemetryBar } from '@/components/vehicle/TelemetryBar';
 import { TheftPanel } from '@/components/vehicle/TheftPanel';
 import { VehicleSwitcher } from '@/components/vehicle/VehicleSwitcher';
 import { useVehicle, useVehicles } from '@/hooks/useVehicles';
 import { useAuth } from '@/stores/AuthContext';
-import { formatCoordinates, formatDateTime, formatDeviceStatus, formatHeading, hoursAgo, nowISO, todayISO } from '@/services/format';
+import {
+  formatCoordinates,
+  formatDateTime,
+  formatDeviceStatus,
+  formatHeading,
+  formatVoltage,
+  hoursAgo,
+  nowISO,
+  todayISO,
+  vehicleVoltage,
+} from '@/services/format';
 import { sortVehicles } from '@/services/vehicleFilters';
 import type { Position } from '@/types';
 import { retentionLabel } from '@/types';
@@ -63,7 +75,7 @@ function VehicleDetails() {
   // Os veículos que a pessoa vê, na ordem da lista: o anterior, o próximo e a busca.
   const fleet = useVehicles();
   const ordered = useMemo(() => sortVehicles(fleet.data ?? []), [fleet.data]);
-  const { isCustomer, canOperateAccount, canManage } = useAuth();
+  const { isCustomer, isStaff, canOperateAccount, canManage } = useAuth();
   const backTo = isCustomer ? '/meus-veiculos' : '/dashboard';
   // Aberto pelo alerta de bateria desconectada ou de movimento sem ignição.
   const [params] = useSearchParams();
@@ -249,6 +261,8 @@ function VehicleDetails() {
           reportUrl={owned ? `/relatorio-roubo/${vehicle.id}` : undefined}
         />
 
+        <LiveLinkPanel vehicle={vehicle} />
+
         <Card title="Comandos">
           <CommandPanel vehicle={vehicle} />
         </Card>
@@ -297,6 +311,18 @@ function VehicleDetails() {
           )}
         </Card>
 
+        {owned && device && (
+          <Card title="Sinistro">
+            <p className={styles.hint}>
+              Bateu, foi batido ou teve outro problema? O relatório mostra o trajeto, a velocidade e a ignição em volta do
+              horário, para o seguro ou a perícia.
+            </p>
+            <Button variant="secondary" size="small" onClick={() => navigate(`/relatorio-sinistro/${vehicle.id}`)}>
+              Gerar relatório de sinistro
+            </Button>
+          </Card>
+        )}
+
         {owned && (
           <VehicleMaintenance
             vehicle={vehicle}
@@ -311,8 +337,9 @@ function VehicleDetails() {
               <Info label="IMEI" value={device.imei} mono />
               <Info label="Protocolo" value={device.protocol || 'ainda não detectado'} mono />
               <Info label="Firmware" value={device.firmware || '—'} />
-              {!isCustomer && <Info label="Linha" value={device.phoneNumber || '—'} />}
-              {!isCustomer && <Info label="ICCID do chip" value={device.iccid || '—'} mono />}
+              <Info label="Voltagem" value={formatVoltage(vehicleVoltage(vehicle))} />
+              {isStaff && <Info label="Linha" value={device.phoneNumber || '—'} />}
+              {isStaff && <Info label="ICCID do chip" value={device.iccid || '—'} mono />}
               <Info label="Última comunicação" value={formatDateTime(device.lastSeenAt)} />
               <Info label="Conexão" value={vehicle.connected ? 'aberta' : 'fechada'} />
             </div>
@@ -328,6 +355,12 @@ function VehicleDetails() {
                 <EventList events={events.data ?? []} />
               )}
             </Card>
+
+            {device && (
+              <Card title="Bloqueios e desbloqueios" subtitle="Quem pediu, de qual aparelho e como confirmou.">
+                <EngineHistory vehicleId={vehicle.id} />
+              </Card>
+            )}
 
             <Card title="Histórico de comandos" flush>
               {commands.isLoading ? (

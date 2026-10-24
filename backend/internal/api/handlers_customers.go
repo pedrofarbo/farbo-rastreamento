@@ -469,6 +469,8 @@ func (s *Server) handleUpdateSubscription(w http.ResponseWriter, r *http.Request
 // arrependimento, pedido desfeito). O corpo é opcional sem parcelas.
 type cancelSubscriptionRequest struct {
 	EquipmentBalance string `json:"equipmentBalance"`
+	// WaiveUninstall dispensa a taxa de desinstalação do comodato.
+	WaiveUninstall bool `json:"waiveUninstall"`
 }
 
 func (s *Server) handleCancelSubscription(w http.ResponseWriter, r *http.Request) {
@@ -482,12 +484,9 @@ func (s *Server) handleCancelSubscription(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "corpo inválido")
 		return
 	}
-	// A fatura do saldo vence no prazo da fatura do pedido.
-	opts := billing.CancelOptions{Balance: req.EquipmentBalance, DueDays: 3}
-	if s.Orders != nil {
-		opts.DueDays = s.Orders.Catalog().SetupDueDays
-	}
-	sub, balance, err := s.Billing.CancelSubscription(r.Context(), id, opts)
+	// O saldo do rastreador e a desinstalação vão para a próxima fatura da conta.
+	opts := billing.CancelOptions{Balance: req.EquipmentBalance, WaiveUninstall: req.WaiveUninstall}
+	canceled, err := s.Billing.CancelSubscription(r.Context(), id, opts)
 	if errors.Is(err, billing.ErrBalanceChoice) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error(), "code": "EQUIPMENT_BALANCE"})
 		return
@@ -496,6 +495,7 @@ func (s *Server) handleCancelSubscription(w http.ResponseWriter, r *http.Request
 		writeBillingError(w, err, "assinatura não encontrada")
 		return
 	}
+	sub, balance := canceled.Subscription, canceled.Balance
 	details := map[string]any{"customerId": sub.CustomerID, "subscriptionId": sub.ID}
 	if sub.Installments > 0 {
 		details["equipmentBalance"] = req.EquipmentBalance
@@ -503,12 +503,19 @@ func (s *Server) handleCancelSubscription(w http.ResponseWriter, r *http.Request
 			details["balanceInvoice"], details["balanceCents"] = balance.ID, balance.AmountCents
 		}
 	}
+	if sub.EquipmentMode == billing.EquipmentLoan {
+		details["waiveUninstall"] = req.WaiveUninstall
+		if canceled.Uninstall != nil {
+			details["uninstallInvoice"], details["uninstallCents"] = canceled.Uninstall.ID, canceled.Uninstall.AmountCents
+		}
+	}
 	s.recordBillingAudit(r, audit.ActionSubscriptionCanceled, details)
-	// A assinatura, como antes, e a fatura do saldo (se houve).
+	// A assinatura, como antes, a fatura do saldo e a da desinstalação (se houve).
 	writeJSON(w, http.StatusOK, struct {
 		*billing.Subscription
-		BalanceInvoice *billing.Invoice `json:"balanceInvoice"`
-	}{sub, balance})
+		BalanceInvoice   *billing.Invoice `json:"balanceInvoice"`
+		UninstallInvoice *billing.Invoice `json:"uninstallInvoice"`
+	}{sub, balance, canceled.Uninstall})
 }
 
 // ---------------------------------------------------------------------------
@@ -733,9 +740,9 @@ func (s *Server) applyLeadPlan(r *http.Request, customerID uuid.UUID, email stri
 	if !promo.IsInsanosPlan(lead.Plan) || promo.InsanosPlanCents <= 0 {
 		return
 	}
-	plan, err := s.Orders.SetAccountPlan(r.Context(), customerID, billing.SubscriptionInput{
+	plan, err := s.Orders.SetAccountPlan(r.Context(), customerID, orders.PlanInput{SubscriptionInput: billing.SubscriptionInput{
 		PlanName: promo.InsanosPlanName, PriceCents: promo.InsanosPlanCents, DueDay: catalog.DefaultDueDay,
-	}, actor(r))
+	}}, actor(r))
 	if err != nil {
 		s.Log.Error("cliente cadastrado, mas sem o plano dos Insanos do pré-cadastro", "customer", customerID, "err", err)
 		return

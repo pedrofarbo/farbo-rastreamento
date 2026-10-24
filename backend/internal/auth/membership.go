@@ -55,3 +55,51 @@ func (s *Service) Membership(ctx context.Context, userID uuid.UUID) (*Membership
 func (s *Service) RevokeSessions(ctx context.Context, userID uuid.UUID) error {
 	return s.repo.RevokeAllForUser(ctx, userID)
 }
+
+// A equipe de uma associação ou seguradora: cada pessoa entra com o próprio
+// login (RoleOrgMember) no painel da organização, com um destes papéis.
+const (
+	// OrgAdmin faz tudo no painel: associados, veículos, bloqueio, a equipe
+	// e as faturas.
+	OrgAdmin = "admin"
+	// OrgOperator cadastra associados e veículos e bloqueia e desbloqueia.
+	OrgOperator = "operator"
+	// OrgViewer só acompanha: mapa, histórico, associados.
+	OrgViewer = "viewer"
+	// OrgBroker é o corretor da seguradora: vê e cadastra só os associados
+	// que são dele (e os veículos deles), sem bloqueio nem o resto do painel.
+	OrgBroker = "broker"
+)
+
+// ValidOrgRole diz se o papel na organização existe.
+func ValidOrgRole(role string) bool {
+	return role == OrgAdmin || role == OrgOperator || role == OrgViewer || role == OrgBroker
+}
+
+// OrgMembership é o vínculo de quem é da equipe de uma organização.
+type OrgMembership struct {
+	OrganizationID uuid.UUID `json:"organizationId"`
+	// Name é o nome da organização, para a tela ("Associação X").
+	Name string `json:"name"`
+	// Kind: association (associação) ou insurer (seguradora).
+	Kind string `json:"kind"`
+	Role string `json:"role"`
+}
+
+// OrgMembershipLookup acha o vínculo de alguém da equipe de uma organização
+// (nil: não é de nenhuma). Fica fora do pacote (organizations) e é ligado no
+// main.
+type OrgMembershipLookup func(ctx context.Context, userID uuid.UUID) (*OrgMembership, error)
+
+// SetOrgMemberships liga a consulta da equipe das organizações. Sem ela,
+// ninguém entra no painel de uma organização.
+func (s *Service) SetOrgMemberships(lookup OrgMembershipLookup) { s.orgMemberships = lookup }
+
+// OrgMembership devolve o vínculo do usuário com uma organização (nil se não
+// houver).
+func (s *Service) OrgMembership(ctx context.Context, userID uuid.UUID) (*OrgMembership, error) {
+	if s.orgMemberships == nil {
+		return nil, nil
+	}
+	return s.orgMemberships(ctx, userID)
+}

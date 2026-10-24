@@ -12,11 +12,11 @@ export interface InvoiceGroup {
 
 const GROUP_PREFIX = 'grupo:';
 
-/** Um grupo para pagar num Pix só (a chave leva as faturas). */
+/** Um grupo para pagar num Pix só (a chave leva as linhas; com uma só, é ela). */
 export function groupOf(invoices: Invoice[], dueDate: string | null): InvoiceGroup {
   const ids = invoices.map((i) => i.id);
   return {
-    key: GROUP_PREFIX + ids.join(','),
+    key: ids.length === 1 ? ids[0] : GROUP_PREFIX + ids.join(','),
     ids,
     dueDate,
     amountCents: invoices.reduce((sum, i) => sum + i.amountCents, 0),
@@ -25,9 +25,9 @@ export function groupOf(invoices: Invoice[], dueDate: string | null): InvoiceGro
 }
 
 /**
- * A fatura do mês: as faturas em aberto que vencem no mesmo dia (uma por
- * veículo, numa frota), quando são duas ou mais, do vencimento mais antigo
- * para o mais novo.
+ * A fatura do mês: tudo o que a conta paga vence no mesmo dia (a mensalidade
+ * de cada veículo, o equipamento, o frete, o proporcional); as linhas em
+ * aberto de cada vencimento são uma fatura só, da mais antiga para a mais nova.
  */
 export function monthlyGroups(invoices: Invoice[]): InvoiceGroup[] {
   const byDate = new Map<string, Invoice[]>();
@@ -38,7 +38,6 @@ export function monthlyGroups(invoices: Invoice[]): InvoiceGroup[] {
     else byDate.set(inv.dueDate, [inv]);
   }
   return [...byDate.entries()]
-    .filter(([, list]) => list.length > 1)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, list]) => groupOf(list, date));
 }
@@ -51,20 +50,6 @@ export function overdueGroup(invoices: Invoice[]): InvoiceGroup | null {
 }
 
 /** As faturas da chave de um grupo (null se a chave é de uma fatura só). */
-/**
- * O que se paga logo depois do pedido: o equipamento (com o frete) e a 1ª
- * mensalidade, que vencem juntos — num pagamento só, quando são as duas.
- */
-export function orderPayment(
-  invoices: (Invoice | null)[],
-): (Pick<Invoice, 'id' | 'description'> & { amountCents: number }) | null {
-  const open = invoices.filter((i): i is Invoice => i !== null && i.status === 'OPEN');
-  if (open.length === 0) return null;
-  if (open.length === 1) return open[0];
-  const group = groupOf(open, open[0].dueDate);
-  return { id: group.key, description: 'Pedido: equipamento e 1ª mensalidade', amountCents: group.amountCents };
-}
-
 export function groupIds(key: string): string[] | null {
   return key.startsWith(GROUP_PREFIX) ? key.slice(GROUP_PREFIX.length).split(',') : null;
 }
@@ -76,8 +61,8 @@ export function groupIds(key: string): string[] | null {
  */
 export const CLOSED_PAGE = 120;
 
-/** Um vencimento com tantas faturas assim (uma frota) vira uma linha só no histórico. */
-export const HISTORY_GROUP_MIN = 5;
+/** Um vencimento com tantas linhas assim vira uma fatura só no histórico (a fatura do mês). */
+export const HISTORY_GROUP_MIN = 2;
 
 /** As faturas de um vencimento, numa linha do histórico. */
 export interface HistoryDay {
@@ -128,17 +113,15 @@ export function historyRows(invoices: Invoice[]): HistoryRow[] {
   return rows;
 }
 
-/** A situação de um vencimento do histórico, numa frase curta. */
+/** A situação da fatura do mês (as linhas de um vencimento), numa palavra ou duas. */
 export function dayStatus(day: HistoryDay): { tone: 'success' | 'warning' | 'danger' | 'neutral'; label: string } {
-  const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-  const paid = day.paid > 0 ? count(day.paid, 'paga', 'pagas') : '';
   if (day.open.length > 0) {
     const late = day.overdue > 0;
-    const label = late ? count(day.overdue, 'vencida', 'vencidas') : count(day.open.length, 'em aberto', 'em aberto');
-    return { tone: late ? 'danger' : 'warning', label: paid ? `${label} · ${paid}` : label };
+    const label = late ? 'Vencida' : 'Em aberto';
+    return { tone: late ? 'danger' : 'warning', label: day.paid > 0 ? `${label} · paga em parte` : label };
   }
-  if (day.paid > 0) return { tone: 'success', label: day.canceled > 0 ? `Pagas · ${count(day.canceled, 'cancelada', 'canceladas')}` : 'Pagas' };
-  return { tone: 'neutral', label: 'Canceladas' };
+  if (day.paid > 0) return { tone: 'success', label: 'Paga' };
+  return { tone: 'neutral', label: 'Cancelada' };
 }
 
 /** As faturas fechadas mais antigas que já estão na tela (o "antes" da próxima página). */

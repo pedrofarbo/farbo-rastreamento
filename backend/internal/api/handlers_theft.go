@@ -33,14 +33,18 @@ type theftView struct {
 func (s *Server) theftView(r *http.Request, vehicle *vehicles.Vehicle, share *shares.Share, m *theft.Mode) theftView {
 	parked, duration := s.Theft.Settings()
 	// O Visualizador da equipe de uma conta só acompanha o modo roubo.
-	operate := true
+	operate, org := true, false
 	if principal, ok := auth.FromContext(r.Context()); ok && principal.IsCustomer() {
 		operate = principal.CanOperateAccount()
+	} else if ok && principal.IsOrgMember() {
+		// A organização liga o modo roubo (o Visualizador, não); desligar é
+		// do associado e da central.
+		operate, org = principal.CanOperateOrg(), true
 	}
 	v := theftView{
 		Mode:          m,
 		CanActivate:   operate && vehicle.DeviceID != nil && (share == nil || share.CanBlock),
-		CanEnd:        operate && share == nil,
+		CanEnd:        operate && share == nil && !org,
 		ParkedSeconds: parked,
 		DurationHours: int(duration / time.Hour),
 	}
@@ -169,19 +173,27 @@ func writeTheftError(w http.ResponseWriter, err error) {
 // publicTheftView é o que o link público mostra: o veículo e onde ele está
 // — nada do dono.
 type publicTheftView struct {
-	Vehicle struct {
-		Name  string `json:"name"`
-		Plate string `json:"plate"`
-		Brand string `json:"brand"`
-		Model string `json:"model"`
-		Year  *int   `json:"year"`
-		Color string `json:"color"`
-	} `json:"vehicle"`
-	ActivatedAt time.Time       `json:"activatedAt"`
-	ExpiresAt   time.Time       `json:"expiresAt"`
-	Position    *publicPosition `json:"position"`
-	Address     string          `json:"address"`
-	Ignition    *bool           `json:"ignition"`
+	Vehicle     publicVehicle `json:"vehicle"`
+	ActivatedAt time.Time     `json:"activatedAt"`
+	ExpiresAt   time.Time     `json:"expiresAt"`
+	publicLocation
+}
+
+// publicVehicle é o veículo nos links públicos (modo roubo e ao vivo).
+type publicVehicle struct {
+	Name  string `json:"name"`
+	Plate string `json:"plate"`
+	Brand string `json:"brand"`
+	Model string `json:"model"`
+	Year  *int   `json:"year"`
+	Color string `json:"color"`
+}
+
+// publicLocation é onde o veículo está, nos links públicos.
+type publicLocation struct {
+	Position *publicPosition `json:"position"`
+	Address  string          `json:"address"`
+	Ignition *bool           `json:"ignition"`
 	// Online: o rastreador está conectado agora.
 	Online bool `json:"online"`
 }
@@ -215,28 +227,41 @@ func (s *Server) handlePublicTheft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var view publicTheftView
-	view.Vehicle.Name, view.Vehicle.Plate, view.Vehicle.Brand = vehicle.Name, vehicle.Plate, vehicle.Brand
-	view.Vehicle.Model, view.Vehicle.Year, view.Vehicle.Color = vehicle.Model, vehicle.Year, vehicle.Color
+	view.Vehicle = publicVehicleOf(vehicle)
 	view.ActivatedAt, view.ExpiresAt = m.ActivatedAt, m.ExpiresAt
-	if vehicle.DeviceID != nil {
-		if device, err := s.Devices.Get(r.Context(), *vehicle.DeviceID); err == nil && s.Conns != nil {
-			_, view.Online = s.Conns.Get(device.IMEI)
+	view.publicLocation = s.publicLocationOf(r, vehicle)
+	writeJSON(w, http.StatusOK, view)
+}
+
+// publicVehicleOf é o veículo como os links públicos mostram.
+func publicVehicleOf(vehicle *vehicles.Vehicle) publicVehicle {
+	return publicVehicle{Name: vehicle.Name, Plate: vehicle.Plate, Brand: vehicle.Brand, Model: vehicle.Model,
+		Year: vehicle.Year, Color: vehicle.Color}
+}
+
+// publicLocationOf é onde o veículo está agora, para os links públicos.
+func (s *Server) publicLocationOf(r *http.Request, vehicle *vehicles.Vehicle) publicLocation {
+	var loc publicLocation
+	if vehicle.DeviceID == nil {
+		return loc
+	}
+	if device, err := s.Devices.Get(r.Context(), *vehicle.DeviceID); err == nil && s.Conns != nil {
+		_, loc.Online = s.Conns.Get(device.IMEI)
+	}
+	if p, err := s.Positions.Latest(r.Context(), *vehicle.DeviceID); err == nil && p != nil {
+		loc.Position = &publicPosition{
+			Latitude: p.Latitude, Longitude: p.Longitude, SpeedKmh: p.SpeedKmh, Heading: p.Heading,
+			GPSTimestamp: p.GPSTimestamp, ReceivedAt: p.ReceivedAt,
 		}
-		if p, err := s.Positions.Latest(r.Context(), *vehicle.DeviceID); err == nil && p != nil {
-			view.Position = &publicPosition{
-				Latitude: p.Latitude, Longitude: p.Longitude, SpeedKmh: p.SpeedKmh, Heading: p.Heading,
-				GPSTimestamp: p.GPSTimestamp, ReceivedAt: p.ReceivedAt,
+		loc.Ignition = p.ACC
+		if s.Geocoder != nil {
+			if address, err := s.Geocoder.Reverse(r.Context(), p.Latitude, p.Longitude); err == nil {
+				loc.Address = address
 			}
-			view.Ignition = p.ACC
-			if s.Geocoder != nil {
-				if address, err := s.Geocoder.Reverse(r.Context(), p.Latitude, p.Longitude); err == nil {
-					view.Address = address
-				}
-			}
-		}
-		if state := s.States.Get(*vehicle.DeviceID); state != nil && state.ACC != nil {
-			view.Ignition = state.ACC
 		}
 	}
-	writeJSON(w, http.StatusOK, view)
+	if state := s.States.Get(*vehicle.DeviceID); state != nil && state.ACC != nil {
+		loc.Ignition = state.ACC
+	}
+	return loc
 }

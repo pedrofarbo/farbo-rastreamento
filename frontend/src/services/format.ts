@@ -150,6 +150,7 @@ const eventLabels: Record<string, string> = {
   DEVICE_DISCONNECTED: 'Rastreador desconectou',
   DEVICE_STALE: 'Rastreador sem comunicação',
   DEVICE_ALARM: 'Alarme do rastreador',
+  VEHICLE_BATTERY_LOW: 'Bateria do veículo fraca',
 };
 
 export function formatEvent(type: string): string {
@@ -171,6 +172,7 @@ export function eventSeverity(type: string): 'danger' | 'warning' | 'success' | 
     case 'DEVICE_STALE':
     case 'VIBRATION':
     case 'DEVICE_ALARM':
+    case 'VEHICLE_BATTERY_LOW':
       return 'warning';
     case 'ENGINE_RESUME_ACK':
     case 'GPS_RECOVERED':
@@ -190,6 +192,20 @@ export function hoursAgo(hours: number): string {
 
 export function nowISO(): string {
   return new Date().toISOString();
+}
+
+/** A voltagem que o rastreador mandou: 12.43 → "12,4 V". */
+export function formatVoltage(volts: number | null | undefined): string {
+  if (volts === null || volts === undefined || Number.isNaN(volts)) return '—';
+  return `${volts.toFixed(1).replace('.', ',')} V`;
+}
+
+/** A voltagem do rastreador no veículo: a do estado ou, sem ela, a da última posição. */
+export function vehicleVoltage(vehicle: {
+  state?: { batteryVoltage?: number | null } | null;
+  lastPosition?: { batteryVoltage?: number | null } | null;
+}): number | null {
+  return vehicle.state?.batteryVoltage ?? vehicle.lastPosition?.batteryVoltage ?? null;
 }
 
 const moneyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });

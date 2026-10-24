@@ -37,6 +37,13 @@ type OwnerIndex struct {
 	groupByVehicle map[uuid.UUID]uuid.UUID
 	groupByDevice  map[uuid.UUID]uuid.UUID
 	restricted     map[uuid.UUID]map[uuid.UUID]bool
+	// A organização (associação ou seguradora) de cada veículo e rastreador
+	// de associado: a equipe dela acompanha ao vivo.
+	orgByVehicle map[uuid.UUID]uuid.UUID
+	orgByDevice  map[uuid.UUID]uuid.UUID
+	// O corretor do associado dono (só nos que têm).
+	brokerByVehicle map[uuid.UUID]uuid.UUID
+	brokerByDevice  map[uuid.UUID]uuid.UUID
 }
 
 func NewOwnerIndex(db *database.DB, log *slog.Logger) *OwnerIndex {
@@ -50,12 +57,19 @@ func NewOwnerIndex(db *database.DB, log *slog.Logger) *OwnerIndex {
 		groupByVehicle:  map[uuid.UUID]uuid.UUID{},
 		groupByDevice:   map[uuid.UUID]uuid.UUID{},
 		restricted:      map[uuid.UUID]map[uuid.UUID]bool{},
+		orgByVehicle:    map[uuid.UUID]uuid.UUID{},
+		orgByDevice:     map[uuid.UUID]uuid.UUID{},
+		brokerByVehicle: map[uuid.UUID]uuid.UUID{},
+		brokerByDevice:  map[uuid.UUID]uuid.UUID{},
 	}
 }
 
 // Refresh relê os donos do banco.
 func (o *OwnerIndex) Refresh(ctx context.Context) error {
-	rows, err := o.db.Query(ctx, `SELECT id, device_id, owner_id, group_id FROM vehicles WHERE owner_id IS NOT NULL`)
+	rows, err := o.db.Query(ctx, `
+		SELECT id, device_id, owner_id, group_id, (SELECT u.organization_id FROM users u WHERE u.id = vehicles.owner_id),
+			(SELECT u.broker_id FROM users u WHERE u.id = vehicles.owner_id)
+		FROM vehicles WHERE owner_id IS NOT NULL`)
 	if err != nil {
 		return database.MapError(err)
 	}
@@ -65,15 +79,31 @@ func (o *OwnerIndex) Refresh(ctx context.Context) error {
 	byDevice := map[uuid.UUID]uuid.UUID{}
 	groupByVehicle := map[uuid.UUID]uuid.UUID{}
 	groupByDevice := map[uuid.UUID]uuid.UUID{}
+	orgByVehicle := map[uuid.UUID]uuid.UUID{}
+	orgByDevice := map[uuid.UUID]uuid.UUID{}
+	brokerByVehicle := map[uuid.UUID]uuid.UUID{}
+	brokerByDevice := map[uuid.UUID]uuid.UUID{}
 	for rows.Next() {
 		var vehicleID, ownerID uuid.UUID
-		var deviceID, groupID *uuid.UUID
-		if err := rows.Scan(&vehicleID, &deviceID, &ownerID, &groupID); err != nil {
+		var deviceID, groupID, orgID, brokerID *uuid.UUID
+		if err := rows.Scan(&vehicleID, &deviceID, &ownerID, &groupID, &orgID, &brokerID); err != nil {
 			return err
+		}
+		if brokerID != nil {
+			brokerByVehicle[vehicleID] = *brokerID
+			if deviceID != nil {
+				brokerByDevice[*deviceID] = *brokerID
+			}
 		}
 		byVehicle[vehicleID] = ownerID
 		if deviceID != nil {
 			byDevice[*deviceID] = ownerID
+		}
+		if orgID != nil {
+			orgByVehicle[vehicleID] = *orgID
+			if deviceID != nil {
+				orgByDevice[*deviceID] = *orgID
+			}
 		}
 		if groupID != nil {
 			groupByVehicle[vehicleID] = *groupID
@@ -151,6 +181,8 @@ func (o *OwnerIndex) Refresh(ctx context.Context) error {
 	o.byVehicle, o.byDevice = byVehicle, byDevice
 	o.guestsByVehicle, o.guestsByDevice = guestsByVehicle, guestsByDevice
 	o.groupByVehicle, o.groupByDevice, o.restricted = groupByVehicle, groupByDevice, restricted
+	o.orgByVehicle, o.orgByDevice = orgByVehicle, orgByDevice
+	o.brokerByVehicle, o.brokerByDevice = brokerByVehicle, brokerByDevice
 	o.mu.Unlock()
 	return nil
 }
@@ -221,6 +253,38 @@ func (o *OwnerIndex) SharedWith(userID uuid.UUID, vehicleID, deviceID *uuid.UUID
 	}
 	if deviceID != nil {
 		return o.guestsByDevice[*deviceID][userID]
+	}
+	return false
+}
+
+// OfBroker diz se a mensagem sobre este veículo/rastreador é de um associado
+// do corretor.
+func (o *OwnerIndex) OfBroker(brokerID uuid.UUID, vehicleID, deviceID *uuid.UUID) bool {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if vehicleID != nil {
+		b, ok := o.brokerByVehicle[*vehicleID]
+		return ok && b == brokerID
+	}
+	if deviceID != nil {
+		b, ok := o.brokerByDevice[*deviceID]
+		return ok && b == brokerID
+	}
+	return false
+}
+
+// InOrganization diz se a mensagem sobre este veículo/rastreador é de um
+// associado da organização. Sem nenhum dos dois identificadores, não.
+func (o *OwnerIndex) InOrganization(orgID uuid.UUID, vehicleID, deviceID *uuid.UUID) bool {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if vehicleID != nil {
+		org, ok := o.orgByVehicle[*vehicleID]
+		return ok && org == orgID
+	}
+	if deviceID != nil {
+		org, ok := o.orgByDevice[*deviceID]
+		return ok && org == orgID
 	}
 	return false
 }

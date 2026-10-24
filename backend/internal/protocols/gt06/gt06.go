@@ -99,6 +99,11 @@ func (p *Protocol) Parse(frame []byte) ([]protocols.TrackerMessage, error) {
 		msg.Kind = protocols.KindOther
 		msg.Ack = buildTimeReply(pkt.serial)
 
+	case pkt.typ == msgInfo:
+		// DOCUMENTED: o 0x94 não pede resposta do servidor.
+		msg.Kind = protocols.KindOther
+		decodeInfo(&msg, pkt.content)
+
 	case hasGPS(pkt.typ):
 		if err := p.decodeLocation(&msg, pkt); err != nil {
 			return nil, err

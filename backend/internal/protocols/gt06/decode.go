@@ -23,6 +23,7 @@ const (
 	msgGPSLBSStatus = 0x2D
 	msgCommand      = 0x80 // servidor -> rastreador
 	msgTimeRequest  = 0x8A
+	msgInfo         = 0x94 // transmissão de informação (quadro longo)
 	msgGPSExtended  = 0xA0
 )
 
@@ -131,12 +132,34 @@ func applyTerminalInfo(msg *protocols.TrackerMessage, info byte) {
 
 // batteryLevelPercent converte o nível 0-6 do GT06 em porcentagem.
 // DOCUMENTED como nível relativo: o GT06 não informa tensão neste campo,
-// por isso preenchemos BatteryPercent e nunca BatteryVoltage (§34).
+// por isso preenchemos BatteryPercent aqui; a tensão (da bateria do veículo)
+// vem só do pacote 0x94 (decodeInfo).
 func batteryLevelPercent(level byte) int {
 	if level > 6 {
 		level = 6
 	}
 	return int(level) * 100 / 6
+}
+
+// Tipos de informação do pacote 0x94. DOCUMENTED: especificação Concox
+// GT06N, "Information Transmission Packet".
+const infoExternalVoltage = 0x00
+
+// decodeInfo lê o pacote 0x94: tipo da informação (1) + conteúdo. Do tipo
+// 0x00 sai a tensão da alimentação externa (a bateria do veículo), em
+// centésimos de volt (2 bytes). Os outros tipos ficam crus (§38).
+func decodeInfo(msg *protocols.TrackerMessage, content []byte) {
+	if len(content) < 1 {
+		return
+	}
+	msg.Attributes["infoType"] = fmt.Sprintf("0x%02X", content[0])
+	if content[0] == infoExternalVoltage && len(content) >= 3 {
+		volts := float64(binary.BigEndian.Uint16(content[1:3])) / 100
+		msg.BatteryVoltage = &volts
+		msg.Kind = protocols.KindStatus
+		return
+	}
+	msg.Attributes["unhandled"] = true
 }
 
 // alarmLabel mapeia o byte de alarme dos pacotes 0x16/0x26/0x27. DOCUMENTED

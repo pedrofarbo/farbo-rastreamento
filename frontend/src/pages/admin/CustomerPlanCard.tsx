@@ -13,8 +13,11 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
-import { centsToInput, formatMoney } from '@/services/format';
-import type { AccountPlan } from '@/types';
+import { centsToInput, formatMoney, parseMoney } from '@/services/format';
+import type { AccountPlan, EquipmentTerms } from '@/types';
+
+import org from '@/components/organization/Organization.module.css';
+import { TextField } from '@/components/ui/Field';
 
 import pageStyles from '../Page.module.css';
 
@@ -25,6 +28,40 @@ function draftFrom(plan: AccountPlan | null, accountDueDay: number | null): Subs
     ? { preset: preset?.id ?? 'custom', planName: plan.planName, price: centsToInput(plan.priceCents), dueDay: plan.dueDay }
     : DEFAULT_SUBSCRIPTION;
   return accountDueDay ? { ...draft, dueDay: accountDueDay } : draft;
+}
+
+/** O rastreador e as taxas no rascunho (os valores como digitados). */
+interface TermsDraft {
+  mode: 'sale' | 'loan';
+  install: string;
+  uninstall: string;
+}
+
+function termsDraftFrom(plan: AccountPlan | null): TermsDraft {
+  return {
+    mode: plan?.equipmentMode ?? 'sale',
+    install: plan?.installFeeCents ? centsToInput(plan.installFeeCents) : '',
+    uninstall: plan?.uninstallFeeCents ? centsToInput(plan.uninstallFeeCents) : '',
+  };
+}
+
+/** Os termos conferidos (vazio é zero), ou a mensagem do problema. */
+export function termsFromDraft(d: TermsDraft): EquipmentTerms | string {
+  if (d.mode === 'sale') return { equipmentMode: 'sale', installFeeCents: 0, uninstallFeeCents: 0 };
+  const install = d.install.trim() ? parseMoney(d.install) : 0;
+  const uninstall = d.uninstall.trim() ? parseMoney(d.uninstall) : 0;
+  if (install === null || uninstall === null) return 'Confira as taxas de instalação e desinstalação (ex.: 80,00).';
+  return { equipmentMode: 'loan', installFeeCents: install, uninstallFeeCents: uninstall };
+}
+
+/** O rastreador do plano, numa frase. */
+export function termsLabel(plan: EquipmentTerms): string {
+  if (plan.equipmentMode !== 'loan') return '';
+  const fees = [
+    plan.installFeeCents ? `instalação ${formatMoney(plan.installFeeCents)}` : '',
+    plan.uninstallFeeCents ? `desinstalação ${formatMoney(plan.uninstallFeeCents)}` : '',
+  ].filter(Boolean);
+  return ` Rastreador em comodato${fees.length ? ` (${fees.join(', ')})` : ', sem taxas'}.`;
 }
 
 /**
@@ -45,6 +82,7 @@ export function CustomerPlanCard({
   const { notify } = useToast();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<SubscriptionDraft | null>(null);
+  const [terms, setTerms] = useState<TermsDraft>(termsDraftFrom(plan));
   const [error, setError] = useState('');
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['customer', customerId] });
@@ -52,7 +90,9 @@ export function CustomerPlanCard({
     mutationFn: () => {
       const input = subscriptionFromDraft(draft as SubscriptionDraft);
       if (typeof input === 'string') throw new Error(input);
-      return customersApi.setPlan(customerId, input);
+      const equipment = termsFromDraft(terms);
+      if (typeof equipment === 'string') throw new Error(equipment);
+      return customersApi.setPlan(customerId, { ...input, ...equipment });
     },
     onSuccess: (saved) => {
       refresh();
@@ -94,6 +134,7 @@ export function CustomerPlanCard({
             onClick={() => {
               setError('');
               setDraft(draftFrom(plan, accountDueDay));
+              setTerms(termsDraftFrom(plan));
             }}
           >
             {plan ? 'Trocar o plano' : 'Definir o plano'}
@@ -103,7 +144,7 @@ export function CustomerPlanCard({
     >
       <p className={pageStyles.description} style={{ margin: 0 }}>
         {plan
-          ? `${plan.planName}: ${formatMoney(plan.priceCents)}/mês, vencimento todo dia ${plan.dueDay}.`
+          ? `${plan.planName}: ${formatMoney(plan.priceCents)}/mês, vencimento todo dia ${plan.dueDay}.${termsLabel(plan)}`
           : 'Padrão: o plano da assinatura ativa do cliente ou, no primeiro veículo, o Plano Mensal.'}
       </p>
 
@@ -136,6 +177,36 @@ export function CustomerPlanCard({
             <p className={pageStyles.description} style={{ margin: 0 }}>
               Na promoção de pré-lançamento, o plano Especial Insanos MC tem a mensalidade promocional dos Insanos.
             </p>
+            <div className={org.choices} role="radiogroup" aria-label="Rastreador">
+              <label className={`${org.choice} ${terms.mode === 'sale' ? org.choiceActive : ''}`}>
+                <input type="radio" name="plan-equipment" checked={terms.mode === 'sale'} onChange={() => setTerms({ ...terms, mode: 'sale' })} />
+                Rastreador vendido
+              </label>
+              <label className={`${org.choice} ${terms.mode === 'loan' ? org.choiceActive : ''}`}>
+                <input type="radio" name="plan-equipment" checked={terms.mode === 'loan'} onChange={() => setTerms({ ...terms, mode: 'loan' })} />
+                Comodato (emprestado)
+              </label>
+            </div>
+            {terms.mode === 'loan' && (
+              <div className={pageStyles.formRow}>
+                <TextField
+                  label="Taxa de instalação (R$)"
+                  inputMode="decimal"
+                  placeholder="0,00"
+                  hint="Na fatura da contratação."
+                  value={terms.install}
+                  onChange={(e) => setTerms({ ...terms, install: e.target.value })}
+                />
+                <TextField
+                  label="Taxa de desinstalação (R$)"
+                  inputMode="decimal"
+                  placeholder="0,00"
+                  hint="Lançada no encerramento."
+                  value={terms.uninstall}
+                  onChange={(e) => setTerms({ ...terms, uninstall: e.target.value })}
+                />
+              </div>
+            )}
             {error && <div className={pageStyles.note}>{error}</div>}
           </div>
         )}

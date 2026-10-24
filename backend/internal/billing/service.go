@@ -46,6 +46,12 @@ func (s *Service) Today() Date { return DateIn(s.now(), s.loc) }
 // SuspendAfterDays é o atraso que suspende o acesso (0 = nunca).
 func (s *Service) SuspendAfterDays() int { return s.cfg.SuspendAfterDays }
 
+// LeadDays: com quantos dias de antecedência a fatura do mês é gerada.
+func (s *Service) LeadDays() int { return s.cfg.InvoiceLeadDays }
+
+// DateOf é a data do calendário de t no fuso da cobrança.
+func (s *Service) DateOf(t time.Time) Date { return DateIn(t, s.loc) }
+
 // suspensionCutoff: fatura em aberto com vencimento antes desta data
 // suspende o cliente. Com 10 dias, a fatura do dia 1 suspende a partir do 12.
 func (s *Service) suspensionCutoff() Date { return s.Today().AddDays(-s.cfg.SuspendAfterDays) }
@@ -176,15 +182,17 @@ func (s *Service) UpdateSubscription(ctx context.Context, id uuid.UUID, planName
 // CancelSubscription encerra a assinatura; com o rastreador parcelado e
 // parcelas por pagar, opts diz se o saldo é cobrado (a fatura dele volta
 // junto) ou dispensado.
-func (s *Service) CancelSubscription(ctx context.Context, id uuid.UUID, opts CancelOptions) (*Subscription, *Invoice, error) {
-	sub, balance, err := s.repo.CancelSubscription(ctx, id, s.Today(), opts)
+func (s *Service) CancelSubscription(ctx context.Context, id uuid.UUID, opts CancelOptions) (*Canceled, error) {
+	out, err := s.repo.CancelSubscription(ctx, id, s.Today(), opts)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	if balance != nil {
-		s.decorate(balance)
+	for _, inv := range []*Invoice{out.Balance, out.Uninstall} {
+		if inv != nil {
+			s.decorate(inv)
+		}
 	}
-	return sub, balance, s.repo.fillInstallments(ctx, sub)
+	return out, s.repo.fillInstallments(ctx, out.Subscription)
 }
 
 func (s *Service) ListSubscriptions(ctx context.Context, customerID uuid.UUID) ([]*Subscription, error) {

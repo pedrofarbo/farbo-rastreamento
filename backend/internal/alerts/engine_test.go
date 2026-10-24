@@ -1027,3 +1027,43 @@ func TestNormalizeEmails(t *testing.T) {
 		}
 	}
 }
+
+func TestCarBatteryCarriesVoltage(t *testing.T) {
+	h := newHarness(t, nil)
+	got := h.event(events.VehicleBatteryLow, h.now, map[string]any{"voltage": 11.42})
+	if len(got) != 1 || got[0].Title != "Bateria do veículo fraca" || !strings.Contains(got[0].Summary, "11,4 V") {
+		t.Fatalf("bateria fraca com a tensão, veio %+v", got)
+	}
+	h.now = h.now.Add(5 * time.Minute)
+	if got := h.event(events.VehicleBatteryLow, h.now, map[string]any{"voltage": 11.3}); len(got) != 0 {
+		t.Errorf("repetida dentro do intervalo mínimo: segurada, veio %d", len(got))
+	}
+}
+
+func TestImpactOnlyWhenMoving(t *testing.T) {
+	h := newHarness(t, nil)
+	vibration := func(speed *float64) []mail.Alert {
+		h.e.handleEvent(h.ctx, &events.Event{ID: 9, DeviceID: deviceID, Type: events.Vibration, Timestamp: h.now, SpeedKmh: speed})
+		return h.flush()
+	}
+	if got := vibration(ptr(0.0)); len(got) != 0 {
+		t.Fatalf("vibração com o carro parado é o alarme de estacionado, não colisão: veio %+v", got)
+	}
+	if got := vibration(ptr(62.0)); len(got) != 1 || got[0].Title != "Possível colisão" || !strings.Contains(got[0].Summary, "62 km/h") {
+		t.Fatalf("vibração andando = possível colisão, veio %+v", got)
+	}
+	// Depois da batida o carro para: andava até agora há pouco, conta.
+	h = newHarness(t, nil)
+	h.position(-23.5, -46.6, 48, true, h.now)
+	h.now = h.now.Add(20 * time.Second)
+	if got := vibration(ptr(0.0)); len(got) != 1 {
+		t.Fatalf("parou logo depois da batida: possível colisão, veio %d", len(got))
+	}
+	// Parado há mais tempo: não.
+	h = newHarness(t, nil)
+	h.position(-23.5, -46.6, 48, true, h.now)
+	h.now = h.now.Add(5 * time.Minute)
+	if got := vibration(nil); len(got) != 0 {
+		t.Fatalf("parado há minutos: alarme de estacionado, veio %d", len(got))
+	}
+}

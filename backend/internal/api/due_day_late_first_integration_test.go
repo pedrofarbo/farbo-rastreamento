@@ -46,7 +46,16 @@ func TestDueDayChangeAfterLateFirstInvoice(t *testing.T) {
 	// A conta no dia 10; o 2º veículo com a cobrança do pedido em 20/11 e o
 	// rastreador em 2x.
 	order("VIC1A11", map[string]any{"equipmentCents": 0})
-	second := order("VIC2B22", map[string]any{"equipmentCents": 12000, "installments": 2, "setupDueDate": "2026-11-20"})
+	second := order("VIC2B22", map[string]any{"equipmentCents": 12000, "installments": 2})
+	// Como ficou o 2º veículo dele, de antes da fatura única: a 1ª
+	// mensalidade em 20/11 e a 2ª (com a última parcela) em 10/01.
+	if _, err := env.db.Exec(ctx, `UPDATE invoices SET due_date = '2026-11-20' WHERE subscription_id = $1`, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.db.Exec(ctx, `UPDATE subscriptions SET next_due_date = '2027-01-10', commitment_until = '2027-01-10'
+		WHERE id = $1`, second.ID); err != nil {
+		t.Fatal(err)
+	}
 	// Como está gravado (a 1ª mensalidade já saiu, em 20/11).
 	stored := func() (day int, next, end string) {
 		t.Helper()

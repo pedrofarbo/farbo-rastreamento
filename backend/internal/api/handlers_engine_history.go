@@ -19,9 +19,10 @@ type engineHistoryItem struct {
 	AcknowledgedAt *time.Time `json:"acknowledgedAt"`
 	Error          string     `json:"error"`
 	// Who é quem pediu, como quem vê a lista entende: "Você", o nome de
-	// alguém da conta ou de quem tem acesso compartilhado, "Central Farbo"
+	// alguém da conta ou de quem tem acesso compartilhado, a associação ou
+	// seguradora (para a equipe dela, o nome da pessoa), "Central Farbo"
 	// (para a equipe, o nome) ou "Sistema". WhoKind: you, account, shared,
-	// central ou system.
+	// organization, central ou system.
 	Who     string `json:"who"`
 	WhoKind string `json:"whoKind"`
 	// UserAgent: de qual aparelho saiu (o da equipe da central não vai para o
@@ -43,7 +44,7 @@ func (s *Server) handleEngineHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	principal, _ := auth.FromContext(r.Context())
-	staff := principal != nil && !principal.IsCustomer()
+	staff := principal != nil && principal.IsStaff()
 	out := make([]engineHistoryItem, 0, len(list))
 	for _, e := range list {
 		item := engineHistoryItem{
@@ -53,6 +54,10 @@ func (s *Server) handleEngineHistory(w http.ResponseWriter, r *http.Request) {
 		item.Who, item.WhoKind = whoRequested(e, principal, vehicle.OwnerID)
 		if item.WhoKind == "central" && !staff {
 			item.Who, item.UserAgent = "Central Farbo", ""
+		}
+		// O aparelho de quem é da organização fica com ela e com a central.
+		if item.WhoKind == "organization" && principal != nil && principal.IsCustomer() {
+			item.UserAgent = ""
 		}
 		out = append(out, item)
 	}
@@ -64,6 +69,20 @@ func whoRequested(e *commands.EngineEntry, viewer *auth.Principal, owner *uuid.U
 	switch {
 	case e.RequestedBy == nil:
 		return "Sistema", "system"
+	case e.RequesterRole == auth.RoleOrgMember:
+		org := e.RequesterOrgName
+		if org == "" {
+			org = "Associação"
+		}
+		switch {
+		case viewer != nil && *e.RequestedBy == viewer.UserID:
+			return "Você", "you"
+		case viewer != nil && viewer.IsOrgMember():
+			return e.RequesterName, "organization"
+		case viewer != nil && viewer.IsStaff():
+			return e.RequesterName + " (" + org + ")", "organization"
+		}
+		return org, "organization"
 	case e.RequesterRole != auth.RoleCustomer:
 		return e.RequesterName, "central"
 	case viewer != nil && *e.RequestedBy == viewer.UserID:

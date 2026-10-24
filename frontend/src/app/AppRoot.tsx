@@ -6,9 +6,11 @@ import { Spinner } from '@/components/ui/Spinner';
 import { ToastProvider } from '@/components/ui/Toast';
 import { RealtimeProvider } from '@/hooks/useRealtime';
 import { InvoicesPage } from '@/pages/customer/InvoicesPage';
+import { FleetOpsPage } from '@/pages/customer/FleetOpsPage';
 import { MaintenancePage } from '@/pages/customer/MaintenancePage';
 import { MyVehiclesPage } from '@/pages/customer/MyVehiclesPage';
 import { ReportsPage } from '@/pages/customer/ReportsPage';
+import { ClaimReportPage } from '@/pages/ClaimReportPage';
 import { TheftReportPage } from '@/pages/TheftReportPage';
 import { ContractGate } from '@/components/contract/ContractGate';
 import { AuthProvider, useAuth } from '@/stores/AuthContext';
@@ -25,6 +27,9 @@ import { FencesScreen } from './screens/FencesScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { MapScreen } from './screens/MapScreen';
 import { VehicleScreen } from './screens/VehicleScreen';
+import { ClaimNewScreen, ClaimScreen, ClaimsScreen } from './screens/ClaimsScreen';
+import { InspectionScreen, InspectionsScreen } from './screens/InspectionsScreen';
+import { ReferralScreen } from './screens/ReferralScreen';
 import styles from './screens/Screen.module.css';
 
 const queryClient = new QueryClient({
@@ -47,7 +52,7 @@ function RequireCustomer() {
     return (
       <div className={styles.login}>
         <h1 className={styles.title}>Este app é dos clientes</h1>
-        <p className={styles.lead}>Com a conta da central, use o painel completo.</p>
+        <p className={styles.lead}>Com a conta da central ou a da sua associação, use o painel completo.</p>
         <Button onClick={() => window.location.assign('/dashboard')} block>
           Abrir o painel
         </Button>
@@ -91,10 +96,12 @@ export function AppRoot() {
                   <Route path="mapa" element={<MapScreen />} />
                   <Route path="veiculos/:id" element={<VehicleScreen />} />
                   <Route path="relatorio-roubo/:id" element={<TheftReportPage />} />
+                  <Route path="relatorio-sinistro/:id" element={<ClaimReportPage />} />
                   <Route path="meus-veiculos" element={<MyVehiclesPage />} />
                   {/* Manutenção e Relatórios abrem pela Conta: o voltar leva a ela. */}
                   <Route path="relatorios" element={<ReportsPage backTo="/conta" />} />
                   <Route path="manutencao" element={<MaintenancePage backTo="/conta" />} />
+                  <Route path="frota" element={<FleetOpsPage backTo="/conta" />} />
                   <Route path="alertas" element={<NotificationsScreen />} />
                   <Route path="alertas/configurar" element={<AlertsScreen />} />
                   <Route path="cercas" element={<FencesScreen />} />
@@ -102,6 +109,12 @@ export function AppRoot() {
                   <Route path="cercas/:id" element={<FenceScreen />} />
                   <Route path="conta" element={<AccountScreen />} />
                   <Route path="conta/seguranca" element={<SecurityScreen />} />
+                  {/* O associado: as ocorrências e as vistorias. */}
+                  <Route path="ocorrencias" element={<ClaimsScreen />} />
+                  <Route path="ocorrencias/nova" element={<ClaimNewScreen />} />
+                  <Route path="ocorrencias/:id" element={<ClaimScreen />} />
+                  <Route path="vistorias" element={<InspectionsScreen />} />
+                  <Route path="vistorias/:id" element={<InspectionScreen />} />
                   {/* Conta empresa: faturas do titular e do Gestor; cadastro e
                       equipe, só do titular. */}
                   <Route element={<RequireAccount operate />}>
@@ -110,6 +123,7 @@ export function AppRoot() {
                   <Route element={<RequireAccount />}>
                     <Route path="conta/dados" element={<ProfileScreen />} />
                     <Route path="conta/equipe" element={<TeamScreen />} />
+                    <Route path="conta/indique" element={<ReferralScreen />} />
                   </Route>
                   <Route path="dashboard" element={<Navigate to="/mapa" replace />} />
                   <Route path="*" element={<Navigate to="/mapa" replace />} />

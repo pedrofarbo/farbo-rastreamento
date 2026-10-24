@@ -6,9 +6,9 @@ import type { MaintenanceInput } from '@/api/resources';
 import { Button } from '@/components/ui/Button';
 import { SelectField, TextField } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
-import { MAINTENANCE_SUGGESTIONS, parseWholeNumber } from '@/services/maintenance';
+import { DOCUMENT_PRESETS, MAINTENANCE_SUGGESTIONS, brDate, parseWholeNumber, renewLabel } from '@/services/maintenance';
 import { todayISO } from '@/services/format';
-import type { MaintenanceItem, VehicleGroup } from '@/types';
+import type { MaintenanceItem, MaintenanceKind, VehicleGroup } from '@/types';
 
 import pageStyles from '@/pages/Page.module.css';
 import styles from './Maintenance.module.css';
@@ -25,7 +25,10 @@ type Scope = 'all' | 'group' | 'pick';
 
 /** O formulário: os números como texto (a pessoa digita "10.000"). */
 interface Draft {
+  kind: MaintenanceKind;
   name: string;
+  /** Documento: o próximo vencimento. */
+  dueDate: string;
   everyKm: string;
   everyMonths: string;
   everyHours: string;
@@ -37,6 +40,14 @@ interface Draft {
 /** O pedido a partir do formulário, ou a mensagem do que falta. */
 export function maintenanceInput(d: Draft, single: boolean): MaintenanceInput | string {
   const name = d.name.trim();
+  if (d.kind === 'document') {
+    if (!name) return 'Dê um nome ao documento (por exemplo, IPVA).';
+    const months = parseWholeNumber(d.everyMonths);
+    if (months === null || Number.isNaN(months) || months < 1 || months > 120)
+      return 'Informe de quantos em quantos meses o documento renova (12 para o IPVA, 60 para a CNH).';
+    if (!d.dueDate) return 'Informe a data do próximo vencimento.';
+    return { kind: 'document', name, everyKm: null, everyMonths: months, everyHours: null, dueDate: d.dueDate };
+  }
   if (!name) return 'Dê um nome à manutenção (por exemplo, Troca de óleo).';
   const everyKm = parseWholeNumber(d.everyKm);
   const everyMonths = parseWholeNumber(d.everyMonths);
@@ -78,6 +89,8 @@ export function MaintenanceFormModal({
 }) {
   const single = vehicles.length === 1 || Boolean(item);
   const [draft, setDraft] = useState<Draft>(() => ({
+    kind: item?.kind ?? 'service',
+    dueDate: item?.kind === 'document' ? (item.nextDate ?? '') : '',
     name: item?.name ?? '',
     everyKm: asText(item?.everyKm),
     everyMonths: asText(item?.everyMonths),
@@ -104,14 +117,17 @@ export function MaintenanceFormModal({
     return q ? vehicles.filter((v) => `${v.name} ${v.plate ?? ''}`.toLowerCase().includes(q)) : vehicles;
   }, [search, vehicles]);
 
+  const document = draft.kind === 'document';
+  // Manutenção é feminino ("criada"); documento, masculino ("criado").
+  const done = document ? 'o' : 'a';
   const save = useMutation({
     mutationFn: async (input: MaintenanceInput) => {
       if (item) {
         await maintenanceApi.update(item.id, input);
-        return `${input.name} atualizada`;
+        return `${input.name} atualizad${done}`;
       }
       const { created } = await maintenanceApi.create({ ...input, vehicleIds: chosen });
-      return created === 1 ? `${input.name} criada` : `${input.name} criada em ${created} veículos`;
+      return created === 1 ? `${input.name} criad${done}` : `${input.name} criad${done} em ${created} veículos`;
     },
     onSuccess: (message) => onSaved(message),
     onError: (err: Error) => setError(err.message),
@@ -128,7 +144,7 @@ export function MaintenanceFormModal({
   return (
     <Modal
       open={open}
-      title={item ? 'Editar manutenção' : 'Nova manutenção'}
+      title={item ? (document ? 'Editar documento' : 'Editar manutenção') : document ? 'Novo documento' : 'Nova manutenção'}
       onClose={onClose}
       footer={
         <>
@@ -147,6 +163,30 @@ export function MaintenanceFormModal({
             {error}
           </div>
         )}
+        {!item && (
+          <div className={styles.choices} role="radiogroup" aria-label="O que cadastrar">
+            {(
+              [
+                ['service', 'Manutenção'],
+                ['document', 'Documento (IPVA, CNH...)'],
+              ] as [MaintenanceKind, string][]
+            ).map(([value, label]) => (
+              <label key={value} className={`${styles.choice} ${draft.kind === value ? styles.choiceOn : ''}`}>
+                <input
+                  type="radio"
+                  name="maintenance-kind"
+                  checked={draft.kind === value}
+                  onChange={() => setDraft({ ...draft, kind: value, name: '', everyMonths: value === 'document' ? '12' : '' })}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+        )}
+        {document ? (
+          <DocumentFields draft={draft} setDraft={setDraft} />
+        ) : (
+          <>
         <TextField
           label="O que fazer"
           list="maintenance-suggestions"
@@ -217,6 +257,8 @@ export function MaintenanceFormModal({
         {!single && (
           <p className={styles.muted}>Cada veículo começa a contar pelo hodômetro e pelo horímetro dele de agora.</p>
         )}
+          </>
+        )}
 
         {!single && (
           <fieldset className={styles.scope}>
@@ -277,6 +319,53 @@ export function MaintenanceFormModal({
   );
 }
 
+/** Os campos de um documento: o nome (com os mais comuns), a renovação e o próximo vencimento. */
+function DocumentFields({ draft, setDraft }: { draft: Draft; setDraft: (d: Draft) => void }) {
+  const months = parseWholeNumber(draft.everyMonths);
+  return (
+    <>
+      <TextField
+        label="Documento"
+        list="document-suggestions"
+        maxLength={60}
+        value={draft.name}
+        placeholder="IPVA"
+        onChange={(e) => {
+          const name = e.target.value;
+          const preset = DOCUMENT_PRESETS.find((p) => p.name === name);
+          setDraft({ ...draft, name, everyMonths: preset ? String(preset.months) : draft.everyMonths });
+        }}
+      />
+      <datalist id="document-suggestions">
+        {DOCUMENT_PRESETS.map((p) => (
+          <option key={p.name} value={p.name} />
+        ))}
+      </datalist>
+      <div className={pageStyles.formRow}>
+        <TextField
+          label="Próximo vencimento"
+          type="date"
+          value={draft.dueDate}
+          onChange={(e) => setDraft({ ...draft, dueDate: e.target.value })}
+        />
+        <TextField
+          label="Renova a cada (meses)"
+          inputMode="numeric"
+          value={draft.everyMonths}
+          placeholder="12"
+          onChange={(e) => setDraft({ ...draft, everyMonths: e.target.value })}
+        />
+      </div>
+      <p className={styles.muted}>
+        {draft.dueDate ? `Vence em ${brDate(draft.dueDate)}. ` : ''}
+        {months && !Number.isNaN(months) ? `${renewLabel(months)}. ` : ''}
+        Avisamos 30 dias antes e no dia. Ao registrar a renovação, o vencimento passa para o seguinte, no mesmo dia do
+        calendário.
+      </p>
+    </>
+  );
+}
+
 /**
  * Registrar manutenções feitas: a data, o km e as horas de motor (com uma
  * só; com várias, o hodômetro e o horímetro de cada veículo) e uma
@@ -292,8 +381,10 @@ export function DoneModal({
   onDone: (message: string) => void;
 }) {
   const single = items.length === 1;
+  // Documento: renovado (sem km nem horas).
+  const document = items.length > 0 && items.every((i) => i.kind === 'document');
   // As horas só pedem campo quando a manutenção vence por elas.
-  const withHours = single && items[0].everyHours !== null;
+  const withHours = single && !document && items[0].everyHours !== null;
   const [date, setDate] = useState(todayISO());
   const [km, setKm] = useState('');
   const [hours, setHours] = useState('');
@@ -301,20 +392,37 @@ export function DoneModal({
   const [error, setError] = useState('');
   const done = useMutation({
     mutationFn: () => {
-      const parsed = single ? parseWholeNumber(km) : null;
+      const parsed = single && !document ? parseWholeNumber(km) : null;
       if (Number.isNaN(parsed)) throw new Error('O km precisa ser um número.');
       const parsedHours = withHours ? parseWholeNumber(hours) : null;
       if (Number.isNaN(parsedHours)) throw new Error('As horas de motor precisam ser um número.');
       return maintenanceApi.done({ itemIds: items.map((i) => i.id), date, km: parsed, hours: parsedHours, notes });
     },
-    onSuccess: ({ done: n }) => onDone(n === 1 ? `${items[0].name} registrada` : `${n} manutenções registradas`),
+    onSuccess: ({ done: n }) =>
+      onDone(
+        document
+          ? n === 1
+            ? `${items[0].name} renovado`
+            : `${n} documentos renovados`
+          : n === 1
+            ? `${items[0].name} registrada`
+            : `${n} manutenções registradas`,
+      ),
     onError: (err: Error) => setError(err.message),
   });
 
   return (
     <Modal
       open={items.length > 0}
-      title={single ? `Registrar: ${items[0]?.name}` : `Registrar ${items.length} manutenções`}
+      title={
+        document
+          ? single
+            ? `Renovar: ${items[0]?.name}`
+            : `Renovar ${items.length} documentos`
+          : single
+            ? `Registrar: ${items[0]?.name}`
+            : `Registrar ${items.length} manutenções`
+      }
       onClose={onClose}
       footer={
         <>
@@ -334,15 +442,23 @@ export function DoneModal({
           </div>
         )}
         <p className={pageStyles.description}>
-          {!single
+          {document
+            ? `${single ? `${items[0]?.vehicleName}: o` : 'O'} vencimento passa para o seguinte, no mesmo dia do calendário.`
+            : !single
             ? 'A contagem de cada uma recomeça desta data e do hodômetro e do horímetro de cada veículo.'
             : withHours
               ? `${items[0]?.vehicleName}: a contagem recomeça desta data, deste km e destas horas de motor.`
               : `${items[0]?.vehicleName}: a contagem recomeça desta data e deste km.`}
         </p>
         <div className={pageStyles.formRow}>
-          <TextField label="Feita em" type="date" max={todayISO()} value={date} onChange={(e) => setDate(e.target.value)} />
-          {single && (
+          <TextField
+            label={document ? 'Renovado em' : 'Feita em'}
+            type="date"
+            max={todayISO()}
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+          {single && !document && (
             <TextField
               label="Com quantos km"
               inputMode="numeric"

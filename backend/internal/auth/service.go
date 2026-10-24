@@ -76,6 +76,9 @@ type Service struct {
 	// memberships acha a conta empresa de quem é da equipe de um cliente
 	// (SetMemberships); nil: todo cliente é titular.
 	memberships MembershipLookup
+	// orgMemberships acha a organização de quem é da equipe de uma
+	// associação ou seguradora (SetOrgMemberships).
+	orgMemberships OrgMembershipLookup
 
 	// cutoffs guarda por uns segundos o corte dos tokens de cada usuário
 	// (sessions_valid_after), para o middleware não ir ao banco a cada
@@ -248,13 +251,21 @@ func (s *Service) Logout(ctx context.Context, refreshToken string) error {
 }
 
 func (s *Service) issue(ctx context.Context, user *User, userAgent string) (*Tokens, error) {
-	// A tela já entra sabendo se a pessoa é da equipe de um cliente.
-	if user.Role == RoleCustomer {
+	// A tela já entra sabendo se a pessoa é da equipe de um cliente ou de
+	// uma organização.
+	switch user.Role {
+	case RoleCustomer:
 		membership, err := s.Membership(ctx, user.ID)
 		if err != nil {
 			return nil, err
 		}
 		user.Membership = membership
+	case RoleOrgMember:
+		org, err := s.OrgMembership(ctx, user.ID)
+		if err != nil {
+			return nil, err
+		}
+		user.Organization = org
 	}
 
 	refresh, err := newOpaqueToken()

@@ -29,6 +29,10 @@ const (
 	LowBattery = "LOW_BATTERY"
 	SOS        = "SOS"
 
+	// VehicleBatteryLow: com a ignição desligada, a tensão da bateria do
+	// veículo caiu abaixo do que costuma dar partida (ver tracking).
+	VehicleBatteryLow = "VEHICLE_BATTERY_LOW"
+
 	GPSLost      = "GPS_LOST"
 	GPSRecovered = "GPS_RECOVERED"
 	GSMLost      = "GSM_LOST"

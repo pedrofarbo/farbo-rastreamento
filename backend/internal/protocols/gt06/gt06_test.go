@@ -663,3 +663,28 @@ func mustHex(t *testing.T, s string) []byte {
 	}
 	return b
 }
+
+// longFrame monta o quadro de 2 bytes de tamanho (79 79), o do 0x94.
+func longFrame(typ byte, content []byte, serial uint16) []byte {
+	length := 1 + len(content) + 2 + 2
+	out := []byte{startLong, startLong}
+	out = binary.BigEndian.AppendUint16(out, uint16(length))
+	out = append(out, typ)
+	out = append(out, content...)
+	out = binary.BigEndian.AppendUint16(out, serial)
+	out = binary.BigEndian.AppendUint16(out, crcITU(out[2:]))
+	return append(out, stopCR, stopLF)
+}
+
+// O 0x94 do tipo 0x00 traz a tensão da bateria do veículo (centésimos de
+// volt); os outros tipos ficam crus. Nenhum pede resposta.
+func TestParseExternalVoltage(t *testing.T) {
+	msg := mustParseOne(t, newProtocol(), longFrame(msgInfo, []byte{0x00, 0x04, 0xD3}, 21))
+	if msg.BatteryVoltage == nil || math.Abs(*msg.BatteryVoltage-12.35) > 1e-9 || msg.Kind != protocols.KindStatus || msg.Ack != nil {
+		t.Fatalf("tensão externa = %+v (kind %s, ack %v)", msg.BatteryVoltage, msg.Kind, msg.Ack)
+	}
+	other := mustParseOne(t, newProtocol(), longFrame(msgInfo, []byte{0x05, 0x01}, 22))
+	if other.BatteryVoltage != nil || other.Attributes["unhandled"] != true || other.Attributes["infoType"] != "0x05" {
+		t.Fatalf("outro tipo de informação = %+v", other)
+	}
+}

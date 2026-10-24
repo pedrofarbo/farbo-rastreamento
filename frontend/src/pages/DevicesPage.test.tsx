@@ -88,7 +88,7 @@ const MOCK_CUSTOMER: CustomerSummary = {
   openInvoices: 0,
   overdueInvoices: 0,
   openAmountCents: 0,
-  suspended: false,
+  suspended: false, organizationId: null, organizationName: '',
 };
 
 // Os rastreadores recusados por falta de cadastro, e o que foi salvo.

@@ -22,17 +22,26 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/accounts"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/apikeys"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/appointments"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/busroutes"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/claims"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/closing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/commands"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/events"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fleet"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geofences"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/inspections"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leakcheck"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/livelinks"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/maintenance"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/organizations"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols/gt06"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/reportmail"
@@ -45,6 +54,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/theft"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/webhooks"
 	ws "github.com/pedrofarbo/farbo-rastreamento/backend/internal/websocket"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/migrations"
 )
@@ -193,6 +203,16 @@ type credEnv struct {
 	sender    *captureSender
 	stepUp    *stepup.Service
 	theft     *theft.Service
+	orgs      *organizations.Service
+	auth      *auth.Service
+	liveLinks *livelinks.Service
+	claims    *claims.Service
+	inspects  *inspections.Service
+	fleetOps  *fleet.Service
+	apiKeys   *apikeys.Service
+	webhooks  *webhooks.Service
+	installs  *appointments.Service
+	routes    *busroutes.Service
 
 	fwdMu     sync.Mutex
 	forwarded [][]byte // o que iria para o Redis (outras instâncias)
@@ -218,6 +238,23 @@ type credEnvOptions struct {
 	team accounts.Notifier
 	// fleet liga as cercas e os relatórios da frota.
 	fleet bool
+	// orgs liga as associações e seguradoras, com os convites da equipe
+	// delas neste Notifier.
+	orgs organizations.Notifier
+	// liveLinks liga a localização ao vivo por um tempo.
+	liveLinks bool
+	// suspendAfterDays liga a suspensão por fatura vencida.
+	suspendAfterDays int
+	// occurrences liga as ocorrências e as vistorias, com o aviso à equipe
+	// da organização neste Notifier.
+	occurrences claims.Notifier
+	// fleetOps liga a gestão da frota (motoristas, custos, multas,
+	// locações), com o aviso de locação atrasada neste Notifier.
+	fleetOps fleet.Notifier
+	// integrations liga as chaves da API e os webhooks (para a rede local).
+	integrations bool
+	// installs liga a agenda de instalação e o link do instalador.
+	installs bool
 }
 
 func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
@@ -238,7 +275,7 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 			EngineCutMaxPositionAge: 10 * time.Minute, SweepInterval: time.Second,
 		},
 		Tracking: config.Tracking{StaleAfter: 5 * time.Minute, OfflineAfter: time.Hour, HistoryRetentionDays: 30},
-		Billing:  config.Billing{Timezone: "UTC"},
+		Billing:  config.Billing{Timezone: "UTC", SuspendAfterDays: opts.suspendAfterDays},
 	}
 
 	env := &credEnv{t: t, db: db, sender: &captureSender{
@@ -301,6 +338,36 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 		}, log)
 		env.theft.SetSync()
 	}
+	if opts.orgs != nil {
+		env.orgs = organizations.NewService(db, authSvc, opts.orgs, billingSvc, log)
+		env.orgs.SetSync()
+		authSvc.SetOrgMemberships(env.orgs.Lookup)
+	}
+	env.auth = authSvc
+	if opts.installs {
+		env.installs = appointments.NewService(db, "https://painel.farbo.test", cfg.Auth.JWTSecret, log)
+		env.installs.SetSync()
+	}
+	if opts.fleetOps != nil {
+		env.routes = busroutes.NewService(db, "https://painel.farbo.test", cfg.Auth.JWTSecret)
+	}
+	if opts.integrations {
+		env.apiKeys = apikeys.NewService(db)
+		env.webhooks = webhooks.NewService(db, log)
+		env.webhooks.AllowPrivate()
+	}
+	if opts.fleetOps != nil {
+		env.fleetOps = fleet.NewService(db, "UTC", opts.fleetOps, log)
+	}
+	if opts.occurrences != nil {
+		env.claims = claims.NewService(db, opts.occurrences, log)
+		env.claims.SetSync()
+		env.inspects = inspections.NewService(db, log)
+		env.inspects.SetSync()
+	}
+	if opts.liveLinks {
+		env.liveLinks = livelinks.NewService(db, "https://painel.farbo.test", cfg.Auth.JWTSecret)
+	}
 	var fences *geofences.Service
 	var reportsSvc *reports.Service
 	var reportMail *reportmail.Service
@@ -313,7 +380,9 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 	}
 	server := NewServer(Deps{
 		Geofences: fences, Reports: reportsSvc, ReportMail: reportMail, Maintenance: maintenanceSvc,
-		StepUp: stepUpSvc, Shares: sharesSvc, Theft: env.theft, Accounts: accountsSvc,
+		StepUp: stepUpSvc, Shares: sharesSvc, Theft: env.theft, Accounts: accountsSvc, Organizations: env.orgs,
+		Closing: closing.NewService(db), LiveLinks: env.liveLinks, Claims: env.claims, Inspections: env.inspects,
+		Fleet: env.fleetOps, APIKeys: env.apiKeys, Webhooks: env.webhooks, Appointments: env.installs, BusRoutes: env.routes,
 		Config: cfg, Log: log, Metrics: metrics, DB: db, Auth: authSvc,
 		Devices: env.devices, Vehicles: env.vehicles, Events: eventSvc, Commands: env.commands,
 		Audit: auditSvc, Billing: billingSvc,

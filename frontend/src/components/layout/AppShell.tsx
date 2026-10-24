@@ -7,7 +7,7 @@ import { financeApi, leadsApi, meApi, whatsappApi } from '@/api/resources';
 import { Spinner } from '@/components/ui/Spinner';
 import { SUPPORT_SCREEN } from '@/config/contact';
 import { useRealtime } from '@/hooks/useRealtime';
-import { ROLE_LABELS } from '@/services/roles';
+import { ORG_ROLES, ROLE_LABELS } from '@/services/roles';
 import { useAuth } from '@/stores/AuthContext';
 import { useTheme } from '@/hooks/useTheme';
 
@@ -57,6 +57,8 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M7 12h2l2-4 2 8 2-4h2" />
     </>
   ),
+  shield: <path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6l-8-3Zm-3 9 2 2 4-4" />,
+  calendar: <path d="M4 6h16v14H4V6Zm0 4h16M8 3v4m8-4v4" />,
   userCog: (
     <>
       <circle cx="10" cy="8" r="4" />
@@ -74,7 +76,8 @@ function Icon({ name }: { name: string }) {
 }
 
 export function AppShell() {
-  const { user, logout, canManage, canOperate, isCustomer, membership, isAccountOwner, canSeeBilling } = useAuth();
+  const { user, logout, canManage, canOperate, isCustomer, membership, isAccountOwner, canSeeBilling, isOrgMember, orgMembership, isOrgAdmin, isOrgBroker, paidByOrganization } =
+    useAuth();
 
   // Para o cliente, a conta alimenta o aviso de fatura vencida no menu.
   const account = useQuery({
@@ -133,9 +136,12 @@ export function AppShell() {
   // O ☰ ganha um ponto quando algum item do menu tem aviso.
   const pending = (canSeeBilling ? overdue : 0) + (canOperate ? waiting : 0) + (canManage ? newLeads + billsDue : 0);
   // Conta empresa: quem é da equipe vê de quem é a conta, o papel e se está restrito a grupos.
+  // Da associação ou seguradora: o nome dela e o papel.
   const accountLabel = membership
     ? `Conta de ${membership.ownerName} · ${membership.role === 'manager' ? 'Gestor' : 'Visualizador'}${membership.restricted ? ' · alguns grupos' : ''}`
-    : null;
+    : orgMembership
+      ? `${orgMembership.name} · ${ORG_ROLES[orgMembership.role].label}`
+      : null;
 
   const navClass = ({ isActive }: { isActive: boolean }) =>
     `${styles.navLink} ${isActive ? styles.navActive : ''}`;
@@ -229,6 +235,13 @@ export function AppShell() {
                 <Icon name="wrench" />
                 Manutenção
               </NavLink>
+              {/* A gestão da frota: motoristas, custos, multas e locações (o associado não tem). */}
+              {!paidByOrganization && (
+                <NavLink to="/frota" className={navClass}>
+                  <Icon name="building" />
+                  Frota
+                </NavLink>
+              )}
               {/* Conta empresa: quem da empresa acessa a conta (só o titular). */}
               {isAccountOwner && (
                 <NavLink to="/equipe" className={navClass}>
@@ -241,6 +254,61 @@ export function AppShell() {
                 <Icon name="phone" />
                 App no celular
               </a>
+            </>
+          ) : isOrgMember ? (
+            <>
+              <NavLink to="/dashboard" className={navClass}>
+                <Icon name="map" />
+                Mapa
+              </NavLink>
+              <NavLink to="/associados" className={navClass}>
+                <Icon name="users" />
+                Associados
+              </NavLink>
+              <NavLink to="/organizacao/relatorios" className={navClass}>
+                <Icon name="chart" />
+                Relatórios
+              </NavLink>
+              {!isOrgBroker && (
+                <>
+                  <NavLink to="/organizacao/ocorrencias" className={navClass}>
+                    <Icon name="activity" />
+                    Ocorrências
+                  </NavLink>
+                  <NavLink to="/organizacao/vistorias" className={navClass}>
+                    <Icon name="car" />
+                    Vistorias
+                  </NavLink>
+                  <NavLink to="/organizacao/recuperacao" className={navClass}>
+                    <Icon name="shield" />
+                    Recuperação
+                  </NavLink>
+                  <NavLink to="/organizacao/comunicados" className={navClass}>
+                    <Icon name="chat" />
+                    Comunicados
+                  </NavLink>
+                  <NavLink to="/organizacao/instalacoes" className={navClass}>
+                    <Icon name="calendar" />
+                    Instalações
+                  </NavLink>
+                </>
+              )}
+              {isOrgAdmin && (
+                <>
+                  <NavLink to="/organizacao/integracoes" className={navClass}>
+                    <Icon name="chip" />
+                    Integrações
+                  </NavLink>
+                  <NavLink to="/organizacao/equipe" className={navClass}>
+                    <Icon name="userCog" />
+                    Equipe
+                  </NavLink>
+                  <NavLink to="/organizacao/faturas" className={navClass}>
+                    <Icon name="receipt" />
+                    Faturas
+                  </NavLink>
+                </>
+              )}
             </>
           ) : (
             <>
@@ -261,6 +329,10 @@ export function AppShell() {
                   <NavLink to="/pedidos" className={navClass}>
                     <Icon name="package" />
                     Pedidos
+                  </NavLink>
+                  <NavLink to="/agenda" className={navClass}>
+                    <Icon name="calendar" />
+                    Agenda
                   </NavLink>
                   {SUPPORT_SCREEN && (
                     <NavLink to="/atendimento" className={navClass}>
@@ -285,6 +357,10 @@ export function AppShell() {
                         {newLeads}
                       </span>
                     )}
+                  </NavLink>
+                  <NavLink to="/associacoes" className={navClass}>
+                    <Icon name="shield" />
+                    Associações
                   </NavLink>
                   <NavLink to="/empresa" className={navClass}>
                     <Icon name="building" />

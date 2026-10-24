@@ -148,7 +148,8 @@ func TestEquipmentInstallments(t *testing.T) {
 	}
 
 	// Cobrar: a mensalidade de dezembro (ainda não vencida) é cancelada e a
-	// parcela dela volta; as 9 que faltam vencem numa fatura só, em 3 dias.
+	// parcela dela volta; as 9 que faltam vão para a próxima fatura do mês da
+	// conta (a de 10/10 já foi paga: a de 10/11).
 	var canceled struct {
 		billing.Subscription
 		BalanceInvoice *billing.Invoice `json:"balanceInvoice"`
@@ -156,7 +157,7 @@ func TestEquipmentInstallments(t *testing.T) {
 	_ = json.Unmarshal(cancel(sub.ID.String(), map[string]string{"equipmentBalance": "CHARGE"}, http.StatusOK), &canceled)
 	balance := canceled.BalanceInvoice
 	if canceled.Status != billing.SubscriptionCanceled || balance == nil || balance.AmountCents != 13500 ||
-		balance.DueDate.Format(time.DateOnly) != "2026-10-10" || balance.SubscriptionID != nil ||
+		balance.DueDate.Format(time.DateOnly) != "2026-11-10" || balance.SubscriptionID != nil ||
 		balance.Description != "Saldo do rastreador: parcelas 2 a 10 de 10 (assinatura encerrada antes da última parcela)" {
 		t.Fatalf("encerrada com o saldo = %+v / %+v", canceled.Subscription, balance)
 	}
@@ -186,8 +187,10 @@ func TestEquipmentInstallments(t *testing.T) {
 	if _, body := adminOrder("PAR0Z00", 0, 3, http.StatusBadRequest); !strings.Contains(string(body), "não há valor de equipamento") {
 		t.Errorf("parcelar sem equipamento: %s", body)
 	}
+	// Na próxima fatura do mês da conta (a de outubro já foi paga): de
+	// novembro a janeiro.
 	r, _ = adminOrder("PAR2B22", 12000, 3, http.StatusCreated)
-	if r.SetupInvoice != nil || r.Subscription.CommitmentUntil.Format(time.DateOnly) != "2026-12-10" {
+	if r.SetupInvoice != nil || r.Subscription.CommitmentUntil.Format(time.DateOnly) != "2027-01-10" {
 		t.Fatalf("3x = %+v / %+v", r.SetupInvoice, r.Subscription)
 	}
 	if invoices := monthly(r.Subscription.ID.String()); len(invoices) != 1 || invoices[0].AmountCents != 6990+4000 {
@@ -202,12 +205,12 @@ func TestEquipmentInstallments(t *testing.T) {
 	}
 
 	// Tudo pago: encerra sem perguntar. 7x de R$ 120,00 (17,16 + 6 × 17,14)
-	// pela central, com a assinatura começando já em outubro.
+	// pela central, com a assinatura começando em novembro.
 	r, _ = adminOrder("PAR3C33", 12000, 7, http.StatusCreated)
 	if invoices := monthly(r.Subscription.ID.String()); len(invoices) != 1 || invoices[0].AmountCents != 6990+1716 {
 		t.Fatalf("7x: 1ª = %+v", invoices)
 	}
-	if _, err := billing.NewRepository(env.db).GenerateDue(ctx, billing.NewDate(2027, 4, 10)); err != nil {
+	if _, err := billing.NewRepository(env.db).GenerateDue(ctx, billing.NewDate(2027, 5, 10)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := env.db.Exec(ctx, `UPDATE invoices SET status = 'PAID', paid_at = NOW(), paid_via = 'MANUAL'

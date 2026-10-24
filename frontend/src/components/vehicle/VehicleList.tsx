@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/stores/AuthContext';
-import { formatDeviceStatus, formatRelative, formatSpeed } from '@/services/format';
+import { formatDeviceStatus, formatRelative, formatSpeed, formatVoltage, vehicleVoltage } from '@/services/format';
 import { matchesVehicle, searchPlaceholder, sortVehicles } from '@/services/vehicleFilters';
 import type { DeviceStatus, VehicleView } from '@/types';
 
@@ -112,6 +112,7 @@ const VehicleRow = memo(function VehicleRow({
   const position = vehicle.lastPosition;
   const status = vehicle.device?.status;
   const blocked = vehicle.state?.relayOn === true;
+  const voltage = vehicleVoltage(vehicle);
 
   return (
     <button
@@ -144,6 +145,11 @@ const VehicleRow = memo(function VehicleRow({
         </span>
         {position?.gsmLevel !== null && position?.gsmLevel !== undefined && (
           <span className={styles.metric}>4G {position.gsmLevel}/4</span>
+        )}
+        {voltage !== null && (
+          <span className={styles.metric} title="Voltagem do rastreador">
+            {formatVoltage(voltage)}
+          </span>
         )}
       </div>
 

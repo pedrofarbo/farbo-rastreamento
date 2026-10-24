@@ -194,15 +194,17 @@ func (a *Aggregator) Recompute(ctx context.Context, device uuid.UUID, day time.T
 	}
 	_, err = a.db.Exec(ctx, `
 		INSERT INTO vehicle_daily_stats (device_id, day, vehicle_id, distance_m, moving_s, idle_s, trips,
-			max_speed_kmh, overspeeds, first_move_at, last_move_at, points, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+			max_speed_kmh, overspeeds, first_move_at, last_move_at, points, night_m, harsh_brakes, harsh_accels,
+			high_speed_s, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
 		ON CONFLICT (device_id, day) DO UPDATE SET vehicle_id = COALESCE(EXCLUDED.vehicle_id, vehicle_daily_stats.vehicle_id),
 			distance_m = EXCLUDED.distance_m, moving_s = EXCLUDED.moving_s, idle_s = EXCLUDED.idle_s,
 			trips = EXCLUDED.trips, max_speed_kmh = EXCLUDED.max_speed_kmh, overspeeds = EXCLUDED.overspeeds,
 			first_move_at = EXCLUDED.first_move_at, last_move_at = EXCLUDED.last_move_at,
-			points = EXCLUDED.points, updated_at = NOW()`,
+			points = EXCLUDED.points, night_m = EXCLUDED.night_m, harsh_brakes = EXCLUDED.harsh_brakes,
+			harsh_accels = EXCLUDED.harsh_accels, high_speed_s = EXCLUDED.high_speed_s, updated_at = NOW()`,
 		device, start.Format(time.DateOnly), vehicle, s.DistanceM, s.MovingS, s.IdleS, s.Trips, s.MaxSpeed,
-		overspeeds, s.FirstMove, s.LastMove, s.Points)
+		overspeeds, s.FirstMove, s.LastMove, s.Points, s.NightM, s.HarshBrakes, s.HarshAccels, s.HighSpeedS)
 	return database.MapError(err)
 }
 

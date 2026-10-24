@@ -552,28 +552,38 @@ type person struct {
 	name  string
 	email string
 	owner bool
+	// org: da equipe da associação ou seguradora do dono (usa o painel, não
+	// o app).
+	org bool
 }
 
 func (s *Service) people(ctx context.Context, vehicleID uuid.UUID) ([]person, error) {
 	// O acesso de terceiro só vale enquanto quem deu for o dono do veículo.
 	// A equipe da conta do dono (conta empresa) também é avisada — quem está
 	// restrito a grupos, só se o veículo for de um deles; o Gestor, que pode
-	// desligar o modo, recebe o lembrete como o dono.
+	// desligar o modo, recebe o lembrete como o dono. No associado, a equipe
+	// da associação ou seguradora (o Administrador e o Operador) também.
 	rows, err := s.db.Query(ctx, `
-		SELECT u.id, u.name, u.email, TRUE FROM vehicles v JOIN users u ON u.id = v.owner_id
+		SELECT u.id, u.name, u.email, TRUE, FALSE FROM vehicles v JOIN users u ON u.id = v.owner_id
 		WHERE v.id = $1 AND u.active
 		UNION ALL
-		SELECT u.id, u.name, u.email, m.role = 'manager' FROM vehicles v
+		SELECT u.id, u.name, u.email, m.role = 'manager', FALSE FROM vehicles v
 		JOIN account_members m ON m.account_id = v.owner_id
 		JOIN users u ON u.id = m.user_id
 		WHERE v.id = $1 AND u.active
 		  AND (NOT m.restricted OR EXISTS (
 			SELECT 1 FROM account_member_groups g WHERE g.user_id = m.user_id AND g.group_id = v.group_id))
 		UNION ALL
-		SELECT u.id, u.name, u.email, FALSE FROM vehicle_shares sh
+		SELECT u.id, u.name, u.email, FALSE, FALSE FROM vehicle_shares sh
 		JOIN vehicles v ON v.id = sh.vehicle_id AND v.owner_id = sh.owner_id
 		JOIN users u ON u.id = sh.guest_id
-		WHERE sh.vehicle_id = $1 AND u.active`, vehicleID)
+		WHERE sh.vehicle_id = $1 AND u.active
+		UNION ALL
+		SELECT u.id, u.name, u.email, FALSE, TRUE FROM vehicles v
+		JOIN users a ON a.id = v.owner_id
+		JOIN organization_members om ON om.organization_id = a.organization_id AND om.role IN ('admin', 'operator')
+		JOIN users u ON u.id = om.user_id
+		WHERE v.id = $1 AND u.active`, vehicleID)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -581,7 +591,7 @@ func (s *Service) people(ctx context.Context, vehicleID uuid.UUID) ([]person, er
 	var out []person
 	for rows.Next() {
 		var p person
-		if err := rows.Scan(&p.id, &p.name, &p.email, &p.owner); err != nil {
+		if err := rows.Scan(&p.id, &p.name, &p.email, &p.owner, &p.org); err != nil {
 			return nil, database.MapError(err)
 		}
 		out = append(out, p)
@@ -614,8 +624,12 @@ func (s *Service) deliver(ctx context.Context, m *Mode, kind string, people []pe
 		if s.pusher == nil || (skipPush != nil && *skipPush == p.id) {
 			continue
 		}
+		url := "/app/veiculos/" + m.VehicleID.String()
+		if p.org {
+			url = "/veiculos/" + m.VehicleID.String()
+		}
 		if _, err := s.pusher.Notify(ctx, p.id, push.Notification{
-			Title: pushTitle, Body: pushBody, URL: "/app/veiculos/" + m.VehicleID.String(),
+			Title: pushTitle, Body: pushBody, URL: url,
 			Tag: "theft:" + m.VehicleID.String(), Severity: mail.SeverityCritical,
 			Urgency: webpush.UrgencyHigh, TTL: 6 * time.Hour,
 		}); err != nil {

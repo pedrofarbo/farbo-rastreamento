@@ -495,3 +495,30 @@ func TestTeamMailer(t *testing.T) {
 		t.Errorf("aviso ao Visualizador:\n%s", msg.Text)
 	}
 }
+
+// O comunicado da associação: o título, os parágrafos (escapados no HTML) e
+// de quem é.
+func TestOrgAnnouncement(t *testing.T) {
+	capture := &captureSender{}
+	mailer := NewOrgMailer(capture, "https://painel.farbo.test")
+	err := mailer.Announcement(context.Background(), "bia@associada.test", OrgAnnouncement{
+		OrgName: "Associação Motoclube", MemberName: "Bia Associada", Title: "Assembleia geral",
+		Body: "Dia 30, às 19h.\r\n\r\nTraga <documento>.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := capture.last
+	if msg.Subject != "Assembleia geral — Associação Motoclube" || msg.To != "bia@associada.test" {
+		t.Errorf("comunicado = %q para %q", msg.Subject, msg.To)
+	}
+	for _, want := range []string{"Olá, Bia!", "Comunicado da Associação Motoclube: Assembleia geral", "Dia 30, às 19h.",
+		"Traga <documento>.", "https://painel.farbo.test/app/"} {
+		if !strings.Contains(msg.Text, want) {
+			t.Errorf("texto sem %q:\n%s", want, msg.Text)
+		}
+	}
+	if !strings.Contains(msg.HTML, "Traga &lt;documento&gt;.") {
+		t.Errorf("o HTML escapa a mensagem:\n%s", msg.HTML)
+	}
+}

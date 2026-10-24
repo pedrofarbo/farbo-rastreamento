@@ -59,6 +59,7 @@ export const PAID_VIA_LABELS: Record<CustomerPaymentMethod, string> = {
   BOLETO: 'Boleto',
   CARD: 'Cartão',
   MANUAL: 'Baixa manual',
+  CREDIT: 'Crédito de indicação',
 };
 
 const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];

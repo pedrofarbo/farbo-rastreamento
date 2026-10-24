@@ -74,6 +74,9 @@ func firstDueDate(today Date, dueDay int) Date {
 	return candidate
 }
 
+// MonthName é o nome do mês por extenso ("outubro").
+func MonthName(m time.Month) string { return monthNames[m-1] }
+
 var monthNames = [...]string{
 	"janeiro", "fevereiro", "março", "abril", "maio", "junho",
 	"julho", "agosto", "setembro", "outubro", "novembro", "dezembro",

@@ -19,7 +19,7 @@ import (
 func deviceAudience(r *http.Request) devices.Audience {
 	principal, ok := auth.FromContext(r.Context())
 	switch {
-	case !ok || principal.IsCustomer():
+	case !ok || principal.IsCustomer() || principal.IsOrgMember():
 		return devices.AudienceCustomer
 	case principal.CanManage():
 		return devices.AudienceAdmin

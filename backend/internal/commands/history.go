@@ -31,6 +31,9 @@ type EngineEntry struct {
 	// RequesterAccount: a conta de cliente de quem pediu (a dele, ou a do
 	// titular, para quem é da equipe de uma conta).
 	RequesterAccount *uuid.UUID
+	// RequesterOrgName: a associação ou seguradora de quem pediu, se for da
+	// equipe de uma (vazio: não é, ou saiu dela).
+	RequesterOrgName string
 }
 
 // EngineHistory traz os últimos bloqueios e desbloqueios do rastreador
@@ -43,10 +46,12 @@ func (r *Repository) EngineHistory(ctx context.Context, deviceID uuid.UUID, limi
 		SELECT c.id, c.device_id, c.command, COALESCE(c.payload, ''), c.status, c.correlation_key,
 			c.requested_by, c.requested_at, c.user_agent, c.confirmed_with, c.sent_at, c.acknowledged_at, c.timeout_at,
 			COALESCE(c.response, ''), COALESCE(c.error, ''), c.created_at, COALESCE(u.name, ''), COALESCE(u.role, ''),
-			CASE WHEN u.role = 'customer' THEN COALESCE(m.account_id, u.id) END
+			CASE WHEN u.role = 'customer' THEN COALESCE(m.account_id, u.id) END, COALESCE(org.name, '')
 		FROM device_commands c
 		LEFT JOIN users u ON u.id = c.requested_by
 		LEFT JOIN account_members m ON m.user_id = u.id
+		LEFT JOIN organization_members om ON om.user_id = u.id
+		LEFT JOIN users org ON org.id = om.organization_id
 		WHERE c.device_id = $1 AND c.command IN ('ENGINE_CUT', 'ENGINE_RESUME')
 		ORDER BY c.requested_at DESC LIMIT $2`, deviceID, limit)
 	if err != nil {
@@ -60,7 +65,7 @@ func (r *Repository) EngineHistory(ctx context.Context, deviceID uuid.UUID, limi
 		e := &EngineEntry{Command: &c}
 		if err := rows.Scan(&c.ID, &c.DeviceID, &c.Command, &c.Payload, &c.Status, &correlation,
 			&c.RequestedBy, &c.RequestedAt, &c.UserAgent, &c.ConfirmedWith, &c.SentAt, &c.AcknowledgedAt, &c.TimeoutAt,
-			&c.Response, &c.Error, &c.CreatedAt, &e.RequesterName, &e.RequesterRole, &e.RequesterAccount); err != nil {
+			&c.Response, &c.Error, &c.CreatedAt, &e.RequesterName, &e.RequesterRole, &e.RequesterAccount, &e.RequesterOrgName); err != nil {
 			return nil, database.MapError(err)
 		}
 		c.CorrelationKey = uint32(correlation)

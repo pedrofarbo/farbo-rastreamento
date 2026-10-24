@@ -1,0 +1,72 @@
+/* O relatório de sinistro: o campo do momento e o gráfico da velocidade
+   (o resto vem do relatório de roubo). */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.chart {
+  margin: 0;
+}
+
+.chart svg {
+  display: block;
+  width: 100%;
+  height: 160px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+.grid {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.limit {
+  stroke: var(--warning);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.marker {
+  stroke: var(--danger);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+/* A posição mais perto do momento, destacada na tabela. */
+.moment td {
+  background: var(--danger-soft);
+  font-weight: 700;
+}
+
+@media print {
+  .chart svg {
+    background: #fff;
+    border-color: #ccc;
+  }
+
+  .line {
+    stroke: #000;
+  }
+
+  .moment td {
+    background: #eee;
+  }
+}

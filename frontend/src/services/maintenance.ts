@@ -10,9 +10,30 @@ export const MAINTENANCE_SUGGESTIONS = [
   'Freios',
   'Correia dentada',
   'Revisão',
-  'Licenciamento',
-  'Seguro',
 ];
+
+/** Os documentos mais comuns, com de quantos em quantos meses renovam. */
+export const DOCUMENT_PRESETS: { name: string; months: number }[] = [
+  { name: 'IPVA', months: 12 },
+  { name: 'Licenciamento (CRLV)', months: 12 },
+  { name: 'Seguro', months: 12 },
+  { name: 'CNH do motorista', months: 60 },
+  { name: 'Aferição do tacógrafo', months: 24 },
+  { name: 'Extintor', months: 12 },
+];
+
+/** "2026-11-05" → "05/11/2026". */
+export function brDate(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return d && m && y ? `${d}/${m}/${y}` : iso;
+}
+
+/** De quanto em quanto tempo o documento renova: "todo ano", "a cada 5 anos", "a cada 6 meses". */
+export function renewLabel(months: number): string {
+  if (months === 12) return 'Renova todo ano';
+  if (months % 12 === 0) return `Renova a cada ${months / 12} anos`;
+  return months === 1 ? 'Renova todo mês' : `Renova a cada ${months} meses`;
+}
 
 export const STATUS_LABEL: Record<MaintenanceStatus, string> = {
   due: 'Vencida',
@@ -32,7 +53,10 @@ export function formatHours(hours: number): string {
 }
 
 /** "A cada 10.000 km ou 6 meses", "A cada 10.000 km, 250 h de motor ou 6 meses". */
-export function intervalLabel(item: Pick<MaintenanceItem, 'everyKm' | 'everyMonths' | 'everyHours'>): string {
+export function intervalLabel(
+  item: Pick<MaintenanceItem, 'everyKm' | 'everyMonths' | 'everyHours'> & Partial<Pick<MaintenanceItem, 'kind'>>,
+): string {
+  if (item.kind === 'document' && item.everyMonths) return renewLabel(item.everyMonths);
   const parts: string[] = [];
   if (item.everyKm) parts.push(formatKm(item.everyKm));
   if (item.everyHours) parts.push(`${formatHours(item.everyHours)} de motor`);
@@ -42,7 +66,14 @@ export function intervalLabel(item: Pick<MaintenanceItem, 'everyKm' | 'everyMont
 }
 
 /** Quanto falta (ou passou): "faltam 900 km · faltam 8 dias", "passou 320 km", "faltam 40 h de motor". */
-export function remainingLabel(item: Pick<MaintenanceItem, 'remainingKm' | 'remainingHours' | 'remainingDays' | 'status'>): string {
+export function remainingLabel(
+  item: Pick<MaintenanceItem, 'remainingKm' | 'remainingHours' | 'remainingDays' | 'status'> &
+    Partial<Pick<MaintenanceItem, 'kind' | 'nextDate'>>,
+): string {
+  if (item.kind === 'document' && item.nextDate && item.remainingDays !== null && item.remainingDays > 0) {
+    const d = item.remainingDays;
+    return `vence em ${brDate(item.nextDate)} (faltam ${d} ${d === 1 ? 'dia' : 'dias'})`;
+  }
   const parts: string[] = [];
   if (item.remainingKm !== null) {
     const km = Math.round(item.remainingKm);

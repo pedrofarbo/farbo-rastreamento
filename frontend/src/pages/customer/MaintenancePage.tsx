@@ -84,9 +84,9 @@ export function MaintenancePage({ backTo }: { backTo?: string } = {}) {
               <h1 className={pageStyles.title}>Manutenção</h1>
             </div>
             <p className={pageStyles.description}>
-              O que vence em cada veículo, por km, horas de motor ou data. Os km vêm do hodômetro informado mais o que o
-              GPS mediu depois, e as horas, do tempo com a ignição ligada; quem cuida da conta recebe um e-mail quando
-              algo fica perto ou vence.
+              O que vence em cada veículo, por km, horas de motor ou data, e os documentos (IPVA, licenciamento, seguro,
+              CNH). Os km vêm do hodômetro informado mais o que o GPS mediu depois, e as horas, do tempo com a ignição
+              ligada; quem cuida da conta recebe um e-mail quando algo fica perto ou vence.
             </p>
           </div>
           {canOperateAccount && (
@@ -121,7 +121,7 @@ export function MaintenancePage({ backTo }: { backTo?: string } = {}) {
               title="Nenhuma manutenção ainda"
               description={
                 canOperateAccount
-                  ? 'Cadastre a troca de óleo, os pneus ou a revisão: dá para criar em toda a frota de uma vez.'
+                  ? 'Cadastre a troca de óleo, os pneus, a revisão ou o vencimento do IPVA e do licenciamento: dá para criar em toda a frota de uma vez.'
                   : 'Quem cuida da conta ainda não cadastrou manutenções.'
               }
             />
@@ -204,7 +204,7 @@ export function MaintenancePage({ backTo }: { backTo?: string } = {}) {
                     {canOperateAccount && (
                       <div className={styles.actions}>
                         <Button size="small" variant="secondary" onClick={() => setDoing([it])}>
-                          Registrar feita
+                          {it.kind === 'document' ? 'Registrar renovação' : 'Registrar feita'}
                         </Button>
                         <Button size="small" variant="ghost" onClick={() => setForm({ item: it })}>
                           Editar

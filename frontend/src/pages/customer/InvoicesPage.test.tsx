@@ -91,26 +91,23 @@ describe('faturas do cliente', () => {
     ];
     await render();
     expect(text()).toContain('Fatura de 13/11/2026');
-    expect(text()).toContain('2 faturas no mesmo vencimento');
+    expect(text()).toContain('A fatura do mês: todos os veículos e o que foi contratado, num pagamento só.');
     expect(text()).toContain('2 faturas vencidas · R$ 99,80.');
     await act(async () => button('Pagar R$ 99,80').click());
     await flush();
     expect(calls).toEqual([['várias', ['van', 'carro']]]);
-    expect(text()).toContain('2 faturas · vencimento 13/11/2026');
     // O boleto do mesmo grupo, um só para as duas.
     await act(async () => (document.querySelector('[role="radio"][aria-checked="false"]') as HTMLButtonElement).click());
     await flush();
     expect(calls).toEqual([['várias', ['van', 'carro']], ['boleto de várias', ['van', 'carro']]]);
   });
 
-  it('com uma fatura por vencimento, nada muda: o Pix de cada uma', async () => {
+  it('com uma linha só no vencimento, ela é a fatura do mês: o Pix dela', async () => {
     invoices = [inv('van', '2026-11-13', 4990), inv('frete', '2026-11-20', 2240)];
     await render();
-    expect(text()).not.toContain('Fatura de ');
-    const buttons = Array.from(document.querySelectorAll('button')).filter((b) => b.textContent === 'Pagar');
-    expect(buttons).toHaveLength(2);
-    const van = buttons.find((b) => b.closest('tr')?.textContent?.includes('van'));
-    await act(async () => van?.click());
+    expect(text()).toContain('Fatura de 13/11/2026');
+    expect(text()).toContain('Fatura de 20/11/2026');
+    await act(async () => button('Pagar R$ 49,90').click());
     await flush();
     expect(calls).toEqual([['uma', 'van']]);
   });
@@ -122,16 +119,16 @@ describe('faturas do cliente', () => {
     olderPages = [fleet('2026-09-13', 1000, { status: 'PAID' })];
     await render();
     // O cartão do mês: 5 linhas, o resto sob demanda.
-    expect(text()).toContain('1000 faturas no mesmo vencimento');
+    expect(text()).toContain('A fatura do mês: todos os veículos');
     expect(text()).toContain('2026-11-13 Van 0005');
     expect(text()).not.toContain('2026-11-13 Van 0006');
     expect(text()).toContain('e mais 995 faturas · ver todas as 1000');
     // O histórico: uma linha por vencimento, em vez de 2000.
     expect(document.querySelectorAll('tbody tr')).toHaveLength(2);
-    expect(text()).toContain('1000 em aberto');
-    expect(text()).toContain('Pagas');
+    expect(text()).toContain('Em aberto');
+    expect(text()).toContain('Paga');
     // Abrir outubro mostra 50 e "mostrar mais".
-    await act(async () => Array.from(document.querySelectorAll('button')).filter((b) => b.textContent === 'Ver as 1000')[1].click());
+    await act(async () => Array.from(document.querySelectorAll('button')).filter((b) => b.textContent === 'Ver as 1000 linhas')[1].click());
     expect(document.querySelectorAll('tbody tr')).toHaveLength(2 + 50 + 1);
     expect(text()).toContain('Mostrar mais 50 (faltam 950)');
     // As mais antigas: setembro, antes de outubro.

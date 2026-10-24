@@ -224,18 +224,22 @@ export function VehicleMaintenance({
                     <strong>{item.name}</strong>
                     <Badge tone={STATUS_TONE[item.status]}>{STATUS_LABEL[item.status]}</Badge>
                   </div>
-                  <span className={styles.muted}>
-                    {intervalLabel(item)} · última em {formatDateOnly(item.lastDate)}
-                    {item.lastKm !== null && ` com ${formatKm(item.lastKm)}`}
-                    {item.everyHours !== null && item.lastHours !== null && `${item.lastKm !== null ? ' e' : ' com'} ${formatHours(item.lastHours)}`}
-                  </span>
+                  {item.kind === 'document' ? (
+                    <span className={styles.muted}>Documento · {intervalLabel(item).toLowerCase()}</span>
+                  ) : (
+                    <span className={styles.muted}>
+                      {intervalLabel(item)} · última em {formatDateOnly(item.lastDate)}
+                      {item.lastKm !== null && ` com ${formatKm(item.lastKm)}`}
+                      {item.everyHours !== null && item.lastHours !== null && `${item.lastKm !== null ? ' e' : ' com'} ${formatHours(item.lastHours)}`}
+                    </span>
+                  )}
                   <span className={item.status === 'due' ? styles.due : item.status === 'soon' ? styles.soon : styles.muted}>
                     {remainingLabel(item)}
                   </span>
                   {canEdit && (
                     <div className={styles.rowActions}>
                       <Button size="small" variant="secondary" onClick={() => setDoing([item])}>
-                        Registrar feita
+                        {item.kind === 'document' ? 'Registrar renovação' : 'Registrar feita'}
                       </Button>
                       <Button size="small" variant="ghost" onClick={() => setForm({ item })}>
                         Editar

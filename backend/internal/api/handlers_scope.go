@@ -20,9 +20,18 @@ const codeRestrictedAccess = "RESTRICTED_ACCESS"
 
 // seesVehicle diz se a requisição enxerga o veículo como da conta: a central
 // vê todos; o cliente, os da conta; quem da equipe está restrito, só os dos
-// grupos dele.
+// grupos dele; a organização, os dos associados.
 func seesVehicle(r *http.Request, v *vehicles.Vehicle) bool {
 	principal, ok := auth.FromContext(r.Context())
+	// Quem é de uma associação ou seguradora: só os veículos dos associados.
+	if ok && principal.IsOrgMember() {
+		org := principal.Organization()
+		if org == uuid.Nil || v.OrganizationID == nil || *v.OrganizationID != org {
+			return false
+		}
+		// O corretor: só os veículos dos associados dele.
+		return !principal.IsOrgBroker() || (v.BrokerID != nil && *v.BrokerID == principal.UserID)
+	}
 	if !ok || !principal.IsCustomer() {
 		return true
 	}

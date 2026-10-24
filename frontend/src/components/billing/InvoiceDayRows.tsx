@@ -11,9 +11,10 @@ import styles from './Billing.module.css';
 import { LINES_PAGE } from './InvoiceLines';
 
 /**
- * Um vencimento de frota numa tabela de faturas: uma linha com quantas são,
- * o total e a situação (e as ações do dia); as faturas abrem sob demanda, de
- * 50 em 50, cada uma com a linha de sempre (`renderInvoice`).
+ * A fatura do mês numa tabela de faturas: uma linha com o total e a
+ * situação (e as ações); as linhas dela (cada veículo, o equipamento, o
+ * proporcional...) abrem sob demanda, de 50 em 50, cada uma com a linha de
+ * sempre (`renderInvoice`).
  */
 export function InvoiceDayRows({
   day,
@@ -35,7 +36,7 @@ export function InvoiceDayRows({
     <>
       <tr className={styles.dayRow}>
         <td>
-          <strong>{day.invoices.length} faturas</strong>{' '}
+          <strong>Fatura de {formatDateOnly(day.dueDate)}</strong>{' '}
           <button
             type="button"
             className={styles.dayToggle}
@@ -45,7 +46,7 @@ export function InvoiceDayRows({
               setLimit(LINES_PAGE);
             }}
           >
-            {open ? 'Recolher' : `Ver as ${day.invoices.length}`}
+            {open ? 'Recolher' : `Ver as ${day.invoices.length} linhas`}
           </button>
         </td>
         <td data-label="Vencimento">{formatDateOnly(day.dueDate)}</td>

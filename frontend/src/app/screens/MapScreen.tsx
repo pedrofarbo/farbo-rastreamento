@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { useFleet } from '@/hooks/useFleet';
 import { useVehicles } from '@/hooks/useVehicles';
+import { useAuth } from '@/stores/AuthContext';
 import { NO_GROUP, inGroup, matchesVehicle } from '@/services/vehicleFilters';
 import { formatDeviceStatus, formatRelative, formatSpeed } from '@/services/format';
 import type { VehicleView } from '@/types';
@@ -45,6 +46,8 @@ function sortVehicles(list: VehicleView[]): VehicleView[] {
 /** Tela inicial: o mapa na tela toda e a lista de veículos deslizando por cima. */
 export function MapScreen() {
   const navigate = useNavigate();
+  // O associado de uma associação: quem inclui veículo é ela.
+  const { paidByOrganization } = useAuth();
   const vehicles = useVehicles();
   const fences = useQuery({ queryKey: fencesKey, queryFn: geofencesApi.list });
   const [selected, setSelected] = useState<string | null>(null);
@@ -104,10 +107,16 @@ export function MapScreen() {
       >
         {list.length === 0 && (
           <div className={styles.section}>
-            <p className={styles.muted}>Você ainda não tem veículos com rastreador.</p>
-            <Button variant="primary" onClick={() => navigate('/meus-veiculos')}>
-              Novo veículo
-            </Button>
+            {paidByOrganization ? (
+              <p className={styles.muted}>Seus veículos aparecem aqui quando o rastreador for instalado.</p>
+            ) : (
+              <>
+                <p className={styles.muted}>Você ainda não tem veículos com rastreador.</p>
+                <Button variant="primary" onClick={() => navigate('/meus-veiculos')}>
+                  Novo veículo
+                </Button>
+              </>
+            )}
           </div>
         )}
         {groups.length > 0 && (

@@ -9,12 +9,11 @@ import { DeliveryBox } from '@/components/address/DeliveryBox';
 import billing from '@/components/billing/Billing.module.css';
 import { MonthlyPrice, isFree } from '@/components/billing/MonthlyPrice';
 import { installmentProgress } from '@/components/billing/installments';
-import { meGroupPixApi } from '@/components/billing/groupPix';
 import { NewVehicleWizard } from '@/components/billing/NewVehicleWizard';
-import { PixPaymentModal } from '@/components/billing/PixPaymentModal';
 import { SuspendedNotice, isSuspendedError } from '@/components/billing/SuspendedNotice';
 import { FulfillmentTimeline } from '@/components/fulfillment/FulfillmentTimeline';
 import fstyles from '@/components/fulfillment/Fulfillment.module.css';
+import { UpcomingInstallations } from '@/components/install/UpcomingInstallations';
 import { InstallersModal } from '@/components/landing/InstallersModal';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -25,9 +24,8 @@ import fieldStyles from '@/components/ui/Field.module.css';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { formatDateTime, formatDeviceStatus, formatRelative } from '@/services/format';
+import { formatDateOnly, formatDateTime, formatDeviceStatus, formatRelative } from '@/services/format';
 import { stepOf, trackerTone } from '@/services/fulfillment';
-import { orderPayment } from '@/services/invoiceGroups';
 import { subscriptionsByVehicle, subscriptionsWithoutVehicle } from '@/services/subscriptions';
 import { NO_GROUP, inGroup, matchesVehicle, situationOf } from '@/services/vehicleFilters';
 import { FleetSettingsModal } from '@/components/vehicle/FleetSettingsModal';
@@ -36,7 +34,7 @@ import type { Situation } from '@/services/vehicleFilters';
 import { useAuth } from '@/stores/AuthContext';
 import { SharesModal, sharesKey } from '@/components/vehicle/SharesModal';
 import { EMPTY_VEHICLE, VehicleFields } from '@/components/vehicle/VehicleFields';
-import type { ChargeMethod, CustomerAccount, CustomerFulfillment, Invoice, Subscription, VehicleView } from '@/types';
+import type { CustomerAccount, CustomerFulfillment, Subscription, VehicleView } from '@/types';
 
 import styles from '../Page.module.css';
 
@@ -62,10 +60,6 @@ export function MyVehiclesPage() {
 
   const [form, setForm] = useState<VehicleForm | null>(null);
   const [ordering, setOrdering] = useState(false);
-  // Uma fatura ou o grupo do pedido (o equipamento e a 1ª mensalidade).
-  const [paying, setPaying] = useState<(Pick<Invoice, 'id' | 'description'> & { amountCents?: number }) | null>(null);
-  // A forma que o cliente escolheu ao contratar (a janela abre nela).
-  const [payingWith, setPayingWith] = useState<ChargeMethod | undefined>(undefined);
   const [showInstallers, setShowInstallers] = useState(false);
   const [editingAddress, setEditingAddress] = useState(false);
   const [following, setFollowing] = useState<CustomerFulfillment | null>(null);
@@ -75,7 +69,9 @@ export function MyVehiclesPage() {
   const [leaving, setLeaving] = useState<string | null>(null);
   // Conta empresa: novo veículo, endereço e acessos são do titular; editar o
   // veículo, também do Gestor; o Visualizador só acompanha.
-  const { isAccountOwner, canOperateAccount, seesWholeAccount, canSeeBilling } = useAuth();
+  const { isAccountOwner, canOperateAccount, seesWholeAccount, canSeeBilling, paidByOrganization } = useAuth();
+  // O associado de uma associação ou seguradora: quem inclui veículo é ela.
+  const canOrder = isAccountOwner && !paidByOrganization;
   // Numa frota: a busca, o filtro por situação e quantos cartões aparecem.
   const [search, setSearch] = useState('');
   const [situation, setSituation] = useState<Situation | ''>('');
@@ -158,8 +154,9 @@ export function MyVehiclesPage() {
           <div>
             <h1 className={styles.title}>Meus veículos</h1>
             <p className={styles.description}>
-              Cada veículo tem o seu rastreador e a sua assinatura. Para incluir outro, use Novo
-              veículo: você informa o veículo, recebe o rastreador e a assinatura começa.
+              {paidByOrganization
+                ? 'Os veículos da sua conta, com a situação do rastreador de cada um.'
+                : 'Cada veículo tem o seu rastreador e a sua assinatura. Para incluir outro, use Novo veículo: você informa o veículo, recebe o rastreador e a assinatura começa.'}
             </p>
           </div>
           {(isAccountOwner || canOperateAccount) && (
@@ -169,7 +166,7 @@ export function MyVehiclesPage() {
                   Grupos e campos
                 </Button>
               )}
-              {isAccountOwner && (
+              {canOrder && (
                 <Button variant="primary" onClick={() => setOrdering(true)}>
                   Novo veículo
                 </Button>
@@ -177,6 +174,8 @@ export function MyVehiclesPage() {
             </div>
           )}
         </header>
+
+        <UpcomingInstallations />
 
         {onlyShared && (
           <p className={billing.muted}>
@@ -186,7 +185,7 @@ export function MyVehiclesPage() {
 
         {account.data &&
           !onlyShared &&
-          isAccountOwner &&
+          canOrder &&
           (address ? (
             <DeliveryBox address={address} label="Endereço de entrega" onChange={() => setEditingAddress(true)} />
           ) : (
@@ -213,7 +212,7 @@ export function MyVehiclesPage() {
               title="Nenhum veículo ainda"
               description="Em Novo veículo você informa o veículo, recebe o rastreador e a assinatura começa."
               action={
-                isAccountOwner ? (
+                canOrder ? (
                   <Button variant="primary" onClick={() => setOrdering(true)}>
                     Novo veículo
                   </Button>
@@ -438,21 +437,15 @@ export function MyVehiclesPage() {
         open={ordering}
         fleet={fleet}
         onClose={() => setOrdering(false)}
-        onDone={(result, payment) => {
+        onDone={(result) => {
           setOrdering(false);
           refresh();
+          // Nada a pagar agora: tudo entra na próxima fatura do mês.
           notify({
             tone: 'success',
             title: 'Pedido feito',
-            description: `${result.vehicle.name} foi cadastrado; o rastreador segue para instalação.`,
+            description: `${result.vehicle.name} foi cadastrado; o rastreador segue para instalação. A cobrança entra na sua fatura de ${formatDateOnly(result.chargeDate)}.`,
           });
-          // Com o pagamento online, já abre o do pedido: o equipamento (com o
-          // frete) e a 1ª mensalidade, num pagamento só.
-          const due = orderPayment([result.setupInvoice, result.firstInvoice]);
-          if (due && account.data?.onlinePayment) {
-            setPayingWith(payment);
-            setPaying(due);
-          }
         }}
       />
 
@@ -506,19 +499,6 @@ export function MyVehiclesPage() {
           notify({ tone: 'success', title: 'Endereço de entrega salvo' });
         }}
       />
-
-      <PixPaymentModal
-        invoice={paying}
-        api={meGroupPixApi}
-        audience="customer"
-        initialMethod={payingWith}
-        autoDebit={payingWith === 'CARD'}
-        onClose={() => {
-          setPaying(null);
-          setPayingWith(undefined);
-        }}
-        onPaid={refresh}
-      />
     </div>
   );
 }
@@ -552,6 +532,7 @@ function VehicleCard({
   groupName?: string;
   customs?: string[];
 }) {
+  const { paidByOrganization } = useAuth();
   const status = vehicle.device?.status;
   // Instalado = o rastreador já deu sinal. O aparelho é vinculado antes, na
   // configuração, então ter aparelho não basta.
@@ -622,29 +603,32 @@ function VehicleCard({
         )}
       </div>
 
-      <div>
-        <div className={billing.deliveryLabel}>Assinatura</div>
-        {subscription?.status === 'ACTIVE' ? (
-          <>
-            <div className={billing.subscriptionLine}>
-              {isFree(subscription) ? (
-                <>{subscription.planName} · sem cobrança</>
-              ) : (
-                <>
-                  {subscription.planName} · <MonthlyPrice sub={subscription} /> · vence dia {subscription.dueDay}
-                </>
+      {/* O associado não tem assinatura: quem paga é a organização. */}
+      {!paidByOrganization && (
+        <div>
+          <div className={billing.deliveryLabel}>Assinatura</div>
+          {subscription?.status === 'ACTIVE' ? (
+            <>
+              <div className={billing.subscriptionLine}>
+                {isFree(subscription) ? (
+                  <>{subscription.planName} · sem cobrança</>
+                ) : (
+                  <>
+                    {subscription.planName} · <MonthlyPrice sub={subscription} /> · vence dia {subscription.dueDay}
+                  </>
+                )}
+              </div>
+              {installmentProgress(subscription) && (
+                <div className={billing.vehicleMeta}>{installmentProgress(subscription)}</div>
               )}
-            </div>
-            {installmentProgress(subscription) && (
-              <div className={billing.vehicleMeta}>{installmentProgress(subscription)}</div>
-            )}
-          </>
-        ) : subscription ? (
-          <Badge tone="neutral">Assinatura encerrada</Badge>
-        ) : (
-          <span className={billing.muted}>Sem assinatura — fale com a gente.</span>
-        )}
-      </div>
+            </>
+          ) : subscription ? (
+            <Badge tone="neutral">Assinatura encerrada</Badge>
+          ) : (
+            <span className={billing.muted}>Sem assinatura — fale com a gente.</span>
+          )}
+        </div>
+      )}
 
       <div className={billing.vehicleActions}>
         {installed && (

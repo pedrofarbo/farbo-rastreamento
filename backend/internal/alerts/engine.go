@@ -56,6 +56,10 @@ const (
 
 	// movingSpeedKmh separa veículo andando de ruído de GPS parado.
 	movingSpeedKmh = 5
+	// impactSpeedKmh: a vibração acima disso é impacto com o veículo andando;
+	// abaixo, só se ele andava até impactWindow atrás.
+	impactSpeedKmh = 15
+	impactWindow   = time.Minute
 	// towingSpeedKmh: acima disso, com a ignição desligada, um único ponto
 	// fora do raio já basta (é deslocamento, não ruído).
 	towingSpeedKmh = 10
@@ -125,6 +129,7 @@ type candidate struct {
 	lat, lon *float64
 	speed    *float64
 	limit    *float64
+	voltage  *float64
 	distance float64
 	offline  time.Duration
 
@@ -257,6 +262,7 @@ func (e *Engine) SetConnectedCount(fn func() int) { e.connected = fn }
 func (e *Engine) OnEvent(ev *events.Event) {
 	switch ev.Type {
 	case events.SOS, events.PowerLoss, events.LowBattery, events.Overspeed, events.IgnitionOn,
+		events.VehicleBatteryLow, events.Vibration,
 		events.EngineCutAck, events.EngineResumeAck, events.DeviceAlarm,
 		events.DeviceDisconnected, events.DeviceConnected,
 		events.GeofenceEnter, events.GeofenceExit:
@@ -397,6 +403,20 @@ func (e *Engine) handleEvent(ctx context.Context, ev *events.Event) {
 		c.kind = KindPowerCut
 	case events.LowBattery:
 		c.kind = KindLowBattery
+	case events.VehicleBatteryLow:
+		c.kind = KindCarBattery
+		if volts, ok := number(ev.Metadata["voltage"]); ok {
+			c.voltage = &volts
+		}
+	case events.Vibration:
+		// Parado, a vibração é o alarme do carro estacionado (o reboque e o
+		// corte de energia já cobrem); andando — ou andando até agora há
+		// pouco, porque depois da batida o veículo para —, possível colisão.
+		moving := ev.SpeedKmh != nil && *ev.SpeedKmh >= impactSpeedKmh
+		if !moving && !e.movedWithin(ev.DeviceID, impactWindow) {
+			return
+		}
+		c.kind = KindImpact
 	case events.Overspeed:
 		c.kind = KindOverspeed
 		if limit, ok := number(ev.Metadata["limitKmh"]); ok {
@@ -550,6 +570,14 @@ func (e *Engine) wasMoving(deviceID uuid.UUID) bool {
 	defer e.mu.Unlock()
 	last, ok := e.moving[deviceID]
 	return ok && e.now().Sub(last) < movingWindow
+}
+
+// movedWithin diz se o veículo andava (acima de movingSpeedKmh) até d atrás.
+func (e *Engine) movedWithin(deviceID uuid.UUID, d time.Duration) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	last, ok := e.moving[deviceID]
+	return ok && e.now().Sub(last) < d
 }
 
 // sweepOffline avisa dos rastreadores parados que continuam sem sinal.

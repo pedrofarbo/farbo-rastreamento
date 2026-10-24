@@ -25,7 +25,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { EMPTY_VEHICLE, VehicleFields } from '@/components/vehicle/VehicleFields';
 import { centsToInput, formatDateOnly, formatMoney, parseMoney, todayISO } from '@/services/format';
 import { errorCode } from '@/services/stepUp';
-import type { AccountPlan, Catalog, ChargeMethod, CustomerAccount, DeliveryAddress, Device, Subscription, TrackerOrderResult, FleetSettings } from '@/types';
+import type { AccountPlan, Catalog, CustomerAccount, DeliveryAddress, Device, EquipmentTerms, Subscription, TrackerOrderResult, FleetSettings } from '@/types';
 
 import pageStyles from '@/pages/Page.module.css';
 import styles from './Billing.module.css';
@@ -48,16 +48,29 @@ export interface WizardAdmin {
 interface AdminDraft {
   deviceId: string;
   equipment: string;
-  dueDate: string;
   plan: SubscriptionDraft;
   /** Aplicar a promoção de pré-lançamento (o cliente tem direito). */
   promo: boolean;
 }
 
-/** O prazo da cobrança do pedido: "vence hoje", "vence amanhã", "vence em 3 dias". */
-function dueIn(days: number): string {
-  if (days <= 0) return 'vence hoje';
-  return days === 1 ? 'vence amanhã' : `vence em ${days} dias`;
+/**
+ * A fatura em que um veículo contratado hoje entra: o próximo dia da conta
+ * depois de hoje (o servidor ainda pula a fatura do mês já paga).
+ */
+export function nextChargeDate(dueDay: number, today: string): string {
+  const [y, m, d] = today.split('-').map(Number);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const month = d < dueDay ? m : m + 1;
+  const date = new Date(y, month - 1, dueDay);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** Os dias de hoje até o vencimento e o proporcional da mensalidade (mês de 30 dias). */
+export function prorataUntil(monthlyCents: number, today: string, due: string): { days: number; cents: number } {
+  const [y1, m1, d1] = today.split('-').map(Number);
+  const [y2, m2, d2] = due.split('-').map(Number);
+  const days = Math.max(0, Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86_400_000));
+  return { days, cents: monthlyCents > 0 ? Math.round((monthlyCents * days) / 30) : 0 };
 }
 
 export function addDays(iso: string, days: number): string {
@@ -109,8 +122,7 @@ function adminDraftFrom(
   const plan = suggestedPlan(c, subscription, account, accountDueDay);
   return {
     deviceId: '',
-    equipment: centsToInput(c.equipmentPriceCents),
-    dueDate: addDays(todayISO(), c.setupDueDays),
+    equipment: account?.equipmentMode === 'loan' ? '0,00' : centsToInput(c.equipmentPriceCents),
     plan,
     promo: false,
   };
@@ -147,8 +159,8 @@ export function NewVehicleWizard({
   /** A organização da frota do cliente: o grupo e os campos personalizados já no cadastro. */
   fleet?: FleetSettings;
   onClose: () => void;
-  /** O pedido feito e, para o cliente, a forma que ele escolheu para pagar agora. */
-  onDone: (result: TrackerOrderResult, payment?: ChargeMethod) => void;
+  /** O pedido feito (nada é cobrado na hora: entra na próxima fatura do mês). */
+  onDone: (result: TrackerOrderResult) => void;
 }) {
   const queryClient = useQueryClient();
   const isAdmin = Boolean(admin);
@@ -170,8 +182,6 @@ export function NewVehicleWizard({
   // cliente sobre manter a assinatura até a última parcela.
   const [installments, setInstallments] = useState(1);
   const [committed, setCommitted] = useState(false);
-  // Como o cliente paga o pedido (a janela de pagamento abre nela).
-  const [payment, setPayment] = useState<ChargeMethod>('PIX');
 
   const catalog = useQuery({ queryKey: ['catalog'], queryFn: catalogApi.get, enabled: open });
   // Para a central: se o cliente pode contratar com a promoção de pré-lançamento.
@@ -181,8 +191,6 @@ export function NewVehicleWizard({
     enabled: open && isAdmin,
   });
   const account = useQuery({ queryKey: ['me', 'account'], queryFn: meApi.account, enabled: open && !isAdmin });
-  // O cartão de crédito aparece na escolha quando está ligado.
-  const card = useQuery({ queryKey: ['me', 'card'], queryFn: meApi.card, enabled: open && !isAdmin });
   // A central libera a promoção para quem não está na lista; ela já vem marcada.
   const grantPromo = useMutation({
     mutationFn: () => customersApi.grantLaunchPromo(admin!.customerId),
@@ -207,7 +215,6 @@ export function NewVehicleWizard({
     setShippingId(null);
     setInstallments(1);
     setCommitted(false);
-    setPayment('PIX');
   }, [open]);
 
   // Os valores da central partem do catálogo, uma vez por abertura: uma nova
@@ -263,15 +270,14 @@ export function NewVehicleWizard({
       if (typeof plan === 'string') throw new Error(plan);
       return customersApi.orderTracker(admin.customerId, {
         vehicle: { ...vehicle, deviceId: d.deviceId || null },
-        equipmentCents: optionalMoney(d.equipment) ?? 0,
-        setupDueDate: d.dueDate || null,
+        equipmentCents: loan ? 0 : (optionalMoney(d.equipment) ?? 0),
         plan,
         launchPromo: d.promo,
         shippingServiceId: freight?.serviceId ?? 0,
         ...(parcels ? { installments: parcels.length } : {}),
       });
     },
-    onSuccess: (result) => onDone(result, isAdmin ? undefined : payment),
+    onSuccess: (result) => onDone(result),
     onError: (err: Error) => {
       // Quem só acompanhava o veículo de outra pessoa aceita o contrato ao
       // pedir o primeiro rastreador: o contrato abre e o pedido segue depois.
@@ -301,6 +307,14 @@ export function NewVehicleWizard({
   });
 
   const loading = !c || (!isAdmin && account.isLoading) || (isAdmin && !adminDraft);
+  // O rastreador do cliente: vendido, ou em comodato (do plano dele).
+  const terms: EquipmentTerms | null = isAdmin
+    ? (admin?.accountPlan ?? null)
+    : c
+      ? { equipmentMode: c.equipmentMode ?? 'sale', installFeeCents: c.installFeeCents ?? 0, uninstallFeeCents: c.uninstallFeeCents ?? 0 }
+      : null;
+  const loan = terms?.equipmentMode === 'loan';
+  const installFee = loan ? (terms?.installFeeCents ?? 0) : 0;
   // A promoção do cliente vem do catálogo; a da central, da opção marcada.
   const customerPromo = !isAdmin ? (c?.launchPromo ?? null) : null;
   const adminPromo = isAdmin && adminDraft?.promo && promoStatus.data?.eligible ? promoStatus.data.offer : null;
@@ -309,11 +323,13 @@ export function NewVehicleWizard({
   const promoMonthly = adminPromo && adminDraft ? promoMonthlyFor(adminPromo, adminDraft.plan.planName) : promo?.monthlyCents;
   // O cliente sem endereço salvo cai direto no formulário.
   const editingAddress = !isAdmin && (addressDraft !== null || !address);
-  const equipmentCents = isAdmin
-    ? adminDraft
-      ? optionalMoney(adminDraft.equipment)
-      : null
-    : (customerPromo?.equipmentCents ?? c?.equipmentPriceCents ?? 0);
+  const equipmentCents = loan
+    ? 0
+    : isAdmin
+      ? adminDraft
+        ? optionalMoney(adminDraft.equipment)
+        : null
+      : (customerPromo?.equipmentCents ?? c?.equipmentPriceCents ?? 0);
   const monthly = isAdmin
     ? adminDraft
       ? { name: adminDraft.plan.planName, cents: parseMoney(adminDraft.plan.price), dueDay: adminDraft.plan.dueDay }
@@ -345,9 +361,14 @@ export function NewVehicleWizard({
   // Parcelado: o equipamento vai nas mensalidades (a 1ª parcela na 1ª).
   const choices = installmentChoices(equipmentCents ?? 0, c?.equipmentMaxInstallments ?? 1);
   const parcels = installments > 1 && choices.length >= installments ? splitInstallments(equipmentCents ?? 0, installments) : null;
-  // A 1ª mensalidade vence com o pedido e se paga junto com ele.
-  const firstMonthly = (promoMonthly ?? monthly?.cents ?? 0) + (parcels?.[0] ?? 0);
-  const totalNow = (parcels ? 0 : (equipmentCents ?? 0)) + (freight?.cents ?? 0) + firstMonthly;
+  // Nada é cobrado na hora: tudo entra na próxima fatura do mês da conta,
+  // com o proporcional dos dias até ela.
+  const today = todayISO();
+  const chargeDate = !isAdmin && c?.chargeDate ? c.chargeDate : nextChargeDate(monthly?.dueDay ?? c?.defaultDueDay ?? 10, today);
+  const monthlyFirst = promoMonthly ?? monthly?.cents ?? 0;
+  const prorata = prorataUntil(monthlyFirst, today, chargeDate);
+  const firstMonthly = monthlyFirst + (parcels?.[0] ?? 0);
+  const invoiceTotal = prorata.cents + firstMonthly + (parcels ? 0 : (equipmentCents ?? 0)) + installFee + (freight?.cents ?? 0);
 
   const goTo = (next: number) => {
     setError('');
@@ -387,7 +408,7 @@ export function NewVehicleWizard({
           : 'Continuar'
         : isAdmin
           ? 'Confirmar'
-          : `Confirmar pedido${totalNow ? ` · ${formatMoney(totalNow)}` : ''}`;
+          : 'Confirmar pedido';
 
   return (
     <>
@@ -504,25 +525,22 @@ export function NewVehicleWizard({
                     </div>
                   )
                 )}
-                <div className={pageStyles.formRow}>
-                  <TextField
-                    label={`${c.equipmentName} (R$)`}
-                    inputMode="decimal"
-                    hint={adminDraft.promo ? 'Preço da promoção de pré-lançamento.' : '0 se o cliente já tem o aparelho.'}
-                    disabled={adminDraft.promo}
-                    value={adminDraft.equipment}
-                    onChange={(e) => setAdminDraft({ ...adminDraft, equipment: e.target.value })}
-                  />
-                  <TextField
-                    label="Vencimento do pedido"
-                    hint="A 1ª mensalidade vence junto."
-                    type="date"
-                    value={adminDraft.dueDate}
-                    onChange={(e) => setAdminDraft({ ...adminDraft, dueDate: e.target.value })}
-                  />
-                </div>
-                {choices.length > 1 && (
-                  <InstallmentsField choices={choices} value={installments} onChange={setInstallments} staff />
+                {loan ? (
+                  <LoanNote terms={terms!} />
+                ) : (
+                  <>
+                    <TextField
+                      label={`${c.equipmentName} (R$)`}
+                      inputMode="decimal"
+                      hint={`${adminDraft.promo ? 'Preço da promoção de pré-lançamento.' : '0 se o cliente já tem o aparelho.'} Entra na fatura de ${formatDateOnly(chargeDate)}.`}
+                      disabled={adminDraft.promo}
+                      value={adminDraft.equipment}
+                      onChange={(e) => setAdminDraft({ ...adminDraft, equipment: e.target.value })}
+                    />
+                    {choices.length > 1 && (
+                      <InstallmentsField choices={choices} value={installments} onChange={setInstallments} staff />
+                    )}
+                  </>
                 )}
                 {!installedDevice &&
                   (address ? (
@@ -538,7 +556,7 @@ export function NewVehicleWizard({
                       </div>
                     </div>
                   ))}
-                <p className={styles.muted}>A instalação é paga direto ao prestador e não entra na fatura.</p>
+                {!loan && <p className={styles.muted}>A instalação é paga direto ao prestador e não entra na fatura.</p>}
               </>
             )}
 
@@ -566,27 +584,35 @@ export function NewVehicleWizard({
                     nos {customerPromo.months} primeiros meses.
                   </div>
                 )}
-                <div className={styles.orderSummary}>
-                  <div className={`${styles.orderLine} ${styles.orderTotal}`}>
-                    <span>
-                      {c.equipmentName} ({dueIn(c.setupDueDays)})
-                    </span>
-                    <span>
-                      {customerPromo && <s className={styles.muted}>{formatMoney(c.equipmentPriceCents)}</s>}{' '}
-                      {formatMoney(customerPromo?.equipmentCents ?? c.equipmentPriceCents)}
-                    </span>
-                  </div>
-                </div>
-                {choices.length > 1 && <InstallmentsField choices={choices} value={installments} onChange={setInstallments} />}
-                <div className={styles.installNote}>
-                  <span>
-                    <strong>Instalação:</strong> é feita por um prestador parceiro e paga direto a ele —
-                    não entra na fatura.
-                  </span>
-                  <Button size="small" variant="secondary" onClick={() => setShowInstallers(true)}>
-                    Ver prestadores
-                  </Button>
-                </div>
+                {loan ? (
+                  <LoanNote terms={terms!} />
+                ) : (
+                  <>
+                    <div className={styles.orderSummary}>
+                      <div className={`${styles.orderLine} ${styles.orderTotal}`}>
+                        <span>
+                          {c.equipmentName} (na fatura de {formatDateOnly(chargeDate)})
+                        </span>
+                        <span>
+                          {customerPromo && <s className={styles.muted}>{formatMoney(c.equipmentPriceCents)}</s>}{' '}
+                          {formatMoney(customerPromo?.equipmentCents ?? c.equipmentPriceCents)}
+                        </span>
+                      </div>
+                    </div>
+                    {choices.length > 1 && (
+                      <InstallmentsField choices={choices} value={installments} onChange={setInstallments} />
+                    )}
+                    <div className={styles.installNote}>
+                      <span>
+                        <strong>Instalação:</strong> é feita por um prestador parceiro e paga direto a ele —
+                        não entra na fatura.
+                      </span>
+                      <Button size="small" variant="secondary" onClick={() => setShowInstallers(true)}>
+                        Ver prestadores
+                      </Button>
+                    </div>
+                  </>
+                )}
               </>
             )}
 
@@ -600,10 +626,13 @@ export function NewVehicleWizard({
                   />
                 ) : (
                   <p className={pageStyles.description}>
-                    A assinatura começa com o pedido, no plano da sua conta: {c.planName}. A 1ª mensalidade se paga
-                    com o pedido; as outras vencem todo dia {c.defaultDueDay} (a 2ª, pelo menos um mês depois).
+                    A assinatura começa com o pedido, no plano da sua conta: {c.planName}. Nada é cobrado agora: tudo
+                    entra na sua fatura de {formatDateOnly(chargeDate)}, com os dias até lá proporcionais. Depois, uma
+                    fatura por mês, todo dia {c.defaultDueDay}.
                   </p>
                 )}
+
+                {loan && <LoanNote terms={terms!} />}
 
                 {ships && (
                   <ShippingOptions
@@ -631,7 +660,28 @@ export function NewVehicleWizard({
                           : 'entrega em mãos'}
                     </span>
                   </div>
-                  {(freight || parcels) && (
+                  {prorata.cents > 0 && (
+                    <div className={styles.orderLine}>
+                      <span>
+                        Proporcional de hoje a {formatDateOnly(chargeDate)} ({prorata.days} {prorata.days === 1 ? 'dia' : 'dias'})
+                      </span>
+                      <span>{formatMoney(prorata.cents)}</span>
+                    </div>
+                  )}
+                  {firstMonthly > 0 && (
+                    <div className={styles.orderLine}>
+                      <span>1ª mensalidade{parcels ? ', com a 1ª parcela' : ''}</span>
+                      <span>{formatMoney(firstMonthly)}</span>
+                    </div>
+                  )}
+                  {loan ? (
+                    installFee > 0 && (
+                      <div className={styles.orderLine}>
+                        <span>Instalação (comodato)</span>
+                        <span>{formatMoney(installFee)}</span>
+                      </div>
+                    )
+                  ) : (
                     <div className={styles.orderLine}>
                       <span>
                         {parcels
@@ -657,29 +707,20 @@ export function NewVehicleWizard({
                       <span>sem frete</span>
                     </div>
                   )}
-                  {firstMonthly > 0 && (
-                    <div className={styles.orderLine}>
-                      <span>1ª mensalidade{parcels ? ', com a 1ª parcela' : ''}</span>
-                      <span>{formatMoney(firstMonthly)}</span>
-                    </div>
-                  )}
                   <div className={`${styles.orderLine} ${styles.orderTotal}`}>
                     <span>
-                      Agora
-                      {isAdmin && adminDraft
-                        ? totalNow
-                          ? ` · vence ${formatDateOnly(adminDraft.dueDate)}`
-                          : ''
-                        : ` · ${dueIn(c.setupDueDays)}`}
+                      Na fatura de {formatDateOnly(chargeDate)}
+                      <br />
+                      <span className={styles.muted}>Hoje não é cobrado nada.</span>
                     </span>
-                    <span>{totalNow ? formatMoney(totalNow) : 'sem cobrança'}</span>
+                    <span>{invoiceTotal ? formatMoney(invoiceTotal) : 'sem cobrança'}</span>
                   </div>
                   {monthly && (
                     <div className={`${styles.orderLine} ${styles.orderMonthly}`}>
                       <span>
                         Assinatura: {monthly.name || 'plano'}, todo dia {monthly.dueDay}
                         <br />
-                        <span className={styles.muted}>A 2ª mensalidade vence pelo menos um mês depois da 1ª.</span>
+                        <span className={styles.muted}>Uma fatura por mês, com todos os veículos da conta.</span>
                         {promo && (
                           <>
                             <br />
@@ -706,9 +747,6 @@ export function NewVehicleWizard({
                     </div>
                   )}
                 </div>
-                {!isAdmin && totalNow > 0 && account.data?.onlinePayment && (
-                  <PaymentChoice value={payment} onChange={setPayment} card={Boolean(card.data?.enabled)} />
-                )}
                 {parcels && (
                   <Commitment
                     installments={parcels.length}
@@ -771,7 +809,7 @@ function InstallmentsField({
       label={staff ? 'Pagamento do equipamento' : 'Como pagar o rastreador'}
       hint={
         value > 1
-          ? `As ${value} parcelas vêm somadas às mensalidades: a 1ª junto com a 1ª mensalidade, paga com o pedido.`
+          ? `As ${value} parcelas vêm somadas às mensalidades: a 1ª junto com a 1ª mensalidade, na próxima fatura.`
           : `À vista, ou parcelado em até ${choices.length}x sem juros nas mensalidades.`
       }
       value={value}
@@ -783,42 +821,6 @@ function InstallmentsField({
         </option>
       ))}
     </SelectField>
-  );
-}
-
-const PAYMENT_CHOICES: { id: ChargeMethod; label: string; hint: string }[] = [
-  { id: 'PIX', label: 'Pix', hint: 'confirma na hora' },
-  { id: 'BOLETO', label: 'Boleto', hint: 'compensa em até 3 dias úteis' },
-  {
-    id: 'CARD',
-    label: 'Cartão de crédito',
-    hint: 'à vista; marcando o débito automático, as mensalidades também caem nele, no vencimento',
-  },
-];
-
-/** Como pagar o pedido: a janela de pagamento abre na forma escolhida. */
-function PaymentChoice({
-  value,
-  onChange,
-  card,
-}: {
-  value: ChargeMethod;
-  onChange: (value: ChargeMethod) => void;
-  card: boolean;
-}) {
-  return (
-    <fieldset className={styles.paymentChoice}>
-      <legend>Como pagar</legend>
-      {PAYMENT_CHOICES.filter((choice) => choice.id !== 'CARD' || card).map((choice) => (
-        <label key={choice.id} className={value === choice.id ? styles.paymentOn : undefined}>
-          <input type="radio" name="order-payment" checked={value === choice.id} onChange={() => onChange(choice.id)} />
-          <span>
-            <strong>{choice.label}</strong>
-            <span className={styles.muted}> · {choice.hint}</span>
-          </span>
-        </label>
-      ))}
-    </fieldset>
   );
 }
 
@@ -850,5 +852,18 @@ function Commitment({
         Parcelando o rastreador, {rule}
       </span>
     </label>
+  );
+}
+
+/** O rastreador em comodato (o plano do cliente): sem equipamento a pagar; a instalação na fatura e a desinstalação no encerramento. */
+function LoanNote({ terms }: { terms: EquipmentTerms }) {
+  return (
+    <div className={styles.installNote}>
+      <span>
+        <strong>Rastreador em comodato:</strong> emprestado, volta na desinstalação — não há equipamento a pagar.
+        {terms.installFeeCents > 0 ? ` A instalação (${formatMoney(terms.installFeeCents)}) entra na fatura.` : ' Instalação sem custo.'}
+        {terms.uninstallFeeCents > 0 ? ` Ao encerrar, a desinstalação: ${formatMoney(terms.uninstallFeeCents)}.` : ''}
+      </span>
+    </div>
   );
 }

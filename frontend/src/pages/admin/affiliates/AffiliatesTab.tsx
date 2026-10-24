@@ -194,6 +194,11 @@ export function AffiliatesTab() {
 
       <ClosingCard />
       <SettingsCard defaultCents={defaultCents} loaded={settings.isSuccess} />
+      <CustomerRewardCard
+        defaultCents={defaultCents}
+        rewardCents={settings.data?.customerRewardCents ?? 3000}
+        loaded={settings.isSuccess}
+      />
 
       <AffiliateModal
         open={creating || editing !== null}
@@ -248,6 +253,49 @@ function SettingsCard({ defaultCents, loaded }: { defaultCents: number; loaded: 
           variant="primary"
           loading={save.isPending}
           disabled={!loaded || cents === null || (cents === defaultCents && !applyToAll)}
+          onClick={() => cents !== null && save.mutate(cents)}
+        >
+          Salvar
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * O indique e ganhe dos clientes: o crédito na fatura de quem indica, quando
+ * o indicado paga a primeira mensalidade (zero desliga).
+ */
+function CustomerRewardCard({ defaultCents, rewardCents, loaded }: { defaultCents: number; rewardCents: number; loaded: boolean }) {
+  const { notify } = useToast();
+  const queryClient = useQueryClient();
+  const [value, setValue] = useState(centsToInput(rewardCents));
+  useEffect(() => setValue(centsToInput(rewardCents)), [rewardCents]);
+  const save = useMutation({
+    mutationFn: (cents: number) =>
+      affiliatesApi.saveSettings({ defaultCommissionCents: defaultCents, applyToAll: false, customerRewardCents: cents }),
+    onSuccess: (_, cents) => {
+      queryClient.invalidateQueries({ queryKey: ['affiliates'] });
+      notify({
+        tone: 'success',
+        title: cents > 0 ? 'Crédito por indicação salvo' : 'Indique e ganhe desligado',
+        description: cents > 0 ? 'Vale para os próximos indicados que pagarem a primeira mensalidade.' : undefined,
+      });
+    },
+    onError: (err: Error) => notify({ tone: 'error', title: 'Não foi possível salvar', description: err.message }),
+  });
+  const cents = parseMoney(value);
+  return (
+    <Card
+      title="Indique e ganhe (clientes)"
+      subtitle="Cada cliente tem o próprio link no app. Quando o indicado paga a primeira mensalidade, quem indicou ganha este crédito, que abate da próxima fatura dele. Zero desliga."
+    >
+      <div className={local.settings}>
+        <TextField label="Crédito por indicação (R$)" value={value} inputMode="decimal" onChange={(e) => setValue(e.target.value)} />
+        <Button
+          variant="primary"
+          loading={save.isPending}
+          disabled={!loaded || cents === null || cents === rewardCents}
           onClick={() => cents !== null && save.mutate(cents)}
         >
           Salvar

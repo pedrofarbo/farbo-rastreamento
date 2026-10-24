@@ -15,7 +15,7 @@ import styles from './Screen.module.css';
 
 /** Conta: quem está conectado, instalar o app, painel completo e sair. */
 export function AccountScreen() {
-  const { user, logout, membership, isAccountOwner } = useAuth();
+  const { user, logout, membership, isAccountOwner, paidByOrganization } = useAuth();
   const { installEvent, installed } = usePwa();
   const { notify } = useToast();
   const navigate = useNavigate();
@@ -86,6 +86,48 @@ export function AccountScreen() {
               </li>
             </>
           )}
+          {paidByOrganization && (
+            <>
+              <li>
+                <Link to="/ocorrencias" className={styles.listLink}>
+                  <span>
+                    <strong>Ocorrências</strong>
+                    <br />
+                    <span className={styles.muted}>Bateu ou foi roubado: abra com as fotos e o boletim</span>
+                  </span>
+                  <span className={styles.chevron}>
+                    <ChevronIcon />
+                  </span>
+                </Link>
+              </li>
+              <li>
+                <Link to="/vistorias" className={styles.listLink}>
+                  <span>
+                    <strong>Vistorias</strong>
+                    <br />
+                    <span className={styles.muted}>As fotos do veículo que pediram a você</span>
+                  </span>
+                  <span className={styles.chevron}>
+                    <ChevronIcon />
+                  </span>
+                </Link>
+              </li>
+            </>
+          )}
+          {isAccountOwner && !paidByOrganization && (
+            <li>
+              <Link to="/conta/indique" className={styles.listLink}>
+                <span>
+                  <strong>Indique e ganhe</strong>
+                  <br />
+                  <span className={styles.muted}>Desconto na fatura para cada amigo que virar cliente</span>
+                </span>
+                <span className={styles.chevron}>
+                  <ChevronIcon />
+                </span>
+              </Link>
+            </li>
+          )}
           <li>
             <Link to="/manutencao" className={styles.listLink}>
               <span>
@@ -98,6 +140,20 @@ export function AccountScreen() {
               </span>
             </Link>
           </li>
+          {!paidByOrganization && (
+            <li>
+              <Link to="/frota" className={styles.listLink}>
+                <span>
+                  <strong>Frota</strong>
+                  <br />
+                  <span className={styles.muted}>Motoristas, custos e abastecimento, multas e locações</span>
+                </span>
+                <span className={styles.chevron}>
+                  <ChevronIcon />
+                </span>
+              </Link>
+            </li>
+          )}
           <li>
             <Link to="/relatorios" className={styles.listLink}>
               <span>

@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ToastProvider } from '@/components/ui/Toast';
 import type { PromoStatus, ShippingQuoteView } from '@/types';
@@ -15,18 +15,18 @@ let promoStatus: PromoStatus;
 // O pedido recusa uma vez por falta do aceite do contrato (quem só acompanhava).
 let needsContract = false;
 const accepted: unknown[] = [];
-// A forma de pagamento que o assistente devolve; o cartão ligado ou não.
-const paidWith: unknown[] = [];
-let cardEnabled = false;
+// Os pedidos que o assistente concluiu; o rastreador do cliente (venda ou comodato).
+const done: unknown[] = [];
+let terms: Record<string, unknown> = {};
 vi.mock('@/api/resources', () => ({
   catalogApi: {
     get: async () => ({
       planName: 'Plano Mensal', planPriceCents: 6990, defaultDueDay: 10, equipmentName: 'Rastreador J16',
       equipmentPriceCents: 15000, setupDueDays: 3, equipmentMaxInstallments: 10, launchPromo: null,
+      chargeDate: '2026-11-10', ...terms,
     }),
   },
   meApi: {
-    card: async () => ({ enabled: cardEnabled, publicKey: 'pk_teste', saved: null, payer: null }),
     account: async () => ({
       onlinePayment: true,
       deliveryAddress: { zipCode: '20040020', street: 'Rua da Assembleia', number: '10', complement: '', district: 'Centro', city: 'Rio de Janeiro', state: 'RJ' },
@@ -38,7 +38,7 @@ vi.mock('@/api/resources', () => ({
         throw new ApiError(403, 'aceite o contrato de prestação de serviços para continuar', { code: 'CONTRACT_REQUIRED' });
       }
       ordered.push(input);
-      return { vehicle: {}, subscription: {}, setupInvoice: null, shipping: null };
+      return { vehicle: {}, subscription: {}, chargeDate: '2026-11-10', setupInvoice: null, shipping: null };
     },
     saveAddress: async () => ({}),
   },
@@ -89,7 +89,7 @@ async function openWizard(installments = 1) {
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <MemoryRouter>
           <ToastProvider>
-            <NewVehicleWizard open onClose={() => undefined} onDone={(_, payment) => paidWith.push(payment)} />
+            <NewVehicleWizard open onClose={() => undefined} onDone={(result) => done.push(result)} />
           </ToastProvider>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -113,34 +113,46 @@ async function openWizard(installments = 1) {
   await flush();
 }
 
+// Hoje é 23/10/2026: até a fatura de 10/11, 18 dias (de 69,90: 41,94).
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(2026, 9, 23, 12, 0, 0));
+});
+
 afterEach(() => {
+  vi.useRealTimers();
   document.body.innerHTML = '';
   ordered.length = 0;
   accepted.length = 0;
-  paidWith.length = 0;
+  done.length = 0;
   needsContract = false;
-  cardEnabled = false;
+  terms = {};
 });
 
-describe('como pagar o pedido', () => {
-  it('Pix, boleto e, com ele ligado, o cartão: a janela de pagamento abre na escolhida', async () => {
+describe('a fatura do mês', () => {
+  it('nada é cobrado na hora: o pedido entra na próxima fatura, com o proporcional', async () => {
     quote = { enabled: false, zipCode: '', problem: '', arrange: false, quotes: [] };
     await openWizard();
-    expect(text()).toContain('Como pagar');
-    expect(text()).not.toContain('Cartão de crédito');
-    await act(async () => button(/Confirmar pedido/).click());
+    expect(text()).not.toContain('Como pagar');
+    expect(text()).toContain('Nada é cobrado agora: tudo entra na sua fatura de 10/11/2026');
+    expect(text()).toContain('Proporcional de hoje a 10/11/2026 (18 dias)R$ 41,94');
+    expect(text()).toContain('1ª mensalidadeR$ 69,90');
+    expect(text()).toContain('EquipamentoR$ 150,00');
+    expect(text()).toContain('Na fatura de 10/11/2026Hoje não é cobrado nada.R$ 261,84');
+    await act(async () => button('Confirmar pedido').click());
     await flush();
-    expect(paidWith).toEqual(['PIX']);
+    expect(done).toHaveLength(1);
+  });
 
-    document.body.innerHTML = '';
-    cardEnabled = true;
+  it('no comodato, sem equipamento: a instalação entra na fatura', async () => {
+    terms = { equipmentMode: 'loan', installFeeCents: 8000, uninstallFeeCents: 5000 };
+    quote = { enabled: false, zipCode: '', problem: '', arrange: false, quotes: [] };
     await openWizard();
-    const card = Array.from(document.querySelectorAll('label')).find((l) => l.textContent?.startsWith('Cartão de crédito'));
-    expect(card?.textContent).toContain('as mensalidades também caem nele');
-    await act(async () => (card?.querySelector('input') as HTMLInputElement).click());
-    await act(async () => button(/Confirmar pedido/).click());
-    await flush();
-    expect(paidWith).toEqual(['PIX', 'CARD']);
+    expect(text()).toContain('Rastreador em comodato');
+    expect(text()).toContain('Ao encerrar, a desinstalação: R$ 50,00');
+    expect(text()).not.toContain('EquipamentoR$');
+    expect(text()).toContain('Instalação (comodato)R$ 80,00');
+    expect(text()).toContain('Na fatura de 10/11/2026Hoje não é cobrado nada.R$ 191,84');
   });
 });
 
@@ -206,7 +218,10 @@ describe('o plano do cliente no Novo veículo da central', () => {
                 open
                 admin={{
                   customerId: 'c1', devices: [], deliveryAddress: null, currentPlan: null,
-                  accountPlan: { planName: 'Especial Insanos MC', priceCents: 3990, dueDay: 15, updatedAt: '2026-10-09T12:00:00Z' },
+                  accountPlan: {
+                    planName: 'Especial Insanos MC', priceCents: 3990, dueDay: 15, updatedAt: '2026-10-09T12:00:00Z',
+                    equipmentMode: 'sale', installFeeCents: 0, uninstallFeeCents: 0,
+                  },
                 }}
                 onClose={() => undefined}
                 onDone={() => undefined}
@@ -240,7 +255,7 @@ describe('frete no pedido', () => {
     expect(deliveryLabel(1)).toBe('até 1 dia útil');
   });
 
-  it('o cliente escolhe a entrega e paga junto com o equipamento', async () => {
+  it('o cliente escolhe a entrega; o frete entra na fatura', async () => {
     quote = {
       enabled: true, zipCode: '20040020', problem: '', arrange: false,
       quotes: [
@@ -249,16 +264,15 @@ describe('frete no pedido', () => {
       ],
     };
     await openWizard();
-    // O mais barato vem marcado; o total soma o frete e a 1ª mensalidade.
+    // O mais barato vem marcado; o total soma o frete, o proporcional e a 1ª mensalidade.
     expect(text()).toContain('Entrega para o CEP 20040-020');
     expect(text()).toContain('Frete: Correios PAC (até 7 dias úteis)R$ 22,40');
     expect(text()).toContain('1ª mensalidadeR$ 69,90');
-    expect(text()).toContain('Agora · vence em 3 diasR$ 242,30');
-    expect(button(/Confirmar pedido · R\$\s242,30/)).toBeTruthy();
+    expect(text()).toContain('Na fatura de 10/11/2026Hoje não é cobrado nada.R$ 284,24');
     // Escolhe o SEDEX.
     const sedex = Array.from(document.querySelectorAll('input[type=radio]'))[1] as HTMLInputElement;
     await act(async () => sedex.click());
-    expect(text()).toContain('Agora · vence em 3 diasR$ 259,80');
+    expect(text()).toContain('Na fatura de 10/11/2026Hoje não é cobrado nada.R$ 301,74');
     await act(async () => button(/Confirmar pedido/).click());
     await flush();
     expect(ordered).toEqual([{ vehicle: expect.objectContaining({ name: 'Moto do trabalho' }), launchPromo: false, shippingServiceId: 2 }]);
@@ -281,8 +295,8 @@ describe('frete no pedido', () => {
     const arrange = document.querySelector('input[type=radio]') as HTMLInputElement;
     await act(async () => arrange.click());
     expect(text()).toContain('Entrega: combinar com a Farbosem frete');
-    expect(text()).toContain('Agora · vence em 3 diasR$ 219,90');
-    expect(button(/Confirmar pedido · R\$\s219,90/).disabled).toBe(false);
+    expect(text()).toContain('Na fatura de 10/11/2026Hoje não é cobrado nada.R$ 261,84');
+    expect(button('Confirmar pedido').disabled).toBe(false);
     await act(async () => button(/Confirmar pedido/).click());
     await flush();
     expect(ordered).toEqual([{ vehicle: expect.objectContaining({ name: 'Moto do trabalho' }), launchPromo: false, arrangeDelivery: true }]);
@@ -302,13 +316,13 @@ describe('frete no pedido', () => {
     quote = { enabled: false, zipCode: '', problem: '', quotes: [], arrange: false };
     await openWizard();
     expect(text()).not.toContain('Entrega para o CEP');
-    expect(button(/Confirmar pedido · R\$\s219,90/).disabled).toBe(false);
+    expect(button('Confirmar pedido').disabled).toBe(false);
     await act(async () => button(/Confirmar pedido/).click());
     await flush();
     expect(ordered).toEqual([{ vehicle: expect.objectContaining({ name: 'Moto do trabalho' }), launchPromo: false }]);
   });
 
-  it('parcelado em 10x: agora o frete e a 1ª mensalidade, com a 1ª parcela, e o cliente confirma que fica até a última', async () => {
+  it('parcelado em 10x: na fatura, o frete e a 1ª mensalidade com a 1ª parcela; o cliente confirma que fica até a última', async () => {
     quote = {
       enabled: true, zipCode: '20040020', problem: '', arrange: false,
       quotes: [{ serviceId: 1, service: 'PAC', company: 'Correios', priceCents: 2240, deliveryDays: 7, error: '' }],
@@ -316,11 +330,11 @@ describe('frete no pedido', () => {
     await openWizard(10);
     expect(text()).toContain('Equipamento: R$ 150,00 em 10x sem jurosnas mensalidades');
     expect(text()).toContain('1ª mensalidade, com a 1ª parcelaR$ 84,90');
-    expect(text()).toContain('Agora · vence em 3 diasR$ 107,30');
+    expect(text()).toContain('Na fatura de 10/11/2026Hoje não é cobrado nada.R$ 149,24');
     expect(text()).toContain('+ R$ 15,00 do rastreador em cada uma das 10 primeiras mensalidades.');
     expect(text()).toContain('fica ativa até a mensalidade com a última parcela (a 10ª)');
     // Sem o "entendi", não confirma.
-    expect(button(/Confirmar pedido · R\$\s107,30/).disabled).toBe(true);
+    expect(button('Confirmar pedido').disabled).toBe(true);
     const agree = document.querySelector('input[type=checkbox]') as HTMLInputElement;
     await act(async () => agree.click());
     expect(button(/Confirmar pedido/).disabled).toBe(false);

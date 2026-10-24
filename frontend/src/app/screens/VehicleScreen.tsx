@@ -14,18 +14,12 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { CommandPanel } from '@/components/vehicle/CommandPanel';
 import { EngineHistory } from '@/components/vehicle/EngineHistory';
+import { UpcomingInstallations } from '@/components/install/UpcomingInstallations';
+import { LiveLinkPanel } from '@/components/vehicle/LiveLinkPanel';
 import { TheftPanel } from '@/components/vehicle/TheftPanel';
 import { useVehicle } from '@/hooks/useVehicles';
 import { useAuth } from '@/stores/AuthContext';
-import {
-  eventSeverity,
-  formatDateTime,
-  formatDeviceStatus,
-  formatDistance,
-  formatEvent,
-  formatRelative,
-  formatSpeed,
-} from '@/services/format';
+import { eventSeverity, formatDateTime, formatDeviceStatus, formatDistance, formatEvent, formatRelative, formatSpeed, formatVoltage } from '@/services/format';
 
 import { fencesOf, notifyLabel, shapeLabel } from '../fence';
 import { BackIcon, ChevronIcon, ExpandIcon } from '../icons';
@@ -189,7 +183,7 @@ export function VehicleScreen() {
             <div className={styles.tile}>
               <span className={styles.tileLabel}>Bateria</span>
               <span className={styles.tileValue}>
-                {voltage !== null ? `${voltage.toFixed(1)} V` : battery !== null ? `${battery}%` : '—'}
+                {voltage !== null ? formatVoltage(voltage) : battery !== null ? `${battery}%` : '—'}
               </span>
             </div>
             <div className={styles.tile}>
@@ -218,12 +212,30 @@ export function VehicleScreen() {
         </p>
       )}
 
+      {/* A instalação ou a retirada do rastreador marcada. */}
+      <UpcomingInstallations vehicleId={vehicle.id} />
+
       {/* Modo roubo: aberto pelo alerta (?roubo=1), já pergunta se é para ligar. */}
       <TheftPanel
         vehicle={vehicle}
         prompt={params.get('roubo') === '1'}
         reportUrl={owned ? `/relatorio-roubo/${vehicle.id}` : undefined}
       />
+
+      {/* A localização ao vivo por algumas horas, para mandar a alguém. */}
+      <LiveLinkPanel vehicle={vehicle} />
+
+      {owned && vehicle.device && (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Sinistro</h2>
+          <p className={styles.muted}>
+            Bateu ou teve outro problema? O relatório mostra o trajeto e a velocidade em volta do horário, para o seguro.
+          </p>
+          <Link className={styles.link} to={`/relatorio-sinistro/${vehicle.id}`}>
+            Gerar relatório de sinistro
+          </Link>
+        </section>
+      )}
 
       {vehicle.device && (
         <section className={styles.section}>

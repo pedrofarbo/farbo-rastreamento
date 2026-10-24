@@ -169,6 +169,12 @@
   color: var(--text-muted);
 }
 
+/* O associado do veículo, nos relatórios da associação. */
+.owner {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
 .empty,
 .note {
   margin: 0;
@@ -249,5 +255,48 @@
 
 .back {
   font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* Utilização: a barra do uso e o número ao lado. */
+.usage {
+  display: grid;
+  grid-template-columns: minmax(4rem, 7rem) auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* Direção: a nota com o rótulo, na cor da faixa. */
+.score {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--text-base);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.score small {
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.score_good {
+  color: var(--accent);
+}
+
+.score_ok {
+  color: var(--text-primary);
+}
+
+.score_warn {
+  color: var(--warning);
+}
+
+.score_bad {
+  color: var(--danger);
+}
+
+.score_none {
   color: var(--text-muted);
 }

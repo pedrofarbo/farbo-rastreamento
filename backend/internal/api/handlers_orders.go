@@ -37,6 +37,12 @@ type catalogView struct {
 	// LaunchPromo: o cliente pode contratar com a promoção de
 	// pré-lançamento (nulo: não pode, ou não é cliente).
 	LaunchPromo *orders.PromoOffer `json:"launchPromo"`
+	// Para o cliente: o rastreador dele (venda ou comodato) e as taxas, e o
+	// vencimento da fatura em que um veículo contratado hoje entra.
+	EquipmentMode     string        `json:"equipmentMode,omitempty"`
+	InstallFeeCents   int           `json:"installFeeCents,omitempty"`
+	UninstallFeeCents int           `json:"uninstallFeeCents,omitempty"`
+	ChargeDate        *billing.Date `json:"chargeDate,omitempty"`
 }
 
 // handleCatalog devolve os preços de um rastreador novo. Para o cliente, o
@@ -52,6 +58,12 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	if customerID, isCustomer := customerOf(r); isCustomer {
 		if plan, err := s.Orders.CustomerPlan(r.Context(), customerID); err == nil {
 			view.PlanName, view.PlanPriceCents, view.DefaultDueDay = plan.PlanName, plan.PriceCents, plan.DueDay
+		}
+		if terms, err := s.Orders.CustomerTerms(r.Context(), customerID); err == nil {
+			view.EquipmentMode, view.InstallFeeCents, view.UninstallFeeCents = terms.EquipmentMode, terms.InstallFeeCents, terms.UninstallFeeCents
+		}
+		if due, err := s.Billing.ChargeDate(r.Context(), s.DB, customerID, view.DefaultDueDay); err == nil {
+			view.ChargeDate = &due
 		}
 		if promo, err := s.Orders.PromoFor(r.Context(), customerID); err == nil && promo.Eligible {
 			// A mensalidade da promoção no plano dele (o do Insanos MC tem a sua).
@@ -95,11 +107,15 @@ func writeOrderError(w http.ResponseWriter, r *http.Request, err error, notFound
 // 3. assinatura.
 type adminTrackerOrderRequest struct {
 	Vehicle vehicles.Input `json:"vehicle"`
-	// Valor do equipamento; zero não gera fatura. A instalação é paga direto
-	// ao prestador e não entra aqui.
-	EquipmentCents int                       `json:"equipmentCents"`
-	SetupDueDate   *billing.Date             `json:"setupDueDate"`
-	Plan           billing.SubscriptionInput `json:"plan"`
+	// Valor do equipamento; zero não cobra. A instalação, fora do comodato, é
+	// paga direto ao prestador e não entra aqui.
+	EquipmentCents int `json:"equipmentCents"`
+	// SetupDueDate não vale mais: tudo entra na próxima fatura do mês da
+	// conta (aceito para as telas antigas).
+	SetupDueDate *billing.Date             `json:"setupDueDate"`
+	Plan         billing.SubscriptionInput `json:"plan"`
+	// Terms: venda ou comodato e as taxas; vazio, os do plano do cliente.
+	Terms *orders.Terms `json:"terms"`
 	// LaunchPromo aplica a promoção de pré-lançamento (o cliente precisa ter
 	// direito; ver /customers/{id}/launch-promo).
 	LaunchPromo bool `json:"launchPromo"`
@@ -129,8 +145,17 @@ func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
+	terms := req.Terms
+	if terms == nil {
+		t, err := s.Orders.CustomerTerms(r.Context(), customerID)
+		if err != nil {
+			handleStoreError(w, err, "cliente não encontrado")
+			return
+		}
+		terms = &t
+	}
 	result, err := s.Orders.Place(r.Context(), customerID, orders.Order{
-		Vehicle: req.Vehicle, EquipmentCents: req.EquipmentCents, SetupDueDate: req.SetupDueDate, Plan: req.Plan,
+		Vehicle: req.Vehicle, EquipmentCents: req.EquipmentCents, Terms: *terms, Plan: req.Plan,
 		LaunchPromo: req.LaunchPromo, Shipping: shipping, Installments: req.Installments,
 	})
 	if err != nil {
@@ -145,11 +170,13 @@ func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request)
 // planilha e, para todas, o valor do equipamento (numa fatura só) e o plano.
 // DryRun só confere.
 type adminFleetImportRequest struct {
-	Rows           []orders.ImportRow        `json:"rows"`
-	EquipmentCents int                       `json:"equipmentCents"`
-	SetupDueDate   *billing.Date             `json:"setupDueDate"`
-	Plan           billing.SubscriptionInput `json:"plan"`
-	DryRun         bool                      `json:"dryRun"`
+	Rows           []orders.ImportRow `json:"rows"`
+	EquipmentCents int                `json:"equipmentCents"`
+	// SetupDueDate não vale mais: tudo entra na próxima fatura do mês da
+	// conta (aceito para as telas antigas).
+	SetupDueDate *billing.Date             `json:"setupDueDate"`
+	Plan         billing.SubscriptionInput `json:"plan"`
+	DryRun       bool                      `json:"dryRun"`
 }
 
 // codeImportProblems: a planilha foi recusada; problems traz cada linha.
@@ -165,8 +192,13 @@ func (s *Server) handleAdminImportFleet(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "corpo inválido (a planilha passa do tamanho aceito?)")
 		return
 	}
+	terms, err := s.Orders.CustomerTerms(r.Context(), customerID)
+	if err != nil {
+		handleStoreError(w, err, "cliente não encontrado")
+		return
+	}
 	result, err := s.Orders.ImportFleet(r.Context(), customerID, orders.Import{
-		Rows: req.Rows, EquipmentCents: req.EquipmentCents, SetupDueDate: req.SetupDueDate, Plan: req.Plan, DryRun: req.DryRun,
+		Rows: req.Rows, EquipmentCents: req.EquipmentCents, Terms: terms, Plan: req.Plan, DryRun: req.DryRun,
 	})
 	var problems orders.ImportProblems
 	if errors.As(err, &problems) {
@@ -218,6 +250,14 @@ func (s *Server) handleMyOrderTracker(w http.ResponseWriter, r *http.Request) {
 	var req customerTrackerOrderRequest
 	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	// O associado de uma associação ou seguradora: quem inclui o veículo é ela.
+	if user, err := s.Auth.GetUser(r.Context(), customerID); err != nil {
+		handleStoreError(w, err, "cliente não encontrado")
+		return
+	} else if user.PaidByOrganization {
+		writeError(w, http.StatusForbidden, "para incluir um veículo, fale com quem contratou o seu rastreamento")
 		return
 	}
 	// Quem só acompanhava o veículo de outra pessoa aceita o contrato ao
@@ -502,7 +542,7 @@ func (s *Server) handleSetCustomerPlan(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in billing.SubscriptionInput
+	var in orders.PlanInput
 	if err := decodeJSON(w, r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, "corpo inválido")
 		return
@@ -514,6 +554,7 @@ func (s *Server) handleSetCustomerPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordBillingAudit(r, audit.ActionCustomerUpdated, map[string]any{
 		"customerId": customerID, "plan": plan.PlanName, "priceCents": plan.PriceCents, "dueDay": plan.DueDay,
+		"equipmentMode": plan.EquipmentMode, "installFeeCents": plan.InstallFeeCents, "uninstallFeeCents": plan.UninstallFeeCents,
 	})
 	writeJSON(w, http.StatusOK, plan)
 }

@@ -82,9 +82,33 @@ const (
 	ActionContractAccepted     = "CONTRACT_ACCEPTED"
 	ActionTrackerOrdered       = "TRACKER_ORDERED"
 	ActionFleetImported        = "FLEET_IMPORTED" // a frota do cliente por planilha
-	ActionMaintenanceChanged   = "MAINTENANCE_CHANGED"
-	ActionInstallerChanged     = "INSTALLER_CHANGED"
-	ActionFinanceChanged       = "FINANCE_CHANGED"
+	// Associações e seguradoras: o cadastro, a equipe, os associados, os
+	// veículos que elas cadastram e a fatura do mês.
+	ActionOrgChanged           = "ORG_CHANGED"
+	ActionOrgMemberChanged     = "ORG_MEMBER_CHANGED"
+	ActionOrgAssociateChanged  = "ORG_ASSOCIATE_CHANGED"
+	ActionOrgVehicleRegistered = "ORG_VEHICLE_REGISTERED"
+	ActionOrgInvoiceGenerated  = "ORG_INVOICE_GENERATED"
+	// ActionFiscalNoteSaved: a nota fiscal do mês registrada (ou tirada).
+	ActionFiscalNoteSaved = "FISCAL_NOTE_SAVED"
+	// A localização ao vivo por um tempo: o link gerado e o encerrado.
+	ActionLiveLinkCreated = "LIVE_LINK_CREATED"
+	ActionLiveLinkRevoked = "LIVE_LINK_REVOKED"
+	// ActionInstallationChanged: a agenda de instalação (agendada, remarcada,
+	// instalada pelo link do instalador, cancelada).
+	ActionInstallationChanged = "INSTALLATION_CHANGED"
+	// ActionIntegrationChanged: as chaves da API e os webhooks.
+	ActionIntegrationChanged = "INTEGRATION_CHANGED"
+	// ActionFleetChanged: a gestão da frota (motoristas, custos, multas, locações).
+	ActionFleetChanged = "FLEET_CHANGED"
+	// As ocorrências e as vistorias dos associados.
+	ActionClaimChanged      = "CLAIM_CHANGED"
+	ActionInspectionChanged = "INSPECTION_CHANGED"
+	// ActionOrgAnnouncement: o comunicado de uma organização aos associados.
+	ActionOrgAnnouncement    = "ORG_ANNOUNCEMENT"
+	ActionMaintenanceChanged = "MAINTENANCE_CHANGED"
+	ActionInstallerChanged   = "INSTALLER_CHANGED"
+	ActionFinanceChanged     = "FINANCE_CHANGED"
 	// ActionSMSSetup: configuração do rastreador por SMS (SMS Market) na ativação.
 	ActionSMSSetup = "SMS_SETUP"
 	// ActionSupplierPix: Pix a um fornecedor pela AbacatePay (enviado,

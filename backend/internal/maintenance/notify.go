@@ -199,11 +199,21 @@ func Describe(it *Item) string {
 			parts = append(parts, fmt.Sprintf("venceu há %d %s", -days, plural(-days, "dia", "dias")))
 		case days == 0:
 			parts = append(parts, "vence hoje")
+		case it.Kind == KindDocument && it.NextDate != nil:
+			parts = append(parts, fmt.Sprintf("vence em %s (faltam %d %s)", brDate(*it.NextDate), days, plural(days, "dia", "dias")))
 		default:
 			parts = append(parts, fmt.Sprintf("faltam %d %s", days, plural(days, "dia", "dias")))
 		}
 	}
 	return strings.Join(parts, " · ")
+}
+
+// brDate: "2026-11-10" → "10/11/2026".
+func brDate(iso string) string {
+	if t, err := time.Parse(time.DateOnly, iso); err == nil {
+		return t.Format("02/01/2006")
+	}
+	return iso
 }
 
 func plural(n int, one, many string) string {

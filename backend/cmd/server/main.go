@@ -26,9 +26,14 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/alerts"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/analytics"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/api"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/apikeys"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/appointments"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/busroutes"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/claims"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/closing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/commands"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/contract"
@@ -37,16 +42,20 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/dunning"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/events"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/finance"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fleet"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geocoding"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geofences"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/infra"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/inspections"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/installers"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/livelinks"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/mail"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/maintenance"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/melhorenvio"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/organizations"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments/abacatepay"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
@@ -70,6 +79,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tracking"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/twofactor"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/webhooks"
 	ws "github.com/pedrofarbo/farbo-rastreamento/backend/internal/websocket"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/whatsapp"
 )
@@ -318,8 +328,15 @@ func run() error {
 		stateStore, geocodingSvc, log)
 	// A queda em massa é medida contra o tamanho da frota conectada.
 	alertEngine.SetConnectedCount(connManager.Count)
+	// Os webhooks das integrações recebem os eventos também (só enfileiram).
+	webhooksSvc := webhooks.NewService(db, log)
+	eventSvc.SetObserver(func(e *events.Event) {
+		if cfg.Alerts.Enabled {
+			alertEngine.OnEvent(e)
+		}
+		webhooksSvc.OnEvent(e)
+	})
 	if cfg.Alerts.Enabled {
-		eventSvc.SetObserver(alertEngine.OnEvent)
 		ingestor.SetPositionObserver(alertEngine.OnPosition)
 	}
 	// Notificações no celular do app do cliente: o mesmo alerta, outro canal.
@@ -369,7 +386,22 @@ func run() error {
 	// requisição.
 	accountsSvc := accounts.NewService(db, authSvc, mail.NewTeamMailer(mailer, cfg.Mail.AppURL), log)
 	authSvc.SetMemberships(accountsSvc.Lookup)
+	// As associações e seguradoras: a equipe delas (conferida no login e a
+	// cada requisição), os associados e a fatura do mês.
+	orgSvc := organizations.NewService(db, authSvc, mail.NewOrgMailer(mailer, cfg.Mail.AppURL), billingSvc, log)
+	authSvc.SetOrgMemberships(orgSvc.Lookup)
 	sharesSvc.SetPusher(pushSvc)
+	orgSvc.SetPusher(pushSvc)
+	// As ocorrências e as vistorias dos associados (o associado é avisado no app).
+	claimsSvc := claims.NewService(db, mail.NewOrgMailer(mailer, cfg.Mail.AppURL), log)
+	claimsSvc.SetPusher(pushSvc)
+	inspectionsSvc := inspections.NewService(db, log)
+	inspectionsSvc.SetPusher(pushSvc)
+	// A agenda de instalação e o link do instalador (o cliente é avisado no app).
+	appointmentsSvc := appointments.NewService(db, cfg.Mail.AppURL, []byte(cfg.Auth.JWTSecret), log)
+	appointmentsSvc.SetPusher(pushSvc)
+	// A gestão da frota (o aviso das locações atrasadas roda com os workers).
+	fleetSvc := fleet.NewService(db, cfg.Billing.Timezone, mail.NewFleetMailer(mailer, cfg.Mail.AppURL), log)
 
 	// O contrato que o cliente aceita no primeiro acesso (com o CPF).
 	contractDoc, err := contract.Render(contract.Params{
@@ -443,9 +475,14 @@ func run() error {
 		Leads: leads.NewService(leads.NewRepository(db),
 			leads.MailNotifier{Mailer: mail.NewLeadMailer(mailer, cfg.Mail.AppURL), To: cfg.Leads.NotifyEmails}, log),
 		Alerts: alertEngine, AlertStore: alertStore, Push: pushSvc, Shares: sharesSvc, Accounts: accountsSvc,
+		Organizations: orgSvc, Closing: closing.NewService(db),
 		Analytics: analyticsSvc,
 		Infra:     infraSvc, Finance: financeSvc, Affiliates: affiliatesSvc, SMSSetup: smsSvc, Theft: theftSvc,
-		Dunning: dunningSvc, Contract: contractSvc, Adjustment: adjustmentSvc,
+		LiveLinks: livelinks.NewService(db, cfg.Mail.AppURL, []byte(cfg.Auth.JWTSecret)),
+		Claims:    claimsSvc, Inspections: inspectionsSvc, Fleet: fleetSvc,
+		APIKeys: apikeys.NewService(db), Webhooks: webhooksSvc, Appointments: appointmentsSvc,
+		BusRoutes: busroutes.NewService(db, cfg.Mail.AppURL, []byte(cfg.Auth.JWTSecret)),
+		Dunning:   dunningSvc, Contract: contractSvc, Adjustment: adjustmentSvc,
 		StepUp:    stepup.NewService(db, cfg.StepUp, authSvc),
 		TwoFactor: twoFactorSvc,
 		Positions: positionRepo, States: stateStore,
@@ -513,10 +550,26 @@ func run() error {
 		stateStore.Run(ctx, log)
 	}()
 
+	// Os webhooks: quatro entregadores (um endereço lento não segura os outros).
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			webhooksSvc.Run(ctx)
+		}()
+	}
+
+	// As locações atrasadas: o aviso por e-mail.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, theftSvc, dunningSvc, adjustmentSvc, contractSvc, pushSvc, log)
+		fleetSvc.Run(ctx)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, theftSvc, dunningSvc, adjustmentSvc, contractSvc, pushSvc, orgSvc, log)
 	}()
 
 	log.Info("plataforma no ar",
@@ -558,6 +611,7 @@ func runWorkers(
 	adjustmentSvc *adjustment.Service,
 	contractSvc *contract.Service,
 	pushSvc *push.Service,
+	orgSvc *organizations.Service,
 	log *slog.Logger,
 ) {
 	statusTicker := time.NewTicker(cfg.Tracking.StatusSweepInterval)
@@ -607,6 +661,7 @@ func runWorkers(
 	ingestor.SweepStatuses(ctx)
 	adjustmentSvc.Work(ctx)
 	billingSvc.GenerateInvoices(ctx)
+	orgSvc.GenerateInvoices(ctx)
 	dunningSvc.Work(ctx)
 	contractSvc.NotifyChanges(ctx)
 	financeSvc.GenerateRecurring(ctx)
@@ -635,6 +690,8 @@ func runWorkers(
 			// O reajuste anual antes das faturas (o preço novo já agendado).
 			adjustmentSvc.Work(ctx)
 			billingSvc.GenerateInvoices(ctx)
+			// A fatura do mês das associações e seguradoras.
+			orgSvc.GenerateInvoices(ctx)
 			// Os lembretes de fatura do dia (só entre 9h e 20h).
 			dunningSvc.Work(ctx)
 			// O aviso do contrato novo a quem aceitou o anterior.

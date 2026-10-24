@@ -17,10 +17,13 @@ import (
 // ?formato=csv, na planilha que o Excel abre direto.
 //
 // O cliente vê os da conta dele (titular e equipe); a central, os de um
-// cliente (?cliente=). O período vai de ?de= a ?ate= (AAAA-MM-DD, no fuso da
+// cliente (?cliente=); a associação ou seguradora, os dos associados (um só,
+// com ?associado=). O período vai de ?de= a ?ate= (AAAA-MM-DD, no fuso da
 // central), até reports.MaxDays dias; sem eles, os últimos 7 dias.
 
 type reportQuery struct {
+	// account: a conta do cliente (vazia na organização).
+	account  uuid.UUID
 	vehicles []reports.Vehicle
 	from, to time.Time // dias (meia-noite no fuso da central)
 	csv      bool
@@ -36,7 +39,8 @@ func (s *Server) reportScope(w http.ResponseWriter, r *http.Request) (reportQuer
 		return reportQuery{}, false
 	}
 	owner, isCustomer := customerOf(r)
-	if !isCustomer {
+	orgID, isOrg := orgOf(r)
+	if !isCustomer && !isOrg {
 		id, err := uuid.Parse(r.URL.Query().Get("cliente"))
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "informe o cliente (?cliente=)")
@@ -72,10 +76,37 @@ func (s *Server) reportScope(w http.ResponseWriter, r *http.Request) (reportQuer
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("o período vai até %d dias", reports.MaxDays))
 		return reportQuery{}, false
 	}
-	list, err := s.Reports.Vehicles(r.Context(), owner)
+	var list []reports.Vehicle
+	if isOrg {
+		list, err = s.Reports.OrganizationVehicles(r.Context(), orgID)
+	} else {
+		list, err = s.Reports.Vehicles(r.Context(), owner)
+	}
 	if err != nil {
 		handleStoreError(w, err, "veículos não encontrados")
 		return reportQuery{}, false
+	}
+	// ?associado=: só os veículos de um associado (a organização).
+	if raw := r.URL.Query().Get("associado"); raw != "" && isOrg {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "associado inválido")
+			return reportQuery{}, false
+		}
+		list = slices.DeleteFunc(list, func(v reports.Vehicle) bool { return v.OwnerID == nil || *v.OwnerID != id })
+	}
+	// O corretor: só os veículos dos associados dele.
+	if broker := brokerOf(r); broker != nil && isOrg {
+		mine, err := s.Organizations.Associates(r.Context(), orgID, broker)
+		if err != nil {
+			handleStoreError(w, err, "associados não encontrados")
+			return reportQuery{}, false
+		}
+		ids := map[uuid.UUID]bool{}
+		for _, a := range mine {
+			ids[a.ID] = true
+		}
+		list = slices.DeleteFunc(list, func(v reports.Vehicle) bool { return v.OwnerID == nil || !ids[*v.OwnerID] })
 	}
 	// Quem da equipe está restrito a grupos vê só os veículos deles.
 	if principal := restrictedPrincipal(r); principal != nil {
@@ -109,9 +140,12 @@ func (s *Server) reportScope(w http.ResponseWriter, r *http.Request) (reportQuer
 		}
 		list = list[i : i+1]
 	}
-	q := reportQuery{vehicles: list, from: from, to: to, csv: r.URL.Query().Get("formato") == "csv",
-		sheet: reports.Sheet{Loc: loc, Groups: map[uuid.UUID]string{}}}
-	if q.csv {
+	if isOrg {
+		owner = uuid.Nil
+	}
+	q := reportQuery{account: owner, vehicles: list, from: from, to: to, csv: r.URL.Query().Get("formato") == "csv",
+		sheet: reports.Sheet{Loc: loc, Groups: map[uuid.UUID]string{}, Owners: isOrg}}
+	if q.csv && !isOrg {
 		groups, err := s.Vehicles.Groups(r.Context(), owner)
 		if err != nil {
 			handleStoreError(w, err, "veículos não encontrados")
@@ -145,6 +179,50 @@ func (s *Server) handleReportSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"from": day(q.from), "to": day(q.to), "rows": rows})
+}
+
+// handleReportUsage: a utilização e a ociosidade de cada veículo (dias
+// parados, o tempo ligado sem andar).
+func (s *Server) handleReportUsage(w http.ResponseWriter, r *http.Request) {
+	q, ok := s.reportScope(w, r)
+	if !ok {
+		return
+	}
+	summary, err := s.Reports.Summary(r.Context(), q.vehicles, q.from, q.to)
+	if err != nil {
+		handleStoreError(w, err, "relatório não encontrado")
+		return
+	}
+	loc := s.Reports.Location()
+	now := time.Now().In(loc)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	rows := s.Reports.Usage(summary, q.vehicles, q.from, q.to, today)
+	if q.csv {
+		writeCSV(w, "utilizacao", q, q.sheet.Usage(rows, q.vehicles))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"from": day(q.from), "to": day(q.to), "rows": rows})
+}
+
+// handleReportDriving: a nota de direção e os dados de uso de cada veículo
+// (na associação ou seguradora, por associado; a planilha é o que vai para a
+// análise de risco).
+func (s *Server) handleReportDriving(w http.ResponseWriter, r *http.Request) {
+	q, ok := s.reportScope(w, r)
+	if !ok {
+		return
+	}
+	rows, err := s.Reports.Driving(r.Context(), q.vehicles, q.from, q.to)
+	if err != nil {
+		handleStoreError(w, err, "relatório não encontrado")
+		return
+	}
+	if q.csv {
+		writeCSV(w, "direcao", q, q.sheet.Driving(rows, q.vehicles))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"from": day(q.from), "to": day(q.to), "rows": rows,
+		"minScoreKm": reports.MinScoreKm})
 }
 
 func (s *Server) handleReportDaily(w http.ResponseWriter, r *http.Request) {

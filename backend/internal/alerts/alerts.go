@@ -36,6 +36,12 @@ const (
 	KindLowBattery    = "LOW_BATTERY"
 	KindEngineBlock   = "ENGINE_BLOCK"
 	KindIgnition      = "IGNITION"
+	// KindCarBattery: a bateria do veículo (não a do rastreador) fraca, com
+	// ele desligado.
+	KindCarBattery = "CAR_BATTERY"
+	// KindImpact: o alarme de vibração com o veículo andando — possível
+	// colisão (depende do aparelho ter o sensor).
+	KindImpact = "IMPACT"
 )
 
 // KindTest é o e-mail de teste pedido pela tela de alertas (não configurável).
@@ -71,6 +77,10 @@ var Catalog = []KindInfo{
 		"O veículo passou do limite de velocidade cadastrado para ele.", false, true},
 	{KindSignalLost, "Rastreador sem sinal",
 		"O rastreador parou de se comunicar: na hora, se o veículo estava em movimento; depois de algumas horas, se estava parado.", false, true},
+	{KindImpact, "Possível colisão",
+		"O rastreador sentiu um impacto com o veículo em movimento (só nos aparelhos com sensor de vibração).", true, true},
+	{KindCarBattery, "Bateria do veículo fraca",
+		"Com o veículo desligado, a tensão da bateria caiu abaixo do que costuma dar partida (11,8 V; 23,6 V nos de 24 V).", false, true},
 	{KindLowBattery, "Bateria do rastreador fraca",
 		"A bateria interna do rastreador está acabando (costuma vir depois de ele ficar sem a energia do veículo).", false, true},
 	{KindEngineBlock, "Bloqueio e desbloqueio do motor",

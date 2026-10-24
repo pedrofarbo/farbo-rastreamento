@@ -37,7 +37,13 @@ const TeamPage = page(() => import('@/pages/customer/TeamPage'), 'TeamPage');
 const PartnerPage = page(() => import('@/pages/PartnerPage'), 'PartnerPage');
 const PartnerFlyerPage = page(() => import('@/pages/PartnerFlyerPage'), 'PartnerFlyerPage');
 const PublicTheftPage = page(() => import('@/pages/PublicTheftPage'), 'PublicTheftPage');
+const PublicLivePage = page(() => import('@/pages/PublicLivePage'), 'PublicLivePage');
+const PublicRoutePage = page(() => import('@/pages/PublicRoutePage'), 'PublicRoutePage');
+const InstallerPage = page(() => import('@/pages/InstallerPage'), 'InstallerPage');
+const InstallationsAgendaPage = page(() => import('@/pages/admin/InstallationsAgendaPage'), 'InstallationsAgendaPage');
+const OrgInstallationsPage = page(() => import('@/pages/org/OrgInstallationsPage'), 'OrgInstallationsPage');
 const TheftReportPage = page(() => import('@/pages/TheftReportPage'), 'TheftReportPage');
+const ClaimReportPage = page(() => import('@/pages/ClaimReportPage'), 'ClaimReportPage');
 const PublicPayPage = page(() => import('@/pages/PublicPayPage'), 'PublicPayPage');
 const InstallGuidePage = page(() => import('@/pages/InstallGuidePage'), 'InstallGuidePage');
 const ContractPage = page(() => import('@/pages/legal/ContractPage'), 'ContractPage');
@@ -45,6 +51,9 @@ const AlertsPage = page(() => import('@/pages/customer/AlertsPage'), 'AlertsPage
 const InvoicesPage = page(() => import('@/pages/customer/InvoicesPage'), 'InvoicesPage');
 const ReportsPage = page(() => import('@/pages/customer/ReportsPage'), 'ReportsPage');
 const MaintenancePage = page(() => import('@/pages/customer/MaintenancePage'), 'MaintenancePage');
+const FleetOpsPage = page(() => import('@/pages/customer/FleetOpsPage'), 'FleetOpsPage');
+const MyIntegrationsPage = page(() => import('@/pages/IntegrationsPage'), 'MyIntegrationsPage');
+const OrgIntegrationsPage = page(() => import('@/pages/IntegrationsPage'), 'OrgIntegrationsPage');
 const CustomerReportsPage = page(() => import('@/pages/customer/ReportsPage'), 'CustomerReportsPage');
 const MyVehiclesPage = page(() => import('@/pages/customer/MyVehiclesPage'), 'MyVehiclesPage');
 const DashboardPage = page(() => import('@/pages/DashboardPage'), 'DashboardPage');
@@ -57,6 +66,18 @@ const CentralFencesPage = page(() => import('@/pages/customer/CustomerFencesPage
 const LoginPage = page(() => import('@/pages/LoginPage'), 'LoginPage');
 const ResetPasswordPage = page(() => import('@/pages/ResetPasswordPage'), 'ResetPasswordPage');
 const VehicleDetailsPage = page(() => import('@/pages/VehicleDetailsPage'), 'VehicleDetailsPage');
+const OrgAssociatesPage = page(() => import('@/pages/org/OrgAssociatesPage'), 'OrgAssociatesPage');
+const OrgAssociatePage = page(() => import('@/pages/org/OrgAssociatePage'), 'OrgAssociatePage');
+const OrgTeamPage = page(() => import('@/pages/org/OrgTeamPage'), 'OrgTeamPage');
+const OrgRecoveryPage = page(() => import('@/pages/org/OrgRecoveryPage'), 'OrgRecoveryPage');
+const OrgAnnouncementsPage = page(() => import('@/pages/org/OrgAnnouncementsPage'), 'OrgAnnouncementsPage');
+const OrgClaimsPage = page(() => import('@/pages/org/OrgClaimsPage'), 'OrgClaimsPage');
+const OrgClaimPage = page(() => import('@/pages/org/OrgClaimsPage'), 'OrgClaimPage');
+const OrgInspectionsPage = page(() => import('@/pages/org/OrgInspectionsPage'), 'OrgInspectionsPage');
+const OrgInspectionPage = page(() => import('@/pages/org/OrgInspectionsPage'), 'OrgInspectionPage');
+const OrgInvoicesPage = page(() => import('@/pages/org/OrgInvoicesPage'), 'OrgInvoicesPage');
+const OrganizationsPage = page(() => import('@/pages/admin/OrganizationsPage'), 'OrganizationsPage');
+const OrganizationDetailsPage = page(() => import('@/pages/admin/OrganizationDetailsPage'), 'OrganizationDetailsPage');
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -95,6 +116,12 @@ export function App() {
                 <Route path="/parceiro/:token/flyer" element={<PartnerFlyerPage />} />
                 {/* Modo roubo: a posição ao vivo pelo link (sem login), para a polícia. */}
                 <Route path="/localizar/:token" element={<PublicTheftPage />} />
+                {/* A localização ao vivo por um tempo, pelo link que o cliente mandou (sem login). */}
+                <Route path="/ao-vivo/:token" element={<PublicLivePage />} />
+                {/* O link do passageiro: onde o ônibus da linha está (sem login). */}
+                <Route path="/linha/:token" element={<PublicRoutePage />} />
+                {/* O link do instalador: o passo a passo da instalação (sem login). */}
+                <Route path="/instalador/:token" element={<InstallerPage />} />
                 {/* O link de pagamento dos lembretes de fatura (sem login). */}
                 <Route path="/pagar/:token" element={<PublicPayPage />} />
                 {/* A instalação do J16 (o QR Code do folheto da embalagem). */}
@@ -103,6 +130,8 @@ export function App() {
                 <Route element={<RequireAuth />}>
                   {/* O relatório para o boletim de ocorrência: sem o menu (vai para a impressora). */}
                   <Route path="relatorio-roubo/:id" element={<TheftReportPage />} />
+                  {/* O relatório de sinistro (o seguro, a perícia): o trajeto e a velocidade em volta de um momento. */}
+                  <Route path="relatorio-sinistro/:id" element={<ClaimReportPage />} />
                   <Route element={<AppShell />}>
                     {/* Comuns: a API filtra o que o cliente vê. */}
                     <Route path="dashboard" element={<DashboardPage />} />
@@ -115,13 +144,34 @@ export function App() {
                       <Route path="alertas" element={<AlertsPage />} />
                       <Route path="relatorios" element={<ReportsPage />} />
                       <Route path="manutencao" element={<MaintenancePage />} />
+                      <Route path="frota" element={<FleetOpsPage />} />
                       {/* Conta empresa: faturas do titular e do Gestor; a equipe, só do titular. */}
                       <Route element={<RequireAccountOperator />}>
                         <Route path="faturas" element={<InvoicesPage />} />
                       </Route>
                       <Route element={<RequireAccountOwner />}>
                         <Route path="equipe" element={<TeamPage />} />
+                        <Route path="integracoes" element={<MyIntegrationsPage />} />
                       </Route>
+                    </Route>
+
+                    {/* O painel da associação ou seguradora (o mapa e os veículos são os comuns). */}
+                    <Route element={<RequireOrgMember />}>
+                      <Route path="associados" element={<OrgAssociatesPage />} />
+                      <Route path="associados/:id" element={<OrgAssociatePage />} />
+                      <Route element={<RequireOrgAdmin />}>
+                        <Route path="organizacao/equipe" element={<OrgTeamPage />} />
+                        <Route path="organizacao/faturas" element={<OrgInvoicesPage />} />
+                        <Route path="organizacao/integracoes" element={<OrgIntegrationsPage />} />
+                      </Route>
+                      <Route path="organizacao/relatorios" element={<ReportsPage />} />
+                      <Route path="organizacao/recuperacao" element={<OrgRecoveryPage />} />
+                      <Route path="organizacao/comunicados" element={<OrgAnnouncementsPage />} />
+                      <Route path="organizacao/ocorrencias" element={<OrgClaimsPage />} />
+                      <Route path="organizacao/ocorrencias/:id" element={<OrgClaimPage />} />
+                      <Route path="organizacao/vistorias" element={<OrgInspectionsPage />} />
+                      <Route path="organizacao/vistorias/:id" element={<OrgInspectionPage />} />
+                      <Route path="organizacao/instalacoes" element={<OrgInstallationsPage />} />
                     </Route>
 
                     <Route element={<RequireStaff />}>
@@ -132,6 +182,7 @@ export function App() {
 
                     <Route element={<RequireOperator />}>
                       <Route path="pedidos" element={<OrdersPage />} />
+                      <Route path="agenda" element={<InstallationsAgendaPage />} />
                       <Route path="atendimento" element={SUPPORT_SCREEN ? <SupportPage /> : <Navigate to="/dashboard" replace />} />
                     </Route>
 
@@ -141,6 +192,8 @@ export function App() {
                       <Route path="clientes" element={<CustomersPage />} />
                       <Route path="clientes/:id" element={<CustomerDetailsPage />} />
                       <Route path="clientes/:id/relatorios" element={<CustomerReportsPage />} />
+                      <Route path="associacoes" element={<OrganizationsPage />} />
+                      <Route path="associacoes/:id" element={<OrganizationDetailsPage />} />
                       <Route path="prestadores" element={<InstallersPage />} />
                       <Route path="empresa" element={<CompanyPage />} />
                       <Route path="usuarios" element={<UsersPage />} />
@@ -216,6 +269,20 @@ function RequireCustomer() {
 function RequireAccountOperator() {
   const { canSeeBilling } = useAuth();
   if (!canSeeBilling) return <Navigate to="/dashboard" replace />;
+  return <Outlet />;
+}
+
+/** O painel da associação ou seguradora. */
+function RequireOrgMember() {
+  const { isOrgMember } = useAuth();
+  if (!isOrgMember) return <Navigate to="/dashboard" replace />;
+  return <Outlet />;
+}
+
+/** A equipe e as faturas da organização: só o Administrador dela. */
+function RequireOrgAdmin() {
+  const { isOrgAdmin } = useAuth();
+  if (!isOrgAdmin) return <Navigate to="/associados" replace />;
   return <Outlet />;
 }
 

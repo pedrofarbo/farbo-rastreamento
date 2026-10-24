@@ -262,22 +262,24 @@ func (s *Service) HasAccepted(ctx context.Context, userID uuid.UUID) (bool, erro
 // Required diz se o cliente precisa aceitar antes de usar a plataforma. Quem
 // só acompanha o veículo de outra pessoa (acesso compartilhado, sem veículo,
 // assinatura nem fatura dele) não é parte do contrato e fica dispensado — até
-// pedir um rastreador.
+// pedir um rastreador. O associado de uma associação ou seguradora também: o
+// contrato é com a organização, que paga o rastreamento dele.
 func (s *Service) Required(ctx context.Context, userID uuid.UUID) (bool, error) {
 	ok, err := s.HasAccepted(ctx, userID)
 	if err != nil || ok {
 		return false, err
 	}
-	var guestOnly bool
+	var exempt bool
 	err = s.db.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM vehicle_shares WHERE guest_id = $1)
+		SELECT (EXISTS (SELECT 1 FROM vehicle_shares WHERE guest_id = $1)
 			AND NOT EXISTS (SELECT 1 FROM vehicles WHERE owner_id = $1)
 			AND NOT EXISTS (SELECT 1 FROM subscriptions WHERE customer_id = $1)
-			AND NOT EXISTS (SELECT 1 FROM invoices WHERE customer_id = $1)`, userID).Scan(&guestOnly)
+			AND NOT EXISTS (SELECT 1 FROM invoices WHERE customer_id = $1))
+			OR EXISTS (SELECT 1 FROM users WHERE id = $1 AND organization_id IS NOT NULL)`, userID).Scan(&exempt)
 	if err != nil {
 		return false, database.MapError(err)
 	}
-	return !guestOnly, nil
+	return !exempt, nil
 }
 
 // Status é o contrato, se o cliente precisa aceitar e o que já aceitou.
@@ -310,7 +312,7 @@ func (s *Service) NotifyChanges(ctx context.Context) {
 	}
 	rows, err := s.db.Query(ctx, `
 		SELECT u.id, u.email, u.name FROM users u
-		WHERE u.role = 'customer' AND u.active
+		WHERE u.role = 'customer' AND u.active AND u.organization_id IS NULL
 			AND EXISTS (SELECT 1 FROM contract_acceptances a WHERE a.user_id = u.id AND a.version <> $1)
 			AND NOT EXISTS (SELECT 1 FROM contract_acceptances a WHERE a.user_id = u.id AND a.version = $1)
 			AND NOT EXISTS (SELECT 1 FROM contract_change_notices n WHERE n.user_id = u.id AND n.version = $1)

@@ -289,8 +289,11 @@ func (s *Server) requireStepUp(w http.ResponseWriter, r *http.Request, purpose s
 // stepUpMethod é o requireStepUp que também diz como o cliente confirmou
 // (biometric ou password; vazio para a equipe da central).
 func (s *Server) stepUpMethod(w http.ResponseWriter, r *http.Request, purpose string) (string, bool) {
+	// O cliente e quem é de uma associação ou seguradora confirmam; a
+	// equipe da central segue como antes.
 	_, isCustomer := customerOf(r)
-	if !isCustomer || s.StepUp == nil {
+	_, isOrg := orgOf(r)
+	if !(isCustomer || isOrg) || s.StepUp == nil {
 		return "", true
 	}
 	// A confirmação é de quem está logado (alguém da equipe confirma com a

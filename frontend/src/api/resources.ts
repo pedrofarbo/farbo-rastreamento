@@ -1,11 +1,25 @@
+import type { AssociateImportRow } from '@/services/associateImport';
 import type { FleetImportRow } from '@/services/fleetImport';
 import type { TeamRole } from '@/services/roles';
 
 import { api, apiUrl, download, fetchBlob, request, tokens } from './client';
 import type {
   AccountMember,
+  AwaitingInstall,
+  AwaitingUninstall,
+  BusRoute,
+  BusRouteInput,
+  BusTrip,
+  InstallCheck,
+  InstallationAppointment,
+  InstallationInput,
+  InstallationSlot,
+  PublicInstallView,
+  PublicRouteView,
+  RouteDay,
   FleetImportResult,
   MaintenanceItem,
+  MaintenanceKind,
   MaintenanceRecord,
   MaintenanceStatus,
   Odometer,
@@ -33,6 +47,9 @@ import type {
   ShippingQuoteView,
   TheftView,
   PublicTheftView,
+  LiveLink,
+  LiveLinksView,
+  PublicLiveView,
   InvoiceReminder,
   PublicInvoice,
   ContractDocument,
@@ -125,11 +142,48 @@ import type {
   ReportDailyRow,
   ReportOverspeed,
   ReportSummaryRow,
+  ReportUsageRow,
+  ReportDrivingRow,
   ReportTrip,
   ReportVehicle,
   FleetSettings,
   VehicleGroup,
   UnknownAttempt,
+  Associate,
+  AssociateDetail,
+  ClosingMonth,
+  EquipmentTerms,
+  FiscalNote,
+  AssociateInput,
+  OrgInvoice,
+  OrgEstimate,
+  OrgMember,
+  OrgOverview,
+  OrgRecoveries,
+  Claim,
+  ClaimInput,
+  ClaimStatus,
+  Inspection,
+  InspectionSlot,
+  ReferralProgram,
+  FleetDriver,
+  FleetDriverInput,
+  FleetExpense,
+  FleetExpenseInput,
+  FleetCostRow,
+  TrafficFine,
+  TrafficFineInput,
+  Rental,
+  RentalInput,
+  JourneyRow,
+  ApiKey,
+  Webhook,
+  OrgAnnouncement,
+  OrgAnnouncements,
+  OrgRole,
+  Organization,
+  OrganizationDetail,
+  OrganizationInput,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -386,6 +440,21 @@ export const theftApi = {
 };
 
 // ---------------------------------------------------------------------------
+// Localização ao vivo por um tempo (o link que o cliente manda)
+// ---------------------------------------------------------------------------
+
+export const liveLinksApi = {
+  list: (vehicleId: string) => api.get<LiveLinksView>(`/api/vehicles/${vehicleId}/live-links`),
+  /** Gera o link (com a biometria ou a senha). */
+  create: (vehicleId: string, input: { hours: number; label: string }, stepUpToken: string) =>
+    request<LiveLink>(`/api/vehicles/${vehicleId}/live-links`, { method: 'POST', body: input, headers: withStepUp(stepUpToken) }),
+  revoke: (vehicleId: string, id: string) => api.delete<void>(`/api/vehicles/${vehicleId}/live-links/${id}`),
+  /** O link público (sem login). */
+  publicView: (token: string) =>
+    request<PublicLiveView>(`/api/public/live/${encodeURIComponent(token)}`, { anonymous: true }),
+};
+
+// ---------------------------------------------------------------------------
 // Acessos de terceiros (o cliente compartilha um veículo dele)
 // ---------------------------------------------------------------------------
 
@@ -410,6 +479,196 @@ export const teamApi = {
   /** Os veículos que a pessoa vê: com grupos, só os deles; vazio, todos. */
   setGroups: (userId: string, groups: string[]) => api.patch<AccountMember>(`/api/me/team/${userId}`, { groups }),
   remove: (userId: string) => api.delete<void>(`/api/me/team/${userId}`),
+};
+
+/** Os dados de quem entra na equipe de uma organização. */
+export interface OrgMemberInput {
+  name: string;
+  email: string;
+  role: OrgRole;
+}
+
+/** O que a equipe de uma organização faz: no painel dela, ou pela central (sem a confirmação extra). */
+export interface OrgTeamApi {
+  list: () => Promise<OrgMember[]>;
+  add: (input: OrgMemberInput, stepUpToken?: string) => Promise<OrgMember>;
+  setRole: (userId: string, role: OrgRole) => Promise<OrgMember>;
+  remove: (userId: string) => Promise<OrgMember>;
+  invite: (userId: string) => Promise<{ message: string }>;
+}
+
+/** O painel da associação ou seguradora (o mapa e os veículos vêm de vehiclesApi). */
+export const orgApi = {
+  overview: () => api.get<OrgOverview>('/api/org/'),
+  associates: () => api.get<Associate[]>('/api/org/associates'),
+  announcements: () => api.get<OrgAnnouncements>('/api/org/announcements'),
+  /** Manda o comunicado aos associados ativos (no app e, se pedido, por e-mail). */
+  announce: (input: { title: string; body: string; email: boolean }) =>
+    api.post<OrgAnnouncement>('/api/org/announcements', input),
+  /** Os associados (e veículos) por planilha; dryRun só confere. Problemas: 422 com problems (row = posição). */
+  importAssociates: (rows: AssociateImportRow[], dryRun: boolean) =>
+    request<{ dryRun: boolean; associates: number; vehicles: number }>('/api/org/associates/import', {
+      method: 'POST',
+      body: { rows, dryRun },
+    }),
+  claims: (status = '') => api.get<Claim[]>(`/api/org/claims${status ? `?situacao=${status}` : ''}`),
+  claim: (id: string) => api.get<Claim>(`/api/org/claims/${id}`),
+  setClaimStatus: (id: string, status: ClaimStatus, note: string) =>
+    api.post<Claim>(`/api/org/claims/${id}/status`, { status, note }),
+  claimNote: (id: string, note: string) => api.post<Claim>(`/api/org/claims/${id}/notes`, { note }),
+  claimFileUrl: (id: string, fileId: string) => `/api/org/claims/${id}/files/${fileId}`,
+  downloadClaimFile: (id: string, fileId: string) => download(`/api/org/claims/${id}/files/${fileId}`),
+  inspections: (status = '') => api.get<Inspection[]>(`/api/org/inspections${status ? `?situacao=${status}` : ''}`),
+  inspection: (id: string) => api.get<Inspection>(`/api/org/inspections/${id}`),
+  requestInspection: (vehicleId: string, note: string) => api.post<Inspection>('/api/org/inspections', { vehicleId, note }),
+  reviewInspection: (id: string, approve: boolean, note: string) =>
+    api.post<Inspection>(`/api/org/inspections/${id}/review`, { approve, note }),
+  inspectionPhotoUrl: (id: string, slot: InspectionSlot) => `/api/org/inspections/${id}/photos/${slot}`,
+  /** O painel de recuperação: os modos roubo dos veículos dos associados. */
+  recoveries: (months = 12) => api.get<OrgRecoveries>(`/api/org/recoveries?meses=${months}`),
+  associate: (id: string) => api.get<AssociateDetail>(`/api/org/associates/${id}`),
+  createAssociate: (input: AssociateInput) => api.post<Associate>('/api/org/associates', input),
+  updateAssociate: (id: string, input: AssociateInput) => api.patch<Associate>(`/api/org/associates/${id}`, input),
+  inviteAssociate: (id: string) => api.post<{ message: string }>(`/api/org/associates/${id}/invite`),
+  /** O veículo do associado e o pedido de instalação (na fila da central). */
+  registerVehicle: (associateId: string, input: VehicleInput) =>
+    api.post<Vehicle>(`/api/org/associates/${associateId}/vehicles`, input),
+  team: {
+    list: () => api.get<OrgMember[]>('/api/org/team'),
+    /** Pede a confirmação extra (biometria ou senha) de quem põe. */
+    add: (input: OrgMemberInput, stepUpToken?: string) =>
+      request<OrgMember>('/api/org/team', { method: 'POST', body: input, headers: withStepUp(stepUpToken) }),
+    setRole: (userId: string, role: OrgRole) => api.patch<OrgMember>(`/api/org/team/${userId}`, { role }),
+    remove: (userId: string) => api.delete<OrgMember>(`/api/org/team/${userId}`),
+    invite: (userId: string) => api.post<{ message: string }>(`/api/org/team/${userId}/invite`),
+  } satisfies OrgTeamApi,
+  invoices: () => api.get<{ invoices: OrgInvoice[]; estimate: OrgEstimate; onlinePayment: boolean }>('/api/org/invoices'),
+  /** Pede à central a retirada do rastreador do veículo do associado (o motivo vai junto). */
+  requestUninstall: (vehicleId: string, note: string) => api.post<void>(`/api/org/vehicles/${vehicleId}/uninstall`, { note }),
+  cancelUninstall: (vehicleId: string) => api.delete<void>(`/api/org/vehicles/${vehicleId}/uninstall`),
+  /** As instalações e desinstalações agendadas dos veículos dos associados (de hoje a 7 dias, ou o período). */
+  installations: (from?: string, to?: string) =>
+    api.get<InstallationAppointment[]>(`/api/org/installations${from && to ? `?de=${from}&ate=${to}` : ''}`),
+  /** As notas fiscais de cada mês. */
+  fiscalNotes: () => api.get<FiscalNote[]>('/api/org/fiscal-notes'),
+  downloadNote: (id: string) => download(`/api/org/fiscal-notes/${id}/file`),
+  /** O contrato da janela de pagamento, para as faturas da organização. */
+  pix: {
+    invoicePix: (id: string) => api.post<PixCharge>(`/api/org/invoices/${id}/pix`),
+    invoiceBoleto: (id: string) => api.post<PixCharge>(`/api/org/invoices/${id}/boleto`),
+    charge: (id: string) => api.get<PixCharge>(`/api/org/charges/${id}`),
+    simulateCharge: (id: string) => api.post<PixCharge>(`/api/org/charges/${id}/simulate`),
+  } satisfies PixApi,
+};
+
+/** O fechamento do mês e as notas fiscais (central). */
+export const closingApi = {
+  /** O mês (AAAA-MM); sem ele, o mês passado. */
+  month: (month?: string) => api.get<ClosingMonth>(`/api/closing/${month ? `?mes=${encodeURIComponent(month)}` : ''}`),
+  exportCsv: (month: string) => download(`/api/closing/export.csv?mes=${encodeURIComponent(month)}`),
+  /** Registra (ou troca) a nota; sem arquivo, fica o que já tinha. */
+  saveNote: (input: { customerId: string; month: string; number: string; issuedOn: string; amountCents: number; file?: File | null }) => {
+    const form = new FormData();
+    form.append('customerId', input.customerId);
+    form.append('month', input.month);
+    form.append('number', input.number);
+    form.append('issuedOn', input.issuedOn);
+    form.append('amountCents', String(input.amountCents));
+    if (input.file) form.append('file', input.file);
+    return request<FiscalNote>('/api/closing/notes', { method: 'POST', body: form });
+  },
+  removeNote: (id: string) => api.delete<void>(`/api/closing/notes/${id}`),
+  downloadNote: (id: string) => download(`/api/closing/notes/${id}/file`),
+};
+
+/** As associações e seguradoras, pela central. */
+export const organizationsApi = {
+  list: () => api.get<Organization[]>('/api/organizations'),
+  create: (input: OrganizationInput & { admin?: { name: string; email: string } }) =>
+    api.post<{ organization: Organization; adminError?: string }>('/api/organizations', input),
+  get: (id: string) => api.get<OrganizationDetail>(`/api/organizations/${id}`),
+  update: (id: string, input: OrganizationInput) => api.patch<Organization>(`/api/organizations/${id}`, input),
+  team: (id: string): OrgTeamApi => ({
+    list: async () => (await api.get<OrganizationDetail>(`/api/organizations/${id}`)).memberList,
+    add: (input: OrgMemberInput) => api.post<OrgMember>(`/api/organizations/${id}/members`, input),
+    setRole: (userId: string, role: OrgRole) => api.patch<OrgMember>(`/api/organizations/${id}/members/${userId}`, { role }),
+    remove: (userId: string) => api.delete<OrgMember>(`/api/organizations/${id}/members/${userId}`),
+    invite: (userId: string) => api.post<{ message: string }>(`/api/organizations/${id}/members/${userId}/invite`),
+  }),
+  createAssociate: (id: string, input: AssociateInput) => api.post<Associate>(`/api/organizations/${id}/associates`, input),
+  /** Os associados (e veículos) por planilha, dentro da organização; dryRun só confere. */
+  importAssociates: (id: string, rows: AssociateImportRow[], dryRun: boolean) =>
+    request<{ dryRun: boolean; associates: number; vehicles: number }>(`/api/organizations/${id}/associates/import`, {
+      method: 'POST',
+      body: { rows, dryRun },
+    }),
+  registerVehicle: (id: string, associateId: string, input: VehicleInput) =>
+    api.post<Vehicle>(`/api/organizations/${id}/associates/${associateId}/vehicles`, input),
+  /** Lança já a fatura do próximo vencimento. */
+  generateInvoice: (id: string) => api.post<OrgInvoice>(`/api/organizations/${id}/invoices/generate`),
+};
+
+/** A agenda de instalação (central). */
+export const installationsApi = {
+  /** De hoje a 7 dias, ou o período (AAAA-MM-DD). */
+  list: (from?: string, to?: string) =>
+    api.get<InstallationAppointment[]>(`/api/installations${from && to ? `?de=${from}&ate=${to}` : ''}`),
+  awaiting: () => api.get<AwaitingInstall[]>('/api/installations/awaiting'),
+  /** Os veículos de associado à espera da retirada do rastreador (pedido da associação ou associado desligado). */
+  awaitingUninstall: () => api.get<AwaitingUninstall[]>('/api/installations/awaiting-uninstall'),
+  create: (input: InstallationInput) => api.post<InstallationAppointment>('/api/installations', input),
+  reschedule: (id: string, input: InstallationInput) => api.patch<InstallationAppointment>(`/api/installations/${id}`, input),
+  /** Cancela ou marca que o cliente não estava. */
+  close: (id: string, status: 'canceled' | 'no_show') =>
+    api.post<InstallationAppointment>(`/api/installations/${id}/close`, { status }),
+  photoUrl: (id: string, slot: InstallationSlot) => `/api/installations/${id}/photos/${slot}`,
+};
+
+/** O link do instalador (sem login). */
+export const installLinkApi = {
+  view: (token: string) => request<PublicInstallView>(`/api/public/install/${encodeURIComponent(token)}`, { anonymous: true }),
+  arrive: (token: string) =>
+    request<PublicInstallView>(`/api/public/install/${encodeURIComponent(token)}/arrive`, { method: 'POST', anonymous: true }),
+  check: (token: string, imei: string) =>
+    request<InstallCheck>(`/api/public/install/${encodeURIComponent(token)}/check`, {
+      method: 'POST',
+      body: { imei },
+      anonymous: true,
+    }),
+  savePhoto: (token: string, slot: InstallationSlot, file: Blob) => {
+    const form = new FormData();
+    form.append('file', file, `${slot}.jpg`);
+    return request<void>(`/api/public/install/${encodeURIComponent(token)}/photos/${slot}`, {
+      method: 'PUT',
+      body: form,
+      anonymous: true,
+    });
+  },
+  photoUrl: (token: string, slot: InstallationSlot, version = '') =>
+    apiUrl(`/api/public/install/${encodeURIComponent(token)}/photos/${slot}${version ? `?v=${version}` : ''}`),
+  complete: (token: string, imei: string, note: string) =>
+    request<PublicInstallView>(`/api/public/install/${encodeURIComponent(token)}/complete`, {
+      method: 'POST',
+      body: { imei, note },
+      anonymous: true,
+    }),
+};
+
+/** Os itinerários da conta (as linhas de ônibus) e o link do passageiro. */
+export const busRoutesApi = {
+  list: () => api.get<BusRoute[]>('/api/me/routes'),
+  get: (id: string) => api.get<BusRoute>(`/api/me/routes/${id}`),
+  /** As viagens do dia (AAAA-MM-DD; sem ele, hoje) com o progresso de cada uma. */
+  day: (id: string, day?: string) => api.get<RouteDay>(`/api/me/routes/${id}/day${day ? `?dia=${day}` : ''}`),
+  save: (id: string | null, input: BusRouteInput) =>
+    id ? api.put<BusRoute>(`/api/me/routes/${id}`, input) : api.post<BusRoute>('/api/me/routes', input),
+  remove: (id: string) => api.delete<void>(`/api/me/routes/${id}`),
+  /** O veículo na linha na hora pedida (e nos dias seguintes, com days). */
+  createTrips: (id: string, input: { vehicleId: string; departsAt: string; days: number }) =>
+    api.post<BusTrip[]>(`/api/me/routes/${id}/trips`, input),
+  cancelTrip: (tripId: string) => api.post<void>(`/api/me/trips/${tripId}/cancel`),
+  publicView: (token: string) =>
+    request<PublicRouteView>(`/api/public/routes/${encodeURIComponent(token)}`, { anonymous: true }),
 };
 
 export const sharesApi = {
@@ -564,6 +823,8 @@ export interface ReportQuery {
   groupId?: string;
   /** A central vendo os relatórios de um cliente. */
   customerId?: string;
+  /** A associação vendo os de um associado só. */
+  associateId?: string;
 }
 
 function reportPath(kind: string, q: ReportQuery, csv = false): string {
@@ -571,15 +832,25 @@ function reportPath(kind: string, q: ReportQuery, csv = false): string {
   if (q.vehicleId) params.set('veiculo', q.vehicleId);
   if (q.groupId) params.set('grupo', q.groupId);
   if (q.customerId) params.set('cliente', q.customerId);
+  if (q.associateId) params.set('associado', q.associateId);
   if (csv) params.set('formato', 'csv');
   return `/api/reports/${kind}?${params}`;
 }
 
-export type ReportKind = 'summary' | 'daily' | 'trips' | 'overspeed';
+export type ReportKind = 'summary' | 'usage' | 'driving' | 'journey' | 'daily' | 'trips' | 'overspeed';
 
 /** Os relatórios da frota da conta; download baixa a planilha (CSV). */
 export const reportsApi = {
   summary: (q: ReportQuery) => api.get<{ from: string; to: string; rows: ReportSummaryRow[] }>(reportPath('summary', q)),
+  usage: (q: ReportQuery) => api.get<{ from: string; to: string; rows: ReportUsageRow[] }>(reportPath('usage', q)),
+  driving: (q: ReportQuery) =>
+    api.get<{ from: string; to: string; rows: ReportDrivingRow[]; minScoreKm: number }>(reportPath('driving', q)),
+  journey: (q: ReportQuery, kind: 'carga' | 'passageiros') =>
+    api.get<{ from: string; to: string; vehicles: ReportVehicle[]; rows: JourneyRow[]; continuousLimitSeconds: number }>(
+      `${reportPath('journey', q)}&tipo=${kind}`,
+    ),
+  costs: (q: ReportQuery) =>
+    api.get<{ from: string; to: string; vehicles: ReportVehicle[]; rows: FleetCostRow[] }>(reportPath('costs' as ReportKind, q)),
   daily: (q: ReportQuery) =>
     api.get<{ from: string; to: string; vehicles: ReportVehicle[]; rows: ReportDailyRow[] }>(reportPath('daily', q)),
   trips: (q: ReportQuery) =>
@@ -610,7 +881,11 @@ export const maintenanceApi = {
 };
 
 export interface MaintenanceInput {
+  /** Sem ele, manutenção. */
+  kind?: MaintenanceKind;
   name: string;
+  /** Documento: o próximo vencimento (no lugar da última vez). */
+  dueDate?: string;
   everyKm: number | null;
   everyMonths: number | null;
   /** Horas de motor. */
@@ -722,9 +997,12 @@ export const customersApi = {
     api.put<{ effectiveDays: number }>(`/api/customers/${id}/history-retention`, { days }),
   /** Quem indicou o cliente (null tira a indicação). */
   /** Define o plano do cliente: vale para todo veículo novo (as assinaturas atuais não mudam). */
-  setPlan: (id: string, input: SubscriptionInput) => api.put<AccountPlan>(`/api/customers/${id}/plan`, input),
+  setPlan: (id: string, input: SubscriptionInput & Partial<EquipmentTerms>) => api.put<AccountPlan>(`/api/customers/${id}/plan`, input),
   /** Volta o cliente ao plano padrão (o da assinatura ativa, ou o do catálogo). */
   clearPlan: (id: string) => api.delete<void>(`/api/customers/${id}/plan`),
+  /** A associação ou seguradora que paga o rastreamento do cliente (null: nenhuma). */
+  setOrganization: (id: string, organizationId: string | null) =>
+    api.put<{ organization: Organization | null }>(`/api/customers/${id}/organization`, { organizationId }),
   setAffiliate: (id: string, affiliateId: string | null) =>
     api.put<{ affiliate: CustomerReferral | null }>(`/api/customers/${id}/affiliate`, { affiliateId }),
 
@@ -734,10 +1012,12 @@ export const customersApi = {
    * Encerra a assinatura. Com o rastreador parcelado e parcelas por pagar, diz
    * o que fazer com o saldo: CHARGE (uma fatura só) ou WAIVE (dispensar).
    */
-  cancelSubscription: (id: string, equipmentBalance?: EquipmentBalance) =>
-    api.post<Subscription & { balanceInvoice: Invoice | null }>(
+  cancelSubscription: (id: string, equipmentBalance?: EquipmentBalance, waiveUninstall = false) =>
+    api.post<Subscription & { balanceInvoice: Invoice | null; uninstallInvoice: Invoice | null }>(
       `/api/subscriptions/${id}/cancel`,
-      equipmentBalance ? { equipmentBalance } : undefined,
+      equipmentBalance || waiveUninstall
+        ? { ...(equipmentBalance ? { equipmentBalance } : {}), ...(waiveUninstall ? { waiveUninstall } : {}) }
+        : undefined,
     ),
 
   createInvoice: (customerId: string, input: InvoiceInput) =>
@@ -795,9 +1075,8 @@ export const customersApi = {
 
 export interface AdminTrackerOrder {
   vehicle: VehicleInput;
-  /** Zero não gera fatura (aparelho do cliente, cortesia). */
+  /** Zero não cobra (aparelho do cliente, cortesia, comodato). */
   equipmentCents: number;
-  setupDueDate?: DateOnly | null;
   plan: SubscriptionInput;
   /** Aplica a promoção de pré-lançamento (o cliente precisa ter direito). */
   launchPromo?: boolean;
@@ -811,7 +1090,6 @@ export interface FleetImportRequest {
   rows: FleetImportRow[];
   /** O valor de cada aparelho; zero não cobra. */
   equipmentCents: number;
-  setupDueDate?: DateOnly | null;
   plan: SubscriptionInput;
   /** Só confere: nada é gravado. */
   dryRun?: boolean;
@@ -978,7 +1256,7 @@ export const affiliatesApi = {
   /** Troca o link secreto da página do afiliado (o antigo para de abrir). */
   renewReportLink: (id: string) => api.post<Affiliate>(`/api/affiliates/${id}/report-token`),
   settings: () => api.get<AffiliateSettings>('/api/affiliates/settings'),
-  saveSettings: (input: { defaultCommissionCents: number; applyToAll: boolean }) =>
+  saveSettings: (input: { defaultCommissionCents: number; applyToAll: boolean; customerRewardCents?: number }) =>
     api.put<AffiliateSettings>('/api/affiliates/settings', input),
   /** month: AAAA-MM. */
   closing: (month: string) => api.get<AffiliateClosingLine[]>(`/api/affiliates/closing?month=${month}`),
@@ -1028,7 +1306,76 @@ export const catalogApi = {
 };
 
 /** Área do cliente (perfil customer). */
+/** A gestão da frota da conta: motoristas, custos, multas e locações. */
+export const fleetOpsApi = {
+  drivers: () => api.get<FleetDriver[]>('/api/me/drivers'),
+  createDriver: (input: FleetDriverInput) => api.post<FleetDriver>('/api/me/drivers', input),
+  updateDriver: (id: string, input: FleetDriverInput) => api.patch<FleetDriver>(`/api/me/drivers/${id}`, input),
+  /** Quem dirige o veículo a partir de agora (nulo: ninguém). */
+  assignDriver: (vehicleId: string, driverId: string | null) =>
+    api.put<void>(`/api/me/vehicles/${vehicleId}/driver`, { driverId }),
+  expenses: (from: string, to: string) => api.get<FleetExpense[]>(`/api/me/expenses?de=${from}&ate=${to}`),
+  createExpense: (input: FleetExpenseInput) => api.post<FleetExpense>('/api/me/expenses', input),
+  deleteExpense: (id: string) => api.delete<void>(`/api/me/expenses/${id}`),
+  fines: () => api.get<TrafficFine[]>('/api/me/fines'),
+  createFine: (input: TrafficFineInput) => api.post<TrafficFine>('/api/me/fines', input),
+  updateFine: (id: string, input: TrafficFineInput) => api.patch<TrafficFine>(`/api/me/fines/${id}`, input),
+  deleteFine: (id: string) => api.delete<void>(`/api/me/fines/${id}`),
+  rentals: () => api.get<Rental[]>('/api/me/rentals'),
+  createRental: (input: RentalInput) => api.post<Rental>('/api/me/rentals', input),
+  returnRental: (id: string, kmEnd: number | null) => api.post<Rental>(`/api/me/rentals/${id}/return`, { kmEnd }),
+  extendRental: (id: string, endsAt: string) => api.post<Rental>(`/api/me/rentals/${id}/extend`, { endsAt }),
+};
+
+/** As integrações (chaves da API e webhooks): do titular (/me) ou da organização (/org). */
+export function integrationsApi(base: '/api/me' | '/api/org') {
+  return {
+    keys: () => api.get<ApiKey[]>(`${base}/api-keys`),
+    createKey: (name: string) => api.post<{ key: ApiKey; secret: string }>(`${base}/api-keys`, { name }),
+    revokeKey: (id: string) => api.delete<void>(`${base}/api-keys/${id}`),
+    webhooks: () => api.get<Webhook[]>(`${base}/webhooks`),
+    createWebhook: (input: { url: string; events: string[] }) => api.post<Webhook>(`${base}/webhooks`, input),
+    updateWebhook: (id: string, input: { url: string; events: string[]; active: boolean }) =>
+      api.patch<Webhook>(`${base}/webhooks/${id}`, input),
+    deleteWebhook: (id: string) => api.delete<void>(`${base}/webhooks/${id}`),
+    testWebhook: (id: string) => api.post<Webhook>(`${base}/webhooks/${id}/test`),
+  };
+}
+
 export const meApi = {
+  /** Indique e ganhe: o link do cliente, quem veio por ele e os créditos. */
+  referral: () => api.get<ReferralProgram>('/api/me/referral'),
+  /** As ocorrências do associado (abertas por ele, com as fotos e o B.O.). */
+  claims: () => api.get<Claim[]>('/api/me/claims'),
+  claim: (id: string) => api.get<Claim>(`/api/me/claims/${id}`),
+  openClaim: (input: ClaimInput) => api.post<Claim>('/api/me/claims', input),
+  claimNote: (id: string, note: string) => api.post<Claim>(`/api/me/claims/${id}/notes`, { note }),
+  addClaimFile: (id: string, kind: 'photo' | 'police_report' | 'document', file: Blob, name: string) => {
+    const form = new FormData();
+    form.append('kind', kind);
+    form.append('file', file, name);
+    return request<{ id: string }>(`/api/me/claims/${id}/files`, { method: 'POST', body: form });
+  },
+  claimFileUrl: (id: string, fileId: string) => `/api/me/claims/${id}/files/${fileId}`,
+  /** As instalações agendadas dos veículos do cliente. */
+  installations: () => api.get<InstallationAppointment[]>('/api/me/installations'),
+  /** As vistorias pedidas ao associado. */
+  inspections: () => api.get<Inspection[]>('/api/me/inspections'),
+  inspection: (id: string) => api.get<Inspection>(`/api/me/inspections/${id}`),
+  saveInspectionPhoto: (id: string, slot: InspectionSlot, file: Blob, position: { latitude: number; longitude: number } | null) => {
+    const form = new FormData();
+    form.append('file', file, `${slot}.jpg`);
+    if (position) {
+      form.append('latitude', String(position.latitude));
+      form.append('longitude', String(position.longitude));
+    }
+    return request<unknown>(`/api/me/inspections/${id}/photos/${slot}`, { method: 'PUT', body: form });
+  },
+  inspectionPhotoUrl: (id: string, slot: InspectionSlot) => `/api/me/inspections/${id}/photos/${slot}`,
+  submitInspection: (id: string) => api.post<Inspection>(`/api/me/inspections/${id}/submit`),
+  /** As notas fiscais de cada mês. */
+  fiscalNotes: () => api.get<FiscalNote[]>('/api/me/fiscal-notes'),
+  downloadNote: (id: string) => download(`/api/me/fiscal-notes/${id}/file`),
   account: () => api.get<CustomerAccount>('/api/me/account'),
   subscriptions: () => api.get<Subscription[]>('/api/me/subscriptions'),
   invoices: () => api.get<Invoice[]>('/api/me/invoices'),

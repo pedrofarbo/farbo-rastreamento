@@ -54,6 +54,11 @@ func (s *Server) vehicleForViewer(w http.ResponseWriter, r *http.Request, requir
 		return nil, nil, nil, false
 	}
 
+	// A organização vê só os veículos dos associados (sem acesso compartilhado).
+	if _, isOrg := orgOf(r); isOrg && !seesVehicle(r, vehicle) {
+		writeError(w, http.StatusNotFound, "veículo não encontrado")
+		return nil, nil, nil, false
+	}
 	var share *shares.Share
 	if _, isCustomer := customerOf(r); isCustomer && !seesVehicle(r, vehicle) {
 		if s.Shares == nil {

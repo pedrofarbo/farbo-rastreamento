@@ -5,7 +5,7 @@ import { authApi } from '@/api/resources';
 import { ApiError, onUnauthorized, tokens } from '@/api/client';
 import { biometricLogin } from '@/services/stepUp';
 import { rememberTrustedDevice, trustedDeviceFor } from '@/services/trustedDevice';
-import type { AuthTokens, LoginResponse, TwoFactorChallenge, User, Membership } from '@/types';
+import type { AuthTokens, LoginResponse, TwoFactorChallenge, User, Membership, OrgMembership } from '@/types';
 
 /** O fim do login com a senha: quem entrou, ou o segundo fator que falta. */
 export type LoginOutcome = { user: User; challenge?: undefined } | { user?: undefined; challenge: TwoFactorChallenge };
@@ -29,7 +29,7 @@ interface AuthContextValue {
   canOperate: boolean;
   /** Cliente final: vê só os próprios veículos e faturas. */
   isCustomer: boolean;
-  /** Equipe da central (admin, operador, visualização). */
+  /** Equipe da central (admin, operador, visualização); não a de uma organização. */
   isStaff: boolean;
   /** Conta empresa: o vínculo de quem é da equipe da conta de um cliente. */
   membership: Membership | null;
@@ -42,8 +42,21 @@ interface AuthContextValue {
    * inteira (faturas, envios, grupos e campos da frota) fica só com eles.
    */
   seesWholeAccount: boolean;
-  /** Faturas, cobranças e envios: o titular e o Gestor com acesso a todos os veículos. */
+  /** Faturas, cobranças e envios: o titular e o Gestor com acesso a todos os veículos (o associado, não: quem paga é a organização). */
   canSeeBilling: boolean;
+  /** O associado de uma associação ou seguradora: sem faturas nem pedido de veículo. */
+  paidByOrganization: boolean;
+  /** Quem é da equipe de uma associação ou seguradora (o painel dela). */
+  isOrgMember: boolean;
+  orgMembership: OrgMembership | null;
+  /** O Administrador e o Operador da organização cadastram e bloqueiam; o Visualizador só acompanha. */
+  canOperateOrg: boolean;
+  /** O Administrador da organização: a equipe e as faturas. */
+  isOrgAdmin: boolean;
+  /** O corretor da seguradora: só os associados dele. */
+  isOrgBroker: boolean;
+  /** Quem cadastra associados e veículos (o Administrador, o Operador e o corretor). */
+  canRegisterOrg: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -177,16 +190,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canSendCommands:
         user?.role === 'admin' ||
         user?.role === 'operator' ||
-        (user?.role === 'customer' && user.membership?.role !== 'viewer'),
+        (user?.role === 'customer' && user.membership?.role !== 'viewer') ||
+        (user?.role === 'org_member' && !!user.organization && user.organization.role !== 'viewer'),
       canManage: user?.role === 'admin',
       canOperate: user?.role === 'admin' || user?.role === 'operator',
       isCustomer: user?.role === 'customer',
-      isStaff: user !== null && user.role !== 'customer',
+      isStaff: user?.role === 'admin' || user?.role === 'operator' || user?.role === 'viewer',
       membership: user?.role === 'customer' ? (user.membership ?? null) : null,
       isAccountOwner: user?.role === 'customer' && !user.membership,
       canOperateAccount: user?.role === 'customer' && user.membership?.role !== 'viewer',
       seesWholeAccount: user?.role === 'customer' && !user.membership?.restricted,
-      canSeeBilling: user?.role === 'customer' && user.membership?.role !== 'viewer' && !user.membership?.restricted,
+      canSeeBilling:
+        user?.role === 'customer' && user.membership?.role !== 'viewer' && !user.membership?.restricted && !user.paidByOrganization,
+      paidByOrganization: user?.role === 'customer' && !!user.paidByOrganization,
+      isOrgMember: user?.role === 'org_member',
+      orgMembership: user?.role === 'org_member' ? (user.organization ?? null) : null,
+      canOperateOrg:
+        user?.role === 'org_member' && (user.organization?.role === 'admin' || user.organization?.role === 'operator'),
+      isOrgAdmin: user?.role === 'org_member' && user.organization?.role === 'admin',
+      isOrgBroker: user?.role === 'org_member' && user.organization?.role === 'broker',
+      canRegisterOrg: user?.role === 'org_member' && !!user.organization && user.organization.role !== 'viewer',
     }),
     [user, loading, login, completeLogin, loginWithBiometric, logout, updateUser],
   );

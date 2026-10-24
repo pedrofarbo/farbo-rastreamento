@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 
-import { customersApi, reportsApi } from '@/api/resources';
+import { customersApi, orgApi, reportsApi } from '@/api/resources';
 import type { ReportKind, ReportQuery } from '@/api/resources';
 import { ReportEmailModal } from '@/components/reports/ReportEmailModal';
 import { BackButton } from '@/components/ui/BackButton';
@@ -29,15 +29,19 @@ import {
   timeline,
 } from '@/services/reports';
 import type { PeriodPreset } from '@/services/reports';
-import type { ReportSummaryRow } from '@/types';
+import { JOURNEY_VIOLATIONS } from '@/services/fleetOps';
+import type { ReportDrivingRow, ReportSummaryRow, ReportUsageRow } from '@/types';
 
 import pageStyles from '../Page.module.css';
 import styles from './ReportsPage.module.css';
 
-type Tab = 'summary' | 'daily' | 'trips' | 'overspeed';
+type Tab = 'summary' | 'usage' | 'driving' | 'journey' | 'daily' | 'trips' | 'overspeed';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'summary', label: 'Resumo' },
+  { id: 'usage', label: 'Utilização' },
+  { id: 'driving', label: 'Direção' },
+  { id: 'journey', label: 'Jornada' },
   { id: 'daily', label: 'Km por dia' },
   { id: 'trips', label: 'Viagens' },
   { id: 'overspeed', label: 'Excessos de velocidade' },
@@ -68,13 +72,16 @@ export function ReportsPage({
   const [downloading, setDownloading] = useState(false);
   // O relatório por e-mail é de quem está logado (não da central vendo um cliente).
   const [emailing, setEmailing] = useState(false);
-  const { membership } = useAuth();
+  const { membership, isOrgMember } = useAuth();
   // O grupo escolhido vale para as quatro abas e para a planilha.
   const { groups } = useFleet(customerId);
   const [group, setGroup] = useState('');
+  // A associação: os veículos de todos os associados, ou de um só.
+  const associates = useQuery({ queryKey: ['org', 'associates'], queryFn: orgApi.associates, enabled: isOrgMember });
+  const [associate, setAssociate] = useState('');
   const scope: ReportQuery = useMemo(
-    () => ({ ...period, groupId: group || undefined, customerId }),
-    [period, group, customerId],
+    () => ({ ...period, groupId: group || undefined, customerId, associateId: associate || undefined }),
+    [period, group, customerId, associate],
   );
   const { notify } = useToast();
   const problem = periodProblem(draft.from, draft.to);
@@ -122,12 +129,13 @@ export function ReportsPage({
               <h1 className={pageStyles.title}>{customerId ? `Relatórios de ${customerName || 'cliente'}` : 'Relatórios'}</h1>
             </div>
             <p className={pageStyles.description}>
-              Os números da frota no período: km, tempo andando, parado com a ignição ligada, viagens e excessos de
-              velocidade. Atualizados a cada 5 minutos.
+              {isOrgMember ? 'Os números dos veículos dos associados' : 'Os números da frota'} no período: km, tempo
+              andando, parado com a ignição ligada, dias sem rodar, viagens e excessos de velocidade. Atualizados a cada 5
+              minutos.
             </p>
           </div>
           <div className={pageStyles.actions}>
-            {!customerId && (
+            {!customerId && !isOrgMember && (
               <Button variant="secondary" onClick={() => setEmailing(true)}>
                 Receber por e-mail
               </Button>
@@ -135,7 +143,7 @@ export function ReportsPage({
             <Button
               variant="secondary"
               loading={downloading}
-              disabled={tab === 'trips' && !vehicleId}
+              disabled={(tab === 'trips' && !vehicleId) || tab === 'journey'}
               onClick={() => void download()}
             >
               Baixar planilha
@@ -206,11 +214,31 @@ export function ReportsPage({
               </select>
             </label>
           )}
+          {isOrgMember && (associates.data?.length ?? 0) > 0 && (
+            <label className={styles.date}>
+              Associado
+              <select
+                className={fieldStyles.select}
+                value={associate}
+                onChange={(e) => {
+                  setAssociate(e.target.value);
+                  setVehicleId('');
+                }}
+              >
+                <option value="">Todos os associados</option>
+                {associates.data!.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {problem && <p className={styles.problem}>{problem}</p>}
         </div>
 
         <div className={pageStyles.tabs} role="tablist">
-          {TABS.map((t) => (
+          {TABS.filter((t) => !(t.id === 'journey' && isOrgMember)).map((t) => (
             <button
               key={t.id}
               type="button"
@@ -234,6 +262,12 @@ export function ReportsPage({
           </Card>
         ) : tab === 'summary' ? (
           <SummaryTab rows={vehicles} />
+        ) : tab === 'usage' ? (
+          <UsageTab period={scope} />
+        ) : tab === 'driving' ? (
+          <DrivingTab period={scope} />
+        ) : tab === 'journey' ? (
+          <JourneyTab period={scope} vehicles={vehicles} />
         ) : tab === 'daily' ? (
           <DailyTab period={scope} />
         ) : tab === 'trips' ? (
@@ -242,7 +276,7 @@ export function ReportsPage({
           <OverspeedTab period={scope} />
         )}
       </div>
-      {!customerId && (
+      {!customerId && !isOrgMember && (
         <ReportEmailModal
           open={emailing}
           onClose={() => setEmailing(false)}
@@ -290,7 +324,10 @@ function useRows<T>(rows: T[], text: (row: T) => string) {
 
 function SummaryTab({ rows }: { rows: ReportSummaryRow[] }) {
   const sorted = useMemo(() => [...rows].sort((a, b) => b.distanceKm - a.distanceKm || a.name.localeCompare(b.name)), [rows]);
-  const { visible, found, searchBox, more } = useRows(sorted, (r) => `${r.name} ${r.plate} ${r.custom1 ?? ''} ${r.custom2 ?? ''}`);
+  const { visible, found, searchBox, more } = useRows(
+    sorted,
+    (r) => `${r.name} ${r.plate} ${r.custom1 ?? ''} ${r.custom2 ?? ''} ${r.ownerName ?? ''}`,
+  );
   const total = rows.reduce(
     (t, r) => ({
       km: t.km + r.distanceKm,
@@ -331,7 +368,7 @@ function SummaryTab({ rows }: { rows: ReportSummaryRow[] }) {
               {visible.map((r) => (
                 <tr key={r.vehicleId}>
                   <td>
-                    <VehicleName name={r.name} plate={r.plate} />
+                    <VehicleName name={r.name} plate={r.plate} owner={r.ownerName} />
                   </td>
                   <td data-label="Km" className={styles.number}>
                     {formatKm(r.distanceKm)}
@@ -375,7 +412,7 @@ function DailyTab({ period }: { period: ReportQuery }) {
     const sum = (id: string) => [...(byVehicle.get(id)?.values() ?? [])].reduce((a, b) => a + b, 0);
     return [...(data?.vehicles ?? [])].map((v) => ({ ...v, km: sum(v.id) })).sort((a, b) => b.km - a.km || a.name.localeCompare(b.name));
   }, [data, byVehicle]);
-  const { visible, searchBox, more } = useRows(ranked, (v) => `${v.name} ${v.plate}`);
+  const { visible, searchBox, more } = useRows(ranked, (v) => `${v.name} ${v.plate} ${v.ownerName ?? ''}`);
   if (q.isLoading) return <Spinner label="Calculando" />;
   if (!data) return null;
   const max = Math.max(1, ...totals.map((t) => t.km));
@@ -414,7 +451,7 @@ function DailyTab({ period }: { period: ReportQuery }) {
               {visible.map((v) => (
                 <tr key={v.id}>
                   <td className={styles.sticky}>
-                    <VehicleName name={v.name} plate={v.plate} />
+                    <VehicleName name={v.name} plate={v.plate} owner={v.ownerName} />
                   </td>
                   <td className={styles.number}>
                     <strong>{formatKm(v.km)}</strong>
@@ -486,7 +523,8 @@ function TripsTab({
           {options.map((v) => (
             <option key={v.vehicleId} value={v.vehicleId}>
               {v.name}
-              {v.plate ? ` · ${v.plate}` : ''} ({v.trips} {v.trips === 1 ? 'viagem' : 'viagens'})
+              {v.plate ? ` · ${v.plate}` : ''}
+              {v.ownerName ? ` — ${v.ownerName}` : ''} ({v.trips} {v.trips === 1 ? 'viagem' : 'viagens'})
             </option>
           ))}
         </select>
@@ -569,7 +607,7 @@ function OverspeedTab({ period }: { period: ReportQuery }) {
   const rows = useMemo(() => [...(q.data?.rows ?? [])].reverse(), [q.data]);
   const { visible, found, searchBox, more } = useRows(rows, (r) => {
     const v = names.get(r.vehicleId);
-    return `${v?.name ?? ''} ${v?.plate ?? ''}`;
+    return `${v?.name ?? ''} ${v?.plate ?? ''} ${v?.ownerName ?? ''}`;
   });
   if (q.isLoading) return <Spinner label="Calculando" />;
   if (!q.data) return null;
@@ -599,7 +637,7 @@ function OverspeedTab({ period }: { period: ReportQuery }) {
                 return (
                   <tr key={`${r.vehicleId}${r.start}`}>
                     <td>
-                      <VehicleName name={v?.name ?? '—'} plate={v?.plate ?? ''} />
+                      <VehicleName name={v?.name ?? '—'} plate={v?.plate ?? ''} owner={v?.ownerName} />
                     </td>
                     <td data-label="Quando">{formatWhen(r.start)}</td>
                     <td data-label="Duração">{seconds >= 60 ? formatSpan(seconds) : seconds > 0 ? `${Math.round(seconds)} s` : '—'}</td>
@@ -629,6 +667,322 @@ function OverspeedTab({ period }: { period: ReportQuery }) {
   );
 }
 
+/** O total da frota na utilização: a média de uso, os parados e a ociosidade. */
+export function usageTotals(rows: ReportUsageRow[]) {
+  const counted = rows.filter((r) => r.periodDays > 0);
+  const moving = rows.reduce((t, r) => t + r.movingSeconds, 0);
+  const idle = rows.reduce((t, r) => t + r.idleSeconds, 0);
+  const days = counted.reduce((t, r) => t + r.periodDays, 0);
+  const active = counted.reduce((t, r) => t + Math.min(r.activeDays, r.periodDays), 0);
+  return {
+    usePercent: days > 0 ? (100 * active) / days : 0,
+    neverMoved: counted.filter((r) => r.activeDays === 0).length,
+    idlePercent: moving + idle > 0 ? (100 * idle) / (moving + idle) : 0,
+    idleSeconds: idle,
+  };
+}
+
+/** 21.7 → "21,7%"; 50 → "50%". */
+const percent = (v: number) => `${v.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+
+/**
+ * A utilização: quanto cada veículo rodou dos dias do período e quanto do
+ * tempo ligado ficou parado (motor ligado sem sair do lugar). Os menos
+ * usados primeiro — são os candidatos a remanejar ou vender.
+ */
+function UsageTab({ period }: { period: ReportQuery }) {
+  const q = useQuery({ queryKey: ['reports', 'usage', period], queryFn: () => reportsApi.usage(period) });
+  const sorted = useMemo(
+    () =>
+      [...(q.data?.rows ?? [])].sort(
+        (a, b) => a.usePercent - b.usePercent || b.stoppedDays - a.stoppedDays || a.name.localeCompare(b.name),
+      ),
+    [q.data],
+  );
+  const { visible, found, searchBox, more } = useRows(sorted, (r) => `${r.name} ${r.plate} ${r.ownerName ?? ''}`);
+  if (q.isLoading) return <Spinner label="Calculando" />;
+  if (q.error) return <p className={styles.problem}>{(q.error as Error).message}</p>;
+  const total = usageTotals(sorted);
+  return (
+    <>
+      <div className={styles.tiles}>
+        <Tile label="Uso da frota" value={percent(Math.round(total.usePercent * 10) / 10)} hint="dias com movimento" />
+        <Tile
+          label="Sem rodar no período"
+          value={String(total.neverMoved)}
+          hint={total.neverMoved === 1 ? 'veículo' : 'veículos'}
+          danger={total.neverMoved > 0}
+        />
+        <Tile label="Ociosidade" value={percent(Math.round(total.idlePercent * 10) / 10)} hint="do tempo ligado, parado" />
+        <Tile label="Parado ligado" value={formatSpan(total.idleSeconds)} hint="motor ligado sem sair do lugar" />
+      </div>
+      <Card flush>
+        {sorted.length > SEARCH_FROM && <div className={styles.toolbar}>{searchBox}</div>}
+        <div className={pageStyles.tableWrap}>
+          <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+            <thead>
+              <tr>
+                <th>Veículo</th>
+                <th>Uso</th>
+                <th>Dias parado</th>
+                <th>Km por dia rodado</th>
+                <th>Ociosidade</th>
+                <th>Parado ligado</th>
+                <th>Última chegada</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((r) => (
+                <tr key={r.vehicleId}>
+                  <td>
+                    <VehicleName name={r.name} plate={r.plate} owner={r.ownerName} />
+                  </td>
+                  <td data-label="Uso">
+                    <span className={styles.usage}>
+                      <span className={styles.barTrack} aria-hidden="true">
+                        <span className={styles.bar} style={{ width: `${Math.min(100, r.usePercent)}%` }} />
+                      </span>
+                      <span className={styles.number}>
+                        {percent(r.usePercent)} · {r.activeDays} de {r.periodDays} {r.periodDays === 1 ? 'dia' : 'dias'}
+                      </span>
+                    </span>
+                  </td>
+                  <td data-label="Dias parado" className={r.periodDays > 0 && r.activeDays === 0 ? styles.danger : undefined}>
+                    {r.stoppedDays}
+                  </td>
+                  <td data-label="Km por dia rodado" className={styles.number}>
+                    {r.activeDays > 0 ? formatKm(r.kmPerActiveDay) : '—'}
+                  </td>
+                  <td data-label="Ociosidade" className={r.idlePercent >= 30 ? styles.danger : styles.number}>
+                    {r.movingSeconds + r.idleSeconds > 0 ? percent(r.idlePercent) : '—'}
+                  </td>
+                  <td data-label="Parado ligado">{formatSpan(r.idleSeconds)}</td>
+                  <td data-label="Última chegada">{r.lastMoveAt ? formatWhen(r.lastMoveAt) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {found.length === 0 && <p className={styles.empty}>Nenhum veículo com essa busca.</p>}
+        {more}
+        <p className={styles.note}>
+          Ociosidade é o tempo com a ignição ligada e o veículo parado, sobre todo o tempo ligado: acima de 30% costuma ser
+          motor ligado esperando (combustível gasto sem rodar).
+        </p>
+      </Card>
+    </>
+  );
+}
+
+/** A nota com o rótulo: 85+ ótima, 70+ boa, 50+ regular, abaixo disso atenção. */
+export function scoreLabel(score: number | null): { label: string; tone: 'good' | 'ok' | 'warn' | 'bad' | 'none' } {
+  if (score === null) return { label: 'poucos km', tone: 'none' };
+  if (score >= 85) return { label: 'ótima', tone: 'good' };
+  if (score >= 70) return { label: 'boa', tone: 'ok' };
+  if (score >= 50) return { label: 'regular', tone: 'warn' };
+  return { label: 'atenção', tone: 'bad' };
+}
+
+/** A nota da frota: a média das notas pesada pelos km de cada veículo. */
+export function fleetScore(rows: Pick<ReportDrivingRow, 'score' | 'distanceKm'>[]): number | null {
+  const scored = rows.filter((r) => r.score !== null);
+  const km = scored.reduce((t, r) => t + r.distanceKm, 0);
+  if (km <= 0) return null;
+  return Math.round(scored.reduce((t, r) => t + (r.score ?? 0) * r.distanceKm, 0) / km);
+}
+
+/**
+ * A direção: a nota de cada veículo (de 0 a 100) e o que pesou nela —
+ * excessos de velocidade, tempo acima de 120 km/h, freadas e arrancadas
+ * bruscas e quanto rodou de noite. As piores primeiro.
+ */
+function DrivingTab({ period }: { period: ReportQuery }) {
+  const q = useQuery({ queryKey: ['reports', 'driving', period], queryFn: () => reportsApi.driving(period) });
+  const sorted = useMemo(
+    () =>
+      [...(q.data?.rows ?? [])].sort(
+        (a, b) => (a.score ?? 101) - (b.score ?? 101) || b.distanceKm - a.distanceKm || a.name.localeCompare(b.name),
+      ),
+    [q.data],
+  );
+  const { visible, found, searchBox, more } = useRows(sorted, (r) => `${r.name} ${r.plate} ${r.ownerName ?? ''}`);
+  if (q.isLoading) return <Spinner label="Calculando" />;
+  if (q.error) return <p className={styles.problem}>{(q.error as Error).message}</p>;
+  const score = fleetScore(sorted);
+  const km = sorted.reduce((t, r) => t + r.distanceKm, 0);
+  const nightKm = sorted.reduce((t, r) => t + r.nightKm, 0);
+  const overspeeds = sorted.reduce((t, r) => t + r.overspeeds, 0);
+  const harsh = sorted.reduce((t, r) => t + r.harshBrakes + r.harshAccels, 0);
+  return (
+    <>
+      <div className={styles.tiles}>
+        <Tile label="Nota da frota" value={score === null ? '—' : String(score)} hint={scoreLabel(score).label} danger={score !== null && score < 50} />
+        <Tile label="Excessos de velocidade" value={String(overspeeds)} danger={overspeeds > 0} />
+        <Tile label="Freadas e arrancadas bruscas" value={String(harsh)} />
+        <Tile label="À noite" value={km > 0 ? percent(Math.round((1000 * nightKm) / km) / 10) : '—'} hint="dos km, das 22h às 6h" />
+      </div>
+      <Card flush>
+        {sorted.length > SEARCH_FROM && <div className={styles.toolbar}>{searchBox}</div>}
+        <div className={pageStyles.tableWrap}>
+          <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+            <thead>
+              <tr>
+                <th>Veículo</th>
+                <th>Nota</th>
+                <th>Km</th>
+                <th>Excessos</th>
+                <th>Acima de 120 km/h</th>
+                <th>Freadas / arrancadas</th>
+                <th>À noite</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((r) => {
+                const s = scoreLabel(r.score);
+                return (
+                  <tr key={r.vehicleId}>
+                    <td>
+                      <VehicleName name={r.name} plate={r.plate} owner={r.ownerName} />
+                    </td>
+                    <td data-label="Nota">
+                      <span className={`${styles.score} ${styles[`score_${s.tone}`]}`}>
+                        {r.score === null ? '—' : r.score}
+                        <small>{s.label}</small>
+                      </span>
+                    </td>
+                    <td data-label="Km" className={styles.number}>
+                      {formatKm(r.distanceKm)}
+                    </td>
+                    <td data-label="Excessos" className={r.overspeeds > 0 ? styles.danger : undefined}>
+                      {r.overspeeds}
+                    </td>
+                    <td data-label="Acima de 120 km/h">{r.highSpeedSeconds > 0 ? formatSpan(r.highSpeedSeconds) : '—'}</td>
+                    <td data-label="Freadas / arrancadas">
+                      {r.harshBrakes} / {r.harshAccels}
+                    </td>
+                    <td data-label="À noite">{r.distanceKm > 0 ? percent(r.nightPercent) : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {found.length === 0 && <p className={styles.empty}>Nenhum veículo com essa busca.</p>}
+        {more}
+        <p className={styles.note}>
+          A nota começa em 100 e perde pontos a cada 100 km: 4 por excesso do limite de velocidade do veículo (até 35) e 3
+          por freada ou arrancada brusca (até 25); 1 por cada 1% do tempo andando acima de 120 km/h (até 20) e 1 por cada
+          10% dos km rodados de noite (até 10). Com menos de {q.data?.minScoreKm ?? 20} km no período, não há nota. As
+          bruscas só aparecem quando o rastreador manda a posição a cada poucos segundos.
+        </p>
+      </Card>
+    </>
+  );
+}
+
+/**
+ * A jornada do motorista (Lei 13.103): cada jornada de cada veículo, com o
+ * motorista, o tempo ao volante, o maior trecho sem descanso de 30 min e o
+ * descanso antes; o que passou do limite em destaque.
+ */
+function JourneyTab({ period, vehicles }: { period: ReportQuery; vehicles: ReportSummaryRow[] }) {
+  const [kind, setKind] = useState<'carga' | 'passageiros'>('carga');
+  const q = useQuery({ queryKey: ['reports', 'journey', period, kind], queryFn: () => reportsApi.journey(period, kind) });
+  const names = new Map(vehicles.map((v) => [v.vehicleId, v]));
+  const rows = useMemo(
+    () => [...(q.data?.rows ?? [])].sort((a, b) => b.violations.length - a.violations.length || b.start.localeCompare(a.start)),
+    [q.data],
+  );
+  const flagged = rows.filter((r) => r.violations.length > 0).length;
+  return (
+    <>
+      <div className={styles.period}>
+        <div className={styles.presets} role="group" aria-label="Tipo de transporte">
+          {(
+            [
+              ['carga', 'Cargas (5h30 contínuas)'],
+              ['passageiros', 'Passageiros (4 h contínuas)'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={`${styles.preset} ${kind === id ? styles.presetOn : ''}`}
+              aria-pressed={kind === id}
+              onClick={() => setKind(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {q.isLoading ? (
+        <Spinner label="Calculando" />
+      ) : q.error ? (
+        <p className={styles.problem}>{(q.error as Error).message}</p>
+      ) : (
+        <Card flush>
+          {rows.length === 0 ? (
+            <p className={styles.empty}>Nenhuma jornada no período (o rastreador não registrou viagens).</p>
+          ) : (
+            <div className={pageStyles.tableWrap}>
+              <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+                <thead>
+                  <tr>
+                    <th>Jornada</th>
+                    <th>Motorista</th>
+                    <th>Ao volante</th>
+                    <th>Maior trecho contínuo</th>
+                    <th>Descanso antes</th>
+                    <th>Km</th>
+                    <th>Alertas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => {
+                    const v = names.get(r.vehicleId);
+                    return (
+                      <tr key={`${r.vehicleId}-${r.start}`}>
+                        <td>
+                          <VehicleName name={v?.name ?? 'Veículo'} plate={v?.plate ?? ''} />
+                          <span className={styles.owner}>
+                            {formatWhen(r.start)} – {formatClock(r.end)}
+                          </span>
+                        </td>
+                        <td data-label="Motorista">{r.driverName || '—'}</td>
+                        <td data-label="Ao volante" className={r.violations.includes('daily') ? styles.danger : undefined}>
+                          {formatSpan(r.drivingSeconds)}
+                        </td>
+                        <td data-label="Maior trecho contínuo" className={r.violations.includes('continuous') ? styles.danger : undefined}>
+                          {formatSpan(r.longestSeconds)}
+                        </td>
+                        <td data-label="Descanso antes" className={r.violations.includes('interjourney') ? styles.danger : undefined}>
+                          {r.restBeforeSeconds !== null ? formatSpan(r.restBeforeSeconds) : '—'}
+                        </td>
+                        <td data-label="Km" className={styles.number}>
+                          {formatKm(r.distanceKm)}
+                        </td>
+                        <td data-label="Alertas">
+                          {r.violations.length === 0 ? '—' : r.violations.map((x) => JOURNEY_VIOLATIONS[x]).join('; ')}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className={styles.note}>
+            {flagged > 0 ? `${flagged} ${flagged === 1 ? 'jornada passou' : 'jornadas passaram'} de algum limite. ` : ''}
+            As jornadas são separadas por um descanso de 8 h; uma parada de 30 min zera a direção contínua. O rastreador vê
+            as viagens: confira com o diário de bordo (espera, carga e descarga não aparecem aqui).
+          </p>
+        </Card>
+      )}
+    </>
+  );
+}
+
 function Tile({ label, value, hint, danger = false }: { label: string; value: string; hint?: string; danger?: boolean }) {
   return (
     <div className={`${styles.tile} ${danger ? styles.tileDanger : ''}`}>
@@ -639,11 +993,13 @@ function Tile({ label, value, hint, danger = false }: { label: string; value: st
   );
 }
 
-function VehicleName({ name, plate }: { name: string; plate: string }) {
+/** O veículo na tabela: o nome, a placa e, na associação, o associado. */
+function VehicleName({ name, plate, owner }: { name: string; plate: string; owner?: string }) {
   return (
     <span className={styles.vehicle}>
       <strong>{name}</strong>
       {plate && <span className={styles.plate}>{plate}</span>}
+      {owner && <span className={styles.owner}>{owner}</span>}
     </span>
   );
 }

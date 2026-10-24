@@ -14,12 +14,16 @@ const MaxDays = 31
 
 // Vehicle é um veículo da conta nos relatórios.
 type Vehicle struct {
-	ID        uuid.UUID  `json:"id"`
-	Name      string     `json:"name"`
-	Plate     string     `json:"plate"`
-	GroupID   *uuid.UUID `json:"groupId"`
-	Custom1   string     `json:"custom1"`
-	Custom2   string     `json:"custom2"`
+	ID      uuid.UUID  `json:"id"`
+	Name    string     `json:"name"`
+	Plate   string     `json:"plate"`
+	GroupID *uuid.UUID `json:"groupId"`
+	Custom1 string     `json:"custom1"`
+	Custom2 string     `json:"custom2"`
+	// OwnerID e OwnerName: o associado, nos relatórios da associação ou
+	// seguradora (vazios nos do cliente).
+	OwnerID   *uuid.UUID `json:"ownerId,omitempty"`
+	OwnerName string     `json:"ownerName,omitempty"`
 	DeviceID  *uuid.UUID `json:"-"`
 	CreatedAt time.Time  `json:"-"`
 }
@@ -32,6 +36,7 @@ type SummaryRow struct {
 	GroupID       *uuid.UUID `json:"groupId"`
 	Custom1       string     `json:"custom1"`
 	Custom2       string     `json:"custom2"`
+	OwnerName     string     `json:"ownerName,omitempty"`
 	DistanceKm    float64    `json:"distanceKm"`
 	MovingSeconds int        `json:"movingSeconds"`
 	IdleSeconds   int        `json:"idleSeconds"`
@@ -109,6 +114,29 @@ func (s *Service) Vehicles(ctx context.Context, ownerID uuid.UUID) ([]Vehicle, e
 	return out, rows.Err()
 }
 
+// OrganizationVehicles são os veículos dos associados de uma organização,
+// por associado e nome.
+func (s *Service) OrganizationVehicles(ctx context.Context, orgID uuid.UUID) ([]Vehicle, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT v.id, v.name, COALESCE(v.plate, ''), v.group_id, v.custom1, v.custom2, v.device_id, v.created_at, a.id, a.name
+		FROM vehicles v JOIN users a ON a.id = v.owner_id
+		WHERE a.organization_id = $1 ORDER BY a.name, v.name, v.id`, orgID)
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	defer rows.Close()
+	var out []Vehicle
+	for rows.Next() {
+		var v Vehicle
+		if err := rows.Scan(&v.ID, &v.Name, &v.Plate, &v.GroupID, &v.Custom1, &v.Custom2, &v.DeviceID, &v.CreatedAt,
+			&v.OwnerID, &v.OwnerName); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 func vehicleIDs(vehicles []Vehicle) []uuid.UUID {
 	ids := make([]uuid.UUID, len(vehicles))
 	for i, v := range vehicles {
@@ -152,7 +180,7 @@ func (s *Service) Summary(ctx context.Context, vehicles []Vehicle, from, to time
 	for _, v := range vehicles {
 		r := byVehicle[v.ID]
 		r.VehicleID, r.Name, r.Plate = v.ID, v.Name, v.Plate
-		r.GroupID, r.Custom1, r.Custom2 = v.GroupID, v.Custom1, v.Custom2
+		r.GroupID, r.Custom1, r.Custom2, r.OwnerName = v.GroupID, v.Custom1, v.Custom2, v.OwnerName
 		out = append(out, r)
 	}
 	return out, nil

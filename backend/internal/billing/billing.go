@@ -63,6 +63,10 @@ type Subscription struct {
 	// assinatura fica ativa até ela.
 	Installments    int   `json:"installments"`
 	CommitmentUntil *Date `json:"commitmentUntil"`
+	// EquipmentMode: o rastreador vendido (sale) ou em comodato (loan); no
+	// comodato, UninstallFeeCents é cobrado no encerramento.
+	EquipmentMode     string `json:"equipmentMode"`
+	UninstallFeeCents int    `json:"uninstallFeeCents"`
 	// O andamento das parcelas (só nas parceladas, preenchido na leitura): o
 	// valor parcelado, a parcela, quantas foram pagas e quanto falta pagar.
 	EquipmentCents       int       `json:"equipmentCents"`
@@ -125,6 +129,11 @@ type CustomerSummary struct {
 	Active    bool      `json:"active"`
 	CreatedAt time.Time `json:"createdAt"`
 
+	// OrganizationID e OrganizationName: a associação ou seguradora que
+	// paga o rastreamento do cliente (o associado); nulo: ninguém.
+	OrganizationID   *uuid.UUID `json:"organizationId"`
+	OrganizationName string     `json:"organizationName"`
+
 	ActiveSubscriptions int `json:"activeSubscriptions"`
 	// FreeSubscriptions: das ativas, as grátis (mensalidade zero, como as de
 	// cortesia). A central não as conta como assinatura.
@@ -149,7 +158,8 @@ func NewRepository(db *database.DB) *Repository { return &Repository{db: db} }
 
 const subscriptionColumns = `id, customer_id, plan_name, price_cents, due_day, next_due_date,
 	status, canceled_at, vehicle_id, delivery_address, promo_price_cents, promo_until,
-	next_price_cents, next_price_from, installments, commitment_until, created_at, updated_at`
+	next_price_cents, next_price_from, installments, commitment_until, equipment_mode, uninstall_fee_cents,
+	created_at, updated_at`
 
 func scanSubscription(row database.Scanner) (*Subscription, error) {
 	var s Subscription
@@ -157,7 +167,8 @@ func scanSubscription(row database.Scanner) (*Subscription, error) {
 	var promoUntil, nextFrom, commitment *time.Time
 	if err := row.Scan(&s.ID, &s.CustomerID, &s.PlanName, &s.PriceCents, &s.DueDay, &next,
 		&s.Status, &s.CanceledAt, &s.VehicleID, &s.DeliveryAddress, &s.PromoPriceCents, &promoUntil,
-		&s.NextPriceCents, &nextFrom, &s.Installments, &commitment, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		&s.NextPriceCents, &nextFrom, &s.Installments, &commitment, &s.EquipmentMode, &s.UninstallFeeCents,
+		&s.CreatedAt, &s.UpdatedAt); err != nil {
 		return nil, database.MapError(err)
 	}
 	s.NextDueDate = Date{next}
@@ -178,11 +189,13 @@ func scanSubscription(row database.Scanner) (*Subscription, error) {
 func InsertSubscription(ctx context.Context, q database.Querier, s *Subscription) (*Subscription, error) {
 	return scanSubscription(q.QueryRow(ctx, `
 		INSERT INTO subscriptions (customer_id, plan_name, price_cents, due_day, next_due_date,
-			vehicle_id, delivery_address, promo_price_cents, promo_until, installments, commitment_until)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			vehicle_id, delivery_address, promo_price_cents, promo_until, installments, commitment_until,
+			equipment_mode, uninstall_fee_cents)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE(NULLIF($12, ''), 'sale'), $13)
 		RETURNING `+subscriptionColumns,
 		s.CustomerID, s.PlanName, s.PriceCents, s.DueDay, s.NextDueDate.Time, s.VehicleID, s.DeliveryAddress,
-		s.PromoPriceCents, dateOrNil(s.PromoUntil), s.Installments, dateOrNil(s.CommitmentUntil)))
+		s.PromoPriceCents, dateOrNil(s.PromoUntil), s.Installments, dateOrNil(s.CommitmentUntil),
+		s.EquipmentMode, s.UninstallFeeCents))
 }
 
 func dateOrNil(d *Date) *time.Time {
@@ -241,19 +254,29 @@ func (r *Repository) UpdateSubscription(ctx context.Context, id uuid.UUID, planN
 // quantos dias vence a fatura do saldo.
 type CancelOptions struct {
 	Balance string
-	DueDays int
+	// WaiveUninstall dispensa a taxa de desinstalação do comodato.
+	WaiveUninstall bool
+}
+
+// Canceled é o encerramento: a assinatura e o que ele lançou na próxima
+// fatura da conta (o saldo do rastreador parcelado e a desinstalação do
+// comodato), nulos se nada.
+type Canceled struct {
+	Subscription *Subscription
+	Balance      *Invoice
+	Uninstall    *Invoice
 }
 
 // CancelSubscription encerra a assinatura e cancela as faturas dela que ainda
 // não venceram. As já vencidas continuam em aberto: são dívida. Com o
 // rastreador parcelado, as parcelas que ficaram sem fatura vão para a fatura
 // do saldo (devolvida junto) ou são dispensadas.
-func (r *Repository) CancelSubscription(ctx context.Context, id uuid.UUID, today Date, opts CancelOptions) (*Subscription, *Invoice, error) {
+func (r *Repository) CancelSubscription(ctx context.Context, id uuid.UUID, today Date, opts CancelOptions) (*Canceled, error) {
 	if opts.Balance != "" && opts.Balance != BalanceCharge && opts.Balance != BalanceWaive {
-		return nil, nil, ValidationError{"saldo do rastreador: use CHARGE (cobrar) ou WAIVE (dispensar)"}
+		return nil, ValidationError{"saldo do rastreador: use CHARGE (cobrar) ou WAIVE (dispensar)"}
 	}
 	var sub *Subscription
-	var balance *Invoice
+	var balance, uninstall *Invoice
 	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
 		var err error
 		sub, err = scanSubscription(tx.QueryRow(ctx, `
@@ -275,8 +298,31 @@ func (r *Repository) CancelSubscription(ctx context.Context, id uuid.UUID, today
 		_, err = tx.Exec(ctx, `
 			UPDATE invoices SET status = 'CANCELED', updated_at = NOW()
 			WHERE subscription_id = $1 AND status = 'OPEN' AND due_date >= $2`, id, today.Time)
-		if err != nil || sub.Installments == 0 {
+		if err != nil {
 			return err
+		}
+		// O comodato: a desinstalação vai para a próxima fatura da conta.
+		if sub.EquipmentMode == EquipmentLoan && sub.UninstallFeeCents > 0 && !opts.WaiveUninstall {
+			due, err := ChargeDate(ctx, tx, sub.CustomerID, today, sub.DueDay)
+			if err != nil {
+				return err
+			}
+			description := "Desinstalação do rastreador (comodato)"
+			var vehicle string
+			if sub.VehicleID != nil {
+				if err := tx.QueryRow(ctx, `SELECT name || COALESCE(' · ' || plate, '') FROM vehicles WHERE id = $1`,
+					*sub.VehicleID).Scan(&vehicle); err == nil {
+					description += ": " + vehicle
+				}
+			}
+			if uninstall, err = InsertInvoice(ctx, tx, &Invoice{
+				CustomerID: sub.CustomerID, Description: description, AmountCents: sub.UninstallFeeCents, DueDate: due,
+			}); err != nil {
+				return err
+			}
+		}
+		if sub.Installments == 0 {
+			return nil
 		}
 		// As parcelas das mensalidades canceladas voltam a ficar sem fatura.
 		if _, err := tx.Exec(ctx, `
@@ -285,18 +331,18 @@ func (r *Repository) CancelSubscription(ctx context.Context, id uuid.UUID, today
 			WHERE i.id = ei.invoice_id AND ei.subscription_id = $1 AND i.status = 'CANCELED'`, id); err != nil {
 			return err
 		}
-		balance, err = settleBalance(ctx, tx, sub, opts.Balance, today, opts.DueDays)
+		balance, err = settleBalance(ctx, tx, sub, opts.Balance, today)
 		return err
 	})
 	if errors.Is(err, database.ErrNotFound) {
 		if _, getErr := r.GetSubscription(ctx, id); getErr == nil {
-			return nil, nil, ErrAlreadyCanceled
+			return nil, ErrAlreadyCanceled
 		}
 	}
 	if err != nil {
-		return nil, nil, database.MapError(err)
+		return nil, database.MapError(err)
 	}
-	return sub, balance, nil
+	return &Canceled{Subscription: sub, Balance: balance, Uninstall: uninstall}, nil
 }
 
 func (r *Repository) ListSubscriptions(ctx context.Context, customerID uuid.UUID) ([]*Subscription, error) {
@@ -653,7 +699,8 @@ const summaryQuery = `
 		(SELECT COALESCE(sum(i.amount_cents), 0) FROM invoices i
 			WHERE i.customer_id = u.id AND i.status = 'OPEN'),
 		$3::boolean AND EXISTS (SELECT 1 FROM invoices i
-			WHERE i.customer_id = u.id AND i.status = 'OPEN' AND i.due_date < $2)
+			WHERE i.customer_id = u.id AND i.status = 'OPEN' AND i.due_date < $2),
+		u.organization_id, COALESCE((SELECT o.name FROM users o WHERE o.id = u.organization_id), '')
 	FROM users u
 	WHERE u.role = 'customer'
 		-- Quem é da equipe da conta de um cliente aparece na ficha dele, não
@@ -664,7 +711,7 @@ func scanSummary(row database.Scanner) (*CustomerSummary, error) {
 	var c CustomerSummary
 	if err := row.Scan(&c.ID, &c.Name, &c.Email, &c.Phone, &c.Document, &c.Active, &c.CreatedAt,
 		&c.ActiveSubscriptions, &c.FreeSubscriptions, &c.VehicleCount, &c.SharedVehicles, &c.OpenInvoices, &c.OverdueInvoices,
-		&c.OpenAmountCents, &c.Suspended); err != nil {
+		&c.OpenAmountCents, &c.Suspended, &c.OrganizationID, &c.OrganizationName); err != nil {
 		return nil, database.MapError(err)
 	}
 	return &c, nil

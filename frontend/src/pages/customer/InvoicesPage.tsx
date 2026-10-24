@@ -10,6 +10,7 @@ import { InvoiceLines } from '@/components/billing/InvoiceLines';
 import { InvoiceStatus } from '@/components/billing/InvoiceStatus';
 import { MonthlyPrice, isFree } from '@/components/billing/MonthlyPrice';
 import { CardSettings } from '@/components/billing/CardSettings';
+import { FiscalNotesCard } from '@/components/billing/FiscalNotes';
 import { PixPaymentModal } from '@/components/billing/PixPaymentModal';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -67,6 +68,11 @@ export function InvoicesPage() {
   // vencidas de mais de um mês, para pagar num Pix só.
   const groups = useMemo(() => (onlinePayment ? monthlyGroups(invoices.data ?? []) : []), [onlinePayment, invoices.data]);
   const late = useMemo(() => (onlinePayment ? overdueGroup(invoices.data ?? []) : null), [onlinePayment, invoices.data]);
+  // As faturas em aberto: uma por vencimento (as linhas do mês são uma fatura só).
+  const openMonths = useMemo(
+    () => new Set((invoices.data ?? []).filter((i) => i.status === 'OPEN' && i.amountCents > 0).map((i) => i.dueDate)).size,
+    [invoices.data],
+  );
 
   // O histórico vem em páginas (as fechadas; o último vencimento sempre
   // inteiro): a primeira junto com as em aberto, as mais antigas sob demanda.
@@ -93,8 +99,7 @@ export function InvoicesPage() {
       setOlderLoading(false);
     }
   };
-  const payDay = (day: HistoryDay) =>
-    payGroup(groupOf(day.open, day.dueDate), `${day.open.length} faturas · vencimento ${formatDateOnly(day.dueDate)}`);
+  const payDay = (day: HistoryDay) => payGroup(groupOf(day.open, day.dueDate), `Fatura de ${formatDateOnly(day.dueDate)}`);
 
   return (
     <div className={styles.page}>
@@ -105,9 +110,9 @@ export function InvoicesPage() {
             <p className={styles.description}>
               {onlinePayment
                 ? cardOn
-                  ? 'A primeira fatura sai assim que o rastreador é contratado; as outras, alguns dias antes do vencimento. Pague aqui mesmo, com Pix, boleto ou cartão: a baixa é automática (no Pix e no cartão, em segundos; no boleto, quando o banco compensar).'
-                  : 'A primeira fatura sai assim que o rastreador é contratado; as outras, alguns dias antes do vencimento. Pague aqui mesmo, com Pix ou boleto: a baixa é automática (no Pix, em segundos; no boleto, quando o banco compensar).'
-                : 'A primeira fatura sai assim que o rastreador é contratado; as outras, alguns dias antes do vencimento. Pague pelo link ou pelo Pix copia-e-cola; a baixa é feita pela nossa equipe assim que o pagamento é confirmado.'}{' '}
+                  ? 'Uma fatura por mês, no dia da sua conta, com tudo junto: a mensalidade de cada veículo e o que foi contratado no mês (com os dias proporcionais). Ela sai alguns dias antes do vencimento. Pague aqui mesmo, com Pix, boleto ou cartão: a baixa é automática (no Pix e no cartão, em segundos; no boleto, quando o banco compensar).'
+                  : 'Uma fatura por mês, no dia da sua conta, com tudo junto: a mensalidade de cada veículo e o que foi contratado no mês (com os dias proporcionais). Ela sai alguns dias antes do vencimento. Pague aqui mesmo, com Pix ou boleto: a baixa é automática (no Pix, em segundos; no boleto, quando o banco compensar).'
+                : 'Uma fatura por mês, no dia da sua conta, com tudo junto: a mensalidade de cada veículo e o que foi contratado no mês (com os dias proporcionais). Ela sai alguns dias antes do vencimento. Pague pelo link ou pelo Pix copia-e-cola; a baixa é feita pela nossa equipe assim que o pagamento é confirmado.'}{' '}
               {/* Link comum: no app (em /app), a página do contrato fica fora das rotas dele. */}
               <a href="/contrato">Ver o contrato de prestação de serviços</a>.
             </p>
@@ -161,7 +166,7 @@ export function InvoicesPage() {
             <span className={billing.tileValue}>{formatMoney(data?.openAmountCents ?? 0)}</span>
             <span className={billing.tileHint}>
               {data?.openInvoices
-                ? `${data.openInvoices} ${data.openInvoices === 1 ? 'fatura' : 'faturas'}`
+                ? `${openMonths || data.openInvoices} ${(openMonths || data.openInvoices) === 1 ? 'fatura' : 'faturas'}`
                 : 'Nada a pagar agora'}
             </span>
           </div>
@@ -199,13 +204,9 @@ export function InvoicesPage() {
           <Card
             key={g.key}
             title={`Fatura de ${formatDateOnly(g.dueDate)}`}
-            subtitle={`${g.invoices.length} faturas no mesmo vencimento — pague todas num pagamento só.`}
+            subtitle="A fatura do mês: todos os veículos e o que foi contratado, num pagamento só."
             actions={
-              <Button
-                size="small"
-                variant="primary"
-                onClick={() => payGroup(g, `${g.invoices.length} faturas · vencimento ${formatDateOnly(g.dueDate)}`)}
-              >
+              <Button size="small" variant="primary" onClick={() => payGroup(g, `Fatura de ${formatDateOnly(g.dueDate)}`)}>
                 Pagar {formatMoney(g.amountCents)}
               </Button>
             }
@@ -226,7 +227,7 @@ export function InvoicesPage() {
             <EmptyState
               icon="🧾"
               title="Nenhuma fatura ainda"
-              description="A primeira fatura aparece aqui assim que o rastreador é contratado."
+              description="A fatura do mês aparece aqui assim que o rastreador é contratado."
             />
           ) : (
             <div className={styles.tableWrap}>
@@ -272,6 +273,8 @@ export function InvoicesPage() {
             </div>
           )}
         </Card>
+
+        <FiscalNotesCard queryKey={['me', 'fiscal-notes']} load={meApi.fiscalNotes} download={meApi.downloadNote} />
 
         <Card title="Minhas assinaturas" flush>
           {subscriptions.isLoading ? (

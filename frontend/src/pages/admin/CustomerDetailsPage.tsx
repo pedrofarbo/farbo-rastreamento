@@ -54,6 +54,7 @@ import type { HistoryRetention, Invoice, PixPayment, ReminderKind, Subscription,
 
 import styles from '../Page.module.css';
 import { CustomerReferralCard } from './affiliates/CustomerReferralCard';
+import { CustomerOrganizationCard } from './CustomerOrganizationCard';
 import { CustomerPlanCard } from './CustomerPlanCard';
 import { CustomerTeamCard } from './CustomerTeamCard';
 import { InviteLinkModal } from './InviteLinkModal';
@@ -68,6 +69,8 @@ interface Confirmation {
   success: string;
   tone: 'primary' | 'danger';
   run: () => Promise<unknown>;
+  /** Uma segunda forma de fazer (ex.: encerrar dispensando a desinstalação). */
+  alternative?: { label: string; success: string; run: () => Promise<unknown> };
 }
 
 export function CustomerDetailsPage() {
@@ -379,6 +382,8 @@ export function CustomerDetailsPage() {
 
         <CustomerReferralCard customerId={id} referral={data.affiliate} />
 
+        <CustomerOrganizationCard customerId={id} organizationId={data.organizationId} organizationName={data.organizationName} />
+
         <CustomerPlanCard customerId={id} plan={data.plan} accountDueDay={accountDueDay(data.subscriptions)} />
 
         <CustomerTeamCard customerId={id} />
@@ -580,11 +585,26 @@ export function CustomerDetailsPage() {
                                       ? openModal(() => setEndFinanced({ sub, vehicle: vehicle.name, balance: 'CHARGE' }))
                                       : setConfirmation({
                                           title: 'Encerrar assinatura?',
-                                          body: `As faturas de ${vehicle.name} que ainda não venceram são canceladas; as vencidas continuam em aberto. O veículo continua na ficha, sem assinatura.`,
-                                          label: 'Encerrar assinatura',
+                                          body:
+                                            `As faturas de ${vehicle.name} que ainda não venceram são canceladas; as vencidas continuam em aberto. O veículo continua na ficha, sem assinatura.` +
+                                            (sub.equipmentMode === 'loan' && sub.uninstallFeeCents > 0
+                                              ? ` Rastreador em comodato: a desinstalação (${formatMoney(sub.uninstallFeeCents)}) entra na próxima fatura do cliente, a não ser que você dispense.`
+                                              : ''),
+                                          label:
+                                            sub.equipmentMode === 'loan' && sub.uninstallFeeCents > 0
+                                              ? 'Encerrar e cobrar a desinstalação'
+                                              : 'Encerrar assinatura',
                                           success: 'Assinatura encerrada',
                                           tone: 'danger',
                                           run: () => customersApi.cancelSubscription(sub.id),
+                                          alternative:
+                                            sub.equipmentMode === 'loan' && sub.uninstallFeeCents > 0
+                                              ? {
+                                                  label: 'Encerrar sem a taxa',
+                                                  success: 'Assinatura encerrada, sem a taxa de desinstalação',
+                                                  run: () => customersApi.cancelSubscription(sub.id, undefined, true),
+                                                }
+                                              : undefined,
                                         })
                                   }
                                 >
@@ -955,9 +975,9 @@ export function CustomerDetailsPage() {
           notify({
             tone: 'success',
             title: 'Veículo incluído',
-            description: result.setupInvoice
-              ? `${result.vehicle.name}: assinatura iniciada e fatura do equipamento de ${formatMoney(result.setupInvoice.amountCents)} lançada.`
-              : `${result.vehicle.name}: assinatura iniciada, sem cobrança de equipamento.`,
+            description: `${result.vehicle.name}: assinatura iniciada; tudo entra na fatura de ${formatDateOnly(result.chargeDate)}${
+              result.setupInvoice ? ` (equipamento ${formatMoney(result.setupInvoice.amountCents)})` : ''
+            }.`,
           });
         }}
       />
@@ -983,7 +1003,9 @@ export function CustomerDetailsPage() {
             title: `${result.vehicles} ${result.vehicles === 1 ? 'veículo importado' : 'veículos importados'}`,
             description: [
               `${result.installed} com o rastreador já vinculado, ${result.vehicles - result.installed} no envio`,
-              result.setupInvoice ? `fatura do equipamento de ${formatMoney(result.setupInvoice.amountCents)} lançada` : 'sem cobrança de equipamento',
+              result.setupInvoice
+                ? `equipamento de ${formatMoney(result.setupInvoice.amountCents)} na fatura de ${formatDateOnly(result.chargeDate ?? '')}`
+                : 'sem cobrança de equipamento',
             ].join('; ') + '.',
           });
         }}
@@ -1495,6 +1517,15 @@ export function CustomerDetailsPage() {
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirmation(null)}>Voltar</Button>
+            {confirmation?.alternative && (
+              <Button
+                variant="secondary"
+                loading={action.isPending}
+                onClick={() => confirmation.alternative && run(confirmation.alternative.success, confirmation.alternative.run)}
+              >
+                {confirmation.alternative.label}
+              </Button>
+            )}
             <Button
               variant={confirmation?.tone === 'danger' ? 'danger' : 'primary'}
               loading={action.isPending}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatHours, formatKm, intervalLabel, parseWholeNumber, remainingLabel } from './maintenance';
+import { brDate, formatHours, formatKm, intervalLabel, parseWholeNumber, remainingLabel, renewLabel } from './maintenance';
 
 describe('manutenção', () => {
   it('escreve o intervalo e quanto falta', () => {
@@ -19,6 +19,19 @@ describe('manutenção', () => {
     expect(left(null, null, 'unknown')).toContain('informe o hodômetro');
     expect(left(null, 293, 'due', -15.4)).toBe('passou 15 h de motor · faltam 293 dias');
     expect(left(null, null, 'soon', 40)).toBe('faltam 40 h de motor');
+  });
+
+  it('escreve a renovação e o vencimento dos documentos', () => {
+    expect(brDate('2026-11-05')).toBe('05/11/2026');
+    expect(renewLabel(12)).toBe('Renova todo ano');
+    expect(renewLabel(60)).toBe('Renova a cada 5 anos');
+    expect(renewLabel(6)).toBe('Renova a cada 6 meses');
+    expect(intervalLabel({ kind: 'document', everyKm: null, everyMonths: 12, everyHours: null })).toBe('Renova todo ano');
+    const doc = (remainingDays: number, status: 'ok' | 'soon' | 'due') =>
+      remainingLabel({ kind: 'document', nextDate: '2026-11-05', remainingKm: null, remainingHours: null, remainingDays, status });
+    expect(doc(24, 'soon')).toBe('vence em 05/11/2026 (faltam 24 dias)');
+    expect(doc(0, 'due')).toBe('vence hoje');
+    expect(doc(-3, 'due')).toBe('venceu há 3 dias');
   });
 
   it('lê os números como a pessoa digita', () => {

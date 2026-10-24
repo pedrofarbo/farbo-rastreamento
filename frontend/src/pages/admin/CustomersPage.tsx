@@ -277,6 +277,9 @@ export function CustomersPage() {
                               <strong>{customer.name}</strong>
                             </Link>
                             {customer.document && <div className={billing.muted}>{formatTaxId(customer.document)}</div>}
+                            {customer.organizationId && (
+                              <div className={billing.muted}>Associado da {customer.organizationName}</div>
+                            )}
                           </td>
                           <td>
                             {customer.email}

@@ -6,7 +6,10 @@ import (
 	"slices"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/addresses"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	ws "github.com/pedrofarbo/farbo-rastreamento/backend/internal/websocket"
 )
@@ -50,6 +53,18 @@ func (s *Server) requireActiveCustomer(next http.Handler) http.Handler {
 // compartilharam com ele, só a posição e a situação (nada de eventos).
 // Mensagem sem veículo nem rastreador não vai para cliente nenhum.
 func (s *Server) websocketScope(r *http.Request) ws.Filter {
+	// A organização recebe o que é dos veículos dos associados; quem saiu
+	// da equipe dela, nada.
+	if principal, ok := auth.FromContext(r.Context()); ok && principal.IsOrgMember() {
+		orgID := principal.Organization()
+		// O corretor: só os dos associados dele.
+		broker := principal.IsOrgBroker()
+		person := principal.UserID
+		return func(msg ws.Message) bool {
+			return s.Owners != nil && orgID != uuid.Nil && s.Owners.InOrganization(orgID, msg.VehicleID, msg.DeviceID) &&
+				(!broker || s.Owners.OfBroker(person, msg.VehicleID, msg.DeviceID))
+		}
+	}
 	customerID, isCustomer := customerOf(r)
 	if !isCustomer {
 		return nil

@@ -169,7 +169,7 @@ var ErrBalanceChoice = errors.New("o rastreador desta assinatura tem parcelas po
 // (as das mensalidades futuras canceladas voltam para cá): cobradas numa
 // fatura avulsa, que vence em dueDays, ou dispensadas. As que estão em fatura
 // vencida continuam nela (são dívida, como a mensalidade).
-func settleBalance(ctx context.Context, tx pgx.Tx, sub *Subscription, choice string, today Date, dueDays int) (*Invoice, error) {
+func settleBalance(ctx context.Context, tx pgx.Tx, sub *Subscription, choice string, today Date) (*Invoice, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id, number, amount_cents FROM equipment_installments
 		WHERE subscription_id = $1 AND invoice_id IS NULL AND waived_at IS NULL
@@ -204,12 +204,17 @@ func settleBalance(ctx context.Context, tx pgx.Tx, sub *Subscription, choice str
 	if len(pending) > 1 {
 		numbers = fmt.Sprintf("parcelas %d a %d", pending[0].number, pending[len(pending)-1].number)
 	}
+	// Na fatura do mês da conta, como o resto.
+	due, err := ChargeDate(ctx, tx, sub.CustomerID, today, sub.DueDay)
+	if err != nil {
+		return nil, err
+	}
 	inv, err := InsertInvoice(ctx, tx, &Invoice{
 		CustomerID: sub.CustomerID,
 		Description: fmt.Sprintf("Saldo do rastreador: %s de %d (assinatura encerrada antes da última parcela)",
 			numbers, sub.Installments),
 		AmountCents: total,
-		DueDate:     today.AddDays(dueDays),
+		DueDate:     due,
 	})
 	if err != nil {
 		return nil, err

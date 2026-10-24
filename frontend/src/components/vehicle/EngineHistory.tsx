@@ -29,7 +29,10 @@ function outcome(item: EngineHistoryItem): { label: string; tone: BadgeTone } {
 /** De onde e como: "iPhone · Safari (iOS 26.6) · confirmado com a senha". */
 export function originLine(item: EngineHistoryItem): string {
   if (item.whoKind === 'central' || item.whoKind === 'system') return '';
-  const parts = [item.userAgent ? deviceLabel(item.userAgent) : 'aparelho não registrado'];
+  // O aparelho de quem é da associação não vai para o associado.
+  const parts: string[] = [];
+  if (item.userAgent) parts.push(deviceLabel(item.userAgent));
+  else if (item.whoKind !== 'organization') parts.push('aparelho não registrado');
   if (item.confirmedWith === 'password') parts.push('confirmado com a senha');
   if (item.confirmedWith === 'biometric') parts.push('confirmado com a biometria');
   return parts.join(' · ');

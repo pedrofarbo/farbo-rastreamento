@@ -142,11 +142,14 @@ func TestFleetImport(t *testing.T) {
 		got[2].group != "Norte" || got[2].dueDay != got[0].dueDay {
 		t.Errorf("veículos = %+v", got)
 	}
+	// Na fatura do mês da conta: o equipamento numa linha e o proporcional
+	// dos dias até o vencimento noutra.
 	var setupInvoices, audits int
 	_ = env.db.QueryRow(ctx, `SELECT count(*) FROM invoices WHERE customer_id = $1 AND subscription_id IS NULL`, frota.ID).Scan(&setupInvoices)
 	_ = env.db.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE action = 'FLEET_IMPORTED'`).Scan(&audits)
-	if setupInvoices != 1 || audits != 1 {
-		t.Errorf("faturas do equipamento = %d, auditoria = %d", setupInvoices, audits)
+	if setupInvoices != 2 || audits != 1 || done.ProrataInvoice == nil || done.ProrataInvoice.DueDate != done.SetupInvoice.DueDate ||
+		!strings.Contains(done.ProrataInvoice.Description, "× 3") {
+		t.Errorf("linhas avulsas = %d, auditoria = %d, proporcional = %+v", setupInvoices, audits, done.ProrataInvoice)
 	}
 
 	// A mesma planilha de novo: as placas já existem.

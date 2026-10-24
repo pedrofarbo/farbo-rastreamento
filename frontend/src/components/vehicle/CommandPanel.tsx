@@ -56,7 +56,7 @@ const POSITION_POLL_MS = 1_500;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function CommandPanel({ vehicle }: CommandPanelProps) {
-  const { canSendCommands, isCustomer, user } = useAuth();
+  const { canSendCommands, isCustomer, isOrgMember, user } = useAuth();
   const { notify } = useToast();
   const queryClient = useQueryClient();
 
@@ -216,13 +216,14 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
   /**
    * O cliente confirma que é ele antes de bloquear ou desbloquear: com a
    * biometria deste aparelho (Face ID, digital) e, se ela falhar ou não
-   * estiver cadastrada, com a senha. O servidor exige o comprovante; a
-   * equipe da central segue direto.
+   * estiver cadastrada, com a senha. O servidor exige o comprovante (também
+   * de quem é de uma associação ou seguradora); a equipe da central segue
+   * direto.
    */
   const confirmIdentity = useCallback(
     async (type: CommandType) => {
       const purpose = PURPOSE[type];
-      if (!isCustomer || !user || !purpose) {
+      if (!(isCustomer || isOrgMember) || !user || !purpose) {
         void execute(type);
         return;
       }
@@ -243,7 +244,7 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
       }
       setVerify('password');
     },
-    [isCustomer, user, execute],
+    [isCustomer, isOrgMember, user, execute],
   );
 
   const submitPassword = async (event: FormEvent) => {
@@ -329,7 +330,9 @@ export function CommandPanel({ vehicle }: CommandPanelProps) {
       <div className={styles.notice}>
         {isCustomer
           ? 'Seu acesso a esta conta é para acompanhar: os comandos ficam com o titular e os gestores.'
-          : 'Seu perfil permite apenas visualizar. Comandos são enviados por operadores e administradores.'}
+          : isOrgMember
+            ? 'Seu acesso à organização é para acompanhar: o bloqueio fica com os administradores e os operadores.'
+            : 'Seu perfil permite apenas visualizar. Comandos são enviados por operadores e administradores.'}
       </div>
     );
   }

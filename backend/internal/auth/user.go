@@ -22,10 +22,18 @@ const (
 	// RoleCustomer é o cliente final: enxerga apenas os próprios veículos e
 	// faturas. Os outros três perfis são a equipe da central.
 	RoleCustomer = "customer"
+	// RoleOrgMember é quem é da equipe de uma associação ou seguradora: entra
+	// no painel dela e vê só os veículos dos associados (o papel na
+	// organização fica em OrgMembership).
+	RoleOrgMember = "org_member"
+	// RoleOrganization é a própria associação ou seguradora, como pagadora
+	// das faturas: não entra no painel (nem aparece na busca por e-mail).
+	RoleOrganization = "organization"
 )
 
+// ValidRole: os perfis de quem tem login (a organização, que só paga, não).
 func ValidRole(role string) bool {
-	return TeamRole(role) || role == RoleCustomer
+	return TeamRole(role) || role == RoleCustomer || role == RoleOrgMember
 }
 
 // TeamRole: os perfis da equipe da central. O cliente tem cadastro próprio
@@ -68,9 +76,18 @@ type User struct {
 	// Membership: quem é da equipe de um cliente (conta empresa). Só vem no
 	// login e em /auth/me.
 	Membership *Membership `json:"membership,omitempty"`
+	// Organization: quem é da equipe de uma associação ou seguradora. Só vem
+	// no login e em /auth/me.
+	Organization *OrgMembership `json:"organization,omitempty"`
+
+	// OrganizationID: o associado, cujo rastreamento a organização paga.
+	OrganizationID *uuid.UUID `json:"-"`
+	// PaidByOrganization: o app esconde as faturas e o pedido de veículo
+	// (quem cuida é a organização). Sem o nome dela: o app é da Farbo.
+	PaidByOrganization bool `json:"paidByOrganization,omitempty"`
 }
 
-const userColumns = `id, email, name, role, phone, document, password_hash, active, created_at, updated_at`
+const userColumns = `id, email, name, role, phone, document, password_hash, active, created_at, updated_at, organization_id`
 
 type Repository struct{ db *database.DB }
 
@@ -79,10 +96,11 @@ func NewRepository(db *database.DB) *Repository { return &Repository{db: db} }
 func scanUser(row database.Scanner) (*User, error) {
 	var u User
 	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.Phone, &u.Document, &u.PasswordHash,
-		&u.Active, &u.CreatedAt, &u.UpdatedAt)
+		&u.Active, &u.CreatedAt, &u.UpdatedAt, &u.OrganizationID)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
+	u.PaidByOrganization = u.Role == RoleCustomer && u.OrganizationID != nil
 	return &u, nil
 }
 
@@ -97,7 +115,8 @@ func (r *Repository) Create(ctx context.Context, u *User) error {
 
 func (r *Repository) GetByEmail(ctx context.Context, email string) (*User, error) {
 	return scanUser(r.db.QueryRow(ctx,
-		`SELECT `+userColumns+` FROM users WHERE lower(email) = lower($1)`, strings.TrimSpace(email)))
+		`SELECT `+userColumns+` FROM users WHERE lower(email) = lower($1) AND role <> $2`,
+		strings.TrimSpace(email), RoleOrganization))
 }
 
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*User, error) {
@@ -129,7 +148,8 @@ func (r *Repository) Names(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]
 
 // ListTeam lista a equipe da central (sem os clientes).
 func (r *Repository) ListTeam(ctx context.Context) ([]*User, error) {
-	rows, err := r.db.Query(ctx, `SELECT `+userColumns+` FROM users WHERE role <> $1 ORDER BY created_at`, RoleCustomer)
+	rows, err := r.db.Query(ctx, `SELECT `+userColumns+` FROM users WHERE role IN ($1, $2, $3) ORDER BY created_at`,
+		RoleAdmin, RoleOperator, RoleViewer)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
