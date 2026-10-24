@@ -403,16 +403,24 @@ func run() error {
 	// A gestão da frota (o aviso das locações atrasadas roda com os workers).
 	fleetSvc := fleet.NewService(db, cfg.Billing.Timezone, mail.NewFleetMailer(mailer, cfg.Mail.AppURL), log)
 
-	// O contrato que o cliente aceita no primeiro acesso (com o CPF).
-	contractDoc, err := contract.Render(contract.Params{
+	// O contrato que o cliente aceita no primeiro acesso (com o CPF), e o
+	// termo do associado (o uso do app e o rastreador em comodato).
+	contractParams := contract.Params{
 		Company: cfg.Company, SuspendAfterDays: cfg.Billing.SuspendAfterDays, HistoryOptions: retention.Options,
 		MaxInstallments: cfg.Catalog.EquipmentMaxInstallments,
-	})
+	}
+	contractDoc, err := contract.Render(contractParams)
+	if err != nil {
+		return err
+	}
+	associateTerm, err := contract.RenderAssociate(contractParams)
 	if err != nil {
 		return err
 	}
 	contractSvc := contract.NewService(db, contractDoc, mail.NewContractMailer(mailer, cfg.Mail.AppURL), log)
-	log.Info("contrato em vigor", "version", contractDoc.Version, "sha256", contractDoc.SHA256[:12])
+	contractSvc.SetAssociateTerm(associateTerm)
+	log.Info("contrato em vigor", "version", contractDoc.Version, "sha256", contractDoc.SHA256[:12],
+		"associado", associateTerm.Version, "associado_sha256", associateTerm.SHA256[:12])
 
 	// Régua de cobrança: os lembretes de fatura (e-mail e push) com o link
 	// que abre o Pix sem login.

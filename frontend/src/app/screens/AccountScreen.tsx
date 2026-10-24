@@ -224,8 +224,8 @@ export function AccountScreen() {
             </a>
           </li>
           <li className={styles.listItem}>
-            <a className={styles.link} href="/contrato">
-              Contrato de prestação de serviços
+            <a className={styles.link} href={paidByOrganization ? '/contrato/associado' : '/contrato'}>
+              {paidByOrganization ? 'Termo de uso e comodato' : 'Contrato de prestação de serviços'}
             </a>
           </li>
           <li className={styles.listItem}>

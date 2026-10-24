@@ -2,7 +2,9 @@
 // no primeiro acesso (e a cada versão nova): o texto, com a versão e o hash,
 // e o registro do aceite eletrônico — nome, CPF/CNPJ, data, IP e navegador.
 // O CPF é obrigatório: é com ele que saem a NF-e do rastreador e a NFS-e das
-// mensalidades.
+// mensalidades. O associado de uma associação ou seguradora aceita outro
+// texto, o termo do associado (o uso do app e o rastreador em comodato; quem
+// paga é a organização), com versões próprias (A1, A2…).
 package contract
 
 import (
@@ -31,17 +33,30 @@ import (
 // A versão em vigor. Ao mudar o texto (contrato.md), mude a versão e a data:
 // todo cliente aceita de novo no próximo acesso.
 const (
-	Version       = "5"
-	EffectiveDate = "13 de outubro de 2026"
+	Version       = "6"
+	EffectiveDate = "24 de outubro de 2026"
 	// Changes resume o que mudou desde a versão anterior (o cliente que
 	// aceitou a anterior lê ao aceitar de novo, e recebe por e-mail).
-	Changes = "A 1ª mensalidade de cada veículo passa a vencer no dia da contratação e é paga junto com o pedido; a 2ª vence no dia de vencimento da conta, pelo menos um mês depois (cláusula 5). No rastreador parcelado, o pedido cobra o frete e a 1ª mensalidade, que já traz a 1ª parcela. As assinaturas já contratadas continuam como estão."
+	Changes = "O rastreador pode ser comprado ou ficar em comodato, conforme o plano do Cliente informado no pedido (cláusula 4): no comodato, ele é da Farbo e é devolvido no fim da assinatura, com as taxas de instalação e de desinstalação do plano e o valor do equipamento se não for devolvido. Nada é cobrado no pedido: o rastreador, o frete, o proporcional e a 1ª mensalidade vêm na 1ª fatura, no dia de vencimento da conta (cláusula 5). Para quem comprou o rastreador, nada muda nele."
 	// MinMonths é a permanência mínima de cada assinatura.
 	MinMonths = 3
+
+	// AssociateVersion é a versão do termo do associado (com o prefixo A:
+	// o aceite de um não vale pelo outro). Ao mudar o texto
+	// (termo-associado.md), mude a versão e a data.
+	AssociateVersion       = "A1"
+	AssociateEffectiveDate = "24 de outubro de 2026"
+	AssociateChanges       = ""
 )
 
 //go:embed contrato.md
 var source string
+
+//go:embed termo-associado.md
+var associateSource string
+
+// IsAssociateVersion diz se a versão é a do termo do associado.
+func IsAssociateVersion(v string) bool { return strings.HasPrefix(v, "A") }
 
 // Block é um parágrafo ou uma lista do contrato.
 type Block struct {
@@ -89,6 +104,15 @@ var numberWords = map[int]string{
 
 // Render monta o contrato em vigor.
 func Render(p Params) (*Document, error) {
+	return renderText(source, Version, EffectiveDate, Changes, p)
+}
+
+// RenderAssociate monta o termo do associado em vigor.
+func RenderAssociate(p Params) (*Document, error) {
+	return renderText(associateSource, AssociateVersion, AssociateEffectiveDate, AssociateChanges, p)
+}
+
+func renderText(source, version, effectiveDate, changes string, p Params) (*Document, error) {
 	tpl, err := template.New("contrato").Option("missingkey=error").Parse(source)
 	if err != nil {
 		return nil, fmt.Errorf("contrato: %w", err)
@@ -111,7 +135,7 @@ func Render(p Params) (*Document, error) {
 	}
 	var out bytes.Buffer
 	if err := tpl.Execute(&out, map[string]any{
-		"Version": Version, "EffectiveDate": EffectiveDate, "MinMonths": MinMonths,
+		"Version": version, "EffectiveDate": effectiveDate, "MinMonths": MinMonths,
 		"Name": name, "LegalName": legal, "CNPJ": strings.TrimSpace(p.Company.CNPJ),
 		"Address": strings.TrimSpace(p.Company.Address), "Email": strings.TrimSpace(p.Company.Email),
 		"SuspendAfterDays": p.SuspendAfterDays, "HistoryOptions": historyOptions,
@@ -122,8 +146,8 @@ func Render(p Params) (*Document, error) {
 	text := out.String()
 	sum := sha256.Sum256([]byte(text))
 	doc := parse(text)
-	doc.Version, doc.EffectiveDate, doc.SHA256, doc.Text = Version, EffectiveDate, hex.EncodeToString(sum[:]), text
-	doc.Changes = Changes
+	doc.Version, doc.EffectiveDate, doc.SHA256, doc.Text = version, effectiveDate, hex.EncodeToString(sum[:]), text
+	doc.Changes = changes
 	return doc, nil
 }
 
@@ -204,12 +228,14 @@ type Mailer interface {
 }
 
 type Service struct {
-	db       *database.DB
-	doc      *Document
-	mailer   Mailer
-	accepted sync.Map // usuário → já aceitou a versão em vigor
-	runAsync func(func())
-	log      *slog.Logger
+	db  *database.DB
+	doc *Document
+	// associate é o termo do associado (nulo: o associado não aceita nada).
+	associate *Document
+	mailer    Mailer
+	accepted  sync.Map // usuário e versão → já aceitou
+	runAsync  func(func())
+	log       *slog.Logger
 }
 
 func NewService(db *database.DB, doc *Document, mailer Mailer, log *slog.Logger) *Service {
@@ -219,8 +245,31 @@ func NewService(db *database.DB, doc *Document, mailer Mailer, log *slog.Logger)
 // SetSync faz a cópia por e-mail sair na hora (testes).
 func (s *Service) SetSync() { s.runAsync = func(f func()) { f() } }
 
+// SetAssociateTerm liga o termo do associado: o associado de uma associação
+// ou seguradora passa a aceitá-lo no primeiro acesso.
+func (s *Service) SetAssociateTerm(doc *Document) { s.associate = doc }
+
 // Current é o contrato em vigor.
 func (s *Service) Current() *Document { return s.doc }
+
+// AssociateTerm é o termo do associado em vigor (nulo se não houver).
+func (s *Service) AssociateTerm() *Document { return s.associate }
+
+// docFor é o texto que o usuário aceita: o termo do associado, para quem é
+// associado de uma organização; o contrato, para os demais.
+func (s *Service) docFor(ctx context.Context, userID uuid.UUID) (*Document, error) {
+	if s.associate == nil {
+		return s.doc, nil
+	}
+	var associate bool
+	if err := s.db.QueryRow(ctx, `SELECT organization_id IS NOT NULL FROM users WHERE id = $1`, userID).Scan(&associate); err != nil {
+		return nil, database.MapError(err)
+	}
+	if associate {
+		return s.associate, nil
+	}
+	return s.doc, nil
+}
 
 const acceptanceColumns = `version, content_sha256, name, document, ip, user_agent, accepted_at`
 
@@ -233,10 +282,26 @@ func scanAcceptance(row pgx.Row) (*Acceptance, error) {
 	return &a, database.MapError(err)
 }
 
-// Accepted é o aceite da versão em vigor (nil se ainda não aceitou).
+// Accepted é o aceite da versão em vigor do texto do usuário (nil se ainda não aceitou).
 func (s *Service) Accepted(ctx context.Context, userID uuid.UUID) (*Acceptance, error) {
+	doc, err := s.docFor(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return s.acceptedOf(ctx, userID, doc)
+}
+
+func (s *Service) acceptedOf(ctx context.Context, userID uuid.UUID, doc *Document) (*Acceptance, error) {
 	return scanAcceptance(s.db.QueryRow(ctx, `SELECT `+acceptanceColumns+` FROM contract_acceptances
-		WHERE user_id = $1 AND version = $2`, userID, s.doc.Version))
+		WHERE user_id = $1 AND version = $2`, userID, doc.Version))
+}
+
+// previousOf é o último aceite de uma versão anterior do mesmo texto (o
+// contrato ou o termo do associado).
+func (s *Service) previousOf(ctx context.Context, userID uuid.UUID, doc *Document) (*Acceptance, error) {
+	return scanAcceptance(s.db.QueryRow(ctx, `SELECT `+acceptanceColumns+` FROM contract_acceptances
+		WHERE user_id = $1 AND (version LIKE 'A%') = $2 ORDER BY accepted_at DESC, id DESC LIMIT 1`,
+		userID, IsAssociateVersion(doc.Version)))
 }
 
 // Latest é o último aceite, de qualquer versão (a ficha do cliente).
@@ -245,25 +310,35 @@ func (s *Service) Latest(ctx context.Context, userID uuid.UUID) (*Acceptance, er
 		WHERE user_id = $1 ORDER BY accepted_at DESC, id DESC LIMIT 1`, userID))
 }
 
-// HasAccepted diz se o cliente aceitou a versão em vigor (guardado em
-// memória depois do primeiro sim: não custa uma consulta por requisição).
+// HasAccepted diz se o usuário aceitou a versão em vigor do texto dele
+// (guardado em memória depois do primeiro sim: não custa uma consulta de
+// aceite por requisição).
 func (s *Service) HasAccepted(ctx context.Context, userID uuid.UUID) (bool, error) {
-	if _, ok := s.accepted.Load(userID); ok {
+	doc, err := s.docFor(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return s.hasAccepted(ctx, userID, doc)
+}
+
+func (s *Service) hasAccepted(ctx context.Context, userID uuid.UUID, doc *Document) (bool, error) {
+	key := userID.String() + "|" + doc.Version
+	if _, ok := s.accepted.Load(key); ok {
 		return true, nil
 	}
-	a, err := s.Accepted(ctx, userID)
+	a, err := s.acceptedOf(ctx, userID, doc)
 	if err != nil || a == nil {
 		return false, err
 	}
-	s.accepted.Store(userID, true)
+	s.accepted.Store(key, true)
 	return true, nil
 }
 
-// Required diz se o cliente precisa aceitar antes de usar a plataforma. Quem
+// Required diz se o usuário precisa aceitar antes de usar a plataforma. Quem
 // só acompanha o veículo de outra pessoa (acesso compartilhado, sem veículo,
 // assinatura nem fatura dele) não é parte do contrato e fica dispensado — até
-// pedir um rastreador. O associado de uma associação ou seguradora também: o
-// contrato é com a organização, que paga o rastreamento dele.
+// pedir um rastreador. O associado de uma associação ou seguradora aceita o
+// termo do associado (sem o termo ligado, fica dispensado).
 func (s *Service) Required(ctx context.Context, userID uuid.UUID) (bool, error) {
 	ok, err := s.HasAccepted(ctx, userID)
 	if err != nil || ok {
@@ -275,28 +350,33 @@ func (s *Service) Required(ctx context.Context, userID uuid.UUID) (bool, error) 
 			AND NOT EXISTS (SELECT 1 FROM vehicles WHERE owner_id = $1)
 			AND NOT EXISTS (SELECT 1 FROM subscriptions WHERE customer_id = $1)
 			AND NOT EXISTS (SELECT 1 FROM invoices WHERE customer_id = $1))
-			OR EXISTS (SELECT 1 FROM users WHERE id = $1 AND organization_id IS NOT NULL)`, userID).Scan(&exempt)
+			OR ($2 AND EXISTS (SELECT 1 FROM users WHERE id = $1 AND organization_id IS NOT NULL))`,
+		userID, s.associate == nil).Scan(&exempt)
 	if err != nil {
 		return false, database.MapError(err)
 	}
 	return !exempt, nil
 }
 
-// Status é o contrato, se o cliente precisa aceitar e o que já aceitou.
+// Status é o texto do usuário (o contrato ou o termo do associado), se ele
+// precisa aceitar e o que já aceitou.
 func (s *Service) Status(ctx context.Context, userID uuid.UUID) (*Status, error) {
-	st := &Status{Contract: s.doc}
+	doc, err := s.docFor(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	st := &Status{Contract: doc}
 	if err := s.db.QueryRow(ctx, `SELECT name, document FROM users WHERE id = $1`, userID).Scan(&st.Name, &st.TaxID); err != nil {
 		return nil, database.MapError(err)
 	}
-	var err error
-	if st.Accepted, err = s.Accepted(ctx, userID); err != nil {
+	if st.Accepted, err = s.acceptedOf(ctx, userID, doc); err != nil {
 		return nil, err
 	}
 	if st.Accepted == nil {
 		if st.Required, err = s.Required(ctx, userID); err != nil {
 			return nil, err
 		}
-		if st.Previous, err = s.Latest(ctx, userID); err != nil {
+		if st.Previous, err = s.previousOf(ctx, userID, doc); err != nil {
 			return nil, err
 		}
 	}
@@ -305,7 +385,8 @@ func (s *Service) Status(ctx context.Context, userID uuid.UUID) (*Status, error)
 
 // NotifyChanges avisa por e-mail, uma vez, quem aceitou uma versão anterior
 // do contrato e ainda não aceitou a atual (cláusula 14: as mudanças são
-// avisadas por e-mail e a plataforma pede o novo aceite).
+// avisadas por e-mail e a plataforma pede o novo aceite). Só o contrato dos
+// clientes: o aviso fala da assinatura e da multa, que o associado não tem.
 func (s *Service) NotifyChanges(ctx context.Context) {
 	if s.mailer == nil {
 		return
@@ -313,7 +394,8 @@ func (s *Service) NotifyChanges(ctx context.Context) {
 	rows, err := s.db.Query(ctx, `
 		SELECT u.id, u.email, u.name FROM users u
 		WHERE u.role = 'customer' AND u.active AND u.organization_id IS NULL
-			AND EXISTS (SELECT 1 FROM contract_acceptances a WHERE a.user_id = u.id AND a.version <> $1)
+			AND EXISTS (SELECT 1 FROM contract_acceptances a WHERE a.user_id = u.id AND a.version <> $1
+				AND a.version NOT LIKE 'A%')
 			AND NOT EXISTS (SELECT 1 FROM contract_acceptances a WHERE a.user_id = u.id AND a.version = $1)
 			AND NOT EXISTS (SELECT 1 FROM contract_change_notices n WHERE n.user_id = u.id AND n.version = $1)
 		ORDER BY u.created_at LIMIT 200`, s.doc.Version)
@@ -350,9 +432,14 @@ func (s *Service) NotifyChanges(ctx context.Context) {
 	}
 }
 
-// Accept registra o aceite da versão em vigor e grava o CPF/CNPJ no cadastro.
+// Accept registra o aceite da versão em vigor do texto do usuário e grava o
+// CPF/CNPJ no cadastro.
 func (s *Service) Accept(ctx context.Context, userID uuid.UUID, version, taxID, ip, userAgent string) (*Acceptance, error) {
-	if version != s.doc.Version {
+	doc, err := s.docFor(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if version != doc.Version {
 		return nil, RuleError{"o contrato foi atualizado: recarregue a página para ler a versão nova"}
 	}
 	digits := payments.Digits(taxID)
@@ -363,7 +450,7 @@ func (s *Service) Accept(ctx context.Context, userID uuid.UUID, version, taxID, 
 		userAgent = userAgent[:500]
 	}
 	var name, email string
-	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `UPDATE users SET document = $2, updated_at = NOW() WHERE id = $1 RETURNING name, email`,
 			userID, digits).Scan(&name, &email); err != nil {
 			return err
@@ -372,22 +459,22 @@ func (s *Service) Accept(ctx context.Context, userID uuid.UUID, version, taxID, 
 			INSERT INTO contract_acceptances (user_id, version, content_sha256, name, document, ip, user_agent)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)
 			ON CONFLICT (user_id, version) DO NOTHING`,
-			userID, s.doc.Version, s.doc.SHA256, strings.TrimSpace(name), digits, ip, userAgent)
+			userID, doc.Version, doc.SHA256, strings.TrimSpace(name), digits, ip, userAgent)
 		return err
 	})
 	if err != nil {
 		return nil, database.MapError(err)
 	}
-	a, err := s.Accepted(ctx, userID)
+	a, err := s.acceptedOf(ctx, userID, doc)
 	if err != nil || a == nil {
 		return nil, errors.Join(err, errors.New("aceite não registrado"))
 	}
-	s.accepted.Store(userID, true)
+	s.accepted.Store(userID.String()+"|"+doc.Version, true)
 	s.log.Info("contrato aceito", "user", userID, "version", a.Version)
 	if s.mailer != nil && strings.TrimSpace(email) != "" {
 		accepted := *a
 		s.runAsync(func() {
-			if err := s.mailer.ContractAccepted(context.WithoutCancel(ctx), email, name, s.copyOf(&accepted)); err != nil {
+			if err := s.mailer.ContractAccepted(context.WithoutCancel(ctx), email, name, copyOf(doc, &accepted)); err != nil {
 				s.log.Warn("falha ao mandar a cópia do contrato", "user", userID, "err", err)
 			}
 		})
@@ -395,11 +482,14 @@ func (s *Service) Accept(ctx context.Context, userID uuid.UUID, version, taxID, 
 	return a, nil
 }
 
-// copyOf é o contrato aceito, como vai no e-mail.
-func (s *Service) copyOf(a *Acceptance) mail.ContractCopy {
+// copyOf é o texto aceito, como vai no e-mail (com o link da página dele).
+func copyOf(doc *Document, a *Acceptance) mail.ContractCopy {
 	c := mail.ContractCopy{
-		Title: s.doc.Title, Version: s.doc.Version, EffectiveDate: s.doc.EffectiveDate, SHA256: s.doc.SHA256,
-		Name: a.Name, Document: payments.FormatTaxID(a.Document), AcceptedAt: a.AcceptedAt, IP: a.IP,
+		Title: doc.Title, Version: doc.Version, EffectiveDate: doc.EffectiveDate, SHA256: doc.SHA256,
+		Name: a.Name, Document: payments.FormatTaxID(a.Document), AcceptedAt: a.AcceptedAt, IP: a.IP, Path: "/contrato",
+	}
+	if IsAssociateVersion(doc.Version) {
+		c.Path = "/contrato/associado"
 	}
 	conv := func(blocks []Block) []mail.ContractBlock {
 		out := make([]mail.ContractBlock, 0, len(blocks))
@@ -408,8 +498,8 @@ func (s *Service) copyOf(a *Acceptance) mail.ContractCopy {
 		}
 		return out
 	}
-	c.Intro = conv(s.doc.Intro)
-	for _, sec := range s.doc.Sections {
+	c.Intro = conv(doc.Intro)
+	for _, sec := range doc.Sections {
 		c.Sections = append(c.Sections, mail.ContractSection{Title: sec.Title, Blocks: conv(sec.Blocks)})
 	}
 	return c

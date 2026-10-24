@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAuth } from '@/stores/AuthContext';
 
-import { ContractAcceptForm, contractKey } from './ContractAcceptForm';
+import { ContractAcceptForm, contractKey, isAssociateTerm } from './ContractAcceptForm';
 import styles from './Contract.module.css';
 
 /**
@@ -41,6 +41,10 @@ export function ContractGate({ children }: { children: ReactNode }) {
     );
   }
   if (!status.data.required) return <>{children}</>;
+  // O associado de uma associação aceita o termo do associado, não o contrato.
+  const associate = isAssociateTerm(status.data.contract);
+  const what = associate ? 'o termo' : 'o contrato';
+  const title = status.data.contract.title || 'Contrato de prestação de serviços';
 
   return (
     <div className={styles.page}>
@@ -48,20 +52,20 @@ export function ContractGate({ children }: { children: ReactNode }) {
         <header className={styles.head}>
           {status.data.previous ? (
             <>
-              <p className={styles.kicker}>Contrato atualizado</p>
-              <h1 className={styles.title}>Contrato de prestação de serviços</h1>
+              <p className={styles.kicker}>{associate ? 'Termo atualizado' : 'Contrato atualizado'}</p>
+              <h1 className={styles.title}>{title}</h1>
               <p className={styles.lead}>
-                {status.data.name ? `${status.data.name.split(' ')[0]}, o` : 'O'} contrato mudou. Para continuar, leia e
-                aceite a versão nova.
+                {status.data.name ? `${status.data.name.split(' ')[0]}, ${what}` : what.charAt(0).toUpperCase() + what.slice(1)}{' '}
+                mudou. Para continuar, leia e aceite a versão nova.
               </p>
             </>
           ) : (
             <>
               <p className={styles.kicker}>Primeiro acesso</p>
-              <h1 className={styles.title}>Contrato de prestação de serviços</h1>
+              <h1 className={styles.title}>{title}</h1>
               <p className={styles.lead}>
-                {status.data.name ? `${status.data.name.split(' ')[0]}, antes` : 'Antes'} de continuar, leia e aceite o
-                contrato e informe o seu CPF. É só desta vez.
+                {status.data.name ? `${status.data.name.split(' ')[0]}, antes` : 'Antes'} de continuar, leia e aceite{' '}
+                {what} e informe o seu CPF. É só desta vez.
               </p>
             </>
           )}

@@ -9,16 +9,19 @@ import type { ContractStatus } from '@/types';
 let required = true;
 let isCustomer = true;
 let previous: ContractStatus['previous'] = null;
+let version = '1';
 const accepted: unknown[] = [];
 const status = (): ContractStatus => ({
   contract: {
-    version: '1', effectiveDate: '7 de outubro de 2026', title: 'Contrato de Prestação de Serviços de Rastreamento Veicular',
+    version,
+    effectiveDate: '7 de outubro de 2026',
+    title: version.startsWith('A') ? 'Termo de Uso e Comodato do Associado' : 'Contrato de Prestação de Serviços de Rastreamento Veicular',
     intro: [{ kind: 'p', text: 'Termo de adesão, versão 1.' }],
     sections: [{ title: '6. Permanência mínima e multa', blocks: [{ kind: 'ul', items: ['3 meses', '1 mensalidade'] }] }],
     sha256: 'x',
     changes: 'Entrou o reajuste anual da mensalidade (cláusula 5).',
   },
-  required, accepted: required ? null : ({ version: '1' } as ContractStatus['accepted']), previous, name: 'Lia Martins', taxId: '',
+  required, accepted: required ? null : ({ version } as ContractStatus['accepted']), previous, name: 'Lia Martins', taxId: '',
 });
 
 vi.mock('@/api/resources', () => ({
@@ -72,6 +75,7 @@ afterEach(() => {
   required = true;
   isCustomer = true;
   previous = null;
+  version = '1';
 });
 
 describe('o contrato no primeiro acesso', () => {
@@ -80,7 +84,8 @@ describe('o contrato no primeiro acesso', () => {
     expect(text()).not.toContain('o painel');
     expect(text()).toContain('Lia, antes de continuar');
     expect(text()).toContain('Os pontos principais');
-    expect(text()).toContain('O rastreador é seu.');
+    expect(text()).toContain('Comprou o rastreador? Ele é seu');
+    expect(text()).toContain('Está em comodato? Ele é emprestado pela Farbo');
     expect(text()).toContain('É só o sistema de rastreamento');
     expect(text()).toContain('não garantimos a recuperação do veículo');
     expect(text()).toContain('Permanência mínima de 3 meses');
@@ -105,6 +110,26 @@ describe('o contrato no primeiro acesso', () => {
     await act(async () => button('Aceitar e continuar').click());
     await flush();
     expect(accepted).toEqual([['1', '529.982.247-25']]);
+    expect(text()).toContain('o painel');
+  });
+
+  it('o associado aceita o termo do associado, sem mensalidade, multa nem notas fiscais', async () => {
+    version = 'A1';
+    await render();
+    expect(text()).toContain('Termo de Uso e Comodato do Associado');
+    expect(text()).toContain('leia e aceite o termo');
+    expect(text()).toContain('A Farbo não cobra nada de você.');
+    expect(text()).toContain('O rastreador é emprestado (comodato).');
+    expect(text()).toContain('A associação acompanha os seus veículos');
+    expect(text()).not.toContain('Permanência mínima de 3 meses');
+    expect(text()).not.toContain('NF-e do rastreador');
+    expect(text()).toContain('Li e aceito o termo de uso e comodato do associado');
+    const cpf = document.querySelector('input[inputmode="numeric"]') as HTMLInputElement;
+    await act(async () => (document.querySelector('input[type=checkbox]') as HTMLInputElement).click());
+    await act(async () => type(cpf, '52998224725'));
+    await act(async () => button('Aceitar e continuar').click());
+    await flush();
+    expect(accepted).toEqual([['A1', '529.982.247-25']]);
     expect(text()).toContain('o painel');
   });
 

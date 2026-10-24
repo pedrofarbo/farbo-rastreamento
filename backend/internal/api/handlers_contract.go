@@ -44,10 +44,19 @@ func (s *Server) requireContract(next http.Handler) http.Handler {
 	})
 }
 
-// handlePublicContract: o contrato em vigor (a página pública e a tela do aceite).
+// handlePublicContract: o contrato em vigor (a página pública e a tela do
+// aceite); com ?tipo=associado, o termo do associado.
 func (s *Server) handlePublicContract(w http.ResponseWriter, r *http.Request) {
 	if s.Contract == nil {
 		writeError(w, http.StatusNotFound, "contrato indisponível")
+		return
+	}
+	if r.URL.Query().Get("tipo") == "associado" {
+		if term := s.Contract.AssociateTerm(); term != nil {
+			writeJSON(w, http.StatusOK, term)
+			return
+		}
+		writeError(w, http.StatusNotFound, "termo indisponível")
 		return
 	}
 	writeJSON(w, http.StatusOK, s.Contract.Current())

@@ -12,9 +12,14 @@ import { ContractText } from './ContractText';
 
 export const contractKey = ['me', 'contract'] as const;
 
+/** O termo do associado (versões A1, A2…), no lugar do contrato dos clientes. */
+export function isAssociateTerm(contract: Pick<ContractStatus['contract'], 'version'>): boolean {
+  return contract.version.startsWith('A');
+}
+
 /**
- * O aceite do contrato: os pontos principais em linguagem simples, o texto
- * completo, o CPF (obrigatório, para as notas fiscais) e o "li e aceito".
+ * O aceite do contrato (ou do termo do associado): os pontos principais em
+ * linguagem simples, o texto completo, o CPF (obrigatório) e o "li e aceito".
  */
 export function ContractAcceptForm({
   status,
@@ -28,6 +33,7 @@ export function ContractAcceptForm({
   const [agreed, setAgreed] = useState(false);
   const [touched, setTouched] = useState(false);
   const validDoc = validTaxId(taxId);
+  const associate = isAssociateTerm(status.contract);
 
   const accept = useMutation({
     mutationFn: () => contractApi.accept(status.contract.version, taxId),
@@ -51,52 +57,91 @@ export function ContractAcceptForm({
     >
       {status.previous && (
         <p className={styles.changed} role="status">
-          <strong>O contrato mudou (versão {status.contract.version}).</strong> Você aceitou a versão{' '}
-          {status.previous.version} em {new Date(status.previous.acceptedAt).toLocaleDateString('pt-BR')}. O que mudou:{' '}
-          {status.contract.changes} Se não concordar, você pode encerrar a assinatura sem multa (cláusula 14).
+          <strong>
+            {associate ? 'O termo' : 'O contrato'} mudou (versão {status.contract.version}).
+          </strong>{' '}
+          Você aceitou a versão {status.previous.version} em {new Date(status.previous.acceptedAt).toLocaleDateString('pt-BR')}.
+          {status.contract.changes && ` O que mudou: ${status.contract.changes}`}
+          {!associate && ' Se não concordar, você pode encerrar a assinatura sem multa (cláusula 14).'}
         </p>
       )}
 
-      <section className={styles.summary} aria-labelledby="contrato-resumo">
-        <h2 id="contrato-resumo" className={styles.summaryTitle}>
-          Os pontos principais
-        </h2>
-        <ul>
-          <li>
-            <strong>É só o sistema de rastreamento</strong>, com o bloqueio e o desbloqueio feitos por você. Não é serviço
-            de segurança, central de monitoramento nem seguro, não há equipe de pronta-resposta e não garantimos a
-            recuperação do veículo em caso de roubo ou furto.
-          </li>
-          <li>
-            <strong>O rastreador é seu.</strong> Ele continua sendo seu mesmo depois que a assinatura termina.
-          </li>
-          <li>
-            <strong>Permanência mínima de 3 meses</strong> por veículo. Se cancelar antes, a multa é de{' '}
-            <strong>1 mensalidade</strong>.
-          </li>
-          <li>
-            <strong>Parcelou o rastreador?</strong> A assinatura fica ativa até a última parcela. Se sair antes, as
-            parcelas que faltam vencem de uma vez.
-          </li>
-          <li>
-            <strong>Reajuste anual em agosto</strong>, pelo IPCA dos 12 meses até maio, com aviso por e-mail 30 dias
-            antes. Só depois de 12 meses de assinatura; índice negativo mantém o preço.
-          </li>
-          <li>
-            <strong>Atraso de mais de 1 mês</strong> pode levar o seu nome aos órgãos de proteção ao crédito (SPC e
-            Serasa), sempre com aviso antes.
-          </li>
-          <li>
-            <strong>Por quê?</strong> Cada rastreador tem um chip com plano de telecomunicações M2M, e a Farbo paga a
-            geração e a entrega do chip. Esses custos não são cobrados à parte: são diluídos nas mensalidades.
-          </li>
-          <li>
-            Desistiu? Em até <strong>7 dias</strong> do recebimento do rastreador, sem multa.
-          </li>
-        </ul>
-      </section>
+      {associate ? (
+        <section className={styles.summary} aria-labelledby="contrato-resumo">
+          <h2 id="contrato-resumo" className={styles.summaryTitle}>
+            Os pontos principais
+          </h2>
+          <ul>
+            <li>
+              <strong>A Farbo não cobra nada de você.</strong> Quem contratou o rastreamento é a sua associação (ou
+              seguradora); a mensalidade e a instalação são combinadas com ela.
+            </li>
+            <li>
+              <strong>O rastreador é emprestado (comodato).</strong> Ele não é seu: cuide dele, use só no veículo em que foi
+              instalado e não retire nem troque de veículo por conta própria.
+            </li>
+            <li>
+              <strong>Saiu da associação ou vendeu o veículo?</strong> A Farbo agenda a retirada do rastreador, em até 30
+              dias. Se não devolver, ou se ele estragar por mau uso, você responde pelo valor dele (roubo ou furto, com
+              boletim de ocorrência, não).
+            </li>
+            <li>
+              <strong>A associação acompanha os seus veículos</strong> (a posição, os alertas e as ocorrências) e pode
+              bloquear o motor para recuperar o veículo.
+            </li>
+            <li>
+              <strong>É só o sistema de rastreamento.</strong> Não é serviço de segurança nem central de monitoramento, não
+              substitui a proteção da associação e não garantimos a recuperação do veículo em caso de roubo ou furto.
+            </li>
+          </ul>
+        </section>
+      ) : (
+        <section className={styles.summary} aria-labelledby="contrato-resumo">
+          <h2 id="contrato-resumo" className={styles.summaryTitle}>
+            Os pontos principais
+          </h2>
+          <ul>
+            <li>
+              <strong>É só o sistema de rastreamento</strong>, com o bloqueio e o desbloqueio feitos por você. Não é serviço
+              de segurança, central de monitoramento nem seguro, não há equipe de pronta-resposta e não garantimos a
+              recuperação do veículo em caso de roubo ou furto.
+            </li>
+            <li>
+              <strong>Comprou o rastreador?</strong> Ele é seu, mesmo depois que a assinatura termina.{' '}
+              <strong>Está em comodato?</strong> Ele é emprestado pela Farbo e volta na desinstalação, com as taxas do seu
+              plano.
+            </li>
+            <li>
+              <strong>Nada é cobrado no pedido:</strong> tudo vem numa fatura só por mês, no dia de vencimento da sua conta.
+            </li>
+            <li>
+              <strong>Permanência mínima de 3 meses</strong> por veículo. Se cancelar antes, a multa é de{' '}
+              <strong>1 mensalidade</strong>.
+            </li>
+            <li>
+              <strong>Parcelou o rastreador?</strong> A assinatura fica ativa até a última parcela. Se sair antes, as
+              parcelas que faltam vencem de uma vez.
+            </li>
+            <li>
+              <strong>Reajuste anual em agosto</strong>, pelo IPCA dos 12 meses até maio, com aviso por e-mail 30 dias
+              antes. Só depois de 12 meses de assinatura; índice negativo mantém o preço.
+            </li>
+            <li>
+              <strong>Atraso de mais de 1 mês</strong> pode levar o seu nome aos órgãos de proteção ao crédito (SPC e
+              Serasa), sempre com aviso antes.
+            </li>
+            <li>
+              <strong>Por quê?</strong> Cada rastreador tem um chip com plano de telecomunicações M2M, e a Farbo paga a
+              geração e a entrega do chip. Esses custos não são cobrados à parte: são diluídos nas mensalidades.
+            </li>
+            <li>
+              Desistiu? Em até <strong>7 dias</strong> do recebimento do rastreador (no comodato, da instalação), sem multa.
+            </li>
+          </ul>
+        </section>
+      )}
 
-      <div className={styles.scroll} tabIndex={0} aria-label="Contrato completo">
+      <div className={styles.scroll} tabIndex={0} aria-label={associate ? 'Termo completo' : 'Contrato completo'}>
         <ContractText contract={status.contract} />
       </div>
 
@@ -116,14 +161,16 @@ export function ContractAcceptForm({
         />
         <span id="contrato-cpf-ajuda" className={docError ? styles.error : styles.hint}>
           {docError ||
-            'Obrigatório: é com ele que emitimos as notas fiscais (a NF-e do rastreador e a NFS-e das mensalidades). Empresa? Informe o CNPJ.'}
+            (associate
+              ? 'Obrigatório: identifica você no aceite do termo e no empréstimo do rastreador.'
+              : 'Obrigatório: é com ele que emitimos as notas fiscais (a NF-e do rastreador e a NFS-e das mensalidades). Empresa? Informe o CNPJ.')}
         </span>
       </label>
 
       <label className={styles.check}>
         <input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} />
         <span>
-          Li e aceito o contrato de prestação de serviços, os{' '}
+          Li e aceito {associate ? 'o termo de uso e comodato do associado' : 'o contrato de prestação de serviços'}, os{' '}
           <a href={TERMS_PATH} target="_blank" rel="noreferrer">
             Termos de Uso
           </a>{' '}

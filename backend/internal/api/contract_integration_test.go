@@ -204,3 +204,114 @@ func containsCode(body []byte, code string) bool {
 	}
 	return json.Unmarshal(body, &out) == nil && out.Code == code
 }
+
+// O termo do associado: o associado de uma associação aceita o termo (não o
+// contrato dos clientes) no primeiro acesso — o aceite do contrato não vale
+// por ele, e vice-versa —; a cópia aponta para a página do termo; o texto
+// público sai com ?tipo=associado. Precisa de FARBO_TEST_DATABASE_URL.
+func TestAssociateTerm(t *testing.T) {
+	mailer := &recordingContractMailer{}
+	env, _ := newLeadsEnv(t, func(d *Deps) {
+		params := contract.Params{
+			Company:          config.Company{Name: "Farbo Rastreadores", LegalName: "FARBO TECNOLOGIA DE SISTEMAS E CLOUD LTDA", CNPJ: "49.757.084/0001-00"},
+			SuspendAfterDays: 10, HistoryOptions: []int{7, 14, 30},
+		}
+		doc, err := contract.Render(params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		term, err := contract.RenderAssociate(params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		svc := contract.NewService(d.DB, doc, mailer, d.Log)
+		svc.SetSync()
+		svc.SetAssociateTerm(term)
+		d.Contract = svc
+	})
+	ctx := context.Background()
+	admin := env.login(auth.RoleAdmin + "@leads.test")
+	var created struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/customers", map[string]any{
+		"name": "Ana Prado", "email": "ana@termo.test", "password": userPassword,
+	}, http.StatusCreated), &created)
+	ana := env.login("ana@termo.test")
+
+	type status struct {
+		Contract struct {
+			Version string `json:"version"`
+			Title   string `json:"title"`
+		} `json:"contract"`
+		Required bool `json:"required"`
+		Accepted *struct {
+			Version string `json:"version"`
+		} `json:"accepted"`
+		Previous *struct {
+			Version string `json:"version"`
+		} `json:"previous"`
+	}
+	read := func() status {
+		t.Helper()
+		var st status
+		_ = json.Unmarshal(env.must(ana, http.MethodGet, "/api/me/contract", nil, http.StatusOK), &st)
+		return st
+	}
+	// Cliente: o contrato.
+	if st := read(); !st.Required || st.Contract.Version != contract.Version {
+		t.Fatalf("cliente = %+v", st)
+	}
+	env.must(ana, http.MethodPost, "/api/me/contract/accept", map[string]any{"version": contract.Version, "document": "390.533.447-05"}, http.StatusOK)
+	env.must(ana, http.MethodGet, "/api/vehicles", nil, http.StatusOK)
+
+	// Vira associada: o termo, que ela ainda não aceitou (o contrato não vale por ele).
+	var orgID string
+	if err := env.db.QueryRow(ctx, `INSERT INTO users (email, name, role, password_hash)
+		VALUES ('contato@associacao.test', 'Associação Termo', 'organization', '') RETURNING id`).Scan(&orgID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.db.Exec(ctx, `INSERT INTO organizations (id, kind, price_cents, due_day) VALUES ($1, 'association', 3000, 10)`, orgID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.db.Exec(ctx, `UPDATE users SET organization_id = $1 WHERE id = $2`, orgID, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	st := read()
+	if !st.Required || st.Contract.Version != contract.AssociateVersion || st.Contract.Title != "Termo de Uso e Comodato do Associado" ||
+		st.Previous != nil {
+		t.Fatalf("associada = %+v", st)
+	}
+	if status, body := env.do(ana, http.MethodGet, "/api/vehicles", nil); status != http.StatusForbidden || !containsCode(body, "CONTRACT_REQUIRED") {
+		t.Fatalf("associada sem o termo = %d %s", status, body)
+	}
+	// A versão do contrato não aceita o termo.
+	env.must(ana, http.MethodPost, "/api/me/contract/accept", map[string]any{"version": contract.Version, "document": "390.533.447-05"}, http.StatusBadRequest)
+	env.must(ana, http.MethodPost, "/api/me/contract/accept", map[string]any{"version": contract.AssociateVersion, "document": "390.533.447-05"}, http.StatusOK)
+	if st := read(); st.Required || st.Accepted == nil || st.Accepted.Version != contract.AssociateVersion {
+		t.Fatalf("termo aceito = %+v", st)
+	}
+	env.must(ana, http.MethodGet, "/api/vehicles", nil, http.StatusOK)
+	if n := len(mailer.sent); n != 2 || mailer.sent[1].Version != contract.AssociateVersion || mailer.sent[1].Path != "/contrato/associado" ||
+		mailer.sent[0].Path != "/contrato" {
+		t.Fatalf("cópias = %+v", mailer.sent)
+	}
+
+	// Deixa a associação: volta ao contrato, que ela já aceitou.
+	if _, err := env.db.Exec(ctx, `UPDATE users SET organization_id = NULL WHERE id = $1`, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	if st := read(); st.Required || st.Contract.Version != contract.Version {
+		t.Fatalf("de volta a cliente = %+v", st)
+	}
+
+	// O texto público do termo.
+	var term struct {
+		Title   string `json:"title"`
+		Version string `json:"version"`
+	}
+	_ = json.Unmarshal(env.must("", http.MethodGet, "/api/public/contract?tipo=associado", nil, http.StatusOK), &term)
+	if term.Version != contract.AssociateVersion || term.Title != "Termo de Uso e Comodato do Associado" {
+		t.Fatalf("termo público = %+v", term)
+	}
+}

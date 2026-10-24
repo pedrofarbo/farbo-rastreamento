@@ -43,6 +43,8 @@ type ContractCopy struct {
 	Document   string
 	AcceptedAt time.Time
 	IP         string
+	// Path é a página do texto na plataforma (vazio: /contrato).
+	Path string
 }
 
 type contractData struct {
@@ -58,6 +60,9 @@ func (m *ContractMailer) ContractAccepted(ctx context.Context, to, name string, 
 	data := contractData{
 		ContractCopy: c, FirstName: firstName(name), When: formatBrazilTime(c.AcceptedAt),
 		AppURL: m.appURL, ActionURL: m.appURL + "/contrato",
+	}
+	if c.Path != "" {
+		data.ActionURL = m.appURL + c.Path
 	}
 	var text, html bytes.Buffer
 	if err := contractTemplates.text.Execute(&text, data); err != nil {

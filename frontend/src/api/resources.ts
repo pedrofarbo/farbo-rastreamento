@@ -1166,8 +1166,9 @@ export const contractApi = {
   mine: () => api.get<ContractStatus>('/api/me/contract'),
   accept: (version: string, document: string) =>
     api.post<ContractStatus>('/api/me/contract/accept', { version, document }),
-  /** O texto em vigor, sem login. */
-  current: () => request<ContractDocument>('/api/public/contract', { anonymous: true }),
+  /** O texto em vigor, sem login (o contrato dos clientes ou o termo do associado). */
+  current: (associate = false) =>
+    request<ContractDocument>(`/api/public/contract${associate ? '?tipo=associado' : ''}`, { anonymous: true }),
 };
 
 /** No link de pagamento, a chave do Pix de todas as faturas do vencimento. */

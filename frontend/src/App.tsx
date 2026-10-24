@@ -47,6 +47,7 @@ const ClaimReportPage = page(() => import('@/pages/ClaimReportPage'), 'ClaimRepo
 const PublicPayPage = page(() => import('@/pages/PublicPayPage'), 'PublicPayPage');
 const InstallGuidePage = page(() => import('@/pages/InstallGuidePage'), 'InstallGuidePage');
 const ContractPage = page(() => import('@/pages/legal/ContractPage'), 'ContractPage');
+const AssociateTermPage = page(() => import('@/pages/legal/ContractPage'), 'AssociateTermPage');
 const AlertsPage = page(() => import('@/pages/customer/AlertsPage'), 'AlertsPage');
 const InvoicesPage = page(() => import('@/pages/customer/InvoicesPage'), 'InvoicesPage');
 const ReportsPage = page(() => import('@/pages/customer/ReportsPage'), 'ReportsPage');
@@ -107,6 +108,7 @@ export function App() {
                 <Route path="/termos-de-uso" element={<TermsPage />} />
                 <Route path="/politica-de-privacidade" element={<PrivacyPage />} />
                 <Route path="/contrato" element={<ContractPage />} />
+                <Route path="/contrato/associado" element={<AssociateTermPage />} />
                 {/* Cadastro no pré-lançamento em eventos (o QR Code do estande). */}
                 <Route path="/evento" element={<EventSignupPage />} />
                 <Route path="/evento/:evento" element={<EventSignupPage />} />
