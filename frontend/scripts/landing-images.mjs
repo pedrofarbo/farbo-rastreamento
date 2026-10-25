@@ -32,6 +32,18 @@ const anatelInfo = await sharp(`${SRC}/anatel-selo-exemplo.png`)
   .png({ compressionLevel: 9 })
   .toFile(`${OUT}/anatel-logo.png`);
 
+// O mockup do hero: as telas de verdade do app (o veículo com o motor
+// bloqueado) e do painel, com dados de demonstração, num celular e numa
+// janela do navegador (montado com o Playwright, fundo transparente). Saem as
+// margens transparentes, e fica com 1200 px de largura — o dobro do que o
+// hero mostra.
+const heroInfo = await sharp(`${SRC}/hero-app-mockup.webp`)
+  .trim()
+  .resize({ width: 1200 })
+  .webp({ quality: 82, alphaQuality: 90, effort: 6 })
+  .toFile(`${OUT}/hero-app.webp`);
+
+console.log(`hero-app.webp ${heroInfo.width}x${heroInfo.height} (${heroInfo.size} bytes)`);
 console.log(`rastreador-j16-farbo.webp ${trackerInfo.width}x${trackerInfo.height} (${trackerInfo.size} bytes)`);
 console.log(`anatel-logo.png ${anatelInfo.width}x${anatelInfo.height} (${anatelInfo.size} bytes)`);
 console.log(`insanos-escudo.webp ${shieldInfo.width}x${shieldInfo.height} (${shieldInfo.size} bytes)`);

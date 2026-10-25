@@ -348,7 +348,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
               </li>
               <li>
                 <span className={styles.checkIcon}>✓</span>
-                Bloqueio remoto (opcional)
+                Bloqueio remoto (relé incluso)
               </li>
               <li>
                 <span className={styles.checkIcon}>✓</span>

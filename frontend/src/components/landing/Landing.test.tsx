@@ -57,12 +57,20 @@ describe('priceParts', () => {
 
 // Os preços vêm da oferta do servidor; com a contratação aberta, os botões levam ao funil.
 describe('landing com a contratação pelo site', () => {
-  it('o CTA do hero leva à contratação, com o menor preço', async () => {
+  it('o hero vende o bloqueio pelo celular, com o preço do servidor, o desconto e as condições', async () => {
     const host = await render(<HeroSection onOpenModal={() => {}} />);
-    const cta = links(host, 'Contratar agora');
+    const text = host.textContent ?? '';
+    expect(host.querySelector('h1')?.textContent).toBe('Bloqueie seu veículo pelo celular.');
+    for (const part of ['bloqueio e desbloqueio remoto do motor', 'melhor preço do mercado', '50% OFF', 'De R$ 69,90',
+      'R$34,90/mês', 'rastreador R$ 120 ou 10x de R$ 12,00 sem juros, com o relé de bloqueio', 'Relé de bloqueio incluso',
+      'Ou em comodato: sem comprar o rastreador, instalado pelos nossos técnicos por R$ 150 (+ R$ 3/mês).',
+      'Homologado pela Anatel', 'O relé vem no kit', 'o bloqueio é feito com o veículo parado']) {
+      expect(text).toContain(part);
+    }
+    const cta = links(host, 'Quero proteger meu veículo');
     expect(cta).toHaveLength(1);
     expect(cta[0].getAttribute('href')).toBe(CHECKOUT_PATH);
-    expect(host.textContent).toContain('A partir de R$ 27,90/mês');
+    expect(links(host, 'Ver planos')[0]?.getAttribute('href')).toBe('#planos');
   });
 
   it('o CTA do menu (computador e celular) é "Contratar"', async () => {
@@ -87,6 +95,8 @@ describe('landing com a contratação pelo site', () => {
     expect(links(host, 'Contratar com o preço do Insanos')[0]?.getAttribute('href')).toBe(checkoutPath({ insanos: true }));
     // O rastreador: quem instala e o comodato.
     expect(text).toContain('Instale com o seu instalador ou com os nossos, por R$ 150.');
+    expect(text).toContain('Bloqueio remoto (relé incluso)');
+    expect(text).not.toContain('(opcional)');
     expect(text).toContain(
       'Ou em comodato, sem comprar: instalação R$ 150 pelos nossos instaladores e + R$ 3/mês de garantia de troca do rastreador (desinstalação R$ 85 ao encerrar).',
     );
@@ -133,7 +143,10 @@ describe('landing com a contratação fechada', () => {
   it('o hero, o menu e os planos abrem o pré-cadastro', async () => {
     const opened: (string | undefined)[] = [];
     const hero = await render(<HeroSection onOpenModal={(plan) => opened.push(plan)} />);
-    expect(links(hero, 'Contratar agora')).toHaveLength(0);
+    expect(links(hero, 'Quero proteger meu veículo')).toHaveLength(0);
+    // Fechada: o preço normal, sem o desconto.
+    expect(hero.textContent).toContain('R$69,90/mês');
+    expect(hero.textContent).not.toContain('OFF');
     const nav = await render(<Navbar onOpenModal={(plan) => opened.push(plan)} />);
     expect(links(nav, 'Contratar')).toHaveLength(0);
     const pricing = await render(<PricingSection onOpenModal={(plan) => opened.push(plan)} />);

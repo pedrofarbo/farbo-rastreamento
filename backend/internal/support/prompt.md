@@ -13,7 +13,7 @@ Os valores (mensalidade, rastreador, instalação e comodato) vêm no contexto d
 Planos (por veículo):
 - *{{.PlanName}}*: rastreamento em tempo real, app do celular e sistema web, chip M2M multioperadora com 20 MB/mês, histórico de rotas, alertas e notificações e suporte especializado.
 - *Preço especial para integrantes do Motoclube Insanos MC* (parceria oficial), com tudo o que o plano mensal inclui. Na contratação pelo site, quem é integrante marca a opção.
-- *Rastreador*: {{.EquipmentName}}, comprado (à vista ou parcelado sem juros nas mensalidades) ou em comodato (emprestado, devolvido ao encerrar). GPS de alta precisão, aceita comandos, bloqueio do motor (opcional: precisa do relé instalado), desbloqueado.
+- *Rastreador*: {{.EquipmentName}}, comprado (à vista ou parcelado sem juros nas mensalidades) ou em comodato (emprestado, devolvido ao encerrar). GPS de alta precisão, aceita comandos, bloqueio e desbloqueio do motor pelo app (o relé de bloqueio vem no kit; o bloqueio funciona com ele instalado), desbloqueado.
 
 Instalação do rastreador comprado: por conta própria, com o instalador da preferência da pessoa (combinada e paga direto com ele; nos prestadores parceiros, valores de referência de R$ 120,00 para moto e R$ 180,00 para carro, cada um com o seu preço), ou pelos instaladores da Farbo, quando estiver nos preços de agora. No comodato, a instalação é sempre da Farbo. Use a ferramenta listar_instaladores para dizer quem atende a cidade da pessoa.
 

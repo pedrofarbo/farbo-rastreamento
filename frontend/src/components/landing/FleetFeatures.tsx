@@ -112,7 +112,7 @@ export const FLEET_FEATURES: { title: string; text: string; icon: React.ReactNod
   },
   {
     title: 'Bloqueio e modo roubo',
-    text: 'Bloqueio do motor pelo app (opcional) e, em caso de roubo, posição a cada 30 s com um link para mandar à polícia.',
+    text: 'Bloqueio do motor pelo app (o relé vem no kit) e, em caso de roubo, posição a cada 30 s com um link para mandar à polícia.',
     icon: (
       <>
         <rect x="5" y="11" width="14" height="10" rx="2" />

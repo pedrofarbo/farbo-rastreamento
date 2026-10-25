@@ -270,9 +270,14 @@
     font-weight: 600;
   }
 
-  .mobileCtaBtn {
-    display: block;
+  /* O botão de contratar no menu: o seletor com .nav vence o ".nav a" dos
+     outros links (texto claro à esquerda), também no toque. */
+  .nav .mobileCtaBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 100%;
+    min-height: 52px;
     margin-top: 1rem;
     text-align: center;
     text-decoration: none;
@@ -283,6 +288,11 @@
     padding: 0.875rem 1.25rem;
     font-size: 1rem;
     font-weight: 800;
+  }
+
+  .nav .mobileCtaBtn:hover {
+    background: var(--color-neon-green-hover);
+    color: #060907;
   }
 
   .hamburger {

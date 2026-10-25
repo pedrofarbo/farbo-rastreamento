@@ -25,9 +25,16 @@
 }
 
 .subtitleTag {
-  font-size: 0.8125rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid rgba(59, 229, 88, 0.45);
+  border-radius: 999px;
+  background: rgba(59, 229, 88, 0.08);
+  font-size: 0.75rem;
   font-weight: 800;
-  letter-spacing: 3px;
+  letter-spacing: 2px;
   color: var(--color-neon-green);
   margin-bottom: 1.25rem;
   text-transform: uppercase;
@@ -51,8 +58,116 @@
   font-size: 1.125rem;
   line-height: 1.6;
   color: #94a3b8;
-  max-width: 480px;
-  margin-bottom: 1.75rem;
+  max-width: 500px;
+  margin-bottom: 1.5rem;
+}
+
+.description strong {
+  color: #ffffff;
+}
+
+.description .highlight {
+  color: var(--color-neon-green);
+}
+
+/* O preço: o normal riscado, o do site grande e o desconto. */
+.priceBox {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid rgba(59, 229, 88, 0.35);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(59, 229, 88, 0.12), rgba(59, 229, 88, 0.02));
+}
+
+.offBadge {
+  position: absolute;
+  top: -0.75rem;
+  right: 1rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  box-shadow: 0 6px 18px rgba(239, 68, 68, 0.35);
+}
+
+.priceLine {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.priceOld {
+  color: #64748b;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.priceNow {
+  display: flex;
+  align-items: flex-start;
+  line-height: 1;
+  color: #ffffff;
+}
+
+.priceCurrency {
+  margin: 0.35rem 0.25rem 0 0;
+  font-size: 1.125rem;
+  font-weight: 800;
+}
+
+.priceReais {
+  font-size: 3.25rem;
+  font-weight: 900;
+  letter-spacing: -1.5px;
+}
+
+.priceCents {
+  display: flex;
+  flex-direction: column;
+  margin: 0.3rem 0 0 0.1rem;
+  font-size: 1.375rem;
+  font-weight: 900;
+}
+
+.priceCents small {
+  margin-top: 0.2rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+
+.pricePending {
+  font-size: 2.5rem;
+  font-weight: 900;
+  color: #334155;
+}
+
+.priceNote {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #a7f3d0;
+}
+
+/* O comodato, separado por um fio. */
+.loanNote {
+  margin: 0.35rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: #cbd5e1;
+}
+
+.loanNote strong {
+  color: #ffffff;
 }
 
 .heroCtaBtn {
@@ -84,9 +199,57 @@
   margin-bottom: 0;
 }
 
-.heroCtaNote {
-  color: #cbd5e1;
+.ctaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.heroGhostBtn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.875rem 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.heroGhostBtn:hover {
+  border-color: var(--color-neon-green);
+  color: var(--color-neon-green);
+  text-decoration: none;
+}
+
+/* Pix, entrega e Anatel: as garantias embaixo dos botões. */
+.trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
   font-size: 0.875rem;
+  color: #cbd5e1;
+}
+
+.trust li::before {
+  content: '✓';
+  margin-right: 0.35rem;
+  color: var(--color-neon-green);
+  font-weight: 900;
+}
+
+/* As condições do bloqueio (os Termos): pequenas, mas à vista. */
+.finePrint {
+  max-width: 500px;
+  margin: -1.25rem 0 2rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #64748b;
 }
 
 .heroCtaBtn:hover {
@@ -158,13 +321,15 @@
 .visualWrapper {
   position: relative;
   width: 100%;
-  max-width: 560px;
+  max-width: 600px;
 }
 
+/* O slogan e o cartão do bloqueio ocupam o vazio embaixo da janela do
+   painel, à direita do celular, sem cobrir as telas. */
 .scriptTextFloat {
   position: absolute;
-  top: -1.5rem;
-  right: 1rem;
+  top: 47%;
+  right: 3%;
   font-family: var(--font-script);
   font-size: 2.5rem;
   color: #ffffff;
@@ -183,6 +348,59 @@
   margin: 0.1rem 0;
 }
 
+/* "Bloqueio pelo app": o cartão sobre a ilustração. */
+.lockCard {
+  position: absolute;
+  right: 6%;
+  bottom: 17%;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 1rem 0.7rem 0.7rem;
+  border: 1px solid rgba(59, 229, 88, 0.45);
+  border-radius: 16px;
+  background: rgba(10, 15, 11, 0.94);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 24px rgba(59, 229, 88, 0.18);
+  color: #ffffff;
+  animation: lockFloat 4s ease-in-out infinite;
+}
+
+.lockCard strong {
+  display: block;
+  font-size: 0.9375rem;
+  font-weight: 800;
+}
+
+.lockCard small {
+  display: block;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.lockIcon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--color-neon-green);
+  color: #060907;
+  flex-shrink: 0;
+}
+
+@keyframes lockFloat {
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lockCard {
+    animation: none;
+  }
+}
+
 .heroGlow {
   position: absolute;
   inset: -10px;
@@ -194,11 +412,10 @@
 .heroImg {
   position: relative;
   z-index: 2;
+  display: block;
   width: 100%;
   height: auto;
-  object-fit: contain;
-  filter: drop-shadow(0 20px 30px rgba(0, 0, 0, 0.7));
-  border-radius: 16px;
+  filter: drop-shadow(0 20px 30px rgba(0, 0, 0, 0.5));
   transition: transform 0.3s ease;
 }
 
@@ -230,6 +447,26 @@
     align-items: center;
   }
 
+  .priceBox {
+    align-items: center;
+    width: 100%;
+    max-width: 420px;
+  }
+
+  .priceLine,
+  .ctaRow,
+  .trust {
+    justify-content: center;
+  }
+
+  .finePrint {
+    max-width: 420px;
+  }
+
+  .lockCard {
+    right: 0.5rem;
+  }
+
   .description {
     max-width: 100%;
   }
@@ -238,11 +475,6 @@
     justify-content: center;
   }
 
-  .scriptTextFloat {
-    right: 50%;
-    transform: translateX(50%) rotate(-3deg);
-    top: -2.5rem;
-  }
 }
 
 @media (max-width: 480px) {
@@ -255,6 +487,23 @@
   }
   .mainTitle {
     font-size: 2.25rem;
+  }
+  .priceReais {
+    font-size: 2.75rem;
+  }
+  .ctaRow {
+    flex-direction: column;
+    width: 100%;
+  }
+  .ctaRow .heroCtaBtn,
+  .heroGhostBtn {
+    justify-content: center;
+    width: 100%;
+  }
+  /* O vazio ao lado do celular é estreito aqui: o cartão sai (o mockup já
+     mostra o motor bloqueado). */
+  .lockCard {
+    display: none;
   }
   /* Os 5 destaques em 3 + 2, centralizados (antes: 4 + 1 sobrando). */
   .featuresRow {
