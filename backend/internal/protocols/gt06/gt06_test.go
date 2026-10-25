@@ -357,6 +357,29 @@ func TestParseHeartbeatWithExtraBytes(t *testing.T) {
 	}
 }
 
+func TestParseGPSLBSWithACC(t *testing.T) {
+	// 0x22 (GPS + LBS): depois do LBS vêm a ignição, o modo de envio e o
+	// reenvio — não bateria nem sinal (o J16 com SZCS#GT06SEL=1#).
+	content := encodeGPSBlock(Fix{Time: time.Date(2026, 10, 25, 18, 56, 0, 0, time.UTC), Latitude: -23.492195,
+		Longitude: -46.843112, Satellites: 9, Valid: true})
+	content = append(content, encodeLBSBlock()...)
+	content = append(content, 0x01, 0x00, 0x00)
+	msg := mustParseOne(t, newProtocol(), buildFrame(msgGPSLBS2, content, 21))
+	if msg.Kind != protocols.KindPosition || !msg.HasLocation {
+		t.Fatalf("0x22 = %+v", msg)
+	}
+	if msg.ACC == nil || !*msg.ACC {
+		t.Fatalf("ignição: esperava ligada, recebi %v", msg.ACC)
+	}
+	if msg.BatteryPercent != nil || msg.GSMLevel != nil {
+		t.Fatalf("0x22 não traz bateria nem sinal: bateria %v, sinal %v", msg.BatteryPercent, msg.GSMLevel)
+	}
+	content[len(content)-3] = 0x00
+	if msg := mustParseOne(t, newProtocol(), buildFrame(msgGPSLBS2, content, 22)); msg.ACC == nil || *msg.ACC {
+		t.Fatalf("ignição: esperava desligada, recebi %v", msg.ACC)
+	}
+}
+
 func TestParseStatusAlarm(t *testing.T) {
 	// Bits 5-3 == 100 no terminal info sinalizam SOS.
 	frame := buildFrame(msgHeartbeat, []byte{0x22, 0x06, 0x04, 0x00, 0x01}, 12)

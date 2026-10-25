@@ -12,9 +12,11 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { TextField } from '@/components/ui/Field';
+import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { formatDateTime, formatRelative } from '@/services/format';
+import { formatDateTime, formatMoney, formatRelative } from '@/services/format';
 import { stepOf, trackerTone } from '@/services/fulfillment';
 import { useAuth } from '@/stores/AuthContext';
 import type { Fulfillment, TrackerStatus } from '@/types';
@@ -42,6 +44,7 @@ export function OrdersPage() {
   const [showAll, setShowAll] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
   const [opened, setOpened] = useState<string | null>(null);
+  const [canceling, setCanceling] = useState<Fulfillment | null>(null);
 
   const list = useQuery({ queryKey: ['fulfillments', showAll], queryFn: () => fulfillmentsApi.list(showAll) });
 
@@ -139,7 +142,12 @@ export function OrdersPage() {
                 </thead>
                 <tbody>
                   {rows.map((f) => (
-                    <OrderRow key={f.id} f={f} onOpen={() => setOpened(f.id)} />
+                    <OrderRow
+                      key={f.id}
+                      f={f}
+                      onOpen={() => setOpened(f.id)}
+                      onCancel={canManage && cancelable(f) ? () => setCanceling(f) : undefined}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -149,11 +157,84 @@ export function OrdersPage() {
       </div>
 
       <FulfillmentAdminModal fulfillmentId={opened} onClose={() => setOpened(null)} />
+      <CancelOrderModal order={canceling} onClose={() => setCanceling(null)} />
     </div>
   );
 }
 
-function OrderRow({ f, onOpen }: { f: Fulfillment; onOpen: () => void }) {
+/** Dá para cancelar antes de o rastreador sair para entrega (e sem etiqueta). */
+function cancelable(f: Fulfillment): boolean {
+  return !['SHIPPED', 'IN_TRANSIT', 'DELIVERED'].includes(f.trackerStatus) && !f.shippingOrderId;
+}
+
+/**
+ * Cancelar o pedido (só o administrador): pede o motivo, que vai para a
+ * auditoria. As cobranças em aberto caem, o veículo sai da conta do cliente e,
+ * se algo já foi pago, o aviso diz quanto devolver (o estorno é por fora).
+ */
+function CancelOrderModal({ order, onClose }: { order: Fulfillment | null; onClose: () => void }) {
+  const { notify } = useToast();
+  const queryClient = useQueryClient();
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    setReason('');
+    setError('');
+  }, [order?.id]);
+  const cancel = useMutation({
+    mutationFn: () => fulfillmentsApi.cancel(order!.id, reason.trim()),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['fulfillments'] });
+      notify({
+        tone: 'success',
+        title: `Pedido de ${result.vehicleName} cancelado`,
+        description:
+          result.paidCents > 0
+            ? `Já tinha sido pago ${formatMoney(result.paidCents)}: devolva ao cliente (o estorno do Pix é por fora).`
+            : `${result.canceledInvoices} cobrança(s) em aberto cancelada(s).`,
+      });
+      onClose();
+    },
+    onError: (err: Error) => setError(err.message || 'Não deu para cancelar agora.'),
+  });
+  return (
+    <Modal
+      open={order !== null}
+      title="Cancelar o pedido?"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={cancel.isPending}>
+            Voltar
+          </Button>
+          <Button variant="danger" loading={cancel.isPending} disabled={!reason.trim()} onClick={() => cancel.mutate()}>
+            Cancelar o pedido
+          </Button>
+        </>
+      }
+    >
+      {order && (
+        <div className={styles.form}>
+          <p>
+            O pedido de <strong>{order.vehicleName}</strong> ({order.customerName}) será cancelado: as cobranças em aberto
+            caem, a assinatura é encerrada e o veículo sai da conta do cliente. Se algo já foi pago, o aviso diz quanto
+            devolver.
+          </p>
+          <TextField
+            label="Motivo"
+            placeholder="Ex.: o cliente desistiu"
+            maxLength={500}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+          {error && <div className={styles.note}>{error}</div>}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function OrderRow({ f, onOpen, onCancel }: { f: Fulfillment; onOpen: () => void; onCancel?: () => void }) {
   return (
     <tr>
       <td>
@@ -186,9 +267,16 @@ function OrderRow({ f, onOpen }: { f: Fulfillment; onOpen: () => void }) {
       </td>
       <td title={formatDateTime(f.updatedAt)}>{formatRelative(f.updatedAt)}</td>
       <td>
-        <Button size="small" variant="primary" onClick={onOpen}>
-          Abrir
-        </Button>
+        <div className={fstyles.rowActions}>
+          <Button size="small" variant="primary" onClick={onOpen}>
+            Abrir
+          </Button>
+          {onCancel && (
+            <Button size="small" variant="ghost" onClick={onCancel}>
+              Cancelar
+            </Button>
+          )}
+        </div>
       </td>
     </tr>
   );

@@ -1383,6 +1383,16 @@ export interface Fulfillment {
   updatedAt: string;
 }
 
+/** O pedido cancelado: as cobranças em aberto que caíram e o pago, a devolver. */
+export interface CancelOrderResult {
+  customerId: string;
+  subscriptionId: string | null;
+  vehicleName: string;
+  canceledInvoices: number;
+  paidCents: number;
+  paidInvoices: string[] | null;
+}
+
 /** O que o cliente vê do acompanhamento. */
 export interface CustomerFulfillment {
   id: string;

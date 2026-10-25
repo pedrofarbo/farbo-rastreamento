@@ -744,8 +744,22 @@ func changedBool(before, after *bool) bool {
 }
 
 // failedResponse reconhece as negativas mais comuns nas respostas de comando.
+// Duas respostas do J16 citam "error"/"fail" sem ter falhado: a de
+// configuração (SZCS#), "SETOK: A*B ERROR:", falha só no que vier depois de
+// ERROR:; e a de estado (STATUS#), em campos chave:valor, onde "GPS:Fail
+// positioning" é o GPS sem sinal, não o comando.
 func failedResponse(response string) bool {
-	lowered := strings.ToLower(response)
+	text := strings.TrimSpace(response)
+	lowered := strings.ToLower(text)
+	if strings.Contains(lowered, "setok") {
+		if i := strings.Index(lowered, "error:"); i >= 0 {
+			return strings.TrimSpace(text[i+len("error:"):]) != ""
+		}
+		return false
+	}
+	if strings.Contains(lowered, "battery:") || strings.Contains(lowered, "gprs:") {
+		return false
+	}
 	for _, needle := range []string{"fail", "error", "invalid", "password err", "not support"} {
 		if strings.Contains(lowered, needle) {
 			return true

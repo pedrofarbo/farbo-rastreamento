@@ -159,6 +159,17 @@ func (p *Protocol) decodeLocation(msg *protocols.TrackerMessage, pkt *packet) er
 		rest = rest[n:]
 	}
 
+	// DOCUMENTED (Concox GT06N): no 0x22, depois do LBS vêm a ignição (ACC),
+	// o modo de envio e o reenvio em tempo real — não o estado do terminal.
+	// Lidos como estado, o modo e o reenvio (zeros) viravam bateria 0% e
+	// sinal 0 (o J16 passa a mandar o 0x22 com SZCS#GT06SEL=1#).
+	if pkt.typ == msgGPSLBS2 {
+		if len(rest) >= 1 {
+			msg.ACC = protocols.Ptr(rest[0] == 0x01)
+		}
+		return nil
+	}
+
 	// Pacotes com bloco de estado trazem terminal info + bateria + GSM.
 	if len(rest) >= 3 {
 		applyTerminalInfo(msg, rest[0])

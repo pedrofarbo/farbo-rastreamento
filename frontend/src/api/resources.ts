@@ -4,6 +4,7 @@ import type { TeamRole } from '@/services/roles';
 
 import { api, apiUrl, download, fetchBlob, request, tokens } from './client';
 import type {
+  CancelOrderResult,
   AccountMember,
   AwaitingInstall,
   AwaitingUninstall,
@@ -1146,6 +1147,8 @@ export const fulfillmentsApi = {
     api.post<Fulfillment>(`/api/fulfillments/${id}/shipping/label`, { serviceId }),
   /** A etiqueta comprada, em PDF (409 LABEL_NOT_PDF com o link, se vier a página de impressão). */
   downloadLabel: (id: string) => download(`/api/fulfillments/${id}/shipping/label.pdf`),
+  /** Admin: cancela o pedido antes do envio (o veículo sai da conta). */
+  cancel: (id: string, reason: string) => api.post<CancelOrderResult>(`/api/fulfillments/${id}/cancel`, { reason }),
 };
 
 /** Atendimento pelo WhatsApp: conversas da IA e da equipe (admin e operador). */

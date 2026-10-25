@@ -73,7 +73,10 @@ const (
 	ActionLaunchPromoRevoked = "LAUNCH_PROMO_REVOKED"
 	// ActionOrderOptionsChanged: a central mudou as opções do pedido do
 	// cliente (o comodato e a instalação pelos instaladores da Farbo).
-	ActionOrderOptionsChanged  = "ORDER_OPTIONS_CHANGED"
+	ActionOrderOptionsChanged = "ORDER_OPTIONS_CHANGED"
+	// ActionOrderCanceled: a central cancelou o pedido de um veículo (antes do
+	// envio), com o motivo e o que foi pago a devolver.
+	ActionOrderCanceled        = "ORDER_CANCELED"
 	ActionSubscriptionCreated  = "SUBSCRIPTION_CREATED"
 	ActionSubscriptionUpdated  = "SUBSCRIPTION_UPDATED"
 	ActionSubscriptionCanceled = "SUBSCRIPTION_CANCELED"

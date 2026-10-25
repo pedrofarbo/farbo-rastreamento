@@ -1040,6 +1040,10 @@ func (s *Server) routes() chi.Router {
 					r.Get("/{id}/shipping/label.pdf", s.handleLabelPDF)
 					r.With(auth.RequireRole(auth.RoleAdmin)).Post("/{id}/shipping/quote", s.handleQuoteShipping)
 					r.With(auth.RequireRole(auth.RoleAdmin)).Post("/{id}/shipping/label", s.handleBuyLabel)
+					// Cancelar o pedido (antes do envio): só o administrador.
+					if s.Orders != nil {
+						r.With(auth.RequireRole(auth.RoleAdmin)).Post("/{id}/cancel", s.handleCancelOrder)
+					}
 				})
 				r.Route("/integrations/melhorenvio", func(r chi.Router) {
 					r.Use(auth.RequireRole(auth.RoleAdmin))

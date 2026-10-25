@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -533,4 +534,37 @@ func (s *Server) handleShippingWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleCancelOrder cancela o pedido de um veículo (só o administrador),
+// antes de o rastreador sair para entrega: as cobranças em aberto caem, o
+// veículo sai da conta e a resposta diz quanto já foi pago (a devolver).
+func (s *Server) handleCancelOrder(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.fulfillmentFromURL(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" || len(reason) > 500 {
+		writeError(w, http.StatusBadRequest, "informe o motivo do cancelamento (até 500 caracteres)")
+		return
+	}
+	result, err := s.Orders.CancelOrder(r.Context(), id)
+	if err != nil {
+		writeOrderError(w, r, err, "pedido não encontrado")
+		return
+	}
+	s.recordAudit(r, audit.ActionOrderCanceled, nil, nil, map[string]any{
+		"fulfillmentId": id, "customerId": result.CustomerID, "subscriptionId": result.SubscriptionID,
+		"vehicle": result.VehicleName, "reason": reason, "canceledInvoices": result.CanceledInvoices,
+		"paidCents": result.PaidCents, "paidInvoices": result.PaidInvoices,
+	})
+	writeJSON(w, http.StatusOK, result)
 }
