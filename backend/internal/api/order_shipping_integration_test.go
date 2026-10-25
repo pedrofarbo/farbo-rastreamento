@@ -152,14 +152,15 @@ func TestOrderShippingEndToEnd(t *testing.T) {
 		http.StatusBadRequest); !strings.Contains(out["error"].(string), "não vale para Rio de Janeiro/RJ") {
 		t.Errorf("combinar fora de SP = %+v", out)
 	}
-	// Escolheu o PAC: o frete entra na fatura do equipamento (com o preço do servidor).
+	// Escolheu o PAC: o frete entra na fatura do equipamento (com o preço do
+	// servidor; o rastreador no preço do site, o da pessoa física).
 	// (A tela não manda preço: um campo a mais é recusado.)
 	order(token, "/api/me/trackers", map[string]any{"vehicle": vehicle("FRT1A11"), "shippingServiceId": 1, "shippingCents": 1},
 		http.StatusBadRequest)
 	res := order(token, "/api/me/trackers", map[string]any{"vehicle": vehicle("FRT1A11"), "shippingServiceId": 1}, http.StatusCreated)
 	setup, _ := res["setupInvoice"].(map[string]any)
 	shipping, _ := res["shipping"].(map[string]any)
-	if setup["amountCents"] != float64(15000+2240) || !strings.Contains(setup["description"].(string), "frete Correios PAC (R$ 22,40)") ||
+	if setup["amountCents"] != float64(12000+2240) || !strings.Contains(setup["description"].(string), "frete Correios PAC (R$ 22,40)") ||
 		shipping["name"] != "Correios PAC" || shipping["priceCents"] != float64(2240) {
 		t.Fatalf("pedido = %+v", res)
 	}
@@ -206,7 +207,7 @@ func TestOrderShippingEndToEnd(t *testing.T) {
 	res = order(sp, "/api/me/trackers", map[string]any{"vehicle": vehicle("FRT6F66"), "arrangeDelivery": true}, http.StatusCreated)
 	setup, _ = res["setupInvoice"].(map[string]any)
 	shipping, _ = res["shipping"].(map[string]any)
-	if setup["amountCents"] != float64(15000) || strings.Contains(setup["description"].(string), "frete") ||
+	if setup["amountCents"] != float64(12000) || strings.Contains(setup["description"].(string), "frete") ||
 		shipping["arranged"] != true || shipping["name"] != fulfillment.ArrangedService || shipping["priceCents"] != float64(0) {
 		t.Fatalf("pedido combinado = %+v", res)
 	}

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/contract"
@@ -22,12 +23,12 @@ import (
 // plano sem a garantia. Precisa de FARBO_TEST_DATABASE_URL.
 func TestCheckoutFunnel(t *testing.T) {
 	var bs *billing.Service
-	var prices config.Catalog
+	var catalogPrices config.Catalog
 	env, _ := newLeadsEnv(t, func(d *Deps) {
 		bs = d.Billing
 		d.Config.Catalog.SetupDueDays = 0
 		d.Config.Catalog.LaunchPromo.InsanosPlanCents = 3990
-		prices = d.Config.Catalog
+		catalogPrices = d.Config.Catalog
 		d.Orders = orders.NewService(d.DB, d.Billing, d.Vehicles, d.Config.Catalog, d.Log)
 		doc, err := contract.Render(contract.Params{Company: config.Company{Name: "Farbo Rastreadores"}, HistoryOptions: []int{7, 14, 30}})
 		if err != nil {
@@ -63,8 +64,8 @@ func TestCheckoutFunnel(t *testing.T) {
 		offer.ContractVersion != contract.Version || offer.Loan == nil || offer.Loan.SurchargeCents != 300 ||
 		offer.Loan.InstallFeeCents != 15000 || offer.Loan.UninstallFeeCents != 8500 || offer.Install == nil ||
 		offer.Install.PriceCents != 15000 || offer.InsanosPlanName != "Especial Insanos MC" ||
-		offer.PlanRegularCents != prices.PlanPriceCents || offer.PlanRegularCents == 0 || offer.InsanosRegularCents != 3990 ||
-		offer.EquipmentRegularCents != prices.EquipmentPriceCents || offer.EquipmentRegularCents == 0 {
+		offer.PlanRegularCents != catalogPrices.PlanPriceCents || offer.PlanRegularCents == 0 || offer.InsanosRegularCents != 3990 ||
+		offer.EquipmentRegularCents != catalogPrices.EquipmentPriceCents || offer.EquipmentRegularCents == 0 {
 		t.Fatalf("oferta = %+v (comodato %+v)", offer, offer.Loan)
 	}
 
@@ -122,6 +123,7 @@ func TestCheckoutFunnel(t *testing.T) {
 	}
 	// O app já abre com a sessão da contratação.
 	env.must(r.Tokens.AccessToken, http.MethodGet, "/api/me/account", nil, http.StatusOK)
+	lia := r.Tokens.AccessToken
 	// O mesmo e-mail de novo: entra no app.
 	if status, out := env.do("", http.MethodPost, "/api/public/checkout", body("lia@site.test", "529.982.247-25", nil)); status != http.StatusConflict ||
 		!containsCode(out, "EMAIL_TAKEN") {
@@ -163,12 +165,46 @@ func TestCheckoutFunnel(t *testing.T) {
 		t.Errorf("plano do próximo veículo = %+v", catalog)
 	}
 
-	// Com o funil fechado pela central, não contrata.
+	// No app, a pessoa física paga o mesmo que no site: a central muda o
+	// preço do site e o próximo veículo da Lia acompanha (o rastreador também).
+	type prices struct {
+		PlanName            string `json:"planName"`
+		PlanPriceCents      int    `json:"planPriceCents"`
+		EquipmentPriceCents int    `json:"equipmentPriceCents"`
+	}
+	pricesOf := func(token string) prices {
+		t.Helper()
+		var p prices
+		_ = json.Unmarshal(env.must(token, http.MethodGet, "/api/catalog", nil, http.StatusOK), &p)
+		return p
+	}
+	if _, err := env.db.Exec(ctx, `UPDATE order_settings SET checkout_plan_cents = 2990, checkout_equipment_cents = 9900`); err != nil {
+		t.Fatal(err)
+	}
+	if p := pricesOf(lia); p.PlanName != "Plano Mensal" || p.PlanPriceCents != 2990 || p.EquipmentPriceCents != 9900 {
+		t.Errorf("app da pessoa física = %+v", p)
+	}
+	// A empresa (CNPJ) segue no catálogo.
+	admin := env.login(auth.RoleAdmin + "@leads.test")
+	env.must(admin, http.MethodPost, "/api/customers", map[string]any{
+		"name": "Frota Ltda", "email": "frota@site.test", "phone": "(11) 94444-0000", "document": "11.222.333/0001-81",
+		"password": userPassword,
+	}, http.StatusCreated)
+	if p := pricesOf(env.login("frota@site.test")); p.PlanPriceCents != catalogPrices.PlanPriceCents ||
+		p.EquipmentPriceCents != catalogPrices.EquipmentPriceCents {
+		t.Errorf("app da empresa = %+v", p)
+	}
+
+	// Com o funil fechado pela central, não contrata; no app, a pessoa física
+	// fica com o plano que já tem e o rastreador do catálogo.
 	if _, err := env.db.Exec(ctx, `UPDATE order_settings SET checkout_enabled = FALSE`); err != nil {
 		t.Fatal(err)
 	}
 	if status, out := env.do("", http.MethodPost, "/api/public/checkout", body("bia@site.test", "529.982.247-25", nil)); status != http.StatusBadRequest ||
 		!strings.Contains(string(out), "fechada") {
 		t.Fatalf("funil fechado = %d %s", status, out)
+	}
+	if p := pricesOf(lia); p.PlanPriceCents != 3490 || p.EquipmentPriceCents != catalogPrices.EquipmentPriceCents {
+		t.Errorf("app com o funil fechado = %+v", p)
 	}
 }

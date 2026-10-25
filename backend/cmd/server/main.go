@@ -469,12 +469,24 @@ func run() error {
 	// ---- Servidores ----
 	tcpServer := tcp.NewServer(cfg.TCP, registry, connManager, ingestor, log, metrics)
 
+	ordersSvc := orders.NewService(db, billingSvc, vehicleSvc, cfg.Catalog, log)
+	// O atendente cita os preços de agora (os da central), lidos a cada resposta.
+	if supportSvc != nil {
+		supportSvc.SetPrices(func(ctx context.Context) (*support.PriceFacts, error) {
+			opts, err := ordersSvc.Options(ctx)
+			if err != nil {
+				return nil, err
+			}
+			prices := support.PricesFrom(cfg.Catalog, *opts, cfg.Mail.AppURL)
+			return &prices, nil
+		})
+	}
 	apiServer := api.NewServer(api.Deps{
 		Config: cfg, Log: log, Metrics: metrics, DB: db,
 		Auth: authSvc, Devices: deviceSvc, Vehicles: vehicleSvc,
 		Geofences: geofenceSvc, Geocoder: geocodingSvc, Events: eventSvc, Commands: commandSvc, Reports: reportsSvc,
 		Audit: auditSvc, ReportMail: reportMailSvc, Maintenance: maintenanceSvc, Billing: billingSvc, Payments: paymentsSvc, Owners: ownerIndex,
-		Orders:      orders.NewService(db, billingSvc, vehicleSvc, cfg.Catalog, log),
+		Orders:      ordersSvc,
 		Installers:  installerRepo,
 		Addresses:   addresses.NewRepository(db),
 		Fulfillment: fulfillmentSvc, Carrier: carrier, CarrierStore: carrierStore, TopUps: topUpSvc,

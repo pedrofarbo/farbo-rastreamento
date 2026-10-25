@@ -471,9 +471,8 @@ func withGuarantee(plan *billing.SubscriptionInput, terms *Terms, cents int) {
 	terms.GuaranteeCents = cents
 }
 
-// CustomerOrder monta o pedido feito pelo próprio cliente, com os preços do
-// catálogo — ele não escolhe valor. O plano é o que ele já tem (quem paga o
-// preço especial continua nele); sem assinatura ativa, vale o plano padrão.
+// CustomerOrder monta o pedido feito pelo próprio cliente, com os preços dele
+// (CustomerPrices) — ele não escolhe valor.
 func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehicle vehicles.Input, launchPromo bool,
 	equipmentMode string, farboInstall bool) (Order, error) {
 	summary, err := s.billing.GetCustomer(ctx, customerID)
@@ -491,7 +490,7 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehic
 		return Order{}, ErrTooManyPending
 	}
 
-	plan, err := s.CustomerPlan(ctx, customerID)
+	plan, equipment, err := s.CustomerPrices(ctx, customerID)
 	if err != nil {
 		return Order{}, err
 	}
@@ -506,7 +505,6 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehic
 	if terms.EquipmentMode == billing.EquipmentLoan && launchPromo {
 		return Order{}, ValidationError{"a promoção de pré-lançamento vale para o rastreador comprado"}
 	}
-	equipment := s.catalog.EquipmentPriceCents
 	if terms.EquipmentMode == billing.EquipmentLoan {
 		equipment = 0
 	}
@@ -550,6 +548,42 @@ func (s *Service) WithFarboInstall(ctx context.Context, o *Order) error {
 		return nil
 	}
 	return s.withFarboInstall(ctx, o, false)
+}
+
+// CustomerPrices são o plano e o rastreador comprado de um novo veículo do
+// cliente. A pessoa física sem plano definido pela central paga no app o
+// mesmo que no site: o plano normal e o do Insanos MC no preço da
+// contratação pelo site, e o rastreador também (com a contratação pelo site
+// fechada, os do catálogo). A empresa, e quem tem plano da central ou um plano
+// próprio na assinatura, segue com o plano dele e o rastreador do catálogo.
+func (s *Service) CustomerPrices(ctx context.Context, customerID uuid.UUID) (billing.SubscriptionInput, int, error) {
+	plan, err := s.CustomerPlan(ctx, customerID)
+	if err != nil {
+		return plan, 0, err
+	}
+	equipment := s.catalog.EquipmentPriceCents
+	account, err := s.AccountPlan(ctx, customerID)
+	if err != nil || account != nil {
+		return plan, equipment, err
+	}
+	individual, err := s.PaysUpfront(ctx, customerID)
+	if err != nil || !individual {
+		return plan, equipment, err
+	}
+	opts, err := s.Options(ctx)
+	if err != nil || !opts.Checkout.Enabled {
+		return plan, equipment, err
+	}
+	switch insanos := s.catalog.LaunchPromo.InsanosPlanName; {
+	case insanos != "" && strings.EqualFold(plan.PlanName, insanos):
+		plan.PriceCents = opts.Checkout.InsanosCents
+	case plan.PlanName == s.catalog.PlanName:
+		plan.PriceCents = opts.Checkout.PlanCents
+	default:
+		// Um plano próprio na assinatura (combinado com a central): fica.
+		return plan, equipment, nil
+	}
+	return plan, opts.Checkout.EquipmentCents, nil
 }
 
 // CustomerPlan é o plano de um novo veículo do cliente: o que a central

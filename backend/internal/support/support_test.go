@@ -8,6 +8,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/anthropics/anthropic-sdk-go"
+
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
 )
 
 func TestPhoneKeys(t *testing.T) {
@@ -140,22 +143,62 @@ func TestBusinessHours(t *testing.T) {
 
 func TestPromptRendersCatalog(t *testing.T) {
 	a, err := NewAssistant("chave", "claude-opus-5", "low", Facts{
-		PlanName: "Plano Mensal", PlanPrice: "R$ 69,90", EquipmentName: "Rastreador J16 GT06",
-		EquipmentPrice: "R$ 150,00", DueDay: 10, SuspendAfterDays: 10,
+		PlanName: "Plano Mensal", EquipmentName: "Rastreador J16 GT06", DueDay: 10, SuspendAfterDays: 10,
 		PanelURL: "https://painel.exemplo.com", AppURL: "https://painel.exemplo.com/app/",
-		Promo: &PromoFacts{EquipmentPrice: "R$ 120,00", MonthlyPrice: "R$ 34,90", InsanosMonthlyPrice: "R$ 27,90", Months: 12, Slots: 500},
 	}, time.UTC)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"R$ 69,90", "R$ 150,00", "dia 10", "mais de 10 dias", "https://painel.exemplo.com/app/",
-		"R$ 120,00", "R$ 34,90", "R$ 27,90", "12 primeiros meses", "500 primeiros",
-		toolTransfer, toolOrders, toolInstallers} {
+	for _, want := range []string{"Plano Mensal", "Rastreador J16 GT06", "dia 10", "mais de 10 dias", "https://painel.exemplo.com/app/",
+		"Preços de agora", toolTransfer, toolOrders, toolInstallers} {
 		if !strings.Contains(a.system, want) {
 			t.Errorf("instruções sem %q", want)
 		}
 	}
+	// Nenhum preço da Farbo fixo nas instruções (eles vêm a cada resposta),
+	// nem a promoção de pré-lançamento.
+	for _, stale := range []string{"R$ 69,90", "R$ 119,90", "R$ 39,90", "R$ 150", "primeiros meses", "primeiros clientes"} {
+		if strings.Contains(a.system, stale) {
+			t.Errorf("instruções com %q", stale)
+		}
+	}
 	if strings.Contains(a.system, "{{") || strings.Contains(a.system, "<no value>") {
 		t.Error("modelo do prompt mal preenchido")
+	}
+}
+
+func TestPricesOfNow(t *testing.T) {
+	catalog := config.Catalog{PlanPriceCents: 6990, EquipmentPriceCents: 15000, EquipmentMaxInstallments: 10,
+		LaunchPromo: config.LaunchPromo{InsanosPlanName: "Especial Insanos MC", InsanosPlanCents: 3990}}
+	opts := orders.Options{
+		Checkout: orders.Checkout{Enabled: true, PlanCents: 3490, InsanosCents: 2790, EquipmentCents: 12000},
+		Loan:     orders.LoanOffer{Enabled: true, SurchargeCents: 300, InstallFeeCents: 15000, UninstallFeeCents: 8500},
+		Install:  orders.InstallService{Enabled: true, PriceCents: 15000},
+	}
+	a := &Assistant{tz: time.UTC}
+	prices := PricesFrom(catalog, opts, "https://farborastreadores.com.br/")
+	note := a.situation(Situation{Now: time.Now(), Prices: &prices})
+	for _, want := range []string{"Plano mensal: R$ 34,90 por mês, enquanto a assinatura durar", "Insanos MC: R$ 27,90",
+		"Rastreador comprado: R$ 120,00, à vista ou em até 10x", "pelos instaladores da Farbo, por R$ 150,00",
+		"mais R$ 3,00 de garantia de troca", "desinstalação de R$ 85,00", "https://farborastreadores.com.br/contratar"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("contexto sem %q:\n%s", want, note)
+		}
+	}
+	// Com o site fechado: os do catálogo, e quem contrata é a equipe.
+	opts.Checkout.Enabled, opts.Loan.Enabled, opts.Install.Enabled = false, false, false
+	prices = PricesFrom(catalog, opts, "https://farborastreadores.com.br")
+	note = a.situation(Situation{Now: time.Now(), Prices: &prices})
+	for _, want := range []string{"Plano mensal: R$ 69,90 por mês.", "Insanos MC: R$ 39,90", "R$ 150,00", "fala com a equipe"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("fechado, contexto sem %q:\n%s", want, note)
+		}
+	}
+	if strings.Contains(note, "comodato") || strings.Contains(note, "/contratar") {
+		t.Errorf("fechado, contexto com o que não há:\n%s", note)
+	}
+	// Sem os preços: não cita valor.
+	if note := a.situation(Situation{Now: time.Now()}); !strings.Contains(note, "Não cite valores") {
+		t.Errorf("sem preços:\n%s", note)
 	}
 }

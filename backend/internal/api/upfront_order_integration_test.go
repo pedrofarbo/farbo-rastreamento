@@ -91,12 +91,13 @@ func TestUpfrontIndividualOrder(t *testing.T) {
 		t.Fatalf("catálogo sem comodato = %+v", c)
 	}
 
-	// À vista: o rastreador e a 1ª mensalidade hoje, sem proporcional; a 2ª
-	// em 10/12 (pelo menos um mês depois de 13/10, no dia da conta).
+	// À vista: o rastreador e a 1ª mensalidade hoje, sem proporcional, nos
+	// preços do site (a pessoa física paga no app o mesmo); a 2ª em 10/12
+	// (pelo menos um mês depois de 13/10, no dia da conta).
 	r := order("NOA1A11", map[string]any{}, http.StatusCreated)
 	if !r.PayNow || r.ChargeDate != "2026-10-13" || r.ProrataInvoice != nil ||
-		r.SetupInvoice == nil || r.SetupInvoice.DueDate.String() != "2026-10-13" || r.SetupInvoice.AmountCents != 15000 ||
-		r.FirstInvoice == nil || r.FirstInvoice.DueDate.String() != "2026-10-13" || r.FirstInvoice.AmountCents != 6990 {
+		r.SetupInvoice == nil || r.SetupInvoice.DueDate.String() != "2026-10-13" || r.SetupInvoice.AmountCents != 12000 ||
+		r.FirstInvoice == nil || r.FirstInvoice.DueDate.String() != "2026-10-13" || r.FirstInvoice.AmountCents != 3490 {
 		t.Fatalf("à vista = %+v", r)
 	}
 	if got := nextDue(r.Subscription.ID.String()); got != "2026-12-10" {
@@ -110,7 +111,7 @@ func TestUpfrontIndividualOrder(t *testing.T) {
 	// instalação, hoje.
 	r = order("NOA2B22", map[string]any{"installments": 10, "farboInstall": true}, http.StatusCreated)
 	if !r.PayNow || r.SetupInvoice != nil || r.FirstInvoice == nil || r.FirstInvoice.DueDate.String() != "2026-10-13" ||
-		r.FirstInvoice.AmountCents != 6990+1500 || r.InstallInvoice == nil || r.InstallInvoice.AmountCents != 15000 ||
+		r.FirstInvoice.AmountCents != 3490+1200 || r.InstallInvoice == nil || r.InstallInvoice.AmountCents != 15000 ||
 		r.InstallInvoice.DueDate.String() != "2026-10-13" {
 		t.Fatalf("parcelado com a instalação = %+v", r)
 	}
@@ -128,7 +129,7 @@ func TestUpfrontIndividualOrder(t *testing.T) {
 	// taxas dele (a promoção de pré-lançamento não vale).
 	order("NOA3C33", map[string]any{"equipmentMode": "loan"}, http.StatusBadRequest)
 	// A mensalidade do comodato da pessoa física: a do plano mais a garantia de troca.
-	monthly := 6990 + 300
+	monthly := 3490 + 300
 	env.must(token, http.MethodPut, "/api/order-options", map[string]any{"loan": map[string]any{"enabled": true}, "install": install},
 		http.StatusForbidden)
 	env.must(admin, http.MethodPut, "/api/order-options", map[string]any{

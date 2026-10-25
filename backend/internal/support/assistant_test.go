@@ -79,7 +79,7 @@ func newFakeAssistant(t *testing.T, model string, responses ...string) (*Assista
 	fake := &fakeClaude{t: t, responses: responses}
 	srv := httptest.NewServer(fake)
 	t.Cleanup(srv.Close)
-	a, err := NewAssistant("chave-teste", model, "low", Facts{PlanName: "Plano Mensal", PlanPrice: "R$ 69,90"},
+	a, err := NewAssistant("chave-teste", model, "low", Facts{PlanName: "Plano Mensal"},
 		time.UTC, option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
 	if err != nil {
 		t.Fatal(err)

@@ -53,6 +53,8 @@ type Service struct {
 	notifier     Notifier
 	tz           *time.Location
 	log          *slog.Logger
+	// prices lê os preços de agora para cada resposta (nil: sem preços).
+	prices func(ctx context.Context) (*PriceFacts, error)
 
 	mu sync.Mutex
 	// running: a conversa já tem quem vá respondê-la; again: chegou mensagem
@@ -74,6 +76,10 @@ func NewService(ctx context.Context, cfg config.WhatsApp, repo *Repository, wa *
 }
 
 func (s *Service) Repo() *Repository { return s.repo }
+
+// SetPrices liga a leitura dos preços de agora (os da central), que o
+// atendente cita em cada resposta.
+func (s *Service) SetPrices(prices func(ctx context.Context) (*PriceFacts, error)) { s.prices = prices }
 
 // Enabled diz se o número do WhatsApp está configurado.
 func (s *Service) Enabled() bool { return s.wa != nil }
@@ -210,10 +216,17 @@ func (s *Service) answer(ctx context.Context, id uuid.UUID) error {
 		s.log.Debug("não deu para marcar como lida", "conversation", id, "err", err)
 	}
 
+	var prices *PriceFacts
+	if s.prices != nil {
+		if prices, err = s.prices(ctx); err != nil {
+			s.log.Warn("preços de agora não lidos; a IA responde sem eles", "conversation", id, "err", err)
+			prices = nil
+		}
+	}
 	tools := &conversationTools{s: s, conv: conv}
 	reply, err := s.ai.Reply(ctx, turnsOf(msgs), Situation{
 		ContactName: conv.ContactName, CustomerName: conv.CustomerName, IsCustomer: conv.CustomerID != nil,
-		Now: time.Now(),
+		Now: time.Now(), Prices: prices,
 	}, tools)
 	s.log.Info("resposta da IA no WhatsApp", "conversation", id, "rounds", reply.Usage.Rounds,
 		"input_tokens", reply.Usage.Input, "output_tokens", reply.Usage.Output,

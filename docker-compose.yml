@@ -191,8 +191,10 @@ services:
       # vazio: a Grande São Paulo.
       SHIPPING_ARRANGE_CITIES: ${SHIPPING_ARRANGE_CITIES:-}
 
-      # Promoção de pré-lançamento (quem está na lista de lançamento).
-      LAUNCH_PROMO_ENABLED: ${LAUNCH_PROMO_ENABLED:-true}
+      # Promoção de pré-lançamento (quem está na lista de lançamento): encerrada
+      # em 25/10/2026 — a pessoa física paga no app os preços da contratação
+      # pelo site. O nome e o valor do plano do Insanos MC continuam valendo.
+      LAUNCH_PROMO_ENABLED: ${LAUNCH_PROMO_ENABLED:-false}
       LAUNCH_PROMO_EQUIPMENT_CENTS: ${LAUNCH_PROMO_EQUIPMENT_CENTS:-12000}
       LAUNCH_PROMO_MONTHLY_CENTS: ${LAUNCH_PROMO_MONTHLY_CENTS:-3490}
       LAUNCH_PROMO_INSANOS_MONTHLY_CENTS: ${LAUNCH_PROMO_INSANOS_MONTHLY_CENTS:-2790}

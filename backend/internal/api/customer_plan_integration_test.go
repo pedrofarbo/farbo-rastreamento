@@ -51,11 +51,12 @@ func TestCustomerAccountPlan(t *testing.T) {
 		return d.Plan
 	}
 
-	// Sem plano definido: o padrão.
+	// Sem plano definido: o padrão, no preço do site (a pessoa física paga no
+	// app o mesmo que na contratação pelo site).
 	if p := detail(); p != nil {
 		t.Fatalf("plano antes = %+v", p)
 	}
-	if c := catalog(); c.PlanName != "Plano Mensal" || c.PlanPriceCents != 6990 {
+	if c := catalog(); c.PlanName != "Plano Mensal" || c.PlanPriceCents != 3490 {
 		t.Fatalf("catálogo antes = %+v", c)
 	}
 

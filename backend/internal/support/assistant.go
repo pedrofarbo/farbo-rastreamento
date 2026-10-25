@@ -14,32 +14,48 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
 )
 
 //go:embed prompt.md
 var promptTemplate string
 
-// Facts são os números do catálogo e os endereços que o atendente cita.
+// Facts são o que não muda entre as conversas: os nomes, o vencimento e os
+// endereços. Os preços não ficam aqui: a central muda os do site, e eles
+// chegam a cada resposta (PriceFacts).
 type Facts struct {
 	PlanName         string
-	PlanPrice        string
 	EquipmentName    string
-	EquipmentPrice   string
 	DueDay           int
 	SuspendAfterDays int
 	PanelURL         string
 	AppURL           string
-	// Promo é a promoção de pré-lançamento (nula: sem promoção).
-	Promo *PromoFacts
 }
 
-// PromoFacts é a promoção de pré-lançamento como o atendente cita.
-type PromoFacts struct {
-	EquipmentPrice      string
-	MonthlyPrice        string
-	InsanosMonthlyPrice string
-	Months              int
-	Slots               int
+// PriceFacts são os preços que o atendente cita, lidos a cada resposta: os
+// mesmos que o site e o app cobram da pessoa física.
+type PriceFacts struct {
+	// SiteOpen: a contratação pelo site está aberta (CheckoutURL); fechada,
+	// os preços são os do catálogo e quem contrata é a equipe.
+	SiteOpen    bool
+	CheckoutURL string
+	Plan        string
+	// Insanos: a mensalidade do plano do Insanos MC (vazio: sem o plano deles).
+	Insanos   string
+	Equipment string
+	// Installments: em até quantas vezes o rastreador comprado sai sem juros.
+	Installments int
+	// FarboInstall: a instalação pelos instaladores da Farbo no rastreador
+	// comprado (vazio: só por conta própria).
+	FarboInstall string
+	// Loan: o comodato (nulo: só o rastreador comprado).
+	Loan *LoanFacts
+}
+
+// LoanFacts são as taxas do comodato e a garantia de troca (somada à
+// mensalidade da pessoa física).
+type LoanFacts struct {
+	Install, Guarantee, Uninstall string
 }
 
 // Nomes das ferramentas (o prompt cita os mesmos).
@@ -94,6 +110,8 @@ type Situation struct {
 	CustomerName string
 	IsCustomer   bool
 	Now          time.Time
+	// Prices: os preços de agora (nulo: não deu para ler).
+	Prices *PriceFacts
 }
 
 // Tools executa as ferramentas para a conversa em atendimento.
@@ -245,7 +263,45 @@ func (a *Assistant) situation(s Situation) string {
 		b.WriteString("- Este número não está no cadastro de clientes: pode ser alguém interessado ou um cliente " +
 			"que cadastrou outro telefone. Sem cadastro, não há pedidos para consultar.")
 	}
+	b.WriteString("\n")
+	writePrices(&b, s.Prices)
 	return b.String()
+}
+
+// writePrices escreve os preços de agora no contexto da conversa.
+func writePrices(b *strings.Builder, p *PriceFacts) {
+	if p == nil {
+		b.WriteString("- Preços: não deu para ler agora. Não cite valores; se a pessoa precisar do preço, transfira para a equipe.")
+		return
+	}
+	b.WriteString("- Preços de agora, por veículo (os mesmos do site e do app; cite só estes):\n")
+	note := "por mês"
+	if p.SiteOpen {
+		note = "por mês, enquanto a assinatura durar (só o reajuste anual)"
+	}
+	fmt.Fprintf(b, "  - Plano mensal: %s %s.\n", p.Plan, note)
+	if p.Insanos != "" {
+		fmt.Fprintf(b, "  - Integrantes do Insanos MC: %s por mês.\n", p.Insanos)
+	}
+	equipment := "à vista"
+	if p.Installments > 1 {
+		equipment = fmt.Sprintf("à vista ou em até %dx sem juros, somadas às mensalidades", p.Installments)
+	}
+	fmt.Fprintf(b, "  - Rastreador comprado: %s, %s.\n", p.Equipment, equipment)
+	if p.FarboInstall != "" {
+		fmt.Fprintf(b, "  - Instalação do rastreador comprado: por conta própria (com o instalador da pessoa, pago direto a ele) "+
+			"ou pelos instaladores da Farbo, por %s.\n", p.FarboInstall)
+	}
+	if l := p.Loan; l != nil {
+		fmt.Fprintf(b, "  - Comodato (rastreador emprestado, devolvido ao encerrar): instalação pelos instaladores da Farbo por %s; "+
+			"a mensalidade da pessoa física tem mais %s de garantia de troca do rastreador; desinstalação de %s ao encerrar.\n",
+			l.Install, l.Guarantee, l.Uninstall)
+	}
+	if p.SiteOpen {
+		fmt.Fprintf(b, "  - Pessoa física contrata pelo site, com Pix na hora: %s. Empresa (CNPJ) e frota: com a equipe.", p.CheckoutURL)
+	} else {
+		b.WriteString("  - A contratação pelo site está fechada agora: quem quiser contratar fala com a equipe.")
+	}
 }
 
 // buildMessages monta a conversa para a API: falas seguidas do mesmo lado
@@ -359,21 +415,38 @@ func tool(name, description string, properties map[string]any, required []string
 	}}
 }
 
-// FactsFrom tira do catálogo e da cobrança o que o atendente cita: os mesmos
-// valores que o painel cobra.
+// FactsFrom tira do catálogo e da cobrança o que o atendente cita sempre.
 func FactsFrom(c config.Catalog, b config.Billing, panelURL string) Facts {
 	panelURL = strings.TrimRight(panelURL, "/")
-	f := Facts{
-		PlanName: c.PlanName, PlanPrice: brl(c.PlanPriceCents),
-		EquipmentName: c.EquipmentName, EquipmentPrice: brl(c.EquipmentPriceCents),
+	return Facts{
+		PlanName: c.PlanName, EquipmentName: c.EquipmentName,
 		DueDay: c.DefaultDueDay, SuspendAfterDays: b.SuspendAfterDays,
 		PanelURL: panelURL, AppURL: panelURL + "/app/",
 	}
-	if p := c.LaunchPromo; p.Enabled {
-		f.Promo = &PromoFacts{
-			EquipmentPrice: brl(p.EquipmentCents), MonthlyPrice: brl(p.MonthlyCents),
-			InsanosMonthlyPrice: brl(p.InsanosMonthlyCents), Months: p.Months, Slots: p.Slots,
+}
+
+// PricesFrom monta os preços de agora: com a contratação pelo site aberta,
+// os dela (os que o site e o app cobram da pessoa física); fechada, os do
+// catálogo.
+func PricesFrom(c config.Catalog, o orders.Options, panelURL string) PriceFacts {
+	p := PriceFacts{
+		SiteOpen: o.Checkout.Enabled, CheckoutURL: strings.TrimRight(panelURL, "/") + "/contratar",
+		Plan: brl(c.PlanPriceCents), Equipment: brl(c.EquipmentPriceCents), Installments: c.EquipmentMaxInstallments,
+	}
+	if c.LaunchPromo.InsanosPlanName != "" && c.LaunchPromo.InsanosPlanCents > 0 {
+		p.Insanos = brl(c.LaunchPromo.InsanosPlanCents)
+	}
+	if o.Checkout.Enabled {
+		p.Plan, p.Equipment = brl(o.Checkout.PlanCents), brl(o.Checkout.EquipmentCents)
+		if c.LaunchPromo.InsanosPlanName != "" {
+			p.Insanos = brl(o.Checkout.InsanosCents)
 		}
 	}
-	return f
+	if o.Install.Enabled {
+		p.FarboInstall = brl(o.Install.PriceCents)
+	}
+	if l := o.Loan; l.Enabled {
+		p.Loan = &LoanFacts{Install: brl(l.InstallFeeCents), Guarantee: brl(l.SurchargeCents), Uninstall: brl(l.UninstallFeeCents)}
+	}
+	return p
 }

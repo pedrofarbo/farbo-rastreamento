@@ -57,8 +57,7 @@ type catalogView struct {
 }
 
 // handleCatalog devolve os preços de um rastreador novo. Para o cliente, o
-// plano mostrado é o que ele pagaria (o definido pela central, o que já tem,
-// ou o padrão).
+// plano e o rastreador mostrados são os que ele pagaria (CustomerPrices).
 func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	c := s.Orders.Catalog()
 	view := catalogView{
@@ -73,8 +72,10 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 	view.Install = &opts.Install
 	if customerID, isCustomer := customerOf(r); isCustomer {
-		if plan, err := s.Orders.CustomerPlan(r.Context(), customerID); err == nil {
+		// Os preços dele: a pessoa física paga no app o mesmo que no site.
+		if plan, equipment, err := s.Orders.CustomerPrices(r.Context(), customerID); err == nil {
 			view.PlanName, view.PlanPriceCents, view.DefaultDueDay = plan.PlanName, plan.PriceCents, plan.DueDay
+			view.EquipmentPriceCents = equipment
 		}
 		if terms, err := s.Orders.CustomerTerms(r.Context(), customerID); err == nil {
 			view.EquipmentMode, view.InstallFeeCents, view.UninstallFeeCents = terms.EquipmentMode, terms.InstallFeeCents, terms.UninstallFeeCents

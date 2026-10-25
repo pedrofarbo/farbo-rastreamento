@@ -27,6 +27,11 @@ func TestBillingAdjustments(t *testing.T) {
 	})
 	ctx := context.Background()
 	bs.SetClock(func() time.Time { return time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC) })
+	// Os valores do catálogo (R$ 150,00 e R$ 69,90): com a contratação pelo
+	// site aberta, a pessoa física pagaria no app os preços do site.
+	if _, err := env.db.Exec(ctx, `UPDATE order_settings SET checkout_enabled = FALSE`); err != nil {
+		t.Fatal(err)
+	}
 	admin := env.login(auth.RoleAdmin + "@leads.test")
 	var bia struct {
 		ID string `json:"id"`
