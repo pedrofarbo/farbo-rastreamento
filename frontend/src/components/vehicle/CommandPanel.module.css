@@ -141,3 +141,13 @@
   background: var(--accent-soft);
   font-size: var(--text-sm);
 }
+
+/* O comando livre do administrador, embaixo dos comandos. */
+.custom {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}

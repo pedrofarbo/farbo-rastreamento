@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { CommandHistory } from '@/components/vehicle/CommandHistory';
 import { CommandPanel } from '@/components/vehicle/CommandPanel';
+import { CustomCommand } from '@/components/vehicle/CustomCommand';
 import { EngineHistory } from '@/components/vehicle/EngineHistory';
 import { EventList } from '@/components/vehicle/EventList';
 import { LiveLinkPanel } from '@/components/vehicle/LiveLinkPanel';
@@ -265,6 +266,8 @@ function VehicleDetails() {
 
         <Card title="Comandos">
           <CommandPanel vehicle={vehicle} />
+          {/* Só o administrador: o texto livre para configurar ou consultar o rastreador. */}
+          <CustomCommand vehicle={vehicle} />
         </Card>
 
         <Card title="Posição atual">
