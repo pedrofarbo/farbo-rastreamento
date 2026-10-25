@@ -38,11 +38,22 @@ type catalogView struct {
 	// pré-lançamento (nulo: não pode, ou não é cliente).
 	LaunchPromo *orders.PromoOffer `json:"launchPromo"`
 	// Para o cliente: o rastreador dele (venda ou comodato) e as taxas, e o
-	// vencimento da fatura em que um veículo contratado hoje entra.
+	// vencimento da cobrança de um veículo contratado hoje.
 	EquipmentMode     string        `json:"equipmentMode,omitempty"`
 	InstallFeeCents   int           `json:"installFeeCents,omitempty"`
 	UninstallFeeCents int           `json:"uninstallFeeCents,omitempty"`
 	ChargeDate        *billing.Date `json:"chargeDate,omitempty"`
+	// PlanTerms: o rastreador vem do plano definido pela central (sem
+	// escolha); sem ele, Loan é o comodato que o cliente pode escolher (nulo:
+	// só comprado).
+	PlanTerms bool              `json:"planTerms,omitempty"`
+	Loan      *orders.LoanOffer `json:"loan,omitempty"`
+	// Install: a instalação pelos instaladores da Farbo no rastreador
+	// comprado (o preço; desligada, o cliente instala por conta própria).
+	Install *orders.InstallService `json:"install,omitempty"`
+	// PayNow: a pessoa física paga no ato (a 1ª mensalidade, o frete e o
+	// rastreador ou a instalação); a empresa, na próxima fatura do mês.
+	PayNow bool `json:"payNow,omitempty"`
 }
 
 // handleCatalog devolve os preços de um rastreador novo. Para o cliente, o
@@ -55,6 +66,12 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 		EquipmentName: c.EquipmentName, EquipmentPriceCents: c.EquipmentPriceCents, SetupDueDays: c.SetupDueDays,
 		EquipmentMaxInstallments: c.EquipmentMaxInstallments,
 	}
+	opts, err := s.Orders.Options(r.Context())
+	if err != nil {
+		handleStoreError(w, err, "opções do pedido não encontradas")
+		return
+	}
+	view.Install = &opts.Install
 	if customerID, isCustomer := customerOf(r); isCustomer {
 		if plan, err := s.Orders.CustomerPlan(r.Context(), customerID); err == nil {
 			view.PlanName, view.PlanPriceCents, view.DefaultDueDay = plan.PlanName, plan.PriceCents, plan.DueDay
@@ -62,7 +79,19 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 		if terms, err := s.Orders.CustomerTerms(r.Context(), customerID); err == nil {
 			view.EquipmentMode, view.InstallFeeCents, view.UninstallFeeCents = terms.EquipmentMode, terms.InstallFeeCents, terms.UninstallFeeCents
 		}
-		if due, err := s.Billing.ChargeDate(r.Context(), s.DB, customerID, view.DefaultDueDay); err == nil {
+		if account, err := s.Orders.AccountPlan(r.Context(), customerID); err == nil && account != nil {
+			view.PlanTerms = true
+		} else if opts.Loan.Enabled {
+			view.Loan = &opts.Loan
+		}
+		if !opts.Install.Enabled {
+			view.Install = nil
+		}
+		if upfront, err := s.Orders.PaysUpfront(r.Context(), customerID); err == nil && upfront {
+			view.PayNow = true
+			due := s.Billing.Today().AddDays(c.SetupDueDays)
+			view.ChargeDate = &due
+		} else if due, err := s.Billing.ChargeDate(r.Context(), s.DB, customerID, view.DefaultDueDay); err == nil {
 			view.ChargeDate = &due
 		}
 		if promo, err := s.Orders.PromoFor(r.Context(), customerID); err == nil && promo.Eligible {
@@ -124,6 +153,9 @@ type adminTrackerOrderRequest struct {
 	ShippingServiceID int `json:"shippingServiceId"`
 	// Installments: o equipamento parcelado sem juros (0 ou 1: à vista).
 	Installments int `json:"installments"`
+	// FarboInstall: o rastreador comprado instalado pelos instaladores da
+	// Farbo, pelo preço das opções do pedido (no comodato, já é da Farbo).
+	FarboInstall bool `json:"farboInstall"`
 }
 
 func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request) {
@@ -154,10 +186,17 @@ func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request)
 		}
 		terms = &t
 	}
-	result, err := s.Orders.Place(r.Context(), customerID, orders.Order{
+	order := orders.Order{
 		Vehicle: req.Vehicle, EquipmentCents: req.EquipmentCents, Terms: *terms, Plan: req.Plan,
 		LaunchPromo: req.LaunchPromo, Shipping: shipping, Installments: req.Installments,
-	})
+	}
+	if req.FarboInstall {
+		if err := s.Orders.WithFarboInstall(r.Context(), &order); err != nil {
+			writeOrderError(w, r, err, "cliente não encontrado")
+			return
+		}
+	}
+	result, err := s.Orders.Place(r.Context(), customerID, order)
 	if err != nil {
 		writeOrderError(w, r, err, "cliente não encontrado")
 		return
@@ -243,6 +282,14 @@ type customerTrackerOrderRequest struct {
 	// Installments: o rastreador parcelado sem juros (0 ou 1: à vista); o
 	// cliente aceita ficar com a assinatura ativa até a última parcela.
 	Installments int `json:"installments"`
+	// EquipmentMode: o rastreador comprado (sale, o padrão) ou em comodato
+	// (loan, quando a central oferece); com o plano definido pela central,
+	// vale o dele.
+	EquipmentMode string `json:"equipmentMode"`
+	// FarboInstall: o rastreador comprado instalado pelos instaladores da
+	// Farbo (a taxa vem junto com a 1ª mensalidade); sem isso, o cliente
+	// instala por conta própria. No comodato, a instalação é sempre da Farbo.
+	FarboInstall bool `json:"farboInstall"`
 }
 
 func (s *Server) handleMyOrderTracker(w http.ResponseWriter, r *http.Request) {
@@ -274,7 +321,7 @@ func (s *Server) handleMyOrderTracker(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	order, err := s.Orders.CustomerOrder(r.Context(), customerID, req.Vehicle, req.LaunchPromo)
+	order, err := s.Orders.CustomerOrder(r.Context(), customerID, req.Vehicle, req.LaunchPromo, req.EquipmentMode, req.FarboInstall)
 	if err != nil {
 		writeOrderError(w, r, err, "cliente não encontrado")
 		return
@@ -618,4 +665,36 @@ func (s *Server) handleLaunchPromoUsage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, usage)
+}
+
+// handleOrderOptions: as opções do pedido do cliente (o comodato e a
+// instalação pelos instaladores da Farbo).
+func (s *Server) handleOrderOptions(w http.ResponseWriter, r *http.Request) {
+	opts, err := s.Orders.Options(r.Context())
+	if err != nil {
+		handleStoreError(w, err, "opções do pedido não encontradas")
+		return
+	}
+	writeJSON(w, http.StatusOK, opts)
+}
+
+func (s *Server) handleSetOrderOptions(w http.ResponseWriter, r *http.Request) {
+	var in orders.Options
+	if err := decodeJSON(w, r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	opts, err := s.Orders.SetOptions(r.Context(), in, actor(r))
+	if err != nil {
+		writeOrderError(w, r, err, "opções do pedido não encontradas")
+		return
+	}
+	meta := map[string]any{"loanEnabled": opts.Loan.Enabled, "loanInstallFeeCents": opts.Loan.InstallFeeCents,
+		"loanUninstallFeeCents": opts.Loan.UninstallFeeCents, "installEnabled": opts.Install.Enabled,
+		"installCents": opts.Install.PriceCents}
+	if opts.Loan.MonthlyCents != nil {
+		meta["loanMonthlyCents"] = *opts.Loan.MonthlyCents
+	}
+	s.recordBillingAudit(r, audit.ActionOrderOptionsChanged, meta)
+	writeJSON(w, http.StatusOK, opts)
 }

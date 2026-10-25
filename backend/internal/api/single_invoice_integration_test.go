@@ -13,12 +13,12 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
 )
 
-// A fatura única do mês: na contratação nada é cobrado na hora. A próxima
-// fatura da conta traz o proporcional dos dias até ela, a 1ª mensalidade
-// (com a 1ª parcela do rastreador), o equipamento (ou a instalação, no
-// comodato) — tudo no dia da conta. Se a fatura desse dia já foi paga, vai
-// para a do mês seguinte. No comodato, o encerramento lança a desinstalação.
-// Precisa de FARBO_TEST_DATABASE_URL.
+// A fatura única do mês, para a empresa (CNPJ): na contratação nada é
+// cobrado na hora. A próxima fatura da conta traz o proporcional dos dias até
+// ela, a 1ª mensalidade (com a 1ª parcela do rastreador), o equipamento (ou a
+// instalação, no comodato) — tudo no dia da conta. Se a fatura desse dia já
+// foi paga, vai para a do mês seguinte. No comodato, o encerramento lança a
+// desinstalação. Precisa de FARBO_TEST_DATABASE_URL.
 func TestSingleMonthlyInvoice(t *testing.T) {
 	var bs *billing.Service
 	env, _ := newLeadsEnv(t, func(d *Deps) {
@@ -39,7 +39,7 @@ func TestSingleMonthlyInvoice(t *testing.T) {
 		ID string `json:"id"`
 	}
 	_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/customers", map[string]any{
-		"name": "Davi Lima", "email": "davi@unica.test", "phone": "(11) 94444-0000", "document": "",
+		"name": "Davi Lima", "email": "davi@unica.test", "phone": "(11) 94444-0000", "document": "11.444.777/0001-61",
 		"password": userPassword,
 	}, http.StatusCreated), &davi)
 	token := env.login("davi@unica.test")

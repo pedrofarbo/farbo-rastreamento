@@ -894,6 +894,10 @@ func (s *Server) routes() chi.Router {
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireRole(auth.RoleAdmin))
 
+					// As opções do pedido do cliente: o comodato e a instalação Farbo.
+					r.Get("/order-options", s.handleOrderOptions)
+					r.Put("/order-options", s.handleSetOrderOptions)
+
 					// O reajuste anual pelo IPCA: o próximo, os anteriores e o veto.
 					if s.Adjustment != nil {
 						r.Get("/price-adjustments", s.handlePriceAdjustments)

@@ -5,6 +5,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { customersApi, leadsApi } from '@/api/resources';
 import billing from '@/components/billing/Billing.module.css';
 import { CustomerStatus } from '@/components/billing/InvoiceStatus';
+import { OrderOptionsCard } from '@/components/billing/OrderOptionsCard';
 import { PriceAdjustmentCard } from '@/components/billing/PriceAdjustmentCard';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -21,7 +22,7 @@ import type { Lead } from '@/types';
 import styles from '../Page.module.css';
 import { AffiliatesTab } from './affiliates/AffiliatesTab';
 import { LeadsTab } from './LeadsTab';
-import { ForecastTile, MrrCard, signedMoney } from './MrrCard';
+import { ForecastTile, MrrCard, mrrParts, signedMoney } from './MrrCard';
 import { SiteAnalyticsTab } from './SiteAnalyticsTab';
 
 interface CustomerDraft {
@@ -215,8 +216,8 @@ export function CustomersPage() {
                 <span className={billing.tileHint}>
                   {!mrr.data
                     ? 'receita recorrente mensal'
-                    : mrr.data.installmentsCents > 0
-                      ? `${formatMoney(mrr.data.currentCents)} mensalidades + ${formatMoney(mrr.data.installmentsCents)} parcelas`
+                    : mrr.data.installmentsCents > 0 || mrr.data.organizationsCents > 0
+                      ? mrrParts({ ...mrr.data, monthlyCents: mrr.data.currentCents })
                       : `mensalidades, ${thisMonth ? signedMoney(thisMonth.changeCents) : '—'} no mês`}
                 </span>
               </div>
@@ -314,6 +315,7 @@ export function CustomersPage() {
             </Card>
 
             <MrrCard mrr={mrr} />
+            <OrderOptionsCard />
             <PriceAdjustmentCard />
           </>
         )}

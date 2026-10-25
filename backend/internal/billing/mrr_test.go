@@ -14,16 +14,21 @@ func TestAssembleMRR(t *testing.T) {
 		// Outubro, só as faturas já geradas.
 		"2026-10": {monthly: 2790, monthlies: 1, newCents: 2790, newCount: 1, parcels: 6000},
 	}
+	// As associações: setembro com 10 veículos; outubro, a fatura que ainda vai sair, com 12.
+	orgs := map[string]mrrOrg{"2026-09": {cents: 30000, vehicles: 10}}
 	// Outubro inteiro: com a que ainda vai sair (R$ 34,90, com a parcela de R$ 12,00).
-	current := MRRForecast{Month: "2026-10", MonthlyCents: 6280, Monthlies: 2, InstallmentsCents: 7200}
+	current := MRRForecast{Month: "2026-10", MonthlyCents: 6280, Monthlies: 2, InstallmentsCents: 7200,
+		OrganizationsCents: 36000, OrganizationVehicles: 12}
 	churn := map[string]mrrChurn{"2026-10": {cents: 3990, count: 1}}
 
-	got := assembleMRR(billed, current, churn, NewDate(2026, 10, 1), 3)
+	got := assembleMRR(billed, orgs, current, churn, NewDate(2026, 10, 1), 3)
 	want := []MRRMonth{
 		{Month: "2026-10", MRRCents: 6280, Subscriptions: 2, NewCents: 2790, NewCount: 1, ChurnCents: 3990, ChurnCount: 1,
-			ChangeCents: -1200, OtherCents: 0, InstallmentsCents: 7200, TotalCents: 13480},
+			ChangeCents: -1200, OtherCents: 0, OrganizationsCents: 36000, OrganizationVehicles: 12, OrganizationsChangeCents: 6000,
+			InstallmentsCents: 7200, TotalCents: 49480},
 		{Month: "2026-09", MRRCents: 7480, Subscriptions: 2, NewCents: 3990, NewCount: 1, ChangeCents: 3990,
-			InstallmentsCents: 1200, InstallmentsPaidCents: 1200, TotalCents: 8680},
+			OrganizationsCents: 30000, OrganizationVehicles: 10, OrganizationsChangeCents: 30000,
+			InstallmentsCents: 1200, InstallmentsPaidCents: 1200, TotalCents: 38680},
 		{Month: "2026-08", MRRCents: 3490, Subscriptions: 1, NewCents: 3490, NewCount: 1, ChangeCents: 3490, TotalCents: 3490},
 	}
 	if len(got.Months) != len(want) {
@@ -34,8 +39,37 @@ func TestAssembleMRR(t *testing.T) {
 			t.Errorf("mês %d = %+v, quer %+v", i, got.Months[i], want[i])
 		}
 	}
-	if got.CurrentCents != 6280 || got.Subscriptions != 2 || got.InstallmentsCents != 7200 || got.TotalCents != 13480 {
+	if got.CurrentCents != 6280 || got.Subscriptions != 2 || got.InstallmentsCents != 7200 || got.TotalCents != 49480 ||
+		got.OrganizationsCents != 36000 || got.OrganizationVehicles != 12 {
 		t.Errorf("o mês atual = %+v", got)
+	}
+}
+
+// A mensalidade das associações no mês: a da fatura que já saiu; a que ainda
+// não saiu, pelos veículos que contam hoje no preço, só da ativa, com preço e
+// a partir do 1º vencimento.
+func TestComputeOrgMonth(t *testing.T) {
+	loc, err := time.LoadLocation("America/Sao_Paulo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := time.Date(2026, 9, 1, 10, 0, 0, 0, loc)
+	got := computeOrgMonth([]orgMonthRow{
+		// A fatura de outubro já saiu (com os veículos do dia dela).
+		{active: true, priceCents: 3000, dueDay: 10, created: created, counting: 99, invoiced: true, invoiceCents: 30000, invoiceVehicles: 10},
+		// Ainda não saiu: 4 veículos de R$ 25,00.
+		{active: true, priceCents: 2500, dueDay: 20, created: created, counting: 4},
+		// Desativada, parceria (sem preço), sem veículos: nada.
+		{active: false, priceCents: 3000, dueDay: 20, created: created, counting: 5},
+		{active: true, priceCents: 0, dueDay: 20, created: created, counting: 5},
+		{active: true, priceCents: 3000, dueDay: 20, created: created},
+		// Criada em 15/10 com vencimento no dia 10: a 1ª fatura é a de novembro.
+		{active: true, priceCents: 3000, dueDay: 10, created: time.Date(2026, 10, 15, 9, 0, 0, 0, loc), counting: 3},
+		// Criada em 15/10 com vencimento no dia 20: já vence em outubro.
+		{active: true, priceCents: 1000, dueDay: 20, created: time.Date(2026, 10, 15, 9, 0, 0, 0, loc), counting: 2},
+	}, NewDate(2026, 10, 1), loc)
+	if got != (mrrOrg{cents: 30000 + 10000 + 2000, vehicles: 16}) {
+		t.Errorf("associações = %+v", got)
 	}
 }
 

@@ -32,6 +32,7 @@ vi.mock('@/api/resources', () => ({
       deliveryAddress: { zipCode: '20040020', street: 'Rua da Assembleia', number: '10', complement: '', district: 'Centro', city: 'Rio de Janeiro', state: 'RJ' },
     }),
     shippingQuote: async () => quote,
+    card: async () => ({ enabled: false, publicKey: '', saved: null, payer: null }),
     orderTracker: async (input: unknown) => {
       if (needsContract) {
         const { ApiError } = await import('@/api/client');
@@ -153,6 +154,76 @@ describe('a fatura do mês', () => {
     expect(text()).not.toContain('EquipamentoR$');
     expect(text()).toContain('Instalação (comodato)R$ 80,00');
     expect(text()).toContain('Na fatura de 10/11/2026Hoje não é cobrado nada.R$ 191,84');
+  });
+});
+
+describe('a pessoa física paga no ato', () => {
+  it('a 1ª mensalidade, o rastreador e o frete agora, sem proporcional, com a forma de pagar', async () => {
+    terms = { payNow: true, chargeDate: '2026-10-23' };
+    quote = { enabled: false, zipCode: '', problem: '', arrange: false, quotes: [] };
+    await openWizard();
+    expect(text()).toContain('Hoje você paga a 1ª mensalidade e o resto do pedido');
+    expect(text()).not.toContain('Proporcional');
+    expect(text()).toContain('1ª mensalidadeR$ 69,90');
+    expect(text()).toContain('EquipamentoR$ 150,00');
+    expect(text()).toContain('AgoraA 1ª mensalidade começa hoje; a 2ª vence pelo menos um mês depois, no dia da conta.R$ 219,90');
+    expect(text()).toContain('Como pagar');
+    await act(async () => button('Confirmar pedido').click());
+    await flush();
+    expect(done).toHaveLength(1);
+    expect(ordered[0]).not.toHaveProperty('equipmentMode');
+  });
+
+  it('o rastreador comprado: instalar por conta própria ou com os instaladores da Farbo (pago no pedido)', async () => {
+    terms = { payNow: true, chargeDate: '2026-10-23', install: { enabled: true, priceCents: 15000 } };
+    quote = { enabled: false, zipCode: '', problem: '', arrange: false, quotes: [] };
+    await openWizard();
+    expect(text()).not.toContain('Instalação (instaladores Farbo)');
+    await act(async () => button('Voltar').click());
+    await flush();
+    expect(text()).toContain('Por conta própria');
+    expect(text()).toContain('Com os instaladores da Farbo · R$ 150,00, pago no pedido; agendamos o dia com você.');
+    const farbo = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="install-choice"]'))[1];
+    await act(async () => farbo.click());
+    await act(async () => button('Continuar').click());
+    await flush();
+    expect(text()).toContain('Instalação (instaladores Farbo)R$ 150,00');
+    expect(text()).toContain('R$ 369,90');
+    await act(async () => button('Confirmar pedido').click());
+    await flush();
+    expect(ordered[0]).toMatchObject({ farboInstall: true });
+  });
+
+  it('com o comodato oferecido, o cliente escolhe: sem o rastreador, a mensalidade e a instalação do comodato', async () => {
+    terms = {
+      payNow: true,
+      chargeDate: '2026-10-23',
+      loan: { enabled: true, monthlyCents: 7990, installFeeCents: 9900, uninstallFeeCents: 4900 },
+      install: { enabled: true, priceCents: 15000 },
+    };
+    quote = { enabled: false, zipCode: '', problem: '', arrange: false, quotes: [] };
+    await openWizard();
+    // Volta à etapa do rastreador e escolhe o comodato.
+    await act(async () => button('Voltar').click());
+    await flush();
+    expect(text()).toContain('Comprar o rastreador');
+    expect(text()).toContain('Comodato (rastreador emprestado)');
+    expect(text()).toContain('Mensalidade de R$ 79,90; instalação R$ 99,00, desinstalação R$ 49,00 ao encerrar.');
+    const loan = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="equipment-mode"]'))[1];
+    await act(async () => loan.click());
+    await act(async () => button('Continuar').click());
+    await flush();
+    expect(text()).toContain('Rastreador em comodato');
+    expect(text()).toContain('A instalação (R$ 99,00) é paga no pedido.');
+    expect(text()).not.toContain('EquipamentoR$');
+    expect(text()).toContain('1ª mensalidadeR$ 79,90');
+    expect(text()).toContain('Instalação (comodato)R$ 99,00');
+    expect(text()).toContain('R$ 178,90');
+    await act(async () => button('Confirmar pedido').click());
+    await flush();
+    expect(ordered[0]).toMatchObject({ equipmentMode: 'loan', launchPromo: false });
+    // No comodato a instalação é sempre nossa, com a taxa dele: sem a escolha.
+    expect(ordered[0]).not.toHaveProperty('farboInstall');
   });
 });
 

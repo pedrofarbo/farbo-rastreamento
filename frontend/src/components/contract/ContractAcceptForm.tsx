@@ -112,7 +112,9 @@ export function ContractAcceptForm({
               plano.
             </li>
             <li>
-              <strong>Nada é cobrado no pedido:</strong> tudo vem numa fatura só por mês, no dia de vencimento da sua conta.
+              <strong>No pedido</strong> (pessoa física), você paga a 1ª mensalidade, o frete, o rastreador à vista e a
+              instalação, se escolher a nossa; depois, uma fatura por mês, no dia de vencimento da conta. Empresa: tudo
+              na fatura do mês.
             </li>
             <li>
               <strong>Permanência mínima de 3 meses</strong> por veículo. Se cancelar antes, a multa é de{' '}

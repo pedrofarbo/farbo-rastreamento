@@ -9,6 +9,7 @@ import {
   historyRows,
   monthlyGroups,
   oldestClosedDue,
+  orderPayment,
   overdueGroup,
 } from './invoiceGroups';
 import type { HistoryDay } from './invoiceGroups';
@@ -46,6 +47,16 @@ describe('faturas para pagar juntas', () => {
     ]);
     expect(late?.ids).toEqual(['set', 'out']);
     expect(late?.amountCents).toBe(9980);
+  });
+
+  it('o pedido da pessoa física: o rastreador, a instalação e a 1ª mensalidade num pagamento só', () => {
+    const due = '2026-10-13';
+    const paid = orderPayment([inv('rastreador', due, 15000), inv('instalacao', due, 9900), inv('mensalidade', due, 6990)]);
+    expect(paid?.amountCents).toBe(31890);
+    expect(groupIds(paid?.id ?? '')).toEqual(['rastreador', 'instalacao', 'mensalidade']);
+    // Uma só: ela mesma; nada em aberto (ou de valor zero): nada a pagar.
+    expect(orderPayment([null, inv('mensalidade', due, 6990), null])?.id).toBe('mensalidade');
+    expect(orderPayment([null, inv('paga', due, 6990, { status: 'PAID' }), inv('zero', due, 0)])).toBeNull();
   });
 });
 

@@ -96,7 +96,11 @@ export function InstallationsAgendaPage() {
 
         <Card
           title="Aguardando instalação"
-          subtitle={pending.length > 0 ? `${pending.length} veículo(s) sem data marcada.` : 'Os veículos sem rastreador.'}
+          subtitle={
+            pending.length > 0
+              ? `${pending.length} veículo(s) sem data marcada; primeiro os que a Farbo instala (comodato, instalação contratada, associados).`
+              : 'Os veículos sem rastreador.'
+          }
           flush
         >
           {awaiting.isLoading ? (
@@ -121,6 +125,13 @@ export function InstallationsAgendaPage() {
                       <td>
                         <strong>{w.vehicleName}</strong>
                         {w.plate && <span className={styles.plate}>{w.plate}</span>}
+                        <div>
+                          {w.farboInstall ? (
+                            <Badge tone="accent">Instalação Farbo</Badge>
+                          ) : (
+                            <span className={styles.muted}>cliente instala por conta própria</span>
+                          )}
+                        </div>
                       </td>
                       <td data-label="Cliente">
                         {w.customerName}

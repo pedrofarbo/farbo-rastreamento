@@ -83,7 +83,8 @@ func TestOrganizationReports(t *testing.T) {
 		t.Errorf("planilha:\n%s", csv)
 	}
 	// A nota de direção e a utilização (os dados de uso): um dia rodado com
-	// um excesso; a planilha sai por associado.
+	// um excesso (hoje no fuso dos relatórios do teste, UTC — não no da
+	// sessão do Postgres); a planilha sai por associado.
 	var bikeID uuid.UUID
 	if err := env.db.QueryRow(ctx, `SELECT id FROM vehicles WHERE name = 'Moto da Bia'`).Scan(&bikeID); err != nil {
 		t.Fatal(err)
@@ -95,7 +96,8 @@ func TestOrganizationReports(t *testing.T) {
 	}
 	if _, err := env.db.Exec(ctx, `
 		INSERT INTO vehicle_daily_stats (device_id, day, vehicle_id, distance_m, moving_s, overspeeds, night_m, harsh_brakes)
-		SELECT id, CURRENT_DATE, $1, 100000, 7200, 1, 50000, 1 FROM devices WHERE imei = '869247061230999'`, bikeID); err != nil {
+		SELECT id, (NOW() AT TIME ZONE 'UTC')::date, $1, 100000, 7200, 1, 50000, 1 FROM devices WHERE imei = '869247061230999'`,
+		bikeID); err != nil {
 		t.Fatal(err)
 	}
 	var driving struct {

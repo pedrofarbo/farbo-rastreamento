@@ -52,11 +52,21 @@ func TestInstallationAgenda(t *testing.T) {
 	tok := env.tokenFor("dona@agenda.test")
 
 	var awaiting []struct {
-		VehicleID uuid.UUID `json:"vehicleId"`
+		VehicleID    uuid.UUID `json:"vehicleId"`
+		FarboInstall bool      `json:"farboInstall"`
 	}
 	_ = json.Unmarshal(env.must(op, http.MethodGet, "/api/installations/awaiting", nil, http.StatusOK), &awaiting)
-	if len(awaiting) != 1 || awaiting[0].VehicleID != car.ID {
+	if len(awaiting) != 1 || awaiting[0].VehicleID != car.ID || awaiting[0].FarboInstall {
 		t.Fatalf("aguardando = %+v", awaiting)
+	}
+	// Com a instalação contratada com a Farbo, a agenda mostra.
+	if _, err := env.db.Exec(ctx, `INSERT INTO subscriptions (customer_id, plan_name, price_cents, due_day, next_due_date, vehicle_id, farbo_install)
+		VALUES ($1, 'Plano Mensal', 6990, 10, CURRENT_DATE, $2, TRUE)`, customer.ID, car.ID); err != nil {
+		t.Fatal(err)
+	}
+	_ = json.Unmarshal(env.must(op, http.MethodGet, "/api/installations/awaiting", nil, http.StatusOK), &awaiting)
+	if len(awaiting) != 1 || !awaiting[0].FarboInstall {
+		t.Fatalf("aguardando com a instalação Farbo = %+v", awaiting)
 	}
 	env.must(tok, http.MethodGet, "/api/installations/awaiting", nil, http.StatusForbidden)
 

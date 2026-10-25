@@ -15,9 +15,11 @@ import (
 // preços. A assinatura conta no mês em que a mensalidade dela vence, não
 // antes (a contratada em outubro com a 1ª mensalidade em 20/11 entra em
 // novembro). As grátis (mensalidade zero) não somam nem contam, e as faturas
-// avulsas (o equipamento à vista, o frete) ficam de fora. Ao lado, as
-// parcelas do rastreador que vencem no mês e o total das duas; a previsão do
-// mês que vem segue a mesma conta.
+// avulsas (o equipamento à vista, o frete) ficam de fora. Ao lado, a
+// mensalidade das associações e seguradoras (os veículos das faturas delas
+// que vencem no mês; no atual e na previsão, a fatura que ainda não saiu pelos
+// veículos que contam hoje), as parcelas do rastreador que vencem no mês e o
+// total; a previsão do mês que vem segue a mesma conta.
 
 // MRRMonth é um mês do resumo.
 type MRRMonth struct {
@@ -32,13 +34,18 @@ type MRRMonth struct {
 	// As encerradas no mês, pela mensalidade do encerramento.
 	ChurnCents int64 `json:"churnCents"`
 	ChurnCount int   `json:"churnCount"`
-	// ChangeCents é a variação sobre o mês anterior; OtherCents, o que ela
-	// tem além de novas e encerradas (fim de promoção, reajuste, assinatura
-	// sem mensalidade no mês).
+	// ChangeCents é a variação das mensalidades sobre o mês anterior;
+	// OtherCents, o que ela tem além de novas e encerradas (fim de promoção,
+	// reajuste, assinatura sem mensalidade no mês).
 	ChangeCents int64 `json:"changeCents"`
 	OtherCents  int64 `json:"otherCents"`
+	// A mensalidade das associações e seguradoras (os veículos das faturas
+	// delas), quantos veículos e a variação sobre o mês anterior.
+	OrganizationsCents       int64 `json:"organizationsCents"`
+	OrganizationVehicles     int   `json:"organizationVehicles"`
+	OrganizationsChangeCents int64 `json:"organizationsChangeCents"`
 	// As parcelas do rastreador das faturas que vencem no mês e quanto delas
-	// já foi pago. TotalCents: mensalidades + parcelas.
+	// já foi pago. TotalCents: mensalidades + associações + parcelas.
 	InstallmentsCents     int64 `json:"installmentsCents"`
 	InstallmentsPaidCents int64 `json:"installmentsPaidCents"`
 	TotalCents            int64 `json:"totalCents"`
@@ -46,12 +53,15 @@ type MRRMonth struct {
 
 // MRR é o resumo: o mês atual e os anteriores, do atual para trás.
 type MRR struct {
-	// As mensalidades do mês atual, quantas são, as parcelas e o total.
-	CurrentCents      int64      `json:"currentCents"`
-	Subscriptions     int        `json:"subscriptions"`
-	InstallmentsCents int64      `json:"installmentsCents"`
-	TotalCents        int64      `json:"totalCents"`
-	Months            []MRRMonth `json:"months"`
+	// As mensalidades do mês atual, quantas são, as associações, as parcelas
+	// e o total.
+	CurrentCents         int64      `json:"currentCents"`
+	Subscriptions        int        `json:"subscriptions"`
+	OrganizationsCents   int64      `json:"organizationsCents"`
+	OrganizationVehicles int        `json:"organizationVehicles"`
+	InstallmentsCents    int64      `json:"installmentsCents"`
+	TotalCents           int64      `json:"totalCents"`
+	Months               []MRRMonth `json:"months"`
 	// Forecast: o que vai ser cobrado no mês que vem.
 	Forecast *MRRForecast `json:"forecast"`
 }
@@ -104,10 +114,17 @@ func churnByMonth(subs []mrrSub, loc *time.Location) map[string]mrrChurn {
 	return out
 }
 
+// mrrOrg é a mensalidade das associações e seguradoras num mês.
+type mrrOrg struct {
+	cents    int64
+	vehicles int
+}
+
 // assembleMRR monta `months` meses, do de cur para trás: as faturas de cada
-// mês (billed), o mês atual inteiro (current: as geradas e as que ainda vão
-// sair) e as encerradas.
-func assembleMRR(billed map[string]mrrBill, current MRRForecast, churn map[string]mrrChurn, cur Date, months int) *MRR {
+// mês (billed e, das organizações, orgs), o mês atual inteiro (current: as
+// geradas e as que ainda vão sair) e as encerradas.
+func assembleMRR(billed map[string]mrrBill, orgs map[string]mrrOrg, current MRRForecast, churn map[string]mrrChurn, cur Date,
+	months int) *MRR {
 	out := &MRR{Months: make([]MRRMonth, 0, months)}
 	for i := 0; i < months; i++ {
 		start := NewDate(cur.Year(), cur.Month()-time.Month(i), 1)
@@ -115,20 +132,24 @@ func assembleMRR(billed map[string]mrrBill, current MRRForecast, churn map[strin
 		b := billed[key]
 		m := MRRMonth{Month: key, MRRCents: b.monthly, Subscriptions: b.monthlies, NewCents: b.newCents, NewCount: b.newCount,
 			InstallmentsCents: b.parcels, InstallmentsPaidCents: b.parcelsPaid}
+		m.OrganizationsCents, m.OrganizationVehicles = orgs[key].cents, orgs[key].vehicles
 		if i == 0 {
 			m.MRRCents, m.Subscriptions, m.InstallmentsCents = current.MonthlyCents, current.Monthlies, current.InstallmentsCents
+			m.OrganizationsCents, m.OrganizationVehicles = current.OrganizationsCents, current.OrganizationVehicles
 		}
 		c := churn[key]
 		m.ChurnCents, m.ChurnCount = c.cents, c.count
-		prev := billed[NewDate(start.Year(), start.Month()-1, 1).Format("2006-01")].monthly
-		m.ChangeCents = m.MRRCents - prev
+		prevKey := NewDate(start.Year(), start.Month()-1, 1).Format("2006-01")
+		m.ChangeCents = m.MRRCents - billed[prevKey].monthly
 		m.OtherCents = m.ChangeCents - (m.NewCents - m.ChurnCents)
-		m.TotalCents = m.MRRCents + m.InstallmentsCents
+		m.OrganizationsChangeCents = m.OrganizationsCents - orgs[prevKey].cents
+		m.TotalCents = m.MRRCents + m.OrganizationsCents + m.InstallmentsCents
 		out.Months = append(out.Months, m)
 	}
 	if len(out.Months) > 0 {
 		m := out.Months[0]
 		out.CurrentCents, out.Subscriptions, out.InstallmentsCents, out.TotalCents = m.MRRCents, m.Subscriptions, m.InstallmentsCents, m.TotalCents
+		out.OrganizationsCents, out.OrganizationVehicles = m.OrganizationsCents, m.OrganizationVehicles
 	}
 	return out
 }
@@ -153,7 +174,15 @@ func (s *Service) MRR(ctx context.Context, months int) (*MRR, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := assembleMRR(billed, computeForecast(subs, generated, cur, next), churnByMonth(canceled, s.loc), cur, months)
+	orgs, err := s.repo.mrrOrgBilled(ctx, from, next)
+	if err != nil {
+		return nil, err
+	}
+	current := computeForecast(subs, generated, cur, next)
+	if err := s.addOrganizations(ctx, &current, cur, next); err != nil {
+		return nil, err
+	}
+	out := assembleMRR(billed, orgs, current, churnByMonth(canceled, s.loc), cur, months)
 	if out.Forecast, err = s.Forecast(ctx); err != nil {
 		return nil, err
 	}
@@ -198,6 +227,112 @@ func (r *Repository) mrrBilled(ctx context.Context, from, to Date) (map[string]m
 	return out, database.MapError(rows.Err())
 }
 
+// mrrOrgBilled soma, por mês de vencimento em [from, to), a mensalidade dos
+// veículos nas faturas das organizações (menos as canceladas): só a linha
+// "monthly" do extrato — o proporcional, a instalação, o equipamento e a
+// desinstalação são avulsos.
+func (r *Repository) mrrOrgBilled(ctx context.Context, from, to Date) (map[string]mrrOrg, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT to_char(oi.due_date, 'YYYY-MM'), COALESCE(sum((it->>'amountCents')::bigint), 0)::bigint, count(*)
+		FROM organization_invoices oi JOIN invoices i ON i.id = oi.invoice_id
+		CROSS JOIN LATERAL jsonb_array_elements(oi.items) it
+		WHERE i.status <> 'CANCELED' AND it->>'kind' = 'monthly' AND oi.due_date >= $1::date AND oi.due_date < $2::date
+		GROUP BY 1`, from.String(), to.String())
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	defer rows.Close()
+	out := map[string]mrrOrg{}
+	for rows.Next() {
+		var month string
+		var o mrrOrg
+		if err := rows.Scan(&month, &o.cents, &o.vehicles); err != nil {
+			return nil, err
+		}
+		out[month] = o
+	}
+	return out, database.MapError(rows.Err())
+}
+
+// orgMonthRow é uma organização no mês: a fatura dele (se já saiu) e, para a
+// que ainda não saiu, o preço, o dia do vencimento e os veículos que contam
+// hoje.
+type orgMonthRow struct {
+	active          bool
+	priceCents      int
+	dueDay          int
+	created         time.Time
+	counting        int
+	invoiced        bool
+	invoiceCents    int64
+	invoiceVehicles int
+}
+
+// computeOrgMonth é a mensalidade das organizações no mês que começa em
+// start: a da fatura, quando já saiu; senão, para a organização ativa, os
+// veículos que contam hoje no preço dela — a partir do 1º vencimento (o do
+// mês da criação, se não for antes dela).
+func computeOrgMonth(rows []orgMonthRow, start Date, loc *time.Location) mrrOrg {
+	var out mrrOrg
+	for _, o := range rows {
+		if o.invoiced {
+			out.cents += o.invoiceCents
+			out.vehicles += o.invoiceVehicles
+			continue
+		}
+		due := NewDate(start.Year(), start.Month(), o.dueDay)
+		if !o.active || o.priceCents <= 0 || o.counting == 0 || due.Before(DateIn(o.created, loc)) {
+			continue
+		}
+		out.cents += int64(o.priceCents) * int64(o.counting)
+		out.vehicles += o.counting
+	}
+	return out
+}
+
+// addOrganizations põe na previsão do mês [start, end) a mensalidade das
+// organizações.
+func (s *Service) addOrganizations(ctx context.Context, f *MRRForecast, start, end Date) error {
+	rows, err := s.repo.orgMonth(ctx, start, end)
+	if err != nil {
+		return err
+	}
+	o := computeOrgMonth(rows, start, s.loc)
+	f.OrganizationsCents, f.OrganizationVehicles = o.cents, o.vehicles
+	f.TotalCents = f.MonthlyCents + f.OrganizationsCents + f.InstallmentsCents
+	return nil
+}
+
+// orgMonth: cada organização com a mensalidade da fatura que vence em
+// [start, end) (se já saiu) e os veículos que contam hoje.
+func (r *Repository) orgMonth(ctx context.Context, start, end Date) ([]orgMonthRow, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT u.active, o.price_cents, o.due_day, o.created_at,
+			(SELECT count(*) FROM organization_vehicles ov WHERE ov.organization_id = o.id AND ov.removed_on IS NULL),
+			inv.id IS NOT NULL,
+			COALESCE((SELECT sum((it->>'amountCents')::bigint) FROM jsonb_array_elements(inv.items) it WHERE it->>'kind' = 'monthly'), 0)::bigint,
+			COALESCE((SELECT count(*) FROM jsonb_array_elements(inv.items) it WHERE it->>'kind' = 'monthly'), 0)
+		FROM organizations o JOIN users u ON u.id = o.id
+		LEFT JOIN LATERAL (
+			SELECT oi.invoice_id AS id, oi.items FROM organization_invoices oi JOIN invoices i ON i.id = oi.invoice_id
+			WHERE oi.organization_id = o.id AND i.status <> 'CANCELED' AND oi.due_date >= $1::date AND oi.due_date < $2::date
+			LIMIT 1) inv ON TRUE`, start.String(), end.String())
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	defer rows.Close()
+	var out []orgMonthRow
+	for rows.Next() {
+		var o orgMonthRow
+		if err := rows.Scan(&o.active, &o.priceCents, &o.dueDay, &o.created, &o.counting, &o.invoiced, &o.invoiceCents,
+			&o.invoiceVehicles); err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, database.MapError(rows.Err())
+}
+
 // mrrCanceled: as assinaturas de clientes encerradas desde from.
 func (r *Repository) mrrCanceled(ctx context.Context, from time.Time) ([]mrrSub, error) {
 	rows, err := r.db.Query(ctx, `
@@ -237,10 +372,13 @@ type MRRForecast struct {
 	// Month: AAAA-MM.
 	Month string `json:"month"`
 	// MonthlyCents e Monthlies: as mensalidades e quantas são.
-	MonthlyCents      int64 `json:"monthlyCents"`
-	Monthlies         int   `json:"monthlies"`
-	InstallmentsCents int64 `json:"installmentsCents"`
-	TotalCents        int64 `json:"totalCents"`
+	MonthlyCents int64 `json:"monthlyCents"`
+	Monthlies    int   `json:"monthlies"`
+	// A mensalidade das associações e seguradoras e quantos veículos.
+	OrganizationsCents   int64 `json:"organizationsCents"`
+	OrganizationVehicles int   `json:"organizationVehicles"`
+	InstallmentsCents    int64 `json:"installmentsCents"`
+	TotalCents           int64 `json:"totalCents"`
 }
 
 // forecastSub é uma assinatura ativa com o que o gerador vai fazer dela.
@@ -310,6 +448,9 @@ func (s *Service) Forecast(ctx context.Context) (*MRRForecast, error) {
 		return nil, err
 	}
 	out := computeForecast(subs, generated, start, end)
+	if err := s.addOrganizations(ctx, &out, start, end); err != nil {
+		return nil, err
+	}
 	return &out, nil
 }
 

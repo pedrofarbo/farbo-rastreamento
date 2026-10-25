@@ -45,13 +45,17 @@ func TestContractText(t *testing.T) {
 		"serviços de segurança ou de vigilância", "central de monitoramento", "seguro veicular",
 		"equipe tática ou de pronta-resposta de prontidão", "não garante a recuperação do veículo em caso de roubo ou furto",
 		"prazo de arrependimento (cláusula 9)", "nova versão deste contrato (cláusula 14)",
-		"parcelado em até 10 (dez) vezes sem juros, por Pix", "a 1ª fatura traz o frete", "a 1ª junto com a 1ª mensalidade",
-		"Nada é cobrado no pedido", "o proporcional dos dias entre a contratação e o vencimento",
+		"parcelado em até 10 (dez) vezes sem juros, por Pix", "o frete é pago no pedido (pessoa física) ou vem na 1ª fatura (empresa)",
+		"a 1ª junto com a 1ª mensalidade", "Pessoa física (CPF): no pedido, paga-se a 1ª mensalidade, o frete, o rastreador à vista e a taxa de instalação",
+		"por conta própria, com o instalador de preferência dele", "com os instaladores indicados pela Farbo Rastreadores",
+		"a 2ª pelo menos um mês depois da 1ª", "Empresa (CNPJ): nada é cobrado no pedido",
+		"o proporcional dos dias entre a contratação e o vencimento",
 		"ativa até a mensalidade que traz a última parcela", "as parcelas restantes vencem de uma vez, numa fatura só",
 		"não são multa: são o preço do rastreador",
 		// O comodato.
-		"comprado pelo Cliente ou emprestado a ele em comodato", "arts. 579 a 585 do Código Civil",
-		"A taxa de instalação, quando o plano prevê, vem na 1ª fatura", "a taxa de desinstalação, quando o plano prevê",
+		"o Cliente escolhe no pedido, quando a Farbo Rastreadores oferece o comodato", "arts. 579 a 585 do Código Civil",
+		"a mensalidade do comodato pode ser diferente", "A taxa de instalação, quando houver, é cobrada junto com a 1ª mensalidade",
+		"a taxa de desinstalação, quando houver",
 		"permite a retirada do rastreador no dia e no endereço combinados, em até 30 (trinta) dias",
 		"o preço de venda do mesmo rastreador na plataforma na data", "comprovado pelo boletim de ocorrência",
 		"no comodato, a retirada não tem a taxa de desinstalação", "o rastreador em comodato é devolvido",
@@ -71,12 +75,12 @@ func TestContractText(t *testing.T) {
 	if s := doc.Sections[6]; s.Title != "7. Permanência mínima e multa" || len(s.Blocks) != 1 || s.Blocks[0].Kind != "ul" || len(s.Blocks[0].Items) != 5 {
 		t.Errorf("cláusula 7 = %+v", s)
 	}
-	if s := doc.Sections[4]; len(s.Blocks) != 1 || len(s.Blocks[0].Items) != 7 {
+	if s := doc.Sections[4]; len(s.Blocks) != 1 || len(s.Blocks[0].Items) != 8 {
 		t.Errorf("cláusula 5 = %+v", s)
 	}
 	// Só à vista: o contrato não fala em parcelamento.
 	cash := renderWith(t, "", 1)
-	if strings.Contains(cash.Text, "parcela") || len(cash.Sections[6].Blocks[0].Items) != 4 || len(cash.Sections[4].Blocks[0].Items) != 6 {
+	if strings.Contains(cash.Text, "parcela") || len(cash.Sections[6].Blocks[0].Items) != 4 || len(cash.Sections[4].Blocks[0].Items) != 7 {
 		t.Errorf("contrato sem parcelamento:\n%s", cash.Text)
 	}
 	// Com o endereço, ele entra; o hash muda junto com o texto.

@@ -12,10 +12,11 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 )
 
-// O rastreador parcelado sem juros: no pedido, só o frete; as parcelas
-// somadas às mensalidades, a 1ª na 1ª (a de uma fatura cancelada volta na
-// seguinte), a assinatura presa até a última e, encerrada antes, o saldo
-// numa fatura só — ou dispensado. Precisa de FARBO_TEST_DATABASE_URL.
+// O rastreador parcelado sem juros (de uma empresa: tudo na fatura do mês da
+// conta): as parcelas somadas às mensalidades, a 1ª na 1ª (a de uma fatura
+// cancelada volta na seguinte), a assinatura presa até a última e,
+// encerrada antes, o saldo numa fatura só — ou dispensado. Precisa de
+// FARBO_TEST_DATABASE_URL.
 func TestEquipmentInstallments(t *testing.T) {
 	var bs *billing.Service
 	env, _ := newLeadsEnv(t, func(d *Deps) { bs = d.Billing })
@@ -28,7 +29,7 @@ func TestEquipmentInstallments(t *testing.T) {
 		ID string `json:"id"`
 	}
 	_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/customers", map[string]any{
-		"name": "Carla Dias", "email": "carla@parcela.test", "phone": "(11) 97777-0000", "document": "",
+		"name": "Carla Dias", "email": "carla@parcela.test", "phone": "(11) 97777-0000", "document": "11.222.333/0001-81",
 		"password": userPassword,
 	}, http.StatusCreated), &carla)
 	token := env.login("carla@parcela.test")

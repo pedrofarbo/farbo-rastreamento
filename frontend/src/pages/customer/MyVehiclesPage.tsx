@@ -10,6 +10,8 @@ import billing from '@/components/billing/Billing.module.css';
 import { MonthlyPrice, isFree } from '@/components/billing/MonthlyPrice';
 import { installmentProgress } from '@/components/billing/installments';
 import { NewVehicleWizard } from '@/components/billing/NewVehicleWizard';
+import { PixPaymentModal } from '@/components/billing/PixPaymentModal';
+import { meGroupPixApi } from '@/components/billing/groupPix';
 import { SuspendedNotice, isSuspendedError } from '@/components/billing/SuspendedNotice';
 import { FulfillmentTimeline } from '@/components/fulfillment/FulfillmentTimeline';
 import fstyles from '@/components/fulfillment/Fulfillment.module.css';
@@ -34,7 +36,8 @@ import type { Situation } from '@/services/vehicleFilters';
 import { useAuth } from '@/stores/AuthContext';
 import { SharesModal, sharesKey } from '@/components/vehicle/SharesModal';
 import { EMPTY_VEHICLE, VehicleFields } from '@/components/vehicle/VehicleFields';
-import type { CustomerAccount, CustomerFulfillment, Subscription, VehicleView } from '@/types';
+import { orderPayment } from '@/services/invoiceGroups';
+import type { ChargeMethod, CustomerAccount, CustomerFulfillment, Invoice, Subscription, VehicleView } from '@/types';
 
 import styles from '../Page.module.css';
 
@@ -60,6 +63,9 @@ export function MyVehiclesPage() {
 
   const [form, setForm] = useState<VehicleForm | null>(null);
   const [ordering, setOrdering] = useState(false);
+  // O pagamento do pedido da pessoa física (abre logo depois do pedido).
+  const [paying, setPaying] = useState<(Pick<Invoice, 'id' | 'description'> & { amountCents?: number }) | null>(null);
+  const [payingWith, setPayingWith] = useState<ChargeMethod | undefined>(undefined);
   const [showInstallers, setShowInstallers] = useState(false);
   const [editingAddress, setEditingAddress] = useState(false);
   const [following, setFollowing] = useState<CustomerFulfillment | null>(null);
@@ -437,19 +443,40 @@ export function MyVehiclesPage() {
         open={ordering}
         fleet={fleet}
         onClose={() => setOrdering(false)}
-        onDone={(result) => {
+        onDone={(result, payment) => {
           setOrdering(false);
           refresh();
-          // Nada a pagar agora: tudo entra na próxima fatura do mês.
           notify({
             tone: 'success',
             title: 'Pedido feito',
-            description: `${result.vehicle.name} foi cadastrado; o rastreador segue para instalação. A cobrança entra na sua fatura de ${formatDateOnly(result.chargeDate)}.`,
+            description: result.payNow
+              ? `${result.vehicle.name} foi cadastrado; o rastreador segue para instalação depois do pagamento do pedido.`
+              : `${result.vehicle.name} foi cadastrado; o rastreador segue para instalação. A cobrança entra na sua fatura de ${formatDateOnly(result.chargeDate)}.`,
           });
+          // Pessoa física: já abre o pagamento do pedido (o rastreador ou a
+          // instalação, o frete e a 1ª mensalidade, num pagamento só).
+          const due = result.payNow ? orderPayment([result.setupInvoice, result.installInvoice, result.firstInvoice]) : null;
+          if (due && account.data?.onlinePayment) {
+            setPayingWith(payment);
+            setPaying(due);
+          }
         }}
       />
 
       <InstallersModal isOpen={showInstallers} onClose={() => setShowInstallers(false)} />
+
+      <PixPaymentModal
+        invoice={paying}
+        api={meGroupPixApi}
+        audience="customer"
+        initialMethod={payingWith}
+        autoDebit={payingWith === 'CARD'}
+        onClose={() => {
+          setPaying(null);
+          setPayingWith(undefined);
+        }}
+        onPaid={refresh}
+      />
 
       {/* Acompanhamento do pedido: chip M2M e rastreador até a casa do cliente */}
       <Modal

@@ -15,6 +15,14 @@ export function signedMoney(cents: number): string {
   return `${cents > 0 ? '+' : '−'}${formatMoney(Math.abs(cents))}`;
 }
 
+/** O MRR em partes: "R$ 100,00 mensalidades + R$ 60,00 associações + R$ 12,00 parcelas" (só o que tem valor). */
+export function mrrParts(p: { monthlyCents: number; organizationsCents: number; installmentsCents: number }): string {
+  const parts = [`${formatMoney(p.monthlyCents)} mensalidades`];
+  if (p.organizationsCents > 0) parts.push(`${formatMoney(p.organizationsCents)} associações`);
+  if (p.installmentsCents > 0) parts.push(`${formatMoney(p.installmentsCents)} parcelas`);
+  return parts.join(' + ');
+}
+
 /** A previsão do mês que vem, num quadro: o total e a divisão. */
 export function ForecastTile({ forecast }: { forecast: MRRForecast | null | undefined }) {
   return (
@@ -24,6 +32,7 @@ export function ForecastTile({ forecast }: { forecast: MRRForecast | null | unde
       <span className={billing.tileHint}>
         {forecast
           ? `${formatMoney(forecast.monthlyCents)} em ${forecast.monthlies} ${forecast.monthlies === 1 ? 'mensalidade' : 'mensalidades'}` +
+            (forecast.organizationsCents > 0 ? ` + ${formatMoney(forecast.organizationsCents)} associações` : '') +
             (forecast.installmentsCents > 0 ? ` + ${formatMoney(forecast.installmentsCents)} parcelas` : '')
           : 'o que vai ser cobrado'}
       </span>
@@ -35,15 +44,15 @@ export function ForecastTile({ forecast }: { forecast: MRRForecast | null | unde
  * O MRR mês a mês, pelo que é cobrado: as mensalidades das faturas que vencem
  * em cada mês (no atual, também as que ainda vão sair), o que entrou com as
  * assinaturas novas, o que saiu com as encerradas e o resto da variação (fim
- * de promoção, reajuste, mês sem cobrança); depois, as parcelas do rastreador
- * do mês e o total.
+ * de promoção, reajuste, mês sem cobrança); depois, a mensalidade das
+ * associações, as parcelas do rastreador do mês e o total.
  */
 export function MrrCard({ mrr }: { mrr: UseQueryResult<MRR> }) {
   return (
     <Card
       flush
       title="MRR mês a mês"
-      subtitle="Pelo que é cobrado: as mensalidades e as parcelas do rastreador das faturas que vencem em cada mês (no atual, também as que ainda vão sair), sem as grátis. A assinatura entra no mês da 1ª mensalidade. Total: as duas."
+      subtitle="Pelo que é cobrado: as mensalidades, a mensalidade dos veículos das associações e as parcelas do rastreador das faturas que vencem em cada mês (no atual, também as que ainda vão sair), sem as grátis nem as taxas avulsas. A assinatura entra no mês da 1ª mensalidade. Total: as três."
     >
       {mrr.isLoading ? (
         <Spinner label="Calculando o MRR" />
@@ -62,6 +71,7 @@ export function MrrCard({ mrr }: { mrr: UseQueryResult<MRR> }) {
                 <th>Encerradas</th>
                 <th>Outras mudanças</th>
                 <th>Variação</th>
+                <th>Associações</th>
                 <th>Parcelas do rastreador</th>
                 <th>Total</th>
               </tr>
@@ -100,6 +110,15 @@ export function MrrCard({ mrr }: { mrr: UseQueryResult<MRR> }) {
                   </td>
                   <td data-label="Variação">
                     <strong>{signedMoney(m.changeCents)}</strong>
+                  </td>
+                  <td data-label="Associações">
+                    {m.organizationsCents > 0 ? formatMoney(m.organizationsCents) : '—'}
+                    {m.organizationVehicles > 0 && (
+                      <div className={billing.muted}>
+                        {m.organizationVehicles} {m.organizationVehicles === 1 ? 'veículo' : 'veículos'}
+                        {m.organizationsChangeCents !== 0 && ` · ${signedMoney(m.organizationsChangeCents)}`}
+                      </div>
+                    )}
                   </td>
                   <td data-label="Parcelas do rastreador">
                     {m.installmentsCents > 0 ? formatMoney(m.installmentsCents) : '—'}

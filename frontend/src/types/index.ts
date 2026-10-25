@@ -1264,10 +1264,14 @@ export interface MRRMonth {
   /** A variação sobre o mês anterior; otherCents, o que ela tem além de novas e encerradas (fim de promoção, reajuste). */
   changeCents: number;
   otherCents: number;
+  /** A mensalidade das associações e seguradoras (os veículos das faturas delas), quantos veículos e a variação. */
+  organizationsCents: number;
+  organizationVehicles: number;
+  organizationsChangeCents: number;
   /** As parcelas do rastreador que vencem no mês (no atual, também as que ainda vão ser cobradas) e quanto já foi pago. */
   installmentsCents: number;
   installmentsPaidCents: number;
-  /** Mensalidades + parcelas. */
+  /** Mensalidades + associações + parcelas. */
   totalCents: number;
 }
 
@@ -1281,6 +1285,9 @@ export interface MRRForecast {
   monthlyCents: number;
   /** Quantas mensalidades (sem as grátis). */
   monthlies: number;
+  /** A mensalidade das associações e quantos veículos. */
+  organizationsCents: number;
+  organizationVehicles: number;
   installmentsCents: number;
   totalCents: number;
 }
@@ -1289,6 +1296,9 @@ export interface MRRForecast {
 export interface MRR {
   currentCents: number;
   subscriptions: number;
+  /** A mensalidade das associações no mês atual e quantos veículos. */
+  organizationsCents: number;
+  organizationVehicles: number;
   /** As parcelas do rastreador do mês atual e o total (mensalidades + parcelas). */
   installmentsCents: number;
   totalCents: number;
@@ -1624,11 +1634,40 @@ export interface Catalog {
   equipmentMaxInstallments: number;
   /** O cliente pode contratar com a promoção de pré-lançamento (nulo: não pode). */
   launchPromo?: PromoOffer | null;
-  /** Para o cliente: o rastreador dele e as taxas, e a fatura em que um veículo contratado hoje entra. */
+  /** Para o cliente: o rastreador dele e as taxas, e o vencimento da cobrança de um veículo contratado hoje. */
   equipmentMode?: 'sale' | 'loan';
   installFeeCents?: number;
   uninstallFeeCents?: number;
   chargeDate?: DateOnly;
+  /** O rastreador vem do plano definido pela central (sem escolha). */
+  planTerms?: boolean;
+  /** Sem plano definido: o comodato que o cliente pode escolher (nulo: só comprado). */
+  loan?: LoanOffer | null;
+  /** A instalação pelos instaladores da Farbo no rastreador comprado (nula: só por conta própria). */
+  install?: InstallService | null;
+  /** Pessoa física: paga no ato a 1ª mensalidade, o frete e o rastreador (ou a instalação). */
+  payNow?: boolean;
+}
+
+/** O comodato que o cliente escolhe no pedido: a mensalidade (nula: a do plano) e as taxas. */
+export interface LoanOffer {
+  enabled: boolean;
+  monthlyCents: number | null;
+  installFeeCents: number;
+  uninstallFeeCents: number;
+}
+
+/** A instalação pelos instaladores da Farbo no rastreador comprado (no comodato, ela é sempre da Farbo). */
+export interface InstallService {
+  enabled: boolean;
+  priceCents: number;
+}
+
+/** As opções do pedido do cliente (central): o comodato e a instalação Farbo. */
+export interface OrderOptions {
+  loan: LoanOffer;
+  install: InstallService;
+  updatedAt?: string;
 }
 
 /**
@@ -1694,8 +1733,10 @@ export interface Installer extends PublicInstaller {
 export interface TrackerOrderResult {
   vehicle: Vehicle;
   subscription: Subscription;
-  /** O vencimento da fatura do mês em que a contratação entra (nada é cobrado na hora). */
+  /** O vencimento da cobrança: no ato (pessoa física) ou na fatura do mês da conta (empresa). */
   chargeDate: DateOnly;
+  /** A pessoa física paga no ato: a tela abre o pagamento do pedido. */
+  payNow: boolean;
   /** A linha do equipamento (com o frete); nula quando nada foi cobrado. */
   setupInvoice: Invoice | null;
   /** A instalação no comodato (nula sem taxa). */
@@ -2939,6 +2980,8 @@ export interface AwaitingInstall {
   /** Já agendado (para quando). */
   scheduledFor: string | null;
   createdAt: string;
+  /** Quem instala é a Farbo (comodato, instalação contratada, associado); sem isso, o cliente instala por conta própria. */
+  farboInstall: boolean;
 }
 
 /** Um veículo de associado à espera da retirada do rastreador. */

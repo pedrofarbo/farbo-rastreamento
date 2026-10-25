@@ -49,6 +49,21 @@ export function overdueGroup(invoices: Invoice[]): InvoiceGroup | null {
   return groupOf(late, null);
 }
 
+/**
+ * O pagamento do pedido da pessoa física, no ato: o equipamento (com o frete),
+ * a instalação (no comodato) e a 1ª mensalidade, num pagamento só (null se
+ * não há nada em aberto).
+ */
+export function orderPayment(
+  invoices: (Invoice | null)[],
+): (Pick<Invoice, 'id' | 'description'> & { amountCents: number }) | null {
+  const open = invoices.filter((i): i is Invoice => i !== null && i.status === 'OPEN' && i.amountCents > 0);
+  if (open.length === 0) return null;
+  if (open.length === 1) return open[0];
+  const group = groupOf(open, open[0].dueDate);
+  return { id: group.key, description: 'Pedido: rastreador e 1ª mensalidade', amountCents: group.amountCents };
+}
+
 /** As faturas da chave de um grupo (null se a chave é de uma fatura só). */
 export function groupIds(key: string): string[] | null {
   return key.startsWith(GROUP_PREFIX) ? key.slice(GROUP_PREFIX.length).split(',') : null;

@@ -69,8 +69,11 @@ const (
 	ActionCustomerPasswordSet = "CUSTOMER_PASSWORD_SET"
 	// ActionLaunchPromoGranted / Revoked: a central liberou (ou retirou) a
 	// promoção de pré-lançamento para um cliente fora da lista de lançamento.
-	ActionLaunchPromoGranted   = "LAUNCH_PROMO_GRANTED"
-	ActionLaunchPromoRevoked   = "LAUNCH_PROMO_REVOKED"
+	ActionLaunchPromoGranted = "LAUNCH_PROMO_GRANTED"
+	ActionLaunchPromoRevoked = "LAUNCH_PROMO_REVOKED"
+	// ActionOrderOptionsChanged: a central mudou as opções do pedido do
+	// cliente (o comodato e a instalação pelos instaladores da Farbo).
+	ActionOrderOptionsChanged  = "ORDER_OPTIONS_CHANGED"
 	ActionSubscriptionCreated  = "SUBSCRIPTION_CREATED"
 	ActionSubscriptionUpdated  = "SUBSCRIPTION_UPDATED"
 	ActionSubscriptionCanceled = "SUBSCRIPTION_CANCELED"

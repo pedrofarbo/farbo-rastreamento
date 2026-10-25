@@ -967,6 +967,8 @@ export function CustomerDetailsPage() {
           currentPlan: data.subscriptions.find((s) => s.status === 'ACTIVE') ?? null,
           accountPlan: data.plan,
           accountDueDay: accountDueDay(data.subscriptions),
+          // Pessoa física (sem CNPJ) paga o pedido no ato; a empresa, na próxima fatura.
+          payNow: data.document.replace(/\D/g, '').length !== 14,
         }}
         onClose={() => setOrdering(false)}
         onDone={(result) => {
@@ -975,7 +977,9 @@ export function CustomerDetailsPage() {
           notify({
             tone: 'success',
             title: 'Veículo incluído',
-            description: `${result.vehicle.name}: assinatura iniciada; tudo entra na fatura de ${formatDateOnly(result.chargeDate)}${
+            description: `${result.vehicle.name}: assinatura iniciada; ${
+              result.payNow ? 'o pedido vence em' : 'tudo entra na fatura de'
+            } ${formatDateOnly(result.chargeDate)}${
               result.setupInvoice ? ` (equipamento ${formatMoney(result.setupInvoice.amountCents)})` : ''
             }.`,
           });

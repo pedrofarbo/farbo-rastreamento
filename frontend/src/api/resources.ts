@@ -7,6 +7,7 @@ import type {
   AccountMember,
   AwaitingInstall,
   AwaitingUninstall,
+  OrderOptions,
   BusRoute,
   BusRouteInput,
   BusTrip,
@@ -1084,6 +1085,8 @@ export interface AdminTrackerOrder {
   shippingServiceId?: number;
   /** O equipamento parcelado sem juros (ausente ou 1: à vista). */
   installments?: number;
+  /** O rastreador comprado instalado pelos instaladores da Farbo, no preço das opções do pedido. */
+  farboInstall?: boolean;
 }
 
 export interface FleetImportRequest {
@@ -1304,6 +1307,9 @@ export const leadsApi = {
 
 export const catalogApi = {
   get: () => api.get<Catalog>('/api/catalog'),
+  /** As opções do pedido do cliente (central): o comodato e a instalação pelos instaladores da Farbo. */
+  orderOptions: () => api.get<OrderOptions>('/api/order-options'),
+  setOrderOptions: (input: Omit<OrderOptions, 'updatedAt'>) => api.put<OrderOptions>('/api/order-options', input),
 };
 
 /** Área do cliente (perfil customer). */
@@ -1414,6 +1420,10 @@ export const meApi = {
     arrangeDelivery?: boolean;
     /** O rastreador parcelado sem juros (ausente ou 1: à vista). */
     installments?: number;
+    /** Comprado ou em comodato (quando a central oferece). */
+    equipmentMode?: 'sale' | 'loan';
+    /** O rastreador comprado instalado pelos instaladores da Farbo (no comodato, ela já é da Farbo). */
+    farboInstall?: boolean;
   }) =>
     api.post<TrackerOrderResult>('/api/me/trackers', input),
   /** As formas de entrega até o endereço do cliente (preço e prazo). */

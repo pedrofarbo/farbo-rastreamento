@@ -237,10 +237,15 @@ type Awaiting struct {
 	Address          string     `json:"address"`
 	ScheduledFor     *time.Time `json:"scheduledFor"`
 	CreatedAt        time.Time  `json:"createdAt"`
+	// FarboInstall: quem instala é a Farbo (o comodato, a instalação
+	// contratada no pedido, o associado); sem isso, o cliente instala por
+	// conta própria.
+	FarboInstall bool `json:"farboInstall"`
 }
 
 // AwaitingInstall são os veículos de cliente sem rastreador, com o endereço
-// de entrega do cliente e o agendamento em aberto (se houver).
+// de entrega do cliente e o agendamento em aberto (se houver): primeiro os
+// que a Farbo instala.
 func (s *Service) AwaitingInstall(ctx context.Context) ([]Awaiting, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT v.id, v.name, COALESCE(v.plate, ''), u.id, u.name, u.phone, COALESCE(o.name, ''),
@@ -249,13 +254,15 @@ func (s *Service) AwaitingInstall(ctx context.Context) ([]Awaiting, error) {
 				FROM customer_addresses ad WHERE ad.customer_id = u.id), ''),
 			(SELECT a.scheduled_for FROM installation_appointments a WHERE a.vehicle_id = v.id
 				AND a.status IN ('scheduled', 'arrived') LIMIT 1),
-			v.created_at
+			v.created_at,
+			u.organization_id IS NOT NULL OR EXISTS (SELECT 1 FROM subscriptions s
+				WHERE s.vehicle_id = v.id AND s.status = 'ACTIVE' AND s.farbo_install) AS farbo
 		FROM vehicles v JOIN users u ON u.id = v.owner_id LEFT JOIN users o ON o.id = u.organization_id
 		WHERE v.device_id IS NULL AND u.active AND u.role = 'customer'
 			-- O rastreador retirado na desinstalação não volta para a fila.
 			AND COALESCE((SELECT x.kind FROM installation_appointments x WHERE x.vehicle_id = v.id AND x.status = 'done'
 				ORDER BY x.completed_at DESC LIMIT 1), 'install') <> 'uninstall'
-		ORDER BY v.created_at LIMIT 500`)
+		ORDER BY farbo DESC, v.created_at LIMIT 500`)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -264,7 +271,7 @@ func (s *Service) AwaitingInstall(ctx context.Context) ([]Awaiting, error) {
 	for rows.Next() {
 		var a Awaiting
 		if err := rows.Scan(&a.VehicleID, &a.VehicleName, &a.Plate, &a.CustomerID, &a.CustomerName, &a.CustomerPhone,
-			&a.OrganizationName, &a.Address, &a.ScheduledFor, &a.CreatedAt); err != nil {
+			&a.OrganizationName, &a.Address, &a.ScheduledFor, &a.CreatedAt, &a.FarboInstall); err != nil {
 			return nil, database.MapError(err)
 		}
 		out = append(out, a)

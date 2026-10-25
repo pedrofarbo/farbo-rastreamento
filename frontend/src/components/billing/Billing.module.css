@@ -1004,3 +1004,15 @@
     font-size: var(--text-lg);
   }
 }
+
+/* Um link no meio do texto de uma opção (o "Ver prestadores"). */
+.linkButton {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
