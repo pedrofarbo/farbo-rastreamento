@@ -13,7 +13,7 @@ import { useTheme } from '@/hooks/useTheme';
 
 import styles from './AppShell.module.css';
 
-/** Os ícones do menu lateral (celular), no traço do resto do painel. */
+/** Os ícones do menu lateral, no traço do resto do painel. */
 const ICONS: Record<string, ReactNode> = {
   map: <path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Zm0 0v14m6-12v14" />,
   car: (
@@ -73,6 +73,25 @@ function Icon({ name }: { name: string }) {
       {ICONS[name]}
     </svg>
   );
+}
+
+const COLLAPSED_KEY = 'farbo.menuRecolhido';
+
+/** A barra lateral recolhida (no aparelho); sem armazenamento, expandida. */
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function saveCollapsed(collapsed: boolean) {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0');
+  } catch {
+    // Armazenamento bloqueado: vale só nesta visita.
+  }
 }
 
 export function AppShell() {
@@ -143,8 +162,30 @@ export function AppShell() {
       ? `${orgMembership.name} · ${ORG_ROLES[orgMembership.role].label}`
       : null;
 
+  // No computador, a barra lateral recolhe (só os ícones) e expande; a
+  // escolha fica no aparelho.
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const toggleCollapsed = () =>
+    setCollapsed((value) => {
+      saveCollapsed(!value);
+      return !value;
+    });
+
   const navClass = ({ isActive }: { isActive: boolean }) =>
     `${styles.navLink} ${isActive ? styles.navActive : ''}`;
+
+  /** Um item do menu: o ícone, o nome (recolhida, ele vira a dica) e o aviso. */
+  const item = (to: string, icon: string, label: string, badge = 0, badgeTitle = '') => (
+    <NavLink to={to} className={navClass} title={collapsed ? label : undefined}>
+      <Icon name={icon} />
+      <span className={styles.navLabel}>{label}</span>
+      {badge > 0 && (
+        <span className={styles.navBadge} title={badgeTitle}>
+          {badge}
+        </span>
+      )}
+    </NavLink>
+  );
 
   return (
     <div className={styles.shell}>
@@ -169,253 +210,6 @@ export function AppShell() {
         <NavLink to="/dashboard" className={styles.brand}>
           <img src="/assets/logo-header.png" alt="Farbo Rastreadores" className={styles.logo} />
         </NavLink>
-
-        {menuOpen && <div className={styles.backdrop} onClick={() => setMenuOpen(false)} aria-hidden="true" />}
-
-        <nav id="menu-principal" className={`${styles.nav} ${menuOpen ? styles.navOpen : ''}`} aria-label="Menu principal">
-          {/* Só no celular: o topo da barra lateral, com quem está logado. */}
-          <div className={styles.drawerTop}>
-            <img src="/assets/logo-header.png" alt="" className={styles.drawerLogo} />
-            <button
-              ref={closeButton}
-              type="button"
-              className={styles.closeButton}
-              aria-label="Fechar o menu"
-              onClick={() => {
-                setMenuOpen(false);
-                menuButton.current?.focus();
-              }}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                <path d="M6 6l12 12M18 6 6 18" />
-              </svg>
-            </button>
-          </div>
-          {user && (
-            <div className={styles.drawerUser}>
-              <strong>{user.name || user.email}</strong>
-              <span>{accountLabel ?? ROLE_LABELS[user.role] ?? user.role}</span>
-            </div>
-          )}
-          <div className={styles.navItems}>
-          {isCustomer ? (
-            <>
-              <NavLink to="/dashboard" className={navClass}>
-                <Icon name="map" />
-                Mapa
-              </NavLink>
-              <NavLink to="/meus-veiculos" className={navClass}>
-                <Icon name="car" />
-                Meus veículos
-              </NavLink>
-              {canSeeBilling && (
-                <NavLink to="/faturas" className={navClass}>
-                  <Icon name="receipt" />
-                  Faturas
-                  {overdue > 0 && (
-                    <span className={styles.navBadge} title={`${overdue} fatura(s) vencida(s)`}>
-                      {overdue}
-                    </span>
-                  )}
-                </NavLink>
-              )}
-              <NavLink to="/alertas" className={navClass}>
-                <Icon name="bell" />
-                Alertas
-              </NavLink>
-              <NavLink to="/cercas" className={navClass}>
-                <Icon name="fence" />
-                Cercas
-              </NavLink>
-              <NavLink to="/relatorios" className={navClass}>
-                <Icon name="chart" />
-                Relatórios
-              </NavLink>
-              <NavLink to="/manutencao" className={navClass}>
-                <Icon name="wrench" />
-                Manutenção
-              </NavLink>
-              {/* A gestão da frota: motoristas, custos, multas e locações (o associado não tem). */}
-              {!paidByOrganization && (
-                <NavLink to="/frota" className={navClass}>
-                  <Icon name="building" />
-                  Frota
-                </NavLink>
-              )}
-              {/* Conta empresa: quem da empresa acessa a conta (só o titular). */}
-              {isAccountOwner && (
-                <NavLink to="/equipe" className={navClass}>
-                  <Icon name="users" />
-                  Equipe
-                </NavLink>
-              )}
-              {/* O app do cliente (PWA) é outra página: link comum, não do router. */}
-              <a href="/app/" className={styles.navLink}>
-                <Icon name="phone" />
-                App no celular
-              </a>
-            </>
-          ) : isOrgMember ? (
-            <>
-              <NavLink to="/dashboard" className={navClass}>
-                <Icon name="map" />
-                Mapa
-              </NavLink>
-              <NavLink to="/associados" className={navClass}>
-                <Icon name="users" />
-                Associados
-              </NavLink>
-              <NavLink to="/organizacao/relatorios" className={navClass}>
-                <Icon name="chart" />
-                Relatórios
-              </NavLink>
-              {!isOrgBroker && (
-                <>
-                  <NavLink to="/organizacao/ocorrencias" className={navClass}>
-                    <Icon name="activity" />
-                    Ocorrências
-                  </NavLink>
-                  <NavLink to="/organizacao/vistorias" className={navClass}>
-                    <Icon name="car" />
-                    Vistorias
-                  </NavLink>
-                  <NavLink to="/organizacao/recuperacao" className={navClass}>
-                    <Icon name="shield" />
-                    Recuperação
-                  </NavLink>
-                  <NavLink to="/organizacao/comunicados" className={navClass}>
-                    <Icon name="chat" />
-                    Comunicados
-                  </NavLink>
-                  <NavLink to="/organizacao/instalacoes" className={navClass}>
-                    <Icon name="calendar" />
-                    Instalações
-                  </NavLink>
-                </>
-              )}
-              {isOrgAdmin && (
-                <>
-                  <NavLink to="/organizacao/integracoes" className={navClass}>
-                    <Icon name="chip" />
-                    Integrações
-                  </NavLink>
-                  <NavLink to="/organizacao/equipe" className={navClass}>
-                    <Icon name="userCog" />
-                    Equipe
-                  </NavLink>
-                  <NavLink to="/organizacao/faturas" className={navClass}>
-                    <Icon name="receipt" />
-                    Faturas
-                  </NavLink>
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              <NavLink to="/dashboard" className={navClass}>
-                <Icon name="map" />
-                Painel
-              </NavLink>
-              <NavLink to="/eventos" className={navClass}>
-                <Icon name="activity" />
-                Eventos
-              </NavLink>
-              <NavLink to="/cercas" className={navClass}>
-                <Icon name="fence" />
-                Cercas
-              </NavLink>
-              {canOperate && (
-                <>
-                  <NavLink to="/pedidos" className={navClass}>
-                    <Icon name="package" />
-                    Pedidos
-                  </NavLink>
-                  <NavLink to="/agenda" className={navClass}>
-                    <Icon name="calendar" />
-                    Agenda
-                  </NavLink>
-                  {SUPPORT_SCREEN && (
-                    <NavLink to="/atendimento" className={navClass}>
-                      <Icon name="chat" />
-                      Atendimento
-                      {waiting > 0 && (
-                        <span className={styles.navBadge} title={`${waiting} conversa(s) esperando a equipe`}>
-                          {waiting}
-                        </span>
-                      )}
-                    </NavLink>
-                  )}
-                </>
-              )}
-              {canManage && (
-                <>
-                  <NavLink to="/clientes" className={navClass}>
-                    <Icon name="users" />
-                    Clientes
-                    {newLeads > 0 && (
-                      <span className={styles.navBadge} title={`${newLeads} pré-cliente(s) novo(s)`}>
-                        {newLeads}
-                      </span>
-                    )}
-                  </NavLink>
-                  <NavLink to="/associacoes" className={navClass}>
-                    <Icon name="shield" />
-                    Associações
-                  </NavLink>
-                  <NavLink to="/empresa" className={navClass}>
-                    <Icon name="building" />
-                    Empresa
-                    {billsDue > 0 && (
-                      <span className={styles.navBadge} title={`${billsDue} conta(s) vencida(s) ou vencendo hoje`}>
-                        {billsDue}
-                      </span>
-                    )}
-                  </NavLink>
-                  <NavLink to="/prestadores" className={navClass}>
-                    <Icon name="wrench" />
-                    Prestadores
-                  </NavLink>
-                  <NavLink to="/dispositivos" className={navClass}>
-                    <Icon name="chip" />
-                    Rastreadores
-                  </NavLink>
-                  <NavLink to="/diagnostico" className={navClass}>
-                    <Icon name="pulse" />
-                    Diagnóstico
-                  </NavLink>
-                  <NavLink to="/usuarios" className={navClass}>
-                    <Icon name="userCog" />
-                    Usuários
-                  </NavLink>
-                </>
-              )}
-            </>
-          )}
-          </div>
-
-          {/* Só no celular: a conta e o tema no pé da barra lateral. */}
-          <div className={styles.drawerFooter}>
-            <NavLink to="/seguranca" className={navClass}>
-              <svg className={styles.navIcon} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="4" y="11" width="16" height="10" rx="2" />
-                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-              </svg>
-              Segurança da conta
-            </NavLink>
-            <button type="button" className={styles.navLink} onClick={toggle}>
-              <span className={styles.navIcon} aria-hidden="true">
-                {theme === 'dark' ? '☾' : '☀'}
-              </span>
-              {theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
-            </button>
-            <button type="button" className={`${styles.navLink} ${styles.drawerLogout}`} onClick={() => void logout()}>
-              <svg className={styles.navIcon} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14 5-5-5-5m5 5H9" />
-              </svg>
-              Sair
-            </button>
-          </div>
-        </nav>
 
         <div className={styles.right}>
           <div
@@ -466,12 +260,160 @@ export function AppShell() {
         </div>
       </header>
 
-      <main className={styles.content}>
-        {/* As páginas carregam sob demanda: o menu fica e só o conteúdo espera. */}
-        <Suspense fallback={<Spinner label="Carregando" />}>
-          <Outlet />
-        </Suspense>
-      </main>
+      <div className={styles.body}>
+        {menuOpen && <div className={styles.backdrop} onClick={() => setMenuOpen(false)} aria-hidden="true" />}
+
+        {/* No computador, a barra lateral fica fixa à esquerda, escura nos dois
+            temas como o cabeçalho; no celular, abre no ☰ por cima da página. */}
+        <nav
+          id="menu-principal"
+          className={`${styles.nav} ${menuOpen ? styles.navOpen : ''} ${collapsed ? styles.navCollapsed : ''}`}
+          aria-label="Menu principal"
+          data-theme="dark"
+        >
+          {/* Só no celular: o topo da barra lateral, com quem está logado. */}
+          <div className={styles.drawerTop}>
+            <img src="/assets/logo-header.png" alt="" className={styles.drawerLogo} />
+            <button
+              ref={closeButton}
+              type="button"
+              className={styles.closeButton}
+              aria-label="Fechar o menu"
+              onClick={() => {
+                setMenuOpen(false);
+                menuButton.current?.focus();
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+          </div>
+          {user && (
+            <div className={styles.drawerUser}>
+              <strong>{user.name || user.email}</strong>
+              <span>{accountLabel ?? ROLE_LABELS[user.role] ?? user.role}</span>
+            </div>
+          )}
+          <div className={styles.navItems}>
+            {isCustomer ? (
+              <>
+                {item('/dashboard', 'map', 'Mapa')}
+                {item('/meus-veiculos', 'car', 'Meus veículos')}
+                {canSeeBilling && item('/faturas', 'receipt', 'Faturas', overdue, `${overdue} fatura(s) vencida(s)`)}
+                {item('/alertas', 'bell', 'Alertas')}
+                {item('/cercas', 'fence', 'Cercas')}
+                {item('/relatorios', 'chart', 'Relatórios')}
+                {item('/manutencao', 'wrench', 'Manutenção')}
+                {/* A gestão da frota: motoristas, custos, multas e locações (o associado não tem). */}
+                {!paidByOrganization && item('/frota', 'building', 'Frota')}
+                {/* Conta empresa: quem da empresa acessa a conta (só o titular). */}
+                {isAccountOwner && item('/equipe', 'users', 'Equipe')}
+                {/* O app do cliente (PWA) é outra página: link comum, não do router. */}
+                <a href="/app/" className={styles.navLink} title={collapsed ? 'App no celular' : undefined}>
+                  <Icon name="phone" />
+                  <span className={styles.navLabel}>App no celular</span>
+                </a>
+              </>
+            ) : isOrgMember ? (
+              <>
+                {item('/dashboard', 'map', 'Mapa')}
+                {item('/associados', 'users', 'Associados')}
+                {item('/organizacao/relatorios', 'chart', 'Relatórios')}
+                {!isOrgBroker && (
+                  <>
+                    {item('/organizacao/ocorrencias', 'activity', 'Ocorrências')}
+                    {item('/organizacao/vistorias', 'car', 'Vistorias')}
+                    {item('/organizacao/recuperacao', 'shield', 'Recuperação')}
+                    {item('/organizacao/comunicados', 'chat', 'Comunicados')}
+                    {item('/organizacao/instalacoes', 'calendar', 'Instalações')}
+                  </>
+                )}
+                {isOrgAdmin && (
+                  <>
+                    {item('/organizacao/integracoes', 'chip', 'Integrações')}
+                    {item('/organizacao/equipe', 'userCog', 'Equipe')}
+                    {item('/organizacao/faturas', 'receipt', 'Faturas')}
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                {item('/dashboard', 'map', 'Painel')}
+                {item('/eventos', 'activity', 'Eventos')}
+                {item('/cercas', 'fence', 'Cercas')}
+                {canOperate && (
+                  <>
+                    {item('/pedidos', 'package', 'Pedidos')}
+                    {item('/agenda', 'calendar', 'Agenda')}
+                    {SUPPORT_SCREEN &&
+                      item('/atendimento', 'chat', 'Atendimento', waiting, `${waiting} conversa(s) esperando a equipe`)}
+                  </>
+                )}
+                {canManage && (
+                  <>
+                    {item('/clientes', 'users', 'Clientes', newLeads, `${newLeads} pré-cliente(s) novo(s)`)}
+                    {item('/associacoes', 'shield', 'Associações')}
+                    {item('/empresa', 'building', 'Empresa', billsDue, `${billsDue} conta(s) vencida(s) ou vencendo hoje`)}
+                    {item('/prestadores', 'wrench', 'Prestadores')}
+                    {item('/dispositivos', 'chip', 'Rastreadores')}
+                    {item('/diagnostico', 'pulse', 'Diagnóstico')}
+                    {item('/usuarios', 'userCog', 'Usuários')}
+                  </>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Só no computador: recolhe a barra (só os ícones) e expande. */}
+          <button
+            type="button"
+            className={`${styles.navLink} ${styles.collapseButton}`}
+            aria-expanded={!collapsed}
+            aria-controls="menu-principal"
+            title={collapsed ? 'Expandir o menu' : 'Recolher o menu'}
+            onClick={toggleCollapsed}
+          >
+            <svg className={styles.navIcon} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M9 4v16" />
+              <path d={collapsed ? 'm13 10 2 2-2 2' : 'm15 10-2 2 2 2'} />
+            </svg>
+            <span className={styles.navLabel}>{collapsed ? 'Expandir o menu' : 'Recolher o menu'}</span>
+          </button>
+
+          {/* Só no celular: a conta e o tema no pé da barra lateral. */}
+          <div className={styles.drawerFooter}>
+            <NavLink to="/seguranca" className={navClass}>
+              <svg className={styles.navIcon} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="4" y="11" width="16" height="10" rx="2" />
+                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+              </svg>
+              Segurança da conta
+            </NavLink>
+            <button type="button" className={styles.navLink} onClick={toggle}>
+              <span className={styles.navIcon} aria-hidden="true">
+                {theme === 'dark' ? '☾' : '☀'}
+              </span>
+              {theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
+            </button>
+            <button type="button" className={`${styles.navLink} ${styles.drawerLogout}`} onClick={() => void logout()}>
+              <svg className={styles.navIcon} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14 5-5-5-5m5 5H9" />
+              </svg>
+              Sair
+            </button>
+          </div>
+        </nav>
+
+
+        <main className={styles.content}>
+          {/* As páginas carregam sob demanda: o menu fica e só o conteúdo espera. */}
+          <Suspense fallback={<Spinner label="Carregando" />}>
+            <Outlet />
+          </Suspense>
+        </main>
+      </div>
     </div>
   );
 }

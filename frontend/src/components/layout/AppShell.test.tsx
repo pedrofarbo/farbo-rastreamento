@@ -57,6 +57,7 @@ async function render() {
 afterEach(() => {
   document.body.innerHTML = '';
   auth = staff;
+  localStorage.clear();
 });
 
 const customer = (over: Record<string, unknown>) => ({
@@ -107,6 +108,32 @@ describe('menu do painel', () => {
     await act(async () => clients.click());
     expect(host.textContent).toContain('clientes');
     expect(menu.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('no computador, a barra lateral recolhe (só os ícones, o nome na dica) e lembra a escolha', async () => {
+    let host = await render();
+    const nav = () => host.querySelector('#menu-principal') as HTMLElement;
+    const toggle = () => host.querySelector('button[title$="o menu"][aria-controls="menu-principal"]:not([aria-label])') as HTMLButtonElement;
+    expect(nav().className).not.toMatch(/navCollapsed/);
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(toggle().title).toBe('Recolher o menu');
+
+    await act(async () => toggle().click());
+    expect(nav().className).toMatch(/navCollapsed/);
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    expect(toggle().title).toBe('Expandir o menu');
+    // Recolhida: cada item mostra o nome na dica e continua com ele para o leitor de tela.
+    const clients = Array.from(nav().querySelectorAll('a')).find((a) => a.textContent?.startsWith('Clientes')) as HTMLAnchorElement;
+    expect(clients.title).toBe('Clientes');
+    expect(clients.querySelector('[class*="navLabel"]')?.textContent).toBe('Clientes');
+
+    // Abrir de novo: continua recolhida; expandir volta ao normal.
+    document.body.innerHTML = '';
+    host = await render();
+    expect(nav().className).toMatch(/navCollapsed/);
+    await act(async () => toggle().click());
+    expect(nav().className).not.toMatch(/navCollapsed/);
+    expect((Array.from(nav().querySelectorAll('a')).find((a) => a.textContent === 'Painel') as HTMLAnchorElement).title).toBe('');
   });
 
   it('conta empresa: o titular vê a Equipe; quem é da equipe vê de quem é a conta, e o Visualizador não vê faturas', async () => {
