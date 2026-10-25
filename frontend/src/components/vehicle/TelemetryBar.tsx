@@ -50,19 +50,10 @@ export function TelemetryBar({ position, state, lastSeenAt }: TelemetryBarProps)
 
       <Cell label="Rede" small value={gsm === null ? '—' : `${gsm}/4`} />
 
-      {/* A voltagem é a da bateria do veículo; sem ela, o nível da bateria
-          interna do rastreador. */}
-      <Cell
-        label={voltage !== null ? 'Voltagem' : 'Bateria interna'}
-        small
-        value={
-          voltage !== null
-            ? formatVoltage(voltage)
-            : battery !== null
-              ? `${battery}%`
-              : '—'
-        }
-      />
+      {/* A voltagem é a da bateria do veículo (o J16 manda com o GT06IEXVOL);
+          a porcentagem, o nível da bateria interna do rastreador. */}
+      {voltage !== null && <Cell label="Bateria do veículo" small value={formatVoltage(voltage)} />}
+      <Cell label="Bateria interna" small value={battery !== null ? `${battery}%` : '—'} />
 
       <Cell
         label="Motor"

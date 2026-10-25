@@ -73,6 +73,17 @@ describe('landing com a contratação pelo site', () => {
     expect(links(host, 'Ver planos')[0]?.getAttribute('href')).toBe('#planos');
   });
 
+  it('o Contato do menu abre o WhatsApp', async () => {
+    const host = await render(<Navbar onOpenModal={() => {}} />);
+    const contact = links(host, 'Contato')[0];
+    if (!WHATSAPP_NUMBER) {
+      expect(contact?.getAttribute('href')).toBe('#contato');
+      return;
+    }
+    expect(contact?.getAttribute('href')).toBe(whatsappUrl(WHATSAPP_GREETING));
+    expect(contact?.getAttribute('target')).toBe('_blank');
+  });
+
   it('o CTA do menu (computador e celular) é "Contratar"', async () => {
     const host = await render(<Navbar onOpenModal={() => {}} />);
     const ctas = links(host, 'Contratar');

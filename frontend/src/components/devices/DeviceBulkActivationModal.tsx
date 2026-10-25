@@ -226,8 +226,9 @@ export function DeviceBulkActivationModal({
         {!results ? (
           <>
             <p className={styles.intro}>
-              Selecione os rastreadores que deseja ativar. O sistema enviará os comandos SMS de
-              configuração (APN, Servidor Farbo, Fuso e Frequência) para o chip de cada um.
+              Selecione os rastreadores que deseja ativar. O sistema manda por SMS, para o chip de cada
+              um, o APN e o servidor da Farbo; quando o rastreador conecta, o fuso, a frequência e a
+              voltagem vão pela conexão, sem gastar SMS.
             </p>
 
             <div className={styles.filterBar}>
@@ -414,7 +415,7 @@ export function DeviceBulkActivationModal({
                   checked={ask}
                   onChange={(e) => setAsk(e.target.checked)}
                 />
-                Pedir a configuração de volta no fim (PARAM#)
+                Pedir a configuração de volta (PARAM#, pela conexão)
               </label>
               {!hideActivated && activatedDevices.length > 0 && (
                 <label style={{ color: 'var(--warning)', marginTop: 4 }}>

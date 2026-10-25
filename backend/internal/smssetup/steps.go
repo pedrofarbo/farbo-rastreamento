@@ -1,8 +1,9 @@
-// Package smssetup configura o rastreador por SMS na ativação: manda os
-// comandos de configuração (APN, servidor, fuso, intervalo) para o número do
-// chip pela SMS Market, um por vez, e espera o rastreador conectar no servidor —
-// a prova de que a configuração pegou. A sintaxe é a do J16 (GT06), em
-// docs/J16.md.
+// Package smssetup configura o rastreador na ativação: manda por SMS, pela
+// SMS Market, só o que ele precisa para conectar (o APN e o servidor), um por
+// vez, e espera a conexão — a prova de que pegou. O resto (fuso, intervalo,
+// voltagem e a consulta) vai pela própria conexão, sem gastar SMS; o que não
+// for confirmado por ela vai por SMS, como reserva. A sintaxe é a do J16
+// (GT06), em docs/J16.md.
 package smssetup
 
 import (
@@ -21,7 +22,10 @@ const (
 	StepServer = "SERVER"
 	StepGMT    = "GMT"
 	StepTimer  = "TIMER"
-	StepParam  = "PARAM" // pede a configuração de volta, por SMS
+	// StepVoltage: o J16 passa a mandar a voltagem da bateria do veículo (o
+	// pacote 0x94) e a posição no formato 0x22, com a ignição.
+	StepVoltage = "VOLTAGE"
+	StepParam   = "PARAM" // pede a configuração de volta, por SMS
 )
 
 // Defaults é o que vale quando o cadastro do rastreador não diz.
@@ -46,11 +50,16 @@ type Options struct {
 	Query bool
 }
 
+// ViaConnection: o passo vai pela conexão do rastreador (GPRS), depois que
+// ele conecta; vazio, por SMS.
+const ViaConnection = "connection"
+
 // Step é um passo, como a tela mostra (o texto redigido: sem as senhas).
 type Step struct {
 	Kind  string `json:"kind"`
 	Label string `json:"label"`
 	Text  string `json:"text"`
+	Via   string `json:"via,omitempty"`
 }
 
 // built é o passo com o texto de verdade, que só existe na hora de enviar.
@@ -137,27 +146,32 @@ func buildSteps(dev *devices.Device, d Defaults, opts Options) (steps []built, p
 	if pass != "" && pass != dev.APNPassword {
 		secrets = append(secrets, pass)
 	}
-	add := func(kind, label, text string) {
+	add := func(kind, label, text, via string) {
 		shown := devices.RedactText(text, secrets)
-		steps = append(steps, built{Step: Step{Kind: kind, Label: label, Text: shown}, real: text})
+		steps = append(steps, built{Step: Step{Kind: kind, Label: label, Text: shown, Via: via}, real: text})
 	}
+	// Por SMS, só o que o rastreador precisa para conectar (sem eles, ele
+	// nem alcança o servidor): destravar (nos lotes travados), o APN (com
+	// usuário e senha) e o servidor.
 	if opts.Unlock {
-		add(StepUnlock, "Destravar o canal de comandos", "CMDLOCK,"+factoryPassword+",0#")
+		add(StepUnlock, "Destravar o canal de comandos", "CMDLOCK,"+factoryPassword+",0#", "")
 	}
-	// A ordem testada em campo, um comando por vez: APN (com usuário e
-	// senha), servidor, fuso e a frequência das posições.
-	add(StepAPN, "APN do chip, com usuário e senha", fmt.Sprintf("APN,%s,%s,%s#", apn, user, pass))
+	add(StepAPN, "APN do chip, com usuário e senha", fmt.Sprintf("APN,%s,%s,%s#", apn, user, pass), "")
 	mode := "1" // domínio
 	if net.ParseIP(host) != nil {
 		mode = "0"
 	}
-	add(StepServer, "Servidor da Farbo", fmt.Sprintf("SERVER,%s,%s,%d,0#", mode, host, port))
-	// O GT06 manda a hora em UTC: o fuso fica zerado (o servidor converte).
-	add(StepGMT, "Fuso horário (UTC)", "GMT,W,0,0#")
-	add(StepTimer, fmt.Sprintf("Posição a cada %ds em movimento, %ds parado", report, parked), fmt.Sprintf("TIMER,%d,%d#", report, parked))
+	add(StepServer, "Servidor da Farbo", fmt.Sprintf("SERVER,%s,%s,%d,0#", mode, host, port), "")
+	// Pela conexão, depois que ele conecta (sem gastar SMS). O GT06 manda a
+	// hora em UTC: o fuso fica zerado (o servidor converte). A voltagem vai
+	// por último: com ela o J16 reconecta.
+	add(StepGMT, "Fuso horário (UTC)", "GMT,W,0,0#", ViaConnection)
+	add(StepTimer, fmt.Sprintf("Posição a cada %ds em movimento, %ds parado", report, parked),
+		fmt.Sprintf("TIMER,%d,%d#", report, parked), ViaConnection)
 	if opts.Query {
-		add(StepParam, "Pedir a configuração de volta", "PARAM#")
+		add(StepParam, "Pedir a configuração de volta", "PARAM#", ViaConnection)
 	}
+	add(StepVoltage, "Voltagem da bateria do veículo", "SZCS#GT06SEL=1#GT06IEXVOL=2#", ViaConnection)
 	return steps, nil
 }
 

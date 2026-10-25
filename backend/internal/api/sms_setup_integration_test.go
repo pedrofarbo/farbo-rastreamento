@@ -19,6 +19,7 @@ import (
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/commands"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
@@ -44,6 +45,56 @@ type fakeProvider struct {
 }
 
 type fakeSMS struct{ to, body string }
+
+// fakeCommander imita a conexão do rastreador: cada texto tem a sequência de
+// desfechos, um por envio (o último se repete; sem nenhum, responde OK). Um
+// desfecho sem SentAt é o rastreador fora do ar.
+type fakeCommander struct {
+	mu       sync.Mutex
+	sent     []string
+	outcomes map[string][]commands.Command
+	byID     map[uuid.UUID]commands.Command
+}
+
+func (f *fakeCommander) Send(_ context.Context, req commands.Request) (*commands.Command, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if req.Type != protocols.CommandCustom || req.Device == nil {
+		return nil, fmt.Errorf("pedido inesperado: %+v", req)
+	}
+	n := 0
+	for _, text := range append(f.sent, req.RawOverride) {
+		if text == req.RawOverride {
+			n++
+		}
+	}
+	f.sent = append(f.sent, req.RawOverride)
+	out := commands.Command{Status: commands.StatusAcknowledged, Response: "OK"}
+	if seq := f.outcomes[req.RawOverride]; len(seq) > 0 {
+		out = seq[min(n, len(seq))-1]
+	}
+	out.ID, out.DeviceID = uuid.New(), req.Device.ID
+	f.byID[out.ID] = out
+	if out.SentAt == nil {
+		return &out, nil // nem saiu: o envio já volta FAILED
+	}
+	sent := out
+	sent.Status, sent.Response, sent.Error = commands.StatusSent, "", ""
+	return &sent, nil
+}
+
+func (f *fakeCommander) Get(_ context.Context, id uuid.UUID) (*commands.Command, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := f.byID[id]
+	return &out, nil
+}
+
+func (f *fakeCommander) texts() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.sent...)
+}
 
 func (f *fakeProvider) Send(_ context.Context, to, body string) (*smsmarket.Message, error) {
 	f.mu.Lock()
@@ -96,13 +147,14 @@ func (f *fakeProvider) bodies() []string {
 	return out
 }
 
-// A configuração por SMS na ativação, de ponta a ponta com a SMS Market de
-// mentira: os comandos do J16 saem um por vez (pela entrega, pela resposta
-// do rastreador ou pelo tempo), a entrega e as respostas vêm das consultas
-// à SMS Market (sem gravar resposta repetida), a senha do APN nunca aparece, e
-// o pedido passa a "Configurado" quando o rastreador conecta. E as falhas:
-// recusa da SMS Market, SMS não entregue, rastreador que não conecta. Precisa de
-// FARBO_TEST_DATABASE_URL.
+// A configuração na ativação, de ponta a ponta com a SMS Market e a conexão de
+// mentira: por SMS só o APN e o servidor, um por vez (pela entrega, pela
+// resposta do rastreador ou pelo tempo), a entrega e as respostas vêm das
+// consultas à SMS Market (sem gravar resposta repetida), a senha do APN nunca
+// aparece, e o pedido passa a "Configurado" quando o rastreador conecta. Aí o
+// resto vai pela conexão, esperando a resposta de cada um; o que fica sem
+// resposta vai por SMS. E as falhas: recusa da SMS Market, SMS não entregue,
+// rastreador que não conecta. Precisa de FARBO_TEST_DATABASE_URL.
 func TestSMSSetupEndToEnd(t *testing.T) {
 	db := integrationDB(t)
 	ctx := context.Background()
@@ -128,6 +180,20 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	defaults := smssetup.Defaults{ServerHost: "farborastreadores.com.br", ServerPort: 5000, ReportSeconds: 30, ParkedSeconds: 3600}
 	sms := smssetup.NewService(db, devicesSvc, fake, fulfillmentSvc, defaults, "SMS Market", log)
 	sms.SetClock(clock)
+	// Pela conexão: o intervalo encontra o rastreador fora do ar uma vez; a
+	// consulta fica sem resposta duas vezes (e vai por SMS).
+	sentAt := time.Now()
+	conn := &fakeCommander{byID: map[uuid.UUID]commands.Command{}, outcomes: map[string][]commands.Command{
+		"GMT,W,0,0#": {{Status: commands.StatusAcknowledged, Response: "GMT:W,0,0 OK", SentAt: &sentAt}},
+		"TIMER,30,3600#": {
+			{Status: commands.StatusFailed, Error: commands.ErrNotConnected.Error()},
+			{Status: commands.StatusAcknowledged, Response: "TIMER:30,3600 OK", SentAt: &sentAt},
+		},
+		"PARAM#":                       {{Status: commands.StatusTimeout, SentAt: &sentAt}},
+		"SZCS#GT06SEL=1#GT06IEXVOL=2#": {{Status: commands.StatusAcknowledged, Response: "SETOK", SentAt: &sentAt}},
+	}}
+	sms.SetCommander(conn)
+	sms.RunOnlineInline()
 	server := NewServer(Deps{
 		Config: cfg, Log: log, Metrics: telemetry.NewMetrics(), DB: db, Auth: authSvc, Devices: devicesSvc,
 		Audit: audit.NewService(audit.NewRepository(db), log), Fulfillment: fulfillmentSvc, SMSSetup: sms,
@@ -190,8 +256,10 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	}
 	call(http.MethodGet, "/api/devices/"+j16.ID.String()+"/sms-setup", nil, http.StatusOK, &view)
 	if !view.Enabled || view.From != "SMS Market" || view.Plan.Phone != "+5511999998888" ||
-		len(view.Plan.Steps) != 4 || view.Plan.Steps[0].Text != "APN,zap.vivo.com.br,vivo,***#" ||
-		view.Plan.Unlock.Text != "CMDLOCK,123456,0#" || view.Plan.Query.Text != "PARAM#" || len(view.Plan.Problems) != 0 || view.Session != nil {
+		len(view.Plan.Steps) != 5 || view.Plan.Steps[0].Text != "APN,zap.vivo.com.br,vivo,***#" || view.Plan.Steps[1].Via != "" ||
+		view.Plan.Steps[2].Via != smssetup.ViaConnection || view.Plan.Steps[4].Text != "SZCS#GT06SEL=1#GT06IEXVOL=2#" ||
+		view.Plan.Unlock.Text != "CMDLOCK,123456,0#" || view.Plan.Unlock.Via != "" ||
+		view.Plan.Query.Text != "PARAM#" || view.Plan.Query.Via != smssetup.ViaConnection || len(view.Plan.Problems) != 0 || view.Session != nil {
 		t.Fatalf("prévia = %+v", view)
 	}
 	semChip := newDevice("869999000000029", "")
@@ -205,7 +273,7 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	var session smssetup.Session
 	call(http.MethodPost, "/api/devices/"+j16.ID.String()+"/sms-setup",
 		map[string]any{"fulfillmentId": orderID, "query": true}, http.StatusCreated, &session)
-	if session.Status != smssetup.StatusSending || len(session.Steps) != 5 || session.Steps[0].Status != "queued" ||
+	if session.Status != smssetup.StatusSending || len(session.Steps) != 6 || session.Steps[0].Status != "queued" ||
 		session.Steps[1].Status != "pending" {
 		t.Fatalf("começo = %+v", session)
 	}
@@ -230,23 +298,21 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A resposta do rastreador (lida na SMS Market, pelo número do chip) libera o
-	// próximo na hora; a senha que ele ecoa fica redigida.
+	// próximo na hora; a senha que ele ecoa fica redigida. O próximo é pela
+	// conexão: nenhum SMS a mais, e passa a esperar o rastreador conectar.
 	fake.reply(smsmarket.Reply{ID: "9001", SentID: "2", From: "5511999998888", Body: "APN:zap.vivo.com.br,vivo,Senh4APN OK"})
 	work(time.Second)
-	if b := fake.bodies(); len(b) != 3 || b[2] != "GMT,W,0,0#" {
+	if b := fake.bodies(); len(b) != 2 {
 		t.Fatalf("depois da resposta: %v", b)
 	}
-	// Sem entrega nem resposta, sai pelo tempo.
-	work(91 * time.Second)
-	work(91 * time.Second)
-	if b := fake.bodies(); len(b) != 5 || b[3] != "TIMER,30,3600#" || b[4] != "PARAM#" {
-		t.Fatalf("pelo tempo: %v", b)
-	}
-	work(91 * time.Second)
 	call(http.MethodGet, "/api/devices/"+j16.ID.String()+"/sms-setup", nil, http.StatusOK, &view)
 	if view.Session == nil || view.Session.Status != smssetup.StatusWaiting || view.Session.Steps[0].Status != "delivered" ||
+		view.Session.Steps[2].Via != smssetup.ViaConnection || view.Session.Steps[2].Status != "pending" ||
 		len(view.Session.Replies) != 1 || view.Session.Replies[0].Body != "APN:zap.vivo.com.br,vivo,*** OK" {
 		t.Fatalf("esperando = %+v", view.Session)
+	}
+	if len(conn.texts()) != 0 {
+		t.Fatalf("mandou pela conexão antes de ela existir: %v", conn.texts())
 	}
 
 	// O rastreador conectou: o pedido passa a "Configurado", com o aparelho no veículo.
@@ -257,6 +323,26 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	call(http.MethodGet, "/api/devices/"+j16.ID.String()+"/sms-setup", nil, http.StatusOK, &view)
 	if view.Session.Status != smssetup.StatusDone || view.Session.ConnectedAt == nil || !strings.Contains(view.Session.Note, "Configurado") {
 		t.Fatalf("conectou = %+v", view.Session)
+	}
+	// Pela conexão, na ordem: o fuso, o intervalo (de novo depois de o
+	// rastreador voltar), a consulta (duas vezes sem resposta: vai por SMS) e
+	// a voltagem por último.
+	if got := strings.Join(conn.texts(), " "); got != "GMT,W,0,0# TIMER,30,3600# TIMER,30,3600# PARAM# PARAM# SZCS#GT06SEL=1#GT06IEXVOL=2#" {
+		t.Fatalf("pela conexão: %s", got)
+	}
+	if b := fake.bodies(); len(b) != 3 || b[2] != "PARAM#" {
+		t.Fatalf("SMS de reserva: %v", b)
+	}
+	steps := view.Session.Steps
+	if view.Session.Online || steps[2].Status != smssetup.OnlineConfirmed || steps[2].Reply != "GMT:W,0,0 OK" ||
+		steps[3].Status != smssetup.OnlineConfirmed || steps[4].Status != "queued" || !steps[4].Fallback ||
+		steps[5].Status != smssetup.OnlineConfirmed || steps[5].Reply != "SETOK" || steps[5].SentAt == nil {
+		t.Fatalf("passos pela conexão = %+v", steps)
+	}
+	// Na volta seguinte, nada sai de novo.
+	work(10 * time.Second)
+	if len(conn.texts()) != 6 || len(fake.bodies()) != 3 {
+		t.Errorf("repetiu: %v %v", conn.texts(), fake.bodies())
 	}
 	var trackerStatus string
 	var linked *uuid.UUID
@@ -320,7 +406,12 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	// Não conectou no prazo; e a que é cancelada.
 	mudo := newDevice("869999000000060", "(11) 95555-0000")
 	call(http.MethodPost, "/api/devices/"+mudo.ID.String()+"/sms-setup", map[string]any{}, http.StatusCreated, &session)
-	for range 5 {
+	// Sem entrega nem resposta, o próximo sai pelo tempo.
+	work(91 * time.Second)
+	if last := fake.sent[len(fake.sent)-1]; last.to != "+5511955550000" || last.body != "SERVER,1,farborastreadores.com.br,5000,0#" {
+		t.Fatalf("pelo tempo: %+v", last)
+	}
+	for range 4 {
 		work(91 * time.Second)
 	}
 	work(21 * time.Minute)
@@ -338,7 +429,7 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	}
 	env.must(operator, http.MethodPost, "/api/sms-setup/"+session.ID.String()+"/cancel", nil, http.StatusBadRequest)
 
-	// O contador da página de rastreadores: o saldo vira ativações (4 SMS
+	// O contador da página de rastreadores: o saldo vira ativações (2 SMS
 	// cada) e o mês conta os SMS que saíram (sem os recusados). O saldo fica
 	// guardado por um minuto; quem só vê o painel não vê o contador.
 	fake.mu.Lock()
@@ -348,7 +439,7 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	call(http.MethodGet, "/api/sms/usage", nil, http.StatusOK, &usage)
 	var sent int
 	_ = db.QueryRow(ctx, `SELECT count(*) FROM sms_messages WHERE direction = 'OUT' AND status <> 'failed'`).Scan(&sent)
-	if !usage.Enabled || usage.Balance == nil || *usage.Balance != 1003 || usage.ActivationSMS != 4 || usage.Activations != 250 ||
+	if !usage.Enabled || usage.Balance == nil || *usage.Balance != 1003 || usage.ActivationSMS != 2 || usage.Activations != 501 ||
 		usage.SentLast30Days != sent || sent == 0 {
 		t.Fatalf("contador = %+v (enviados %d)", usage, sent)
 	}
@@ -361,7 +452,7 @@ func TestSMSSetupEndToEnd(t *testing.T) {
 	}
 	now = now.Add(61 * time.Second)
 	call(http.MethodGet, "/api/sms/usage", nil, http.StatusOK, &usage)
-	if *usage.Balance != 8 || usage.Activations != 2 {
+	if *usage.Balance != 8 || usage.Activations != 4 {
 		t.Errorf("depois de um minuto = %+v", usage)
 	}
 	env.must(env.login(auth.RoleViewer+"@sms.test"), http.MethodGet, "/api/sms/usage", nil, http.StatusForbidden)

@@ -21,15 +21,25 @@ func TestBuildSteps(t *testing.T) {
 	// Sem APN no cadastro: o padrão, com a senha redigida na tela.
 	steps, problems := buildSteps(&devices.Device{Protocol: "gt06"}, defaults, Options{})
 	real, shown := texts(steps)
-	if len(problems) > 0 || strings.Join(real, " ") != "APN,smart.m2m.vivo.com.br,vivo,Segr3d0# SERVER,1,farborastreadores.com.br,5000,0# GMT,W,0,0# TIMER,30,3600#" {
+	if len(problems) > 0 || strings.Join(real, " ") != "APN,smart.m2m.vivo.com.br,vivo,Segr3d0# SERVER,1,farborastreadores.com.br,5000,0# GMT,W,0,0# TIMER,30,3600# SZCS#GT06SEL=1#GT06IEXVOL=2#" {
 		t.Fatalf("padrão = %v %v", real, problems)
+	}
+	// Por SMS, só o APN e o servidor; o resto, pela conexão. O contador da
+	// página de rastreadores conta com isso (ActivationSMS).
+	var bySMS int
+	for i, st := range steps {
+		if st.Via == "" {
+			bySMS++
+		}
+		if (st.Via == "") != (i < 2) {
+			t.Errorf("passo %d (%s) via %q", i, st.Kind, st.Via)
+		}
+	}
+	if bySMS != ActivationSMS {
+		t.Errorf("SMS por ativação = %d, quero %d", bySMS, ActivationSMS)
 	}
 	if shown[0] != "APN,smart.m2m.vivo.com.br,vivo,***#" {
 		t.Errorf("na tela = %v", shown)
-	}
-	// O contador da página de rastreadores conta com isso.
-	if len(steps) != ActivationSMS {
-		t.Errorf("a ativação padrão manda %d SMS, ActivationSMS diz %d", len(steps), ActivationSMS)
 	}
 
 	// O cadastro do rastreador manda: outro APN (com o usuário e a senha
@@ -39,19 +49,21 @@ func TestBuildSteps(t *testing.T) {
 		ServerPort: &port, ReportIntervalSeconds: &report}
 	steps, problems = buildSteps(dev, defaults, Options{Unlock: true, Query: true})
 	real, _ = texts(steps)
-	want := "CMDLOCK,123456,0# APN,zap.vivo.com.br,vivo,vivo# SERVER,0,143.95.169.244,7000,0# GMT,W,0,0# TIMER,60,3600# PARAM#"
+	// O destravamento vai por SMS (antes do APN); a consulta, pela conexão,
+	// antes da voltagem (que faz o J16 reconectar).
+	want := "CMDLOCK,123456,0# APN,zap.vivo.com.br,vivo,vivo# SERVER,0,143.95.169.244,7000,0# GMT,W,0,0# TIMER,60,3600# PARAM# SZCS#GT06SEL=1#GT06IEXVOL=2#"
 	if len(problems) > 0 || strings.Join(real, " ") != want {
 		t.Fatalf("do cadastro = %v %v", real, problems)
 	}
-	if steps[0].Kind != StepUnlock || steps[len(steps)-1].Kind != StepParam {
-		t.Errorf("ordem = %+v", steps)
+	if steps[0].Via != "" || steps[5].Via != ViaConnection || steps[6].Via != ViaConnection {
+		t.Errorf("vias = %+v", steps)
 	}
 
 	// Sem intervalo no padrão nem no cadastro: 10 s ligado (testado em campo).
 	noReport := defaults
 	noReport.ReportSeconds = 0
 	steps, _ = buildSteps(&devices.Device{}, noReport, Options{})
-	if real, _ = texts(steps); real[len(real)-1] != "TIMER,10,3600#" {
+	if real, _ = texts(steps); real[len(real)-2] != "TIMER,10,3600#" {
 		t.Errorf("intervalo padrão = %v", real)
 	}
 

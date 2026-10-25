@@ -2758,11 +2758,16 @@ export interface PartnerReport {
 // Configuração do rastreador por SMS (SMS Market) na ativação
 // ---------------------------------------------------------------------------
 
-/** Um comando de configuração (texto redigido: as senhas viram ***). */
+/**
+ * Um comando de configuração (texto redigido: as senhas viram ***). Por SMS
+ * vai só o que o rastreador precisa para conectar; via 'connection', vai pela
+ * conexão dele, depois que ele conecta.
+ */
 export interface SmsStep {
-  kind: 'UNLOCK' | 'APN' | 'SERVER' | 'GMT' | 'TIMER' | 'PARAM';
+  kind: 'UNLOCK' | 'APN' | 'SERVER' | 'GMT' | 'TIMER' | 'VOLTAGE' | 'PARAM';
   label: string;
   text: string;
+  via?: 'connection';
 }
 
 /** Os comandos que vão sair e o que falta no cadastro. */
@@ -2777,10 +2782,17 @@ export interface SmsPlan {
 }
 
 export interface SmsStepView extends SmsStep {
-  /** pending (ainda não saiu), queued, sending, sent, delivered, undelivered, failed. */
+  /**
+   * pending (ainda não saiu), queued, sending, sent, delivered, undelivered,
+   * failed; pela conexão, confirmed (respondeu) ou rejected (respondeu com erro).
+   */
   status: string;
   error: string;
   sentAt: string | null;
+  /** A resposta do rastreador pela conexão. */
+  reply: string;
+  /** Sem resposta pela conexão, o passo foi por SMS (o status é o do SMS). */
+  fallback: boolean;
 }
 
 /**
@@ -2817,6 +2829,8 @@ export interface SmsSession {
   error: string;
   note: string;
   steps: SmsStepView[];
+  /** Conectou, e os passos pela conexão ainda estão indo. */
+  online: boolean;
   replies: { body: string; at: string }[];
   waitingSince: string | null;
   connectedAt: string | null;
@@ -2833,7 +2847,7 @@ export interface SmsUsage {
   /** Saldo em SMS; nulo se não deu para ler (balanceError diz por quê). */
   balance: number | null;
   balanceError: string;
-  /** SMS por ativação padrão (os opcionais somam 1 cada). */
+  /** SMS por ativação padrão (o APN e o servidor; destravar soma 1). */
   activationSms: number;
   /** Quantas ativações o saldo paga. */
   activations: number;

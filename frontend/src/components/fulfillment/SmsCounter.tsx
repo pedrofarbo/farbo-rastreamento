@@ -14,7 +14,8 @@ const number = (n: number) => n.toLocaleString('pt-BR');
 
 /**
  * O contador de SMS da configuração por SMS: o saldo na SMS Market, quantos
- * rastreadores ele ativa (4 SMS cada) e o que saiu nos últimos 30 dias.
+ * rastreadores ele ativa (2 SMS cada: o resto vai pela conexão) e o que saiu
+ * nos últimos 30 dias.
  */
 export function SmsCounter() {
   const usage = useQuery({
@@ -50,7 +51,7 @@ export function SmsCounter() {
           {u.balance === null ? '—' : `${number(u.activations)} ${u.activations === 1 ? 'rastreador' : 'rastreadores'}`}
         </span>
         <span className={styles.hint}>
-          {u.activationSms} SMS por ativação ({u.activationSms + 1} pedindo a configuração de volta)
+          {u.activationSms} SMS por ativação ({u.activationSms + 1} destravando o canal de comandos)
         </span>
       </div>
       <div className={styles.stat}>

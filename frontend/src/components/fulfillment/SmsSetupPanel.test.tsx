@@ -22,7 +22,7 @@ vi.mock('@/api/resources', () => ({
   },
 }));
 
-import { SmsSetupPanel, phoneLabel, stepStatus } from './SmsSetupPanel';
+import { SmsSetupPanel, phoneLabel, planned, stepStatus } from './SmsSetupPanel';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const flush = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
@@ -33,18 +33,22 @@ const PLAN: SmsSetupView['plan'] = {
   steps: [
     { kind: 'APN', label: 'APN do chip', text: 'APN,zap.vivo.com.br,vivo,***#' },
     { kind: 'SERVER', label: 'Servidor da Farbo', text: 'SERVER,1,farborastreadores.com.br,5000,0#' },
-    { kind: 'GMT', label: 'Fuso horário (UTC)', text: 'GMT,W,0,0#' },
-    { kind: 'TIMER', label: 'Posição a cada 30s em movimento, 3600s parado', text: 'TIMER,30,3600#' },
+    { kind: 'GMT', label: 'Fuso horário (UTC)', text: 'GMT,W,0,0#', via: 'connection' },
+    { kind: 'TIMER', label: 'Posição a cada 30s em movimento, 3600s parado', text: 'TIMER,30,3600#', via: 'connection' },
+    { kind: 'VOLTAGE', label: 'Voltagem da bateria do veículo', text: 'SZCS#GT06SEL=1#GT06IEXVOL=2#', via: 'connection' },
   ],
   problems: [],
   unlock: { kind: 'UNLOCK', label: 'Destravar o canal de comandos', text: 'CMDLOCK,123456,0#' },
-  query: { kind: 'PARAM', label: 'Pedir a configuração de volta', text: 'PARAM#' },
+  query: { kind: 'PARAM', label: 'Pedir a configuração de volta', text: 'PARAM#', via: 'connection' },
 };
 
 const session = (over: Partial<SmsSession>): SmsSession => ({
   id: 's1', deviceId: 'd1', fulfillmentId: 'f1', phone: '+5511999998888', status: 'SENDING', error: '', note: '',
-  steps: PLAN.steps.map((s, i) => ({ ...s, status: i === 0 ? 'delivered' : i === 1 ? 'sent' : 'pending', error: '', sentAt: i < 2 ? '2026-10-06T12:00:00Z' : null })),
-  replies: [], waitingSince: null, connectedAt: null, finishedAt: null, createdAt: '2026-10-06T12:00:00Z', ...over,
+  steps: PLAN.steps.map((s, i) => ({
+    ...s, status: i === 0 ? 'delivered' : i === 1 ? 'sent' : 'pending', error: '', sentAt: i < 2 ? '2026-10-06T12:00:00Z' : null,
+    reply: '', fallback: false,
+  })),
+  online: false, replies: [], waitingSince: null, connectedAt: null, finishedAt: null, createdAt: '2026-10-06T12:00:00Z', ...over,
 });
 
 async function render() {
@@ -83,9 +87,13 @@ describe('SmsSetupPanel', () => {
     expect(host.textContent).toContain('APN,zap.vivo.com.br,vivo,***#');
     expect(host.textContent).toContain('SERVER,1,farborastreadores.com.br,5000,0#');
     expect(host.textContent).not.toContain('CMDLOCK');
+    // Por SMS só o APN e o servidor; o resto, pela conexão.
+    expect(host.textContent).toContain('Por SMS (2)');
+    expect(host.textContent).toContain('Pela conexão, depois que ele conectar (sem gastar SMS)');
     const boxes = Array.from(host.querySelectorAll('input[type=checkbox]')) as HTMLInputElement[];
     await act(async () => boxes[0].click());
     expect(host.textContent).toContain('CMDLOCK,123456,0#');
+    expect(host.textContent).toContain('Por SMS (3)');
     await act(async () => button('Configurar por SMS').click());
     await flush();
     expect(started).toEqual([['d1', { fulfillmentId: 'f1', unlock: true, query: false }]]);
@@ -123,6 +131,19 @@ describe('SmsSetupPanel', () => {
     expect(button('Mandar de novo')).toBeTruthy();
   });
 
+  it('conectou: os passos pela conexão com a resposta, e o que foi por SMS', async () => {
+    const steps = session({}).steps.map((s, i) => ({ ...s, status: i < 2 ? 'delivered' : 'pending' }));
+    steps[2] = { ...steps[2], status: 'confirmed', reply: 'GMT:W,0,0 OK', sentAt: '2026-10-06T12:05:00Z' };
+    steps[3] = { ...steps[3], status: 'queued', fallback: true, sentAt: '2026-10-06T12:06:00Z' };
+    view = { enabled: true, from: 'SMS Market', plan: PLAN, session: session({ status: 'DONE', online: true, steps }) };
+    const host = await render();
+    expect(host.textContent).toContain('Conectado; configurando pela conexão…');
+    expect(host.textContent).toContain('Resposta: GMT:W,0,0 OK');
+    expect(host.textContent).toContain('Sem resposta pela conexão: foi por SMS.');
+    expect(host.textContent).toContain('Depois de conectar');
+    expect(host.textContent).toContain('Confirmado');
+  });
+
   it('o SMS pegou, mas o rastreador conecta com outro IMEI: diz qual, e que não precisa mandar de novo', async () => {
     view = { enabled: true, from: 'SMS Market', plan: PLAN, session: session({
       status: 'WAITING', waitingSince: '2026-10-06T12:03:00Z',
@@ -139,7 +160,13 @@ describe('SmsSetupPanel', () => {
     expect(phoneLabel('+5511999998888')).toBe('(11) 99999-8888');
     expect(phoneLabel('+551133334444')).toBe('(11) 3333-4444');
     expect(phoneLabel('+14158675310')).toBe('+14158675310');
-    expect(stepStatus({ ...PLAN.steps[0], status: 'undelivered', error: '', sentAt: null }).label).toBe('Não chegou');
-    expect(stepStatus({ ...PLAN.steps[0], status: 'queued', error: '', sentAt: null }).label).toBe('Enviando');
+    expect(stepStatus({ ...PLAN.steps[0], status: 'undelivered', error: '', sentAt: null, reply: '', fallback: false }).label).toBe('Não chegou');
+    const view = { error: '', sentAt: null, reply: '', fallback: false };
+    expect(stepStatus({ ...PLAN.steps[0], ...view, status: 'queued' }).label).toBe('Enviando');
+    expect(stepStatus({ ...PLAN.steps[0], ...view, status: 'pending' }).label).toBe('Na fila');
+    expect(stepStatus({ ...PLAN.steps[2], ...view, status: 'pending' }).label).toBe('Depois de conectar');
+    expect(stepStatus({ ...PLAN.steps[2], ...view, status: 'rejected' }).label).toBe('Recusado');
+    // A consulta vai antes da voltagem (que faz o J16 reconectar); o destravamento, antes de tudo.
+    expect(planned(PLAN, true, true).map((s) => s.kind)).toEqual(['UNLOCK', 'APN', 'SERVER', 'GMT', 'TIMER', 'PARAM', 'VOLTAGE']);
   });
 });

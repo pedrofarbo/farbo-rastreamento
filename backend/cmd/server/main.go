@@ -377,8 +377,10 @@ func run() error {
 		infraSvc.SetRedis(func(ctx context.Context) error { return redisClient.Ping(ctx).Err() })
 	}
 
-	// Configuração do rastreador por SMS (SMS Market) na ativação.
+	// Configuração do rastreador na ativação: por SMS (SMS Market) o que ele
+	// precisa para conectar; o resto pela conexão, depois que ele conecta.
 	smsSvc := newSMSSetup(cfg, db, deviceSvc, fulfillmentSvc, log)
+	smsSvc.SetCommander(commandSvc)
 
 	// Acessos de terceiros aos veículos (acompanhar e bloqueio de emergência).
 	sharesSvc := shares.NewService(db, authSvc, mail.NewShareMailer(mailer, cfg.Mail.AppURL), log)

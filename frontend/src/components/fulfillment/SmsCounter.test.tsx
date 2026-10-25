@@ -29,7 +29,7 @@ async function render(value: SmsUsage): Promise<string> {
   return (host.textContent ?? '').replace(/ /g, ' ');
 }
 
-const base: SmsUsage = { enabled: true, balance: 1003, balanceError: '', activationSms: 4, activations: 250, sentLast30Days: 12 };
+const base: SmsUsage = { enabled: true, balance: 1003, balanceError: '', activationSms: 2, activations: 501, sentLast30Days: 12 };
 
 afterEach(() => {
   document.body.innerHTML = '';
@@ -39,8 +39,8 @@ describe('o contador de SMS da página de rastreadores', () => {
   it('mostra o saldo, quantos rastreadores ele ativa e o mês', async () => {
     const text = await render(base);
     expect(text).toContain('1.003 SMS');
-    expect(text).toContain('250 rastreadores');
-    expect(text).toContain('4 SMS por ativação (5 pedindo a configuração de volta)');
+    expect(text).toContain('501 rastreadores');
+    expect(text).toContain('2 SMS por ativação (3 destravando o canal de comandos)');
     expect(text).toContain('12 SMS');
     expect(text).toContain('Comprar SMS');
     expect(text).not.toContain('Saldo baixo');

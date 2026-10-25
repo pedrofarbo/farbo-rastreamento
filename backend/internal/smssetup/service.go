@@ -13,8 +13,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/commands"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smsmarket"
 )
 
@@ -31,6 +33,13 @@ type Sender interface {
 // veículo) quando o rastreador conecta.
 type Activator interface {
 	AutoConfigure(ctx context.Context, fulfillmentID, deviceID uuid.UUID, note string) error
+}
+
+// Commander manda um comando pela conexão do rastreador e lê como ele ficou
+// (commands.Service).
+type Commander interface {
+	Send(ctx context.Context, req commands.Request) (*commands.Command, error)
+	Get(ctx context.Context, id uuid.UUID) (*commands.Command, error)
 }
 
 // Status de uma configuração.
@@ -58,9 +67,18 @@ const (
 	// inboxWindow: quanto tempo depois do último SMS enviado ainda lê as
 	// respostas (a do modo roubo também).
 	inboxWindow = 6 * time.Hour
-	// ActivationSMS: quantos SMS uma ativação padrão manda (APN, servidor,
-	// fuso e intervalo; os opcionais somam 1 cada).
-	ActivationSMS = 4
+	// ActivationSMS: quantos SMS uma ativação padrão manda (o APN e o
+	// servidor; o destravamento soma 1). O resto vai pela conexão.
+	ActivationSMS = 2
+	// Os passos pela conexão: com o rastreador fora do ar, tenta de novo
+	// offlineTries vezes, a cada retryWait; sem resposta em ackWait, manda
+	// mais uma vez; depois disso, vai por SMS. Um passo que ficou para trás
+	// (o servidor reiniciou no meio) é retomado até onlineWindow depois da
+	// conexão.
+	offlineTries = 6
+	retryWait    = 20 * time.Second
+	ackWait      = 45 * time.Second
+	onlineWindow = time.Hour
 	// balanceTTL: por quanto tempo o saldo lido na SMS Market vale.
 	balanceTTL = time.Minute
 )
@@ -83,10 +101,19 @@ type Service struct {
 	balance   *int
 	balanceAt time.Time
 
+	// Os passos pela conexão: as configurações com eles rodando agora; inline
+	// roda na chamada do Work, sem esperar entre as tentativas (testes).
+	onlineMu  sync.Mutex
+	inflight  map[uuid.UUID]bool
+	inline    bool
+	retryWait time.Duration
+	pollEvery time.Duration
+
 	db        *database.DB
 	devices   *devices.Service
 	sender    Sender
 	activator Activator
+	commander Commander
 	defaults  Defaults
 	from      string
 	log       *slog.Logger
@@ -98,11 +125,20 @@ func NewService(db *database.DB, devs *devices.Service, sender Sender, activator
 	return &Service{
 		db: db, devices: devs, sender: sender, activator: activator, defaults: defaults,
 		from: from, log: log.With("component", "smssetup"), now: time.Now,
+		inflight: map[uuid.UUID]bool{}, retryWait: retryWait, pollEvery: time.Second,
 	}
 }
 
 // SetClock troca o relógio (testes).
 func (s *Service) SetClock(now func() time.Time) { s.now = now }
+
+// SetCommander liga os passos pela conexão. Sem ele, eles vão por SMS depois
+// que o rastreador conecta.
+func (s *Service) SetCommander(c Commander) { s.commander = c }
+
+// RunOnlineInline faz os passos pela conexão na chamada do Work, sem esperar
+// entre as tentativas (testes).
+func (s *Service) RunOnlineInline() { s.inline, s.retryWait, s.pollEvery = true, 0, 0 }
 
 // Enabled diz se dá para mandar SMS.
 func (s *Service) Enabled() bool { return s != nil && s.sender != nil }
@@ -307,6 +343,28 @@ func (s *Service) Work(ctx context.Context) {
 			s.log.Error("falha ao avançar a configuração por SMS", "session", id, "err", err)
 		}
 	}
+	// Os passos pela conexão que ficaram para trás (o servidor reiniciou no
+	// meio deles).
+	rows, err = s.db.Query(ctx, `
+		SELECT id FROM sms_setup_sessions
+		WHERE status = 'DONE' AND connected_at > $1 AND jsonb_array_length(online) <
+			(SELECT count(*) FROM jsonb_array_elements(steps) st WHERE st->>'via' = 'connection')
+		ORDER BY created_at LIMIT 50`, s.now().Add(-onlineWindow))
+	if err != nil {
+		s.log.Error("falha ao listar os passos pela conexão", "err", err)
+		return
+	}
+	ids = ids[:0]
+	for rows.Next() {
+		var id uuid.UUID
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	for _, id := range ids {
+		s.startOnline(ctx, id)
+	}
 }
 
 type sessionRow struct {
@@ -376,11 +434,15 @@ func (s *Service) advance(ctx context.Context, id uuid.UUID, skipLocked bool) er
 		}
 		_, _ = s.db.Exec(ctx, `UPDATE sms_setup_sessions SET note = $2, updated_at = NOW() WHERE id = $1`, id, result)
 	}
+	if connected != nil {
+		s.startOnline(ctx, id)
+	}
 	return nil
 }
 
 // sendNext manda o próximo comando, se o anterior já teve resposta, entrega
-// ou tempo; com todos enviados, passa a esperar a conexão.
+// ou tempo; com todos os SMS enviados, passa a esperar a conexão (os passos
+// pela conexão vêm depois dela).
 func (s *Service) sendNext(ctx context.Context, tx pgx.Tx, r *sessionRow) error {
 	now := s.now()
 	if r.next > 0 {
@@ -407,7 +469,7 @@ func (s *Service) sendNext(ctx context.Context, tx pgx.Tx, r *sessionRow) error 
 			return nil
 		}
 	}
-	if r.next >= len(r.steps) {
+	if r.next >= len(r.steps) || r.steps[r.next].Via == ViaConnection {
 		_, err := tx.Exec(ctx, `
 			UPDATE sms_setup_sessions SET status = 'WAITING', waiting_since = $2, updated_at = NOW() WHERE id = $1`, r.id, now)
 		return err
@@ -544,6 +606,189 @@ func mapErr(err error) error {
 }
 
 // ---------------------------------------------------------------------------
+// Passos pela conexão (depois que o rastreador conecta)
+// ---------------------------------------------------------------------------
+
+// Como ficou um passo pela conexão.
+const (
+	// OnlineConfirmed: o rastreador respondeu pela conexão.
+	OnlineConfirmed = "confirmed"
+	// OnlineRejected: respondeu, mas com erro (por SMS seria igual).
+	OnlineRejected = "rejected"
+	// OnlineSMS: sem resposta pela conexão, foi por SMS.
+	OnlineSMS = "sms"
+	// OnlineFailed: nem foi (o cadastro mudou no meio).
+	OnlineFailed = "failed"
+)
+
+// onlineResult é o desfecho de um passo pela conexão (a coluna online).
+type onlineResult struct {
+	Step   int       `json:"step"`
+	Status string    `json:"status"`
+	Reply  string    `json:"reply,omitempty"`
+	Error  string    `json:"error,omitempty"`
+	At     time.Time `json:"at"`
+}
+
+// startOnline manda os passos pela conexão fora do Work (cada um espera a
+// resposta do rastreador). Uma configuração com eles rodando não começa de
+// novo.
+func (s *Service) startOnline(ctx context.Context, id uuid.UUID) {
+	s.onlineMu.Lock()
+	if s.inflight[id] {
+		s.onlineMu.Unlock()
+		return
+	}
+	s.inflight[id] = true
+	s.onlineMu.Unlock()
+	run := func() {
+		defer func() {
+			s.onlineMu.Lock()
+			delete(s.inflight, id)
+			s.onlineMu.Unlock()
+		}()
+		ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+		defer cancel()
+		if err := s.configureOnline(ctx, id); err != nil {
+			s.log.Error("falha nos passos pela conexão", "session", id, "err", err)
+		}
+	}
+	if s.inline {
+		run()
+		return
+	}
+	go run()
+}
+
+// configureOnline manda pela conexão, na ordem, os passos que ainda não foram,
+// e grava o desfecho de cada um assim que sai.
+func (s *Service) configureOnline(ctx context.Context, id uuid.UUID) error {
+	var deviceID uuid.UUID
+	var phone, status string
+	var rawSteps, rawOnline []byte
+	if err := s.db.QueryRow(ctx, `SELECT device_id, phone, status, steps, online FROM sms_setup_sessions WHERE id = $1`, id).
+		Scan(&deviceID, &phone, &status, &rawSteps, &rawOnline); err != nil {
+		return err
+	}
+	if status != StatusDone {
+		return nil
+	}
+	var steps []Step
+	var results []onlineResult
+	if err := json.Unmarshal(rawSteps, &steps); err != nil {
+		return err
+	}
+	if err := json.Unmarshal(rawOnline, &results); err != nil {
+		return err
+	}
+	finished := map[int]bool{}
+	for _, r := range results {
+		finished[r.Step] = true
+	}
+	// O texto de verdade sai do cadastro agora (as senhas não ficam gravadas).
+	dev, err := s.devices.Get(ctx, deviceID)
+	if err != nil {
+		return err
+	}
+	built, problems := buildSteps(dev, s.defaults, optionsOf(steps))
+	same := len(problems) == 0 && len(built) == len(steps)
+	for i := 0; same && i < len(steps); i++ {
+		same = built[i].Kind == steps[i].Kind
+	}
+	for i, st := range steps {
+		if st.Via != ViaConnection || finished[i] {
+			continue
+		}
+		res := onlineResult{Step: i, Status: OnlineFailed, Error: "O cadastro do rastreador mudou durante a configuração: mande este comando de novo.", At: s.now()}
+		if same {
+			res = s.runOnline(ctx, id, dev, phone, i, built[i])
+		}
+		if ctx.Err() != nil {
+			return ctx.Err() // sem desfecho: o Work retoma
+		}
+		raw, _ := json.Marshal(res)
+		if _, err := s.db.Exec(ctx, `
+			UPDATE sms_setup_sessions SET online = online || jsonb_build_array($2::jsonb), updated_at = NOW() WHERE id = $1`,
+			id, string(raw)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// runOnline manda um passo pela conexão e espera a resposta. Fora do ar, tenta
+// de novo daqui a pouco; sem resposta, manda mais uma vez; sem resposta de
+// novo (ou fora do ar por muito tempo), vai por SMS.
+func (s *Service) runOnline(ctx context.Context, session uuid.UUID, dev *devices.Device, phone string, idx int, step built) onlineResult {
+	why := "a conexão não está ligada no servidor"
+	if s.commander != nil {
+		offline, silent := 0, 0
+	attempts:
+		for ctx.Err() == nil {
+			cmd, err := s.commander.Send(ctx, commands.Request{Device: dev, Type: protocols.CommandCustom, RawOverride: step.real})
+			if err != nil {
+				why = err.Error()
+				break
+			}
+			cmd = s.await(ctx, cmd)
+			switch {
+			case cmd.Status == commands.StatusAcknowledged:
+				return onlineResult{Step: idx, Status: OnlineConfirmed, Reply: cmd.Response, At: s.now()}
+			case cmd.Status == commands.StatusFailed && cmd.SentAt == nil:
+				// Nem chegou ao rastreador: está fora do ar (a voltagem,
+				// por exemplo, faz o J16 reconectar).
+				why = "o rastreador saiu do ar"
+				if offline++; offline >= offlineTries || !sleep(ctx, s.retryWait) {
+					break attempts
+				}
+			case cmd.Status == commands.StatusFailed || cmd.Status == commands.StatusRejected:
+				return onlineResult{Step: idx, Status: OnlineRejected, Reply: cmd.Error, At: s.now()}
+			default:
+				why = "sem resposta pela conexão"
+				if silent++; silent >= 2 {
+					break attempts
+				}
+			}
+		}
+	}
+	if ctx.Err() != nil {
+		return onlineResult{}
+	}
+	s.log.Info("passo pela conexão vai por SMS", "session", session, "step", step.Kind, "motivo", why)
+	res := onlineResult{Step: idx, Status: OnlineSMS, Error: why, At: s.now()}
+	if err := s.text(ctx, &session, &idx, dev.ID, phone, step.real, step.Text); err != nil {
+		s.log.Warn("SMS de reserva recusado", "session", session, "step", step.Kind, "err", err)
+	}
+	return res
+}
+
+// await espera o comando terminar: resposta, recusa ou tempo.
+func (s *Service) await(ctx context.Context, cmd *commands.Command) *commands.Command {
+	deadline := time.Now().Add(ackWait)
+	for !commands.Terminal(cmd.Status) && time.Now().Before(deadline) && sleep(ctx, s.pollEvery) {
+		if next, err := s.commander.Get(ctx, cmd.ID); err == nil {
+			cmd = next
+		}
+	}
+	return cmd
+}
+
+// sleep espera d (ou o contexto acabar: false).
+func sleep(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Status dos SMS e respostas do rastreador (consultados na SMS Market)
 // ---------------------------------------------------------------------------
 
@@ -572,7 +817,13 @@ func (s *Service) SendText(ctx context.Context, dev *devices.Device, text string
 	if !s.Enabled() || phone == "" {
 		return ErrNoSMS
 	}
-	msg, sendErr := s.sender.Send(ctx, phone, text)
+	return s.text(ctx, nil, nil, dev.ID, phone, text, devices.RedactText(text, dev.Secrets()))
+}
+
+// text manda um SMS fora da sequência da configuração (o avulso e a reserva
+// de um passo pela conexão) e guarda no histórico, com o texto redigido.
+func (s *Service) text(ctx context.Context, session *uuid.UUID, step *int, deviceID uuid.UUID, phone, real, shown string) error {
+	msg, sendErr := s.sender.Send(ctx, phone, real)
 	status, sid, code, message := smsmarket.StatusFailed, "", "", ""
 	if sendErr != nil {
 		message = providerMessage(sendErr)
@@ -580,10 +831,10 @@ func (s *Service) SendText(ctx context.Context, dev *devices.Device, text string
 		status, sid, code, message = orDefault(msg.Status, smsmarket.StatusQueued), msg.ID, msg.ErrorCode, msg.ErrorMessage
 	}
 	if _, err := s.db.Exec(ctx, `
-		INSERT INTO sms_messages (device_id, direction, phone, body, provider_sid, status, error_code, error_message)
-		VALUES ($1, 'OUT', $2, $3, NULLIF($4, ''), $5, $6, $7)`,
-		dev.ID, phone, devices.RedactText(text, dev.Secrets()), sid, status, code, message); err != nil {
-		s.log.Error("falha ao guardar o SMS avulso", "device", dev.ID, "err", err)
+		INSERT INTO sms_messages (session_id, device_id, direction, step, phone, body, provider_sid, status, error_code, error_message)
+		VALUES ($1, $2, 'OUT', $3, $4, $5, NULLIF($6, ''), $7, $8, $9)`,
+		session, deviceID, step, phone, shown, sid, status, code, message); err != nil {
+		s.log.Error("falha ao guardar o SMS", "device", deviceID, "err", err)
 	}
 	return sendErr
 }
@@ -753,10 +1004,15 @@ func (s *Service) pollInbox(ctx context.Context) {
 // StepView é um passo com o andamento.
 type StepView struct {
 	Step
-	// Status: pending, queued, sending, sent, delivered, undelivered, failed.
+	// Status: pending, queued, sending, sent, delivered, undelivered, failed;
+	// pela conexão, confirmed ou rejected.
 	Status string     `json:"status"`
 	Error  string     `json:"error"`
 	SentAt *time.Time `json:"sentAt"`
+	// Reply: a resposta do rastreador pela conexão. Fallback: sem resposta
+	// por ela, o passo foi por SMS (o status é o do SMS).
+	Reply    string `json:"reply"`
+	Fallback bool   `json:"fallback"`
 }
 
 // Reply é uma resposta do rastreador.
@@ -775,11 +1031,13 @@ type Session struct {
 	Error         string     `json:"error"`
 	Note          string     `json:"note"`
 	Steps         []StepView `json:"steps"`
-	Replies       []Reply    `json:"replies"`
-	WaitingSince  *time.Time `json:"waitingSince"`
-	ConnectedAt   *time.Time `json:"connectedAt"`
-	FinishedAt    *time.Time `json:"finishedAt"`
-	CreatedAt     time.Time  `json:"createdAt"`
+	// Online: o rastreador conectou e os passos pela conexão ainda estão indo.
+	Online       bool       `json:"online"`
+	Replies      []Reply    `json:"replies"`
+	WaitingSince *time.Time `json:"waitingSince"`
+	ConnectedAt  *time.Time `json:"connectedAt"`
+	FinishedAt   *time.Time `json:"finishedAt"`
+	CreatedAt    time.Time  `json:"createdAt"`
 	// WrongIMEI: um rastreador com o IMEI parecido com o do cadastro está
 	// tentando conectar e sendo recusado — o IMEI do cadastro está errado.
 	WrongIMEI *WrongIMEI `json:"wrongImei"`
@@ -796,17 +1054,21 @@ type WrongIMEI struct {
 // Session lê uma configuração com os SMS e as respostas.
 func (s *Service) Session(ctx context.Context, id uuid.UUID) (*Session, error) {
 	var out Session
-	var raw []byte
+	var raw, rawOnline []byte
 	err := s.db.QueryRow(ctx, `
-		SELECT id, device_id, fulfillment_id, phone, status, error, note, steps, waiting_since, connected_at, finished_at, created_at
+		SELECT id, device_id, fulfillment_id, phone, status, error, note, steps, online, waiting_since, connected_at, finished_at, created_at
 		FROM sms_setup_sessions WHERE id = $1`, id).
-		Scan(&out.ID, &out.DeviceID, &out.FulfillmentID, &out.Phone, &out.Status, &out.Error, &out.Note, &raw,
+		Scan(&out.ID, &out.DeviceID, &out.FulfillmentID, &out.Phone, &out.Status, &out.Error, &out.Note, &raw, &rawOnline,
 			&out.WaitingSince, &out.ConnectedAt, &out.FinishedAt, &out.CreatedAt)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
 	var steps []Step
+	var results []onlineResult
 	if err := json.Unmarshal(raw, &steps); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(rawOnline, &results); err != nil {
 		return nil, err
 	}
 	out.Steps = make([]StepView, len(steps))
@@ -843,6 +1105,25 @@ func (s *Service) Session(ctx context.Context, id uuid.UUID) (*Session, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	finished := map[int]bool{}
+	for _, r := range results {
+		if r.Step < 0 || r.Step >= len(out.Steps) {
+			continue
+		}
+		finished[r.Step] = true
+		v := &out.Steps[r.Step]
+		if r.Status == OnlineSMS {
+			v.Fallback = true // o status e o erro são os do SMS
+			continue
+		}
+		at := r.At
+		v.Status, v.Error, v.Reply, v.SentAt = r.Status, r.Error, r.Reply, &at
+	}
+	if out.Status == StatusDone && out.ConnectedAt != nil && s.now().Sub(*out.ConnectedAt) < onlineWindow {
+		for i, st := range steps {
+			out.Online = out.Online || (st.Via == ViaConnection && !finished[i])
+		}
 	}
 	// O SMS pegou, mas o rastreador conecta com o IMEI de verdade e o do
 	// cadastro está errado: o servidor o recusa, e a tela mostra qual é.

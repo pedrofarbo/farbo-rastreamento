@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { formatRelative, formatTime } from '@/services/format';
-import type { SmsSession, SmsStepView } from '@/types';
+import type { SmsPlan, SmsSession, SmsStep, SmsStepView } from '@/types';
 
 import styles from './SmsSetup.module.css';
 
@@ -21,11 +21,15 @@ export function phoneLabel(e164: string): string {
   return `(${local.slice(0, 2)}) ${local.slice(2, -4)}-${local.slice(-4)}`;
 }
 
-/** O andamento de um SMS, como a tela mostra. */
+/** O andamento de um passo (o SMS, ou o comando pela conexão), como a tela mostra. */
 export function stepStatus(step: SmsStepView): { label: string; tone: BadgeTone } {
   switch (step.status) {
     case 'pending':
-      return { label: 'Na fila', tone: 'neutral' };
+      return { label: step.via === 'connection' ? 'Depois de conectar' : 'Na fila', tone: 'neutral' };
+    case 'confirmed':
+      return { label: 'Confirmado', tone: 'success' };
+    case 'rejected':
+      return { label: 'Recusado', tone: 'danger' };
     case 'delivered':
       return { label: 'Entregue', tone: 'success' };
     case 'undelivered':
@@ -42,9 +46,23 @@ export function stepStatus(step: SmsStepView): { label: string; tone: BadgeTone 
 const LIVE: SmsSession['status'][] = ['SENDING', 'WAITING'];
 
 /**
- * Configurar o rastreador por SMS na ativação: os comandos do J16 vão para o
- * número do chip, um por vez, pela SMS Market. Quando o rastreador conecta no
- * servidor, o pedido passa sozinho para "Configurado".
+ * Os comandos na ordem em que saem: o destravamento antes de tudo; a consulta,
+ * antes da voltagem (que faz o J16 reconectar).
+ */
+export function planned(plan: SmsPlan, unlock: boolean, ask: boolean): SmsStep[] {
+  const steps = [...(unlock ? [plan.unlock] : []), ...plan.steps];
+  if (ask) {
+    const voltage = steps.findIndex((s) => s.kind === 'VOLTAGE');
+    steps.splice(voltage < 0 ? steps.length : voltage, 0, plan.query);
+  }
+  return steps;
+}
+
+/**
+ * Configurar o rastreador na ativação: por SMS (SMS Market), um por vez, só o
+ * que o J16 precisa para conectar — o APN e o servidor. Quando ele conecta, o
+ * pedido passa sozinho para "Configurado" e o resto (fuso, intervalo,
+ * voltagem) vai pela conexão, sem gastar SMS.
  */
 export function SmsSetupPanel({
   deviceId,
@@ -69,8 +87,11 @@ export function SmsSetupPanel({
   const view = useQuery({
     queryKey: ['sms-setup', deviceId],
     queryFn: () => smsSetupApi.get(deviceId),
-    // Enquanto a configuração anda, a tela acompanha.
-    refetchInterval: (q) => (q.state.data?.session && LIVE.includes(q.state.data.session.status) ? 3000 : false),
+    // Enquanto a configuração anda (pelos SMS ou pela conexão), a tela acompanha.
+    refetchInterval: (q) => {
+      const s = q.state.data?.session;
+      return s && (LIVE.includes(s.status) || s.online) ? 3000 : false;
+    },
   });
   const session = view.data?.session ?? null;
   const live = session !== null && LIVE.includes(session.status);
@@ -125,6 +146,9 @@ export function SmsSetupPanel({
     session && session.status !== 'DONE'
       ? 'Mandar de novo'
       : (buttonLabel ?? 'Configurar por SMS');
+  const commands = planned(plan, unlock, ask);
+  const bySMS = commands.filter((s) => s.via !== 'connection');
+  const online = commands.filter((s) => s.via === 'connection');
 
   return (
     <section className={styles.panel} aria-label="Configurar por SMS">
@@ -162,26 +186,10 @@ export function SmsSetupPanel({
             </p>
           ))}
           {plan.steps.length > 0 && (
-            <ol className={styles.commands}>
-              {unlock && (
-                <li>
-                  <code>{plan.unlock.text}</code>
-                  <span className={styles.muted}>{plan.unlock.label}</span>
-                </li>
-              )}
-              {plan.steps.map((s) => (
-                <li key={s.kind}>
-                  <code>{s.text}</code>
-                  <span className={styles.muted}>{s.label}</span>
-                </li>
-              ))}
-              {ask && (
-                <li>
-                  <code>{plan.query.text}</code>
-                  <span className={styles.muted}>{plan.query.label}</span>
-                </li>
-              )}
-            </ol>
+            <>
+              <CommandList title={`Por SMS (${bySMS.length})`} steps={bySMS} />
+              {online.length > 0 && <CommandList title="Pela conexão, depois que ele conectar (sem gastar SMS)" steps={online} />}
+            </>
           )}
           {plan.steps.length > 0 && (
             <div className={styles.options}>
@@ -191,7 +199,7 @@ export function SmsSetupPanel({
               </label>
               <label>
                 <input type="checkbox" checked={ask} onChange={(e) => setAsk(e.target.checked)} /> Pedir a configuração de volta
-                no fim (PARAM#)
+                (PARAM#, pela conexão)
               </label>
             </div>
           )}
@@ -206,8 +214,8 @@ export function SmsSetupPanel({
             </Button>
             <span className={styles.muted}>
               {fulfillmentId
-                ? 'Um SMS por vez; quando o rastreador conectar no servidor, o pedido passa para "Configurado".'
-                : 'Um SMS por vez; quando o rastreador conectar no servidor, a ativação é concluída.'}
+                ? 'Um SMS por vez; quando o rastreador conectar no servidor, o pedido passa para "Configurado" e o resto vai pela conexão.'
+                : 'Um SMS por vez; quando o rastreador conectar no servidor, a ativação é concluída e o resto vai pela conexão.'}
             </span>
           </div>
         </>
@@ -224,6 +232,22 @@ export function SmsSetupPanel({
   );
 }
 
+function CommandList({ title, steps }: { title: string; steps: SmsStep[] }) {
+  return (
+    <div className={styles.group}>
+      <span className={styles.groupTitle}>{title}</span>
+      <ol className={styles.commands}>
+        {steps.map((s) => (
+          <li key={s.kind}>
+            <code>{s.text}</code>
+            <span className={styles.muted}>{s.label}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 function SessionView({ session }: { session: SmsSession }) {
   const headline: Record<SmsSession['status'], { text: string; tone: BadgeTone }> = {
     SENDING: { text: 'Mandando os comandos…', tone: 'accent' },
@@ -233,10 +257,10 @@ function SessionView({ session }: { session: SmsSession }) {
     TIMEOUT: { text: 'O rastreador não conectou', tone: 'danger' },
     CANCELED: { text: 'Interrompida', tone: 'neutral' },
   };
-  const h = headline[session.status];
+  const h = session.online ? { text: 'Conectado; configurando pela conexão…', tone: 'accent' as BadgeTone } : headline[session.status];
   return (
     <div className={styles.session} aria-live="polite">
-      <Badge tone={h.tone} pulse={session.status === 'SENDING' || session.status === 'WAITING'}>
+      <Badge tone={h.tone} pulse={session.status === 'SENDING' || session.status === 'WAITING' || session.online}>
         {h.text}
       </Badge>
       <ol className={styles.steps}>
@@ -249,6 +273,12 @@ function SessionView({ session }: { session: SmsSession }) {
                 {s.sentAt && <span className={styles.muted}>{formatTime(s.sentAt)}</span>}
                 <Badge tone={st.tone}>{st.label}</Badge>
               </span>
+              {s.fallback && <span className={styles.stepNote}>Sem resposta pela conexão: foi por SMS.</span>}
+              {s.reply && (
+                <span className={styles.stepNote}>
+                  Resposta: <code>{s.reply}</code>
+                </span>
+              )}
               {s.error && <span className={styles.danger}>{s.error}</span>}
             </li>
           );

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 import { Link } from 'react-router-dom';
 
+import { WHATSAPP_GREETING, WHATSAPP_NUMBER, whatsappUrl } from '@/config/contact';
 import { CHECKOUT_PATH, PRE_LAUNCH } from '@/config/landing';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 
@@ -83,7 +84,20 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenModal }) => {
           {!PRE_LAUNCH && (
             <a href="#depoimentos" onClick={closeMenu}>Depoimentos</a>
           )}
-          <a href="#contato" onClick={closeMenu}>Contato</a>
+          {/* O contato é o WhatsApp (sem o número configurado, a seção de contato). */}
+          {WHATSAPP_NUMBER ? (
+            <a
+              href={whatsappUrl(WHATSAPP_GREETING)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={closeMenu}
+              data-analytics="menu-whatsapp"
+            >
+              Contato
+            </a>
+          ) : (
+            <a href="#contato" onClick={closeMenu}>Contato</a>
+          )}
           <ClientAreaLink className={styles.mobileLoginLink} onClick={closeMenu}>
             <UserIcon />
             Área do cliente

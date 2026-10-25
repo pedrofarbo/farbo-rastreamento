@@ -78,6 +78,26 @@
   overflow-wrap: anywhere;
 }
 
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.groupTitle {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+/* A resposta pela conexão, ou o aviso de que foi por SMS: numa linha só dela. */
+.stepNote {
+  flex-basis: 100%;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
 .stepEnd {
   display: inline-flex;
   align-items: center;
