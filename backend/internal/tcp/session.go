@@ -3,6 +3,7 @@ package tcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -33,6 +34,35 @@ type session struct {
 	registered bool
 	// ip é o endereço do rastreador (conta nas conexões não identificadas).
 	ip string
+	// sampled: quando cada tipo de pacote fora do padrão foi para o log.
+	sampled map[string]time.Time
+}
+
+// sampleEvery limita o log dos pacotes fora do padrão: um de cada tipo por
+// conexão nesse intervalo.
+const sampleEvery = 10 * time.Minute
+
+// sample põe no log, cru, o pacote que o protocolo não interpretou por
+// inteiro (tipo desconhecido, informação 0x94, bytes a mais): é por ele que
+// se descobre um formato novo de firmware (a voltagem externa do J16, por
+// exemplo). Normalmente não acontece; quando acontece, sai uma amostra.
+func (s *session) sample(msg protocols.TrackerMessage) {
+	unhandled, _ := msg.Attributes["unhandled"].(bool)
+	info, hasInfo := msg.Attributes["infoType"]
+	extra, hasExtra := msg.Attributes["extraBytes"]
+	if !unhandled && !hasInfo && !hasExtra {
+		return
+	}
+	key := fmt.Sprint(msg.Attributes["packetType"], info)
+	if last, ok := s.sampled[key]; ok && time.Since(last) < sampleEvery {
+		return
+	}
+	if s.sampled == nil {
+		s.sampled = map[string]time.Time{}
+	}
+	s.sampled[key] = time.Now()
+	s.log.Info("pacote fora do padrão, para análise", "imei", msg.IMEI, "packetType", msg.Attributes["packetType"],
+		"infoType", info, "extraBytes", extra, "unhandled", unhandled, "raw", msg.RawPayload)
 }
 
 func (s *session) run(ctx context.Context) {
@@ -194,6 +224,7 @@ func (s *session) dispatch(ctx context.Context, proto protocols.TrackerProtocol,
 		}
 
 		s.server.metrics.PacketsReceived.WithLabelValues(proto.Name(), string(msg.Kind)).Inc()
+		s.sample(msg)
 
 		// O ACK vai antes do processamento: firmware que não recebe resposta
 		// rápida reenvia o pacote ou derruba a conexão.

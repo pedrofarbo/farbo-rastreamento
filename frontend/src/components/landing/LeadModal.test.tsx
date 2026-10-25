@@ -32,7 +32,6 @@ function render(plan?: string) {
   act(() => root.render(withQuery(<LeadModal isOpen onClose={() => {}} defaultPlan={plan} />)));
   return host;
 }
-const flush = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 
 /** Preenche como o usuário: o setter nativo, para o React ver a mudança. */
 function type(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
@@ -114,15 +113,14 @@ describe('LeadModal (pré-cadastro)', () => {
 
   it('com a contratação pelo site aberta, leva a ela; fechada na central, não', async () => {
     let host = render();
-    await flush();
     const link = () => Array.from(document.querySelectorAll('a')).find((a) => a.textContent === 'Contrate pelo site, com Pix');
-    expect(link()?.getAttribute('href')).toBe(CHECKOUT_PATH);
+    await vi.waitFor(() => expect(link()?.getAttribute('href')).toBe(CHECKOUT_PATH));
     expect(byId(host, 'lead-launch')).toBeNull();
     document.body.innerHTML = '';
+    // Fechada: enquanto a oferta carrega o link aparece (o normal); chegando, sai.
     offer = offerWith({ enabled: false });
     host = render();
-    await flush();
-    expect(link()).toBeUndefined();
+    await vi.waitFor(() => expect(link()).toBeUndefined());
   });
 
     it('quantidade pelo − e +, e a mensagem só aparece quando pedida', async () => {

@@ -339,6 +339,22 @@ func TestParseHeartbeat(t *testing.T) {
 	if len(msg.Ack) == 0 {
 		t.Fatal("heartbeat exige ACK, senão o rastreador derruba a conexão")
 	}
+	if _, ok := msg.Attributes["extraBytes"]; ok {
+		t.Fatal("heartbeat padrão marcado com bytes a mais")
+	}
+}
+
+func TestParseHeartbeatWithExtraBytes(t *testing.T) {
+	// Firmware que acrescenta 2 bytes (ex.: a voltagem externa): o heartbeat
+	// continua valendo e os bytes a mais ficam marcados para análise.
+	frame := buildFrame(msgHeartbeat, []byte{0x42, 0x06, 0x03, 0x00, 0x01, 0x04, 0xEC}, 13)
+	msg := mustParseOne(t, newProtocol(), frame)
+	if msg.Kind != protocols.KindHeartbeat || msg.BatteryPercent == nil || *msg.BatteryPercent != 100 {
+		t.Fatalf("heartbeat com bytes a mais = %+v", msg)
+	}
+	if msg.Attributes["extraBytes"] != 2 || msg.RawPayload == "" {
+		t.Fatalf("bytes a mais = %v, bruto = %q", msg.Attributes["extraBytes"], msg.RawPayload)
+	}
 }
 
 func TestParseStatusAlarm(t *testing.T) {

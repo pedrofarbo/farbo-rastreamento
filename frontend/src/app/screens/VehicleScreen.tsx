@@ -180,8 +180,10 @@ export function VehicleScreen() {
                 {yesNo(state?.relayOn, 'Bloqueado', 'Liberado')}
               </span>
             </div>
+            {/* A voltagem é a da bateria do veículo; sem ela, o nível da
+                bateria interna do rastreador (o GT06 manda de 0 a 6). */}
             <div className={styles.tile}>
-              <span className={styles.tileLabel}>Bateria</span>
+              <span className={styles.tileLabel}>{voltage !== null ? 'Voltagem' : 'Bateria interna'}</span>
               <span className={styles.tileValue}>
                 {voltage !== null ? formatVoltage(voltage) : battery !== null ? `${battery}%` : '—'}
               </span>

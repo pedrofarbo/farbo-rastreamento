@@ -50,8 +50,10 @@ export function TelemetryBar({ position, state, lastSeenAt }: TelemetryBarProps)
 
       <Cell label="Rede" small value={gsm === null ? '—' : `${gsm}/4`} />
 
+      {/* A voltagem é a da bateria do veículo; sem ela, o nível da bateria
+          interna do rastreador. */}
       <Cell
-        label={voltage !== null ? 'Voltagem' : 'Bateria'}
+        label={voltage !== null ? 'Voltagem' : 'Bateria interna'}
         small
         value={
           voltage !== null

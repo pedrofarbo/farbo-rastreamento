@@ -125,6 +125,9 @@ func (p *Protocol) Parse(frame []byte) ([]protocols.TrackerMessage, error) {
 	return []protocols.TrackerMessage{msg}, nil
 }
 
+// heartbeatSize é o conteúdo do heartbeat no GT06 padrão.
+const heartbeatSize = 5
+
 func (p *Protocol) decodeHeartbeat(msg *protocols.TrackerMessage, pkt *packet) error {
 	// DOCUMENTED: estado do terminal (1) + nível de bateria (1) + sinal GSM (1)
 	// + alarme/idioma (2).
@@ -134,6 +137,11 @@ func (p *Protocol) decodeHeartbeat(msg *protocols.TrackerMessage, pkt *packet) e
 	applyTerminalInfo(msg, pkt.content[0])
 	msg.BatteryPercent = protocols.Ptr(batteryLevelPercent(pkt.content[1]))
 	msg.GSMLevel = protocols.Ptr(int(pkt.content[2]))
+	// UNKNOWN: firmware que acrescenta campos ao heartbeat (a voltagem
+	// externa, em alguns J16): os bytes a mais ficam marcados para análise.
+	if extra := len(pkt.content) - heartbeatSize; extra > 0 {
+		msg.Attributes["extraBytes"] = extra
+	}
 	if msg.Alarm != "" {
 		msg.Kind = protocols.KindAlarm
 	}
