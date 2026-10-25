@@ -1,4 +1,5 @@
-import { LAUNCH_OFFER, PRE_LAUNCH, installmentsOf, priceParts } from '@/config/landing';
+import { installmentsOf, priceLabel, priceParts } from '@/config/landing';
+import type { CheckoutOffer } from '@/types';
 
 /**
  * O flyer do afiliado, desenhado num canvas: a oferta do site (os mesmos
@@ -66,34 +67,42 @@ const MUTED = '#94a3b8';
 const SOFT = '#cbd5e1';
 const FONT = 'Inter, system-ui, -apple-system, "Segoe UI", sans-serif';
 
-/** A oferta do flyer: no pré-lançamento, a promoção (os valores da landing). */
-export function flyerOffer(preLaunch = PRE_LAUNCH): FlyerOffer {
-  if (preLaunch) {
+/**
+ * A oferta do flyer, da oferta do servidor (a mesma do site): com a
+ * contratação pelo site aberta, o preço dela, com o normal riscado; fechada,
+ * o plano normal.
+ */
+export function flyerOffer(offer: CheckoutOffer): FlyerOffer {
+  const installments = (cents: number): Segment[] =>
+    offer.maxInstallments > 1 ? [{ text: ` ou ${installmentsOf(cents, offer.maxInstallments)} sem juros no Pix` }] : [];
+  if (offer.enabled) {
+    const regular = offer.planRegularCents > offer.planCents;
+    const equipmentRegular = offer.equipmentRegularCents > offer.equipmentCents;
     return {
-      tag: 'PREÇO DE PRÉ-LANÇAMENTO',
-      monthlyCents: LAUNCH_OFFER.monthlyCents,
+      tag: 'PREÇO PROMOCIONAL',
+      monthlyCents: offer.planCents,
       note: [
-        { text: `nos ${LAUNCH_OFFER.months} primeiros meses · o normal é ` },
-        { text: LAUNCH_OFFER.monthlyRegular, strike: true },
+        { text: `enquanto a assinatura durar${regular ? ' · o normal é ' : ''}` },
+        ...(regular ? [{ text: priceLabel(offer.planRegularCents), strike: true }] : []),
       ],
       equipment: [
         { text: 'Rastreador ' },
-        { text: LAUNCH_OFFER.equipmentRegular, strike: true },
-        { text: ` ${LAUNCH_OFFER.equipment}`, color: WHITE, weight: 800 },
-        { text: ` ou ${installmentsOf(LAUNCH_OFFER.equipmentCents)} sem juros no Pix` },
+        ...(equipmentRegular ? [{ text: priceLabel(offer.equipmentRegularCents), strike: true }] : []),
+        { text: `${equipmentRegular ? ' ' : ''}${priceLabel(offer.equipmentCents)}`, color: WHITE, weight: 800 },
+        ...installments(offer.equipmentCents),
       ],
-      cta: 'e garanta o seu preço',
-      fine: `Promoção para os ${LAUNCH_OFFER.slots} primeiros da lista, em quantos veículos quiser.`,
+      cta: 'e contrate com Pix',
+      fine: 'Contrate pelo site e pague com Pix, em quantos veículos quiser.',
     };
   }
   return {
     tag: 'PLANO MENSAL',
-    monthlyCents: LAUNCH_OFFER.monthlyRegularCents,
+    monthlyCents: offer.planRegularCents,
     note: [{ text: 'chip M2M, app e suporte inclusos' }],
     equipment: [
       { text: 'Rastreador ' },
-      { text: LAUNCH_OFFER.equipmentRegular, color: WHITE, weight: 800 },
-      { text: ` ou ${installmentsOf(LAUNCH_OFFER.equipmentRegularCents)} sem juros no Pix` },
+      { text: priceLabel(offer.equipmentRegularCents), color: WHITE, weight: 800 },
+      ...installments(offer.equipmentRegularCents),
     ],
     cta: 'e contrate o seu',
     fine: '',
@@ -178,7 +187,7 @@ export function drawFlyer(
   format: FlyerFormat,
   content: FlyerContent,
   assets: FlyerAssets,
-  offer: FlyerOffer = flyerOffer(),
+  offer: FlyerOffer,
 ) {
   const spec = FLYER_FORMATS[format];
   const unit = spec.width / UNITS;

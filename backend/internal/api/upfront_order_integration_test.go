@@ -72,8 +72,8 @@ func TestUpfrontIndividualOrder(t *testing.T) {
 			PriceCents int `json:"priceCents"`
 		} `json:"install"`
 		Loan *struct {
-			MonthlyCents    *int `json:"monthlyCents"`
-			InstallFeeCents int  `json:"installFeeCents"`
+			SurchargeCents  int `json:"surchargeCents"`
+			InstallFeeCents int `json:"installFeeCents"`
 		} `json:"loan"`
 	}
 	readCatalog := func() catalog {
@@ -82,6 +82,10 @@ func TestUpfrontIndividualOrder(t *testing.T) {
 		_ = json.Unmarshal(env.must(token, http.MethodGet, "/api/catalog", nil, http.StatusOK), &c)
 		return c
 	}
+	// O comodato começa desligado neste teste (a central liga mais abaixo).
+	install := map[string]any{"enabled": true, "priceCents": 15000}
+	env.must(admin, http.MethodPut, "/api/order-options", map[string]any{"loan": map[string]any{"enabled": false}, "install": install,
+		"checkout": map[string]any{"enabled": true, "planCents": 3490, "insanosCents": 2790, "equipmentCents": 12000}}, http.StatusOK)
 	if c := readCatalog(); !c.PayNow || c.ChargeDate != "2026-10-13" || c.Loan != nil || c.PlanTerms ||
 		c.Install == nil || c.Install.PriceCents != 15000 {
 		t.Fatalf("catálogo sem comodato = %+v", c)
@@ -123,18 +127,18 @@ func TestUpfrontIndividualOrder(t *testing.T) {
 	// O comodato: desligado, não dá; ligado pela central, a mensalidade e as
 	// taxas dele (a promoção de pré-lançamento não vale).
 	order("NOA3C33", map[string]any{"equipmentMode": "loan"}, http.StatusBadRequest)
-	monthly := 7990
-	install := map[string]any{"enabled": true, "priceCents": 15000}
+	// A mensalidade do comodato da pessoa física: a do plano mais a garantia de troca.
+	monthly := 6990 + 300
 	env.must(token, http.MethodPut, "/api/order-options", map[string]any{"loan": map[string]any{"enabled": true}, "install": install},
 		http.StatusForbidden)
 	env.must(admin, http.MethodPut, "/api/order-options", map[string]any{
-		"loan": map[string]any{"enabled": true, "monthlyCents": -1}, "install": install,
+		"loan": map[string]any{"enabled": true, "surchargeCents": -1}, "install": install,
 	}, http.StatusBadRequest)
 	env.must(admin, http.MethodPut, "/api/order-options", map[string]any{
-		"loan":    map[string]any{"enabled": true, "monthlyCents": monthly, "installFeeCents": 9900, "uninstallFeeCents": 4900},
+		"loan":    map[string]any{"enabled": true, "surchargeCents": 300, "installFeeCents": 9900, "uninstallFeeCents": 4900},
 		"install": install,
 	}, http.StatusOK)
-	if c := readCatalog(); c.Loan == nil || c.Loan.MonthlyCents == nil || *c.Loan.MonthlyCents != monthly || c.Loan.InstallFeeCents != 9900 {
+	if c := readCatalog(); c.Loan == nil || c.Loan.SurchargeCents != 300 || c.Loan.InstallFeeCents != 9900 {
 		t.Fatalf("catálogo com comodato = %+v", c)
 	}
 	order("NOA3C33", map[string]any{"equipmentMode": "loan", "launchPromo": true}, http.StatusBadRequest)
@@ -145,7 +149,8 @@ func TestUpfrontIndividualOrder(t *testing.T) {
 	if !r.PayNow || r.SetupInvoice != nil || r.InstallInvoice == nil || r.InstallInvoice.DueDate.String() != "2026-10-13" ||
 		r.InstallInvoice.AmountCents != 9900 || r.FirstInvoice == nil || r.FirstInvoice.AmountCents != monthly ||
 		r.Subscription.EquipmentMode != billing.EquipmentLoan || r.Subscription.UninstallFeeCents != 4900 ||
-		r.Subscription.PriceCents != monthly || !farbo(r.Subscription.ID.String()) {
+		r.Subscription.PriceCents != monthly || r.Subscription.PlanName != "Plano Mensal"+orders.GuaranteeName ||
+		!farbo(r.Subscription.ID.String()) {
 		t.Fatalf("comodato = %+v", r)
 	}
 

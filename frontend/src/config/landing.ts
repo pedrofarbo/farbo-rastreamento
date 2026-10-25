@@ -1,46 +1,38 @@
 /**
- * Pré-lançamento: enquanto não há clientes ativos, no lugar dos depoimentos a
- * landing mostra a lista de quem quer ser avisado do lançamento. Com clientes
- * de verdade para depor, false traz os depoimentos de volta (o componente
- * TestimonialsSection continua no código para isso).
+ * Sem clientes ativos ainda para depor: os depoimentos ficam fora da landing
+ * (o componente TestimonialsSection continua no código). Com clientes de
+ * verdade, false os traz de volta.
  */
 export const PRE_LAUNCH = true;
 
-/** A seção que fica no lugar dos depoimentos: âncora e nome no menu. */
-export const SOCIAL_SECTION = PRE_LAUNCH
-  ? { id: 'lancamento', label: 'Lançamento' }
-  : { id: 'depoimentos', label: 'Depoimentos' };
-
 /**
- * A promoção de pré-lançamento como a landing mostra. Os valores cobrados
- * vêm do servidor (LAUNCH_PROMO_*): mude os dois juntos.
+ * A contratação pelo site (/contratar): a pessoa física escolhe o plano e o
+ * rastreador (comprado ou em comodato) e paga com Pix na hora. Nenhum preço
+ * fica no código: as páginas mostram os da oferta do servidor (as opções do
+ * pedido, na central), os mesmos cobrados. Fechada na central, os botões
+ * abrem o pré-cadastro.
  */
-export const LAUNCH_OFFER = {
-  equipment: 'R$ 120',
-  equipmentRegular: 'R$ 150',
-  monthly: 'R$ 34,90',
-  monthlyRegular: 'R$ 69,90',
-  /** Integrantes do Insanos MC: a mensalidade deles na promoção (depois, INSANOS_MONTHLY). */
-  insanosMonthly: 'R$ 27,90',
-  /** Os mesmos valores em centavos, para o preço grande dos planos. */
-  equipmentCents: 12000,
-  equipmentRegularCents: 15000,
-  monthlyCents: 3490,
-  monthlyRegularCents: 6990,
-  insanosMonthlyCents: 2790,
-  months: 12,
-  slots: 500,
-};
+export const CHECKOUT_PATH = '/contratar';
+/** A seção da landing que chama para a contratação. */
+export const CHECKOUT_ANCHOR = '#contratar';
 
-/**
- * O rastreador parcelado sem juros, por Pix (no pedido, o frete e a 1ª
- * mensalidade; as parcelas somadas às mensalidades). O servidor manda no limite
- * (CATALOG_EQUIPMENT_MAX_INSTALLMENTS): mude os dois juntos.
- */
-export const EQUIPMENT_INSTALLMENTS = 10;
+/** O link do funil, com o plano do Insanos MC já marcado e o evento do QR Code. */
+export function checkoutPath({ insanos = false, event = '' }: { insanos?: boolean; event?: string } = {}): string {
+  const params = new URLSearchParams();
+  if (insanos) params.set('plano', 'insanos');
+  if (event) params.set('evento', event);
+  const query = params.toString();
+  return query ? `${CHECKOUT_PATH}?${query}` : CHECKOUT_PATH;
+}
 
-/** "10x de R$ 12,00": a parcela do rastreador no teto do parcelamento. */
-export function installmentsOf(cents: number, n: number = EQUIPMENT_INSTALLMENTS): string {
+/** "R$ 120" ou "R$ 34,90": o preço como as páginas públicas escrevem. */
+export function priceLabel(cents: number): string {
+  const parts = priceParts(cents);
+  return `R$ ${parts.reais}${parts.cents === ',00' ? '' : parts.cents}`;
+}
+
+/** "10x de R$ 12,00": a parcela do rastreador em n vezes (o teto vem da oferta). */
+export function installmentsOf(cents: number, n: number): string {
   const parcel = Math.floor(cents / n);
   return `${n}x de R$ ${Math.floor(parcel / 100)},${String(parcel % 100).padStart(2, '0')}`;
 }
@@ -48,10 +40,10 @@ export function installmentsOf(cents: number, n: number = EQUIPMENT_INSTALLMENTS
 /**
  * "10x de R$ 12,00 sem juros no Pix, direto na mensalidade": o rastreador
  * parcelado como as páginas públicas dizem (as parcelas vêm somadas às
- * mensalidades, uma por mês).
+ * mensalidades, uma por mês). Vazio se ele é só à vista.
  */
-export function installmentsPhrase(cents: number): string {
-  return `${installmentsOf(cents)} sem juros no Pix, direto na mensalidade`;
+export function installmentsPhrase(cents: number, n: number): string {
+  return n > 1 ? `${installmentsOf(cents, n)} sem juros no Pix, direto na mensalidade` : '';
 }
 
 /** O endereço público do site: o QR Code dos eventos aponta para ele. */
@@ -75,7 +67,7 @@ export function eventSlug(name: string): string {
 
 /**
  * Para quem é o QR Code do evento: o do Insanos MC destaca o preço deles; o
- * do público geral, o preço de pré-lançamento (sem falar do Insanos).
+ * do público geral, o do plano normal (sem falar do Insanos).
  */
 export type EventAudience = 'insanos' | 'geral';
 
@@ -86,9 +78,6 @@ export function eventUrl(name: string, audience: EventAudience = 'insanos'): str
   return `${SITE_URL}/evento${slug ? `/${slug}` : ''}${audience === 'geral' ? '?publico=geral' : ''}`;
 }
 
-/** A âncora da seção de pré-lançamento (lista de lançamento). */
-export const LAUNCH_ANCHOR = '#lancamento';
-
 /** Para o preço grande: 2990 → { reais: '29', cents: ',90' }. */
 export function priceParts(cents: number): { reais: string; cents: string } {
   return { reais: String(Math.floor(cents / 100)), cents: `,${String(cents % 100).padStart(2, '0')}` };
@@ -98,6 +87,3 @@ export function priceParts(cents: number): { reais: string; cents: string } {
 export const ANATEL_HOMOLOGATION = '04895-25-16219';
 /** A consulta pública de produtos homologados da Anatel (sem login): confere o número acima. */
 export const ANATEL_LOOKUP_URL = 'https://informacoes.anatel.gov.br/paineis/certificacao-de-produtos/consulta-de-produtos';
-
-/** Preço especial dos integrantes do Insanos MC (depois da promoção, é o deles). */
-export const INSANOS_MONTHLY = { label: 'R$ 39,90', cents: 3990 };

@@ -174,6 +174,14 @@ export function SiteAnalyticsTab() {
               <span className={billing.tileValue}>{data.waitlist}</span>
               <span className={billing.tileHint}>{percent(data.waitlist, data.visitors)} dos visitantes</span>
             </div>
+            <div className={billing.tile}>
+              <span className={billing.tileLabel}>Contrataram pelo site</span>
+              <span className={billing.tileValue}>{data.checkouts}</span>
+              <span className={billing.tileHint}>
+                {percent(data.checkouts, data.visitors)} dos visitantes · {percent(data.checkouts, data.checkoutOpens)} de
+                quem abriu
+              </span>
+            </div>
           </div>
 
           <Card title="Visitantes por dia" subtitle={`${formatDay(data.from)} a ${formatDay(data.to)}`}>
@@ -194,6 +202,8 @@ export function SiteAnalyticsTab() {
                   { label: 'Enviaram o pré-cadastro', visitors: data.leads },
                   { label: 'Entraram na lista de lançamento', visitors: data.waitlist },
                   { label: 'Viram os prestadores', visitors: data.installerOpens },
+                  { label: 'Abriram a contratação', visitors: data.checkoutOpens },
+                  { label: 'Contrataram pelo site', visitors: data.checkouts },
                 ]}
               />
             </Card>
@@ -293,6 +303,7 @@ function OriginsFunnel({
               <span className={styles.originSteps}>
                 {plural(o.leadOpens, 'abriu o pré-cadastro', 'abriram o pré-cadastro')} ·{' '}
                 {plural(o.leads, 'pré-cadastro', 'pré-cadastros')} · {o.waitlist.toLocaleString('pt-BR')} na lista ·{' '}
+                {plural(o.checkouts, 'contratou', 'contrataram')} ·{' '}
                 <strong>{percent(o.converted, o.visitors)}</strong> viraram contato
               </span>
             </button>

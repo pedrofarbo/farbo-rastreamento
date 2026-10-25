@@ -10,7 +10,7 @@ import {
   whatsappDisplay,
   whatsappUrl,
 } from '@/config/contact';
-import { ANATEL_HOMOLOGATION, ANATEL_LOOKUP_URL, SOCIAL_SECTION } from '@/config/landing';
+import { ANATEL_HOMOLOGATION, ANATEL_LOOKUP_URL, CHECKOUT_PATH, PRE_LAUNCH } from '@/config/landing';
 import { COMPANY, CONTRACT_PATH, PRIVACY_PATH, TERMS_PATH } from '@/config/legal';
 
 import styles from './Footer.module.css';
@@ -71,7 +71,8 @@ export const Footer: React.FC = () => {
               <li><a href="/#beneficios">Benefícios</a></li>
               <li><a href="/#planos">Planos e Preços</a></li>
               <li><a href="/#como-funciona">Como Funciona</a></li>
-              <li><a href={`/#${SOCIAL_SECTION.id}`}>{SOCIAL_SECTION.label}</a></li>
+              {!PRE_LAUNCH && <li><a href="/#depoimentos">Depoimentos</a></li>}
+              <li><a href={CHECKOUT_PATH}>Contratar</a></li>
             </ul>
           </div>
 

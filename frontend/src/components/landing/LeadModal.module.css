@@ -32,6 +32,16 @@
   font-size: 0.875rem;
 }
 
+/* "Quer contratar agora?": fica também no celular, onde o resto do texto sai. */
+.head p.checkoutLink {
+  display: block;
+}
+
+.checkoutLink a {
+  color: var(--color-neon-green);
+  font-weight: 700;
+}
+
 .form {
   display: flex;
   flex-direction: column;
@@ -196,17 +206,6 @@ textarea.input {
 }
 
 /* A opção da lista de pré-lançamento: destacada, é a oferta. */
-.launchOption {
-  padding: 0.6rem 0.8rem;
-  border-radius: 10px;
-  border: 1px solid rgba(59, 229, 88, 0.4);
-  background: rgba(59, 229, 88, 0.08);
-}
-
-.launchOption strong {
-  color: #ffffff;
-}
-
 .error {
   margin: 0;
   padding: 0.6rem 0.9rem;

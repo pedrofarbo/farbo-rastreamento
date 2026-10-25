@@ -31,6 +31,10 @@ type Terms struct {
 	EquipmentMode     string `json:"equipmentMode"`
 	InstallFeeCents   int    `json:"installFeeCents"`
 	UninstallFeeCents int    `json:"uninstallFeeCents"`
+	// GuaranteeCents: a garantia de troca do rastreador que a mensalidade
+	// inclui (o comodato da pessoa física, pelas opções do pedido; o plano
+	// definido pela central não tem).
+	GuaranteeCents int `json:"-"`
 }
 
 // check confere os termos (vazio é venda).

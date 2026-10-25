@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 
-import { LAUNCH_ANCHOR, PRE_LAUNCH, SOCIAL_SECTION } from '@/config/landing';
+import { Link } from 'react-router-dom';
+
+import { CHECKOUT_PATH, PRE_LAUNCH } from '@/config/landing';
+import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 
 import { ClientAreaLink } from './ClientAreaLink';
 import styles from './Navbar.module.css';
@@ -13,6 +16,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenModal }) => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [logoError, setLogoError] = useState(false);
+  // Contratação aberta: o botão leva ao funil; fechada, abre o pré-cadastro.
+  const { open } = useCheckoutOffer();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -74,19 +79,19 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenModal }) => {
           <a href="#planos" onClick={closeMenu}>Planos</a>
           <a href="#frotas" onClick={closeMenu}>Frotas</a>
           <a href="#como-funciona" onClick={closeMenu}>Como funciona</a>
-          {/* No pré-lançamento o botão do menu já leva à seção da lista. */}
+          {/* Os depoimentos, quando houver clientes para depor. */}
           {!PRE_LAUNCH && (
-            <a href={`#${SOCIAL_SECTION.id}`} onClick={closeMenu}>{SOCIAL_SECTION.label}</a>
+            <a href="#depoimentos" onClick={closeMenu}>Depoimentos</a>
           )}
           <a href="#contato" onClick={closeMenu}>Contato</a>
           <ClientAreaLink className={styles.mobileLoginLink} onClick={closeMenu}>
             <UserIcon />
             Área do cliente
           </ClientAreaLink>
-          {PRE_LAUNCH ? (
-            <a className={styles.mobileCtaBtn} href={LAUNCH_ANCHOR} onClick={closeMenu} data-analytics="menu-pre-lancamento">
-              Pré-lançamento
-            </a>
+          {open ? (
+            <Link className={styles.mobileCtaBtn} to={CHECKOUT_PATH} onClick={closeMenu} data-analytics="menu-contratar">
+              Contratar
+            </Link>
           ) : (
             <button
               className={styles.mobileCtaBtn}
@@ -106,10 +111,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenModal }) => {
             <span>Área do cliente</span>
           </ClientAreaLink>
 
-          {PRE_LAUNCH ? (
-            <a className={styles.ctaButton} href={LAUNCH_ANCHOR} data-analytics="menu-pre-lancamento">
-              Pré-lançamento
-            </a>
+          {open ? (
+            <Link className={styles.ctaButton} to={CHECKOUT_PATH} data-analytics="menu-contratar">
+              Contratar
+            </Link>
           ) : (
             <button
               className={styles.ctaButton}

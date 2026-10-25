@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { currentReferral } from '@/services/referral';
+import { OFFER, withQuery } from '@/test/checkoutOffer';
 import type { WaitlistInput } from '@/types';
 
 const sent: WaitlistInput[] = [];
@@ -21,6 +22,7 @@ vi.mock('@/api/resources', () => ({
       return { name: 'João Motoca', handle: 'joao.moto', code };
     },
   },
+  checkoutApi: { offer: async () => OFFER },
 }));
 
 import { ReferralSignupPage } from './ReferralSignupPage';
@@ -39,11 +41,13 @@ async function render(path: string) {
   document.body.appendChild(host);
   await act(async () =>
     createRoot(host).render(
-      <MemoryRouter initialEntries={[path]}>
-        <Routes>
-          <Route path="/indicacao/:codigo" element={<ReferralSignupPage />} />
-        </Routes>
-      </MemoryRouter>,
+      withQuery(
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route path="/indicacao/:codigo" element={<ReferralSignupPage />} />
+          </Routes>
+        </MemoryRouter>,
+      ),
     ),
   );
   await flush();
@@ -63,12 +67,21 @@ describe('ReferralSignupPage', () => {
     expect(looked).toEqual(['joao-moto']);
     expect(currentReferral()).toBe('joao-moto');
     expect(host.textContent).toContain('Indicado por @joao.moto');
-    // O destaque é o preço da promoção (não o do Insanos MC).
-    expect(host.textContent).toContain('Preço de pré-lançamento');
+    // O destaque é o preço do plano no site (não o do Insanos MC), do servidor.
+    expect(host.textContent).toContain('Preço promocional');
     expect(host.textContent).toContain('R$34,90/mês');
     expect(host.textContent).toContain('ou 10x de R$ 12,00 sem juros no Pix, direto na mensalidade');
     expect(host.textContent).not.toContain('Preço exclusivo Insanos MC');
-    // O link de indicação lembra o preço do Insanos MC e deixa marcar.
+    expect(host.textContent).toContain('É do Insanos MC? A sua mensalidade é R$ 27,90.');
+    // O botão leva à contratação (o link fica guardado no aparelho e vai junto).
+    const cta = Array.from(host.querySelectorAll('a')).find((a) => a.textContent === 'Contratar agora');
+    expect(cta?.getAttribute('href')).toBe('/contratar');
+
+    // Quem prefere conversar deixa o contato; o link de indicação lembra o
+    // preço do Insanos MC e deixa marcar.
+    await act(async () =>
+      (Array.from(host.querySelectorAll('button')).find((b) => b.textContent === 'Prefiro que a Farbo fale comigo') as HTMLButtonElement).click(),
+    );
     expect(host.textContent).toContain('Sou integrante do Insanos MC');
 
     const inputs = () => Array.from(host.querySelectorAll('input')) as HTMLInputElement[];
@@ -80,7 +93,7 @@ describe('ReferralSignupPage', () => {
       type(field('email'), 'bia@cliente.test');
     });
     const consent = Array.from(host.querySelectorAll('label'))
-      .find((l) => l.textContent?.includes('Aceito receber o aviso'))!
+      .find((l) => l.textContent?.includes('Aceito que a Farbo'))!
       .querySelector('input') as HTMLInputElement;
     await act(async () => consent.click());
     await act(async () => (host.querySelector('button[type=submit]') as HTMLButtonElement).click());
@@ -98,7 +111,7 @@ describe('ReferralSignupPage', () => {
 
   it('link desconhecido: a mesma tela, sem o selo', async () => {
     const host = await render('/indicacao/ninguem');
-    expect(host.textContent).toContain('Garanta o preço de pré-lançamento');
+    expect(host.textContent).toContain('Contrate o seu rastreador');
     expect(host.textContent).not.toContain('Indicado por');
   });
 });

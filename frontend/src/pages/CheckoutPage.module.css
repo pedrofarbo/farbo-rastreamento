@@ -1,0 +1,216 @@
+/* A contratação pelo site: os passos, as opções em cartões e o resumo do pedido. */
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.step::before {
+  content: '';
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.stepActive {
+  color: #ffffff;
+}
+
+.stepActive::before,
+.stepDone::before {
+  background: var(--color-neon-green);
+}
+
+.stepDone {
+  color: #94a3b8;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.legend {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.0625rem;
+  font-weight: 800;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.option {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: #141c15;
+  cursor: pointer;
+}
+
+.option input {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: var(--color-neon-green);
+}
+
+.optionOn {
+  border-color: var(--color-neon-green);
+  background: rgba(59, 229, 88, 0.08);
+}
+
+.optionBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.optionTitle {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.optionPrice {
+  color: var(--color-neon-green);
+  white-space: nowrap;
+}
+
+.optionText {
+  color: #94a3b8;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.select {
+  width: 100%;
+  min-height: 52px;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: #141c15;
+  color: #ffffff;
+  font: inherit;
+  font-size: 1rem;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: #0b110c;
+}
+
+.line {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #cbd5e1;
+  font-size: 0.9375rem;
+}
+
+.line span:last-child {
+  white-space: nowrap;
+}
+
+.total {
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font-size: 1.125rem;
+  font-weight: 900;
+}
+
+.monthly {
+  color: var(--color-neon-green);
+  font-weight: 800;
+}
+
+.note {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.note a {
+  color: var(--color-neon-green);
+}
+
+.panel {
+  /* Os campos e as opções de frete do painel, no fundo da página. */
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Campos de 16px (o iPhone não dá zoom ao tocar) e altos para o polegar. */
+.panel input:not([type='radio']):not([type='checkbox']),
+.panel select {
+  min-height: 48px;
+  font-size: 1rem;
+}
+
+.panel label {
+  font-size: 0.8125rem;
+}
+
+.honeypot {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+@media (max-width: 420px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -72,6 +72,23 @@
   transition: all 0.25s ease;
 }
 
+.heroCta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-bottom: 2.25rem;
+}
+
+.heroCta .heroCtaBtn {
+  margin-bottom: 0;
+}
+
+.heroCtaNote {
+  color: #cbd5e1;
+  font-size: 0.875rem;
+}
+
 .heroCtaBtn:hover {
   text-decoration: none;
   background: var(--color-neon-green-hover);
@@ -206,6 +223,10 @@
   }
 
   .contentLeft {
+    align-items: center;
+  }
+
+  .heroCta {
     align-items: center;
   }
 

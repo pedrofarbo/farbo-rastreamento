@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // rejeitada e a acusa como não tratada, mesmo o componente tratando.
 const sent: unknown[] = [];
 let respond: () => Promise<unknown> = async () => ({ status: 'ok' });
+let offer = OFFER;
 vi.mock('@/api/resources', () => ({
   publicApi: {
     createLead: (input: unknown) => {
@@ -14,7 +15,11 @@ vi.mock('@/api/resources', () => ({
       return respond();
     },
   },
+  checkoutApi: { offer: async () => offer },
 }));
+
+import { CHECKOUT_PATH } from '@/config/landing';
+import { OFFER, offerWith, withQuery } from '@/test/checkoutOffer';
 
 import { LeadModal } from './LeadModal';
 
@@ -24,9 +29,10 @@ function render(plan?: string) {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);
-  act(() => root.render(<LeadModal isOpen onClose={() => {}} defaultPlan={plan} />));
+  act(() => root.render(withQuery(<LeadModal isOpen onClose={() => {}} defaultPlan={plan} />)));
   return host;
 }
+const flush = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 
 /** Preenche como o usuário: o setter nativo, para o React ver a mudança. */
 function type(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
@@ -43,6 +49,7 @@ const submitButton = (host: HTMLElement) => host.querySelector('button[type="sub
 beforeEach(() => {
   sent.length = 0;
   respond = async () => ({ status: 'ok' });
+  offer = OFFER;
 });
 afterEach(() => {
   document.body.innerHTML = '';
@@ -50,11 +57,11 @@ afterEach(() => {
 
 describe('LeadModal (pré-cadastro)', () => {
   it('só envia com nome, e-mail e o aceite; manda os dados e mostra a confirmação', async () => {
-    const host = render('Preço Especial Insanos MC - R$ 39,90');
+    const host = render('Preço Especial Insanos MC');
 
-    expect(byId<HTMLSelectElement>(host, 'lead-plan').value).toBe('Preço Especial Insanos MC - R$ 39,90');
-    // No plano do Insanos, a promoção mostra a mensalidade deles.
-    expect(host.textContent).toContain('R$ 27,90/mês');
+    expect(byId<HTMLSelectElement>(host, 'lead-plan').value).toBe('Preço Especial Insanos MC');
+    // Os planos vão sem preço: os preços estão nos cartões (vêm do servidor).
+    expect(host.textContent).not.toMatch(/R\$ ?\d/);
     expect(submitButton(host).disabled).toBe(true);
 
     type(byId(host, 'lead-name'), 'Ana Souza');
@@ -78,15 +85,15 @@ describe('LeadModal (pré-cadastro)', () => {
         email: 'ana@exemplo.com.br',
         phone: '(11) 9-8888-7777',
         city: 'Campinas',
-        plan: 'Preço Especial Insanos MC - R$ 39,90',
+        plan: 'Preço Especial Insanos MC',
         vehicleType: 'moto',
         vehicleCount: 1,
         consent: true,
-        joinLaunch: true,
+        joinLaunch: false,
         website: '',
       }),
     );
-    expect(host.textContent).toContain('também entrou na lista de pré-lançamento');
+    expect(host.textContent).not.toContain('lista de pré-lançamento');
     expect(host.textContent).toContain('Recebemos seu interesse!');
     expect(host.textContent).toContain('ana@exemplo.com.br');
   });
@@ -105,23 +112,17 @@ describe('LeadModal (pré-cadastro)', () => {
     expect(byId(host, 'lead-name')).not.toBeNull();
   });
 
-  it('a lista de pré-lançamento vem marcada; desmarcada, não entra', async () => {
-    const host = render();
-    const launch = byId<HTMLInputElement>(host, 'lead-launch');
-    expect(launch.checked).toBe(true);
-    expect(host.textContent).toContain('R$ 34,90/mês');
-    expect(host.textContent).toContain('rastreador por R$ 120 (ou 10x de R$ 12,00 sem juros no Pix, direto na mensalidade)');
-
-    type(byId(host, 'lead-name'), 'Carla');
-    type(byId(host, 'lead-email'), 'carla@exemplo.com.br');
-    type(byId(host, 'lead-phone'), '19977776666');
-    act(() => launch.click());
-    act(() => byId<HTMLInputElement>(host, 'lead-consent').click());
-    await act(async () => {
-      submitButton(host).click();
-    });
-    expect(sent[0]).toEqual(expect.objectContaining({ joinLaunch: false }));
-    expect(host.textContent).not.toContain('também entrou na lista');
+  it('com a contratação pelo site aberta, leva a ela; fechada na central, não', async () => {
+    let host = render();
+    await flush();
+    const link = () => Array.from(document.querySelectorAll('a')).find((a) => a.textContent === 'Contrate pelo site, com Pix');
+    expect(link()?.getAttribute('href')).toBe(CHECKOUT_PATH);
+    expect(byId(host, 'lead-launch')).toBeNull();
+    document.body.innerHTML = '';
+    offer = offerWith({ enabled: false });
+    host = render();
+    await flush();
+    expect(link()).toBeUndefined();
   });
 
     it('quantidade pelo − e +, e a mensagem só aparece quando pedida', async () => {

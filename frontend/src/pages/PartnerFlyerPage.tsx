@@ -3,10 +3,11 @@ import { Link, useParams } from 'react-router-dom';
 
 import { ApiError } from '@/api/client';
 import { publicApi } from '@/api/resources';
+import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { referralUrl } from '@/services/referral';
 import type { PartnerReport } from '@/types';
 
-import { FLYER_FORMATS, drawFlyer, flyerFileName, jpegToPdf } from './partner/flyer';
+import { FLYER_FORMATS, drawFlyer, flyerFileName, flyerOffer, jpegToPdf } from './partner/flyer';
 import type { FlyerAssets, FlyerFormat } from './partner/flyer';
 
 import styles from './Partner.module.css';
@@ -81,6 +82,8 @@ export function PartnerFlyerPage() {
   const [file, setFile] = useState<File | null>(null);
   const [notice, setNotice] = useState('');
   const canvas = useRef<HTMLCanvasElement>(null);
+  // Os preços do flyer são os do site (a oferta do servidor).
+  const { offer, query: offerQuery } = useCheckoutOffer();
 
   useEffect(() => {
     document.title = 'Seu flyer · Farbo Rastreadores';
@@ -127,12 +130,12 @@ export function PartnerFlyerPage() {
 
   useEffect(() => {
     const el = canvas.current;
-    if (!el || !assets || !report) return;
+    if (!el || !assets || !report || !offer) return;
     el.width = spec.width;
     el.height = spec.height;
     const ctx = el.getContext('2d');
     if (!ctx) return;
-    drawFlyer(ctx, format, { link: referralUrl(report.code), referrer: showReferrer ? referrer : '' }, assets);
+    drawFlyer(ctx, format, { link: referralUrl(report.code), referrer: showReferrer ? referrer : '' }, assets, flyerOffer(offer));
     setFile(null);
     setNotice('');
     let alive = true;
@@ -142,7 +145,7 @@ export function PartnerFlyerPage() {
     return () => {
       alive = false;
     };
-  }, [assets, report, format, showReferrer, referrer, spec]);
+  }, [assets, report, offer, format, showReferrer, referrer, spec]);
 
   const download = async (kind: 'png' | 'pdf') => {
     const el = canvas.current;
@@ -246,13 +249,17 @@ export function PartnerFlyerPage() {
           </label>
 
           <div className={styles.preview}>
-            {assets ? (
+            {assets && offer ? (
               <canvas
                 ref={canvas}
                 className={styles.previewCanvas}
                 style={{ aspectRatio: `${spec.width} / ${spec.height}` }}
                 aria-label={`Prévia do ${spec.label}`}
               />
+            ) : offerQuery.isError ? (
+              <p className={base.hint} role="status">
+                Não deu para carregar os preços agora. Tente de novo em instantes.
+              </p>
             ) : (
               <p className={base.hint} role="status">
                 Montando o flyer…
@@ -262,7 +269,7 @@ export function PartnerFlyerPage() {
 
           <div className={styles.linkActions}>
             {spec.pdf ? (
-              <button type="button" className={base.primary} disabled={!assets || busy} onClick={() => void download('pdf')}>
+              <button type="button" className={base.primary} disabled={!assets || !offer || busy} onClick={() => void download('pdf')}>
                 Baixar PDF (para gráfica)
               </button>
             ) : (
@@ -271,7 +278,7 @@ export function PartnerFlyerPage() {
                 Compartilhar no Instagram
               </button>
             )}
-            <button type="button" className={base.secondary} disabled={!assets || busy} onClick={() => void download('png')}>
+            <button type="button" className={base.secondary} disabled={!assets || !offer || busy} onClick={() => void download('png')}>
               Baixar PNG
             </button>
             {canShareFiles && !spec.pdf && (

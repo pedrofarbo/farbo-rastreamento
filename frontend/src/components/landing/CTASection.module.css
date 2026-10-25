@@ -20,6 +20,8 @@
 }
 
 .mainCtaBtn {
+  /* Também é link (a contratação pelo site): sem sublinhado. */
+  text-decoration: none;
   flex: 1;
   max-width: 600px;
   background: var(--color-neon-green);

@@ -7,6 +7,9 @@ import type {
   AccountMember,
   AwaitingInstall,
   AwaitingUninstall,
+  CheckoutInput,
+  CheckoutOffer,
+  CheckoutResult,
   OrderOptions,
   BusRoute,
   BusRouteInput,
@@ -607,6 +610,15 @@ export const organizationsApi = {
     api.post<Vehicle>(`/api/organizations/${id}/associates/${associateId}/vehicles`, input),
   /** Lança já a fatura do próximo vencimento. */
   generateInvoice: (id: string) => api.post<OrgInvoice>(`/api/organizations/${id}/invoices/generate`),
+};
+
+/** A contratação rápida pelo site (sem login): a oferta, o frete até o CEP e o pedido com Pix. */
+export const checkoutApi = {
+  offer: () => request<CheckoutOffer>('/api/public/checkout', { anonymous: true }),
+  shipping: (address: DeliveryAddress) =>
+    request<ShippingQuoteView>('/api/public/checkout/shipping', { method: 'POST', body: address, anonymous: true }),
+  place: (input: CheckoutInput) =>
+    request<CheckoutResult>('/api/public/checkout', { method: 'POST', body: input, anonymous: true }),
 };
 
 /** A agenda de instalação (central). */

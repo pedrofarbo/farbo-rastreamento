@@ -90,9 +90,10 @@ export const ContactModal: React.FC<ContactModalProps> = ({
                 value={selectedPlan}
                 onChange={(e) => setSelectedPlan(e.target.value)}
               >
-                <option value="Plano Mensal - R$ 69,90">Plano Mensal (R$ 69,90/mês)</option>
-                <option value="Preço Especial Insanos MC - R$ 39,90">Insanos MC (R$ 39,90/mês)</option>
-                <option value="Apenas Equipamento - R$ 150,00">Apenas Equipamento (R$ 150,00)</option>
+                {/* Só os nomes: os preços estão nos planos da página (vêm do servidor). */}
+                <option value="Plano Mensal">Plano Mensal</option>
+                <option value="Preço Especial Insanos MC">Insanos MC</option>
+                <option value="Apenas Equipamento">Apenas o rastreador</option>
               </select>
             </div>
 

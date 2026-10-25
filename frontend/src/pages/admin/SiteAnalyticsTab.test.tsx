@@ -7,16 +7,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AnalyticsOrigin, LandingAnalytics } from '@/types';
 
 const ORIGINS: AnalyticsOrigin[] = [
-  { channel: 'instagram', visitors: 30, leadOpens: 9, leads: 3, waitlist: 2, converted: 4, clicked: 12 },
-  { channel: 'direto', visitors: 15, leadOpens: 1, leads: 1, waitlist: 0, converted: 1, clicked: 2 },
-  { channel: 'panfleto', visitors: 5, leadOpens: 0, leads: 0, waitlist: 0, converted: 0, clicked: 0 },
+  { channel: 'instagram', visitors: 30, leadOpens: 9, leads: 3, waitlist: 2, checkouts: 1, converted: 4, clicked: 12 },
+  { channel: 'direto', visitors: 15, leadOpens: 1, leads: 1, waitlist: 0, checkouts: 0, converted: 1, clicked: 2 },
+  { channel: 'panfleto', visitors: 5, leadOpens: 0, leads: 0, waitlist: 0, checkouts: 0, converted: 0, clicked: 0 },
 ];
 
 function summary(channel: string): LandingAnalytics {
   const visitors = channel === 'instagram' ? 30 : 50;
   return {
     from: '2026-09-06', to: '2026-10-05', channel, visitors, pageviews: visitors + 10, activeNow: 1,
-    leadOpens: 10, leads: 4, waitlist: 2, installerOpens: 0,
+    leadOpens: 10, leads: 4, waitlist: 2, installerOpens: 0, checkoutOpens: 3, checkouts: 1,
     days: [{ day: '2026-10-05', visitors, pageviews: visitors }],
     origins: ORIGINS, campaigns: [], devices: [], browsers: [], systems: [], sections: [], clicks: [],
   };
@@ -70,7 +70,8 @@ describe('SiteAnalyticsTab', () => {
     for (const part of [
       'Funil por origem',
       'Instagram30 · 60%',
-      '9 abriram o pré-cadastro · 3 pré-cadastros · 2 na lista · 13% viraram contato',
+      '9 abriram o pré-cadastro · 3 pré-cadastros · 2 na lista · 1 contratou · 13% viraram contato',
+      'Contrataram pelo site12% dos visitantes · 33% de quem abriu',
       'Direto15 · 30%',
       '1 abriu o pré-cadastro · 1 pré-cadastro',
       'panfleto',

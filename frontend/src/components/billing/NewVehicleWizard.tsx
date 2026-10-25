@@ -375,7 +375,8 @@ export function NewVehicleWizard({
     : c
       ? {
           name: c.planName,
-          cents: loan && loanOffer?.monthlyCents != null ? loanOffer.monthlyCents : c.planPriceCents,
+          // No comodato da pessoa física, a garantia de troca do rastreador soma na mensalidade.
+          cents: c.planPriceCents + (loan && c.payNow ? (loanOffer?.surchargeCents ?? 0) : 0),
           dueDay: c.defaultDueDay,
         }
       : null;
@@ -1002,7 +1003,9 @@ function EquipmentChoice({
   offer: LoanOffer;
   catalog: Catalog;
 }) {
-  const loanMonthly = offer.monthlyCents ?? catalog.planPriceCents;
+  // A garantia de troca do rastreador: só a pessoa física (que paga no ato).
+  const guarantee = catalog.payNow ? offer.surchargeCents : 0;
+  const loanMonthly = catalog.planPriceCents + guarantee;
   const fees = [
     offer.installFeeCents > 0 ? `instalação ${formatMoney(offer.installFeeCents)}` : 'instalação sem custo',
     offer.uninstallFeeCents > 0 ? `desinstalação ${formatMoney(offer.uninstallFeeCents)} ao encerrar` : '',
@@ -1028,7 +1031,8 @@ function EquipmentChoice({
           <strong>Comodato (rastreador emprestado)</strong>
           <span className={styles.muted}>
             {' '}
-            · sem pagar o rastreador; ele volta na desinstalação. Mensalidade de {formatMoney(loanMonthly)}; {fees.join(', ')}.
+            · sem pagar o rastreador; ele volta na desinstalação. Mensalidade de {formatMoney(loanMonthly)}
+            {guarantee > 0 ? `, com ${formatMoney(guarantee)} de garantia de troca do rastreador` : ''}; {fees.join(', ')}.
           </span>
         </span>
       </label>

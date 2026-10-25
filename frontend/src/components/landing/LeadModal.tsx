@@ -3,7 +3,8 @@ import React, { useEffect, useState } from 'react';
 import { publicApi } from '@/api/resources';
 import { CONTACT_EMAIL, WHATSAPP_NUMBER, whatsappDisplay, whatsappUrl } from '@/config/contact';
 import { PRIVACY_PATH } from '@/config/legal';
-import { LAUNCH_OFFER, PRE_LAUNCH, installmentsPhrase } from '@/config/landing';
+import { CHECKOUT_PATH } from '@/config/landing';
+import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { track } from '@/services/analytics';
 import { currentReferral } from '@/services/referral';
 import { formatPhoneInput, isPhoneComplete } from '@/services/format';
@@ -13,14 +14,13 @@ import base from './ContactModal.module.css';
 import styles from './LeadModal.module.css';
 import { useModalBehavior } from './useModalBehavior';
 
+// Só os nomes: os preços estão nos planos da página (vêm do servidor). O do
+// Insanos MC tem o nome do plano deles, que o cadastro do cliente reconhece.
 const PLANS = [
-  { value: 'Plano Mensal - R$ 69,90', label: 'Plano Mensal (R$ 69,90/mês)' },
-  { value: 'Preço Especial Insanos MC - R$ 39,90', label: 'Insanos MC (R$ 39,90/mês)' },
-  { value: 'Apenas Equipamento - R$ 150,00', label: 'Apenas Equipamento (R$ 150,00)' },
+  { value: 'Plano Mensal', label: 'Plano Mensal' },
+  { value: 'Preço Especial Insanos MC', label: 'Insanos MC' },
+  { value: 'Apenas Equipamento', label: 'Apenas o rastreador' },
 ];
-
-/** No plano do Insanos MC, a promoção de pré-lançamento tem a mensalidade deles. */
-const INSANOS_PLAN = PLANS[1].value;
 
 const VEHICLE_TYPES = [
   ['moto', '🏍 Moto'],
@@ -51,14 +51,13 @@ export const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, defaultPl
   const [phone, setPhone] = useState('');
   const [city, setCity] = useState('');
   const [plan, setPlan] = useState(PLANS[0].value);
+  const { open: checkoutOpen } = useCheckoutOffer();
   const [vehicleType, setVehicleType] = useState<LeadVehicleType>('moto');
   const [vehicleCount, setVehicleCount] = useState(1);
   const [message, setMessage] = useState('');
   // A mensagem é rara: fica atrás de um link até alguém querer escrever.
   const [showMessage, setShowMessage] = useState(false);
   const [consent, setConsent] = useState(false);
-  // No pré-lançamento, entrar também na lista (aviso e promoção) vem marcado.
-  const [joinLaunch, setJoinLaunch] = useState(PRE_LAUNCH);
   const [website, setWebsite] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -75,7 +74,6 @@ export const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, defaultPl
       setMessage('');
       setShowMessage(false);
       setConsent(false);
-      setJoinLaunch(PRE_LAUNCH);
       setSent(false);
     }
     setError('');
@@ -99,7 +97,7 @@ export const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, defaultPl
     try {
       await publicApi.createLead({
         name, email, phone, city, plan, vehicleType, vehicleCount, message, consent, website,
-        joinLaunch: PRE_LAUNCH && joinLaunch, ref: currentReferral(),
+        joinLaunch: false, ref: currentReferral(),
       });
       setSent(true);
       track('lead_submit', plan);
@@ -136,12 +134,6 @@ export const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, defaultPl
             <p>
               Vamos responder no e-mail <strong>{email}</strong> com os próximos passos para proteger o seu veículo.
             </p>
-            {PRE_LAUNCH && joinLaunch && (
-              <p>
-                Você também entrou na lista de pré-lançamento. Na hora de contratar, use este mesmo e-mail para
-                garantir a promoção.
-              </p>
-            )}
             <p className={styles.muted}>
               Ficou alguma dúvida?{' '}
               {WHATSAPP_NUMBER && (
@@ -165,6 +157,15 @@ export const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, defaultPl
               <div className={base.badge}>Pré-cadastro</div>
               <h2 id="lead-modal-title">Quero meu rastreador</h2>
               <p>Deixe seus dados e a nossa equipe responde por e-mail{WHATSAPP_NUMBER ? ' ou WhatsApp' : ''}.</p>
+              {checkoutOpen && (
+                <p className={styles.checkoutLink}>
+                  Quer contratar agora?{' '}
+                  <a href={CHECKOUT_PATH} data-analytics="pre-cadastro-contratar">
+                    Contrate pelo site, com Pix
+                  </a>
+                  .
+                </p>
+              )}
             </div>
 
             <form onSubmit={submit} className={styles.form} noValidate>
@@ -337,24 +338,6 @@ export const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, defaultPl
                 />
               </div>
 
-              {PRE_LAUNCH && (
-                <label className={`${styles.consent} ${styles.launchOption}`}>
-                  <input
-                    id="lead-launch"
-                    type="checkbox"
-                    checked={joinLaunch}
-                    onChange={(e) => setJoinLaunch(e.target.checked)}
-                  />
-                  <span>
-                    <strong>Entrar também na lista de pré-lançamento</strong>: promoção para os {LAUNCH_OFFER.slots}{' '}
-                    primeiros — rastreador por {LAUNCH_OFFER.equipment} (ou{' '}
-                    {installmentsPhrase(LAUNCH_OFFER.equipmentCents)}) e{' '}
-                    {plan === INSANOS_PLAN ? LAUNCH_OFFER.insanosMonthly : LAUNCH_OFFER.monthly}/mês por{' '}
-                    {LAUNCH_OFFER.months} meses.
-                  </span>
-                </label>
-              )}
-
               <label className={styles.consent}>
                 <input
                   id="lead-consent"
@@ -392,10 +375,7 @@ export const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, defaultPl
                 <p className={styles.alt}>
                   Prefere conversar?{' '}
                   <a
-                    href={whatsappUrl(
-                      // Só o nome do plano: o preço do valor ("- R$ 39,90") confunde no pré-lançamento.
-                      `Olá! Vim pelo site da Farbo Rastreadores e quero saber mais sobre: ${plan.split(' - ')[0]}.`,
-                    )}
+                    href={whatsappUrl(`Olá! Vim pelo site da Farbo Rastreadores e quero saber mais sobre: ${plan}.`)}
                     target="_blank"
                     rel="noopener noreferrer"
                     data-analytics="whatsapp-pre-cadastro"

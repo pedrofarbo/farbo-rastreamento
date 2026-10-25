@@ -37,6 +37,8 @@ var Events = map[string]bool{
 	"lead_submit":     true, // mandou o pré-cadastro
 	"waitlist_submit": true, // entrou na lista de lançamento
 	"installers_open": true, // abriu os prestadores
+	"checkout_open":   true, // abriu a contratação pelo site (label = plano)
+	"checkout_submit": true, // contratou pelo site (label = plano e rastreador)
 }
 
 const (
@@ -194,6 +196,7 @@ type Origin struct {
 	LeadOpens int    `json:"leadOpens"`
 	Leads     int    `json:"leads"`
 	Waitlist  int    `json:"waitlist"`
+	Checkouts int    `json:"checkouts"`
 	Converted int    `json:"converted"`
 	Clicked   int    `json:"clicked"`
 }
@@ -213,6 +216,9 @@ type Summary struct {
 	Leads          int `json:"leads"`
 	Waitlist       int `json:"waitlist"`
 	InstallerOpens int `json:"installerOpens"`
+	// CheckoutOpens: abriram a contratação pelo site; Checkouts: contrataram.
+	CheckoutOpens int `json:"checkoutOpens"`
+	Checkouts     int `json:"checkouts"`
 
 	Days []Day `json:"days"`
 	// Origins é o funil de cada origem, sempre de todas (é de onde se escolhe
@@ -265,9 +271,12 @@ func (s *Service) Summary(ctx context.Context, days int, channel string) (*Summa
 			count(DISTINCT (day, visitor)) FILTER (WHERE name = 'lead_open'),
 			count(DISTINCT (day, visitor)) FILTER (WHERE name = 'lead_submit'),
 			count(DISTINCT (day, visitor)) FILTER (WHERE name = 'waitlist_submit'),
-			count(DISTINCT (day, visitor)) FILTER (WHERE name = 'installers_open')
+			count(DISTINCT (day, visitor)) FILTER (WHERE name = 'installers_open'),
+			count(DISTINCT (day, visitor)) FILTER (WHERE name = 'checkout_open'),
+			count(DISTINCT (day, visitor)) FILTER (WHERE name = 'checkout_submit')
 		FROM scoped`, from, to, channel).
-		Scan(&out.Visitors, &out.Pageviews, &out.LeadOpens, &out.Leads, &out.Waitlist, &out.InstallerOpens)
+		Scan(&out.Visitors, &out.Pageviews, &out.LeadOpens, &out.Leads, &out.Waitlist, &out.InstallerOpens,
+			&out.CheckoutOpens, &out.Checkouts)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -333,16 +342,17 @@ func (s *Service) origins(ctx context.Context, from, to string) ([]Origin, error
 				bool_or(e.name = 'lead_open') AS opened,
 				bool_or(e.name = 'lead_submit') AS lead,
 				bool_or(e.name = 'waitlist_submit') AS waitlist,
+				bool_or(e.name = 'checkout_submit') AS checkout,
 				bool_or(e.name IN ('cta_click', 'outbound_click')) AS clicked
 			FROM analytics_events e JOIN origins o USING (day, visitor)
 			WHERE e.day BETWEEN $1 AND $2
 			GROUP BY o.channel, e.day, e.visitor
 		)
 		SELECT channel, count(*) FILTER (WHERE visited), count(*) FILTER (WHERE opened),
-			count(*) FILTER (WHERE lead), count(*) FILTER (WHERE waitlist),
-			count(*) FILTER (WHERE lead OR waitlist), count(*) FILTER (WHERE clicked)
+			count(*) FILTER (WHERE lead), count(*) FILTER (WHERE waitlist), count(*) FILTER (WHERE checkout),
+			count(*) FILTER (WHERE lead OR waitlist OR checkout), count(*) FILTER (WHERE clicked)
 		FROM visits GROUP BY channel
-		ORDER BY 2 DESC, 6 DESC, 1
+		ORDER BY 2 DESC, 7 DESC, 1
 		LIMIT 20`, from, to)
 	if err != nil {
 		return nil, database.MapError(err)
@@ -351,7 +361,7 @@ func (s *Service) origins(ctx context.Context, from, to string) ([]Origin, error
 	out := []Origin{}
 	for rows.Next() {
 		var o Origin
-		if err := rows.Scan(&o.Channel, &o.Visitors, &o.LeadOpens, &o.Leads, &o.Waitlist, &o.Converted, &o.Clicked); err != nil {
+		if err := rows.Scan(&o.Channel, &o.Visitors, &o.LeadOpens, &o.Leads, &o.Waitlist, &o.Checkouts, &o.Converted, &o.Clicked); err != nil {
 			return nil, err
 		}
 		out = append(out, o)

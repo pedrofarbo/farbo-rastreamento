@@ -5,14 +5,14 @@ import { publicApi } from '@/api/resources';
 import { referralCode, saveReferral } from '@/services/referral';
 import type { PublicAffiliate } from '@/types';
 
-import { PreLaunchSignup } from './PreLaunchSignup';
+import { CheckoutInvite } from './CheckoutInvite';
 
 /**
- * O link de indicação do afiliado (/indicacao/<código>): o cadastro no
- * pré-lançamento com "Indicado por @fulano". O código fica guardado no
- * aparelho por 60 dias, para valer também se a pessoa se cadastrar depois
- * pela landing. Um link desconhecido (ou de afiliado inativo) abre a mesma
- * tela, sem o selo: o servidor não liga a ninguém.
+ * O link de indicação do afiliado (/indicacao/<código>): a chamada para
+ * contratar pelo site com "Indicado por @fulano". O código fica guardado no
+ * aparelho por 60 dias: a contratação (agora ou depois, pela landing) e o
+ * contato saem com ele. Um link desconhecido (ou de afiliado inativo) abre a
+ * mesma tela, sem o selo: o servidor não liga a ninguém.
  */
 export function ReferralSignupPage() {
   const { codigo = '' } = useParams();
@@ -32,5 +32,5 @@ export function ReferralSignupPage() {
     };
   }, [code]);
 
-  return <PreLaunchSignup source="indicacao" campaign={code} referral={code} referrer={referrer} highlight="launch" />;
+  return <CheckoutInvite source="indicacao" campaign={code} referral={code} referrer={referrer} highlight="plan" />;
 }

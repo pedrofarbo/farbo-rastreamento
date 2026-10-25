@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -330,9 +331,11 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 			}
 		}
 		// Quem instala é a Farbo (o comodato e a instalação contratada): a
-		// agenda da central mostra.
-		if loan || o.FarboInstall {
-			if _, err := tx.Exec(ctx, `UPDATE subscriptions SET farbo_install = TRUE WHERE id = $1`, result.Subscription.ID); err != nil {
+		// agenda da central mostra. E a garantia de troca que a mensalidade
+		// inclui (o próximo veículo parte do plano sem ela).
+		if loan || o.FarboInstall || o.Terms.GuaranteeCents > 0 {
+			if _, err := tx.Exec(ctx, `UPDATE subscriptions SET farbo_install = $2, guarantee_cents = $3 WHERE id = $1`,
+				result.Subscription.ID, loan || o.FarboInstall, o.Terms.GuaranteeCents); err != nil {
 				return err
 			}
 		}
@@ -423,10 +426,10 @@ func (s *Service) applyPromo(ctx context.Context, tx pgx.Tx, customerID uuid.UUI
 
 // OrderTerms é o rastreador do pedido do cliente: o do plano definido pela
 // central para ele (sem escolha); sem plano, o que ele escolheu — comprado,
-// ou em comodato quando a central oferece (a mensalidade do comodato, se
-// houver, troca a do plano).
+// ou em comodato quando a central oferece (para a pessoa física, a garantia
+// de troca do rastreador soma na mensalidade do plano).
 func (s *Service) OrderTerms(ctx context.Context, customerID uuid.UUID, equipmentMode string,
-	plan *billing.SubscriptionInput) (Terms, error) {
+	plan *billing.SubscriptionInput, individual bool) (Terms, error) {
 	account, err := s.AccountPlan(ctx, customerID)
 	if err != nil {
 		return Terms{}, err
@@ -448,13 +451,24 @@ func (s *Service) OrderTerms(ctx context.Context, customerID uuid.UUID, equipmen
 		if !offer.Enabled {
 			return Terms{}, ValidationError{"o comodato não está disponível agora: escolha comprar o rastreador"}
 		}
-		if offer.MonthlyCents != nil && plan != nil {
-			plan.PriceCents = *offer.MonthlyCents
+		terms := Terms{EquipmentMode: billing.EquipmentLoan, InstallFeeCents: offer.InstallFeeCents,
+			UninstallFeeCents: offer.UninstallFeeCents}
+		if individual && offer.SurchargeCents > 0 && plan != nil {
+			withGuarantee(plan, &terms, offer.SurchargeCents)
 		}
-		return Terms{EquipmentMode: billing.EquipmentLoan, InstallFeeCents: offer.InstallFeeCents,
-			UninstallFeeCents: offer.UninstallFeeCents}, nil
+		return terms, nil
 	}
 	return Terms{}, ValidationError{"escolha o rastreador: comprado ou em comodato"}
+}
+
+// withGuarantee soma a garantia de troca do rastreador na mensalidade (e no
+// nome) do plano.
+func withGuarantee(plan *billing.SubscriptionInput, terms *Terms, cents int) {
+	plan.PriceCents += cents
+	if !strings.HasSuffix(plan.PlanName, GuaranteeName) {
+		plan.PlanName += GuaranteeName
+	}
+	terms.GuaranteeCents = cents
 }
 
 // CustomerOrder monta o pedido feito pelo próprio cliente, com os preços do
@@ -481,7 +495,11 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehic
 	if err != nil {
 		return Order{}, err
 	}
-	terms, err := s.OrderTerms(ctx, customerID, equipmentMode, &plan)
+	individual, err := s.PaysUpfront(ctx, customerID)
+	if err != nil {
+		return Order{}, err
+	}
+	terms, err := s.OrderTerms(ctx, customerID, equipmentMode, &plan, individual)
 	if err != nil {
 		return Order{}, err
 	}
@@ -567,7 +585,13 @@ func (s *Service) customerPlan(ctx context.Context, customerID uuid.UUID) (billi
 	}
 	for _, sub := range subscriptions {
 		if sub.Status == billing.SubscriptionActive {
-			return billing.SubscriptionInput{PlanName: sub.PlanName, PriceCents: sub.PriceCents, DueDay: sub.DueDay}, nil
+			// Sem a garantia de troca do comodato: ela é do rastreador, não do plano.
+			var guarantee int
+			if err := s.db.QueryRow(ctx, `SELECT guarantee_cents FROM subscriptions WHERE id = $1`, sub.ID).Scan(&guarantee); err != nil {
+				return billing.SubscriptionInput{}, database.MapError(err)
+			}
+			return billing.SubscriptionInput{PlanName: strings.TrimSuffix(sub.PlanName, GuaranteeName),
+				PriceCents: sub.PriceCents - guarantee, DueDay: sub.DueDay}, nil
 		}
 	}
 	return billing.SubscriptionInput{

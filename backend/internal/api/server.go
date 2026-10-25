@@ -231,6 +231,10 @@ func (s *Server) routes() chi.Router {
 	resetLimiter := newRateLimiter(0.5, 10)
 	// Cadastro de interesse da landing: público, poucos envios por IP.
 	leadLimiter := newRateLimiter(0.05, 5)
+	// A contratação pelo site: a oferta e o frete à vontade; a contratação
+	// cria a conta, poucas por IP.
+	checkoutLimiter := newRateLimiter(0.5, 30)
+	checkoutOrderLimiter := newRateLimiter(0.02, 10)
 	// Lista de lançamento: mais folgado que o pré-cadastro, porque num evento
 	// (QR Code) muita gente se inscreve pela mesma rede, ou no mesmo tablet.
 	launchLimiter := newRateLimiter(0.5, 20)
@@ -309,6 +313,12 @@ func (s *Server) routes() chi.Router {
 		// O contrato em vigor, para ler antes de contratar.
 		if s.Contract != nil {
 			r.Get("/public/contract", s.handlePublicContract)
+		}
+		// A contratação rápida pela landing (pessoa física, Pix na hora).
+		if s.Orders != nil {
+			r.With(checkoutLimiter.middleware).Get("/public/checkout", s.handleCheckoutOffer)
+			r.With(checkoutLimiter.middleware).Post("/public/checkout/shipping", s.handleCheckoutShipping)
+			r.With(checkoutOrderLimiter.middleware).Post("/public/checkout", s.handleCheckout)
 		}
 		// Link de pagamento da fatura (sem login): o lembrete abre o Pix.
 		if s.Dunning != nil {

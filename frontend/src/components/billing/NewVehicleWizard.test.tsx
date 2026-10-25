@@ -198,7 +198,7 @@ describe('a pessoa física paga no ato', () => {
     terms = {
       payNow: true,
       chargeDate: '2026-10-23',
-      loan: { enabled: true, monthlyCents: 7990, installFeeCents: 9900, uninstallFeeCents: 4900 },
+      loan: { enabled: true, surchargeCents: 300, installFeeCents: 9900, uninstallFeeCents: 4900 },
       install: { enabled: true, priceCents: 15000 },
     };
     quote = { enabled: false, zipCode: '', problem: '', arrange: false, quotes: [] };
@@ -208,7 +208,10 @@ describe('a pessoa física paga no ato', () => {
     await flush();
     expect(text()).toContain('Comprar o rastreador');
     expect(text()).toContain('Comodato (rastreador emprestado)');
-    expect(text()).toContain('Mensalidade de R$ 79,90; instalação R$ 99,00, desinstalação R$ 49,00 ao encerrar.');
+    // A pessoa física tem a garantia de troca somada à mensalidade do plano.
+    expect(text()).toContain(
+      'Mensalidade de R$ 72,90, com R$ 3,00 de garantia de troca do rastreador; instalação R$ 99,00, desinstalação R$ 49,00 ao encerrar.',
+    );
     const loan = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="equipment-mode"]'))[1];
     await act(async () => loan.click());
     await act(async () => button('Continuar').click());
@@ -216,9 +219,9 @@ describe('a pessoa física paga no ato', () => {
     expect(text()).toContain('Rastreador em comodato');
     expect(text()).toContain('A instalação (R$ 99,00) é paga no pedido.');
     expect(text()).not.toContain('EquipamentoR$');
-    expect(text()).toContain('1ª mensalidadeR$ 79,90');
+    expect(text()).toContain('1ª mensalidadeR$ 72,90');
     expect(text()).toContain('Instalação (comodato)R$ 99,00');
-    expect(text()).toContain('R$ 178,90');
+    expect(text()).toContain('R$ 171,90');
     await act(async () => button('Confirmar pedido').click());
     await flush();
     expect(ordered[0]).toMatchObject({ equipmentMode: 'loan', launchPromo: false });

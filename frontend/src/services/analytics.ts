@@ -16,7 +16,9 @@ export type AnalyticsEvent =
   | 'lead_open'
   | 'lead_submit'
   | 'waitlist_submit'
-  | 'installers_open';
+  | 'installers_open'
+  | 'checkout_open'
+  | 'checkout_submit';
 
 // A visita conta uma vez por carregamento da página (o React, em
 // desenvolvimento, monta a página duas vezes).

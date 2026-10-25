@@ -689,12 +689,11 @@ func (s *Server) handleSetOrderOptions(w http.ResponseWriter, r *http.Request) {
 		writeOrderError(w, r, err, "opções do pedido não encontradas")
 		return
 	}
-	meta := map[string]any{"loanEnabled": opts.Loan.Enabled, "loanInstallFeeCents": opts.Loan.InstallFeeCents,
-		"loanUninstallFeeCents": opts.Loan.UninstallFeeCents, "installEnabled": opts.Install.Enabled,
-		"installCents": opts.Install.PriceCents}
-	if opts.Loan.MonthlyCents != nil {
-		meta["loanMonthlyCents"] = *opts.Loan.MonthlyCents
-	}
+	meta := map[string]any{"loanEnabled": opts.Loan.Enabled, "loanSurchargeCents": opts.Loan.SurchargeCents,
+		"loanInstallFeeCents": opts.Loan.InstallFeeCents, "loanUninstallFeeCents": opts.Loan.UninstallFeeCents,
+		"installEnabled": opts.Install.Enabled, "installCents": opts.Install.PriceCents,
+		"checkoutEnabled": opts.Checkout.Enabled, "checkoutPlanCents": opts.Checkout.PlanCents,
+		"checkoutInsanosCents": opts.Checkout.InsanosCents, "checkoutEquipmentCents": opts.Checkout.EquipmentCents}
 	s.recordBillingAudit(r, audit.ActionOrderOptionsChanged, meta)
 	writeJSON(w, http.StatusOK, opts)
 }

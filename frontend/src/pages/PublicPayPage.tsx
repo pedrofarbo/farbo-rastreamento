@@ -32,6 +32,8 @@ export function PublicPayPage() {
   // Todas as do vencimento (padrão, e o "?todas=1" do lembrete) ou só esta.
   const [params] = useSearchParams();
   const [onlyThis, setOnlyThis] = useState(params.get('todas') === '0');
+  // Quem acabou de contratar pelo site (?novo=1): depois do pagamento, o app.
+  const newCustomer = params.get('novo') === '1';
 
   useEffect(() => {
     document.title = 'Pagar fatura · Farbo Rastreadores';
@@ -114,10 +116,22 @@ export function PublicPayPage() {
                 ✓
               </span>
               <h2 className={styles.title}>{justPaid ? 'Pagamento recebido. Obrigado!' : 'Esta fatura já está paga'}</h2>
-              <p className={styles.text}>
-                {invoice.paidAt ? `Paga em ${formatDateTime(invoice.paidAt)}. ` : ''}Se o acesso estava suspenso, ele já foi
-                liberado.
-              </p>
+              {newCustomer ? (
+                <>
+                  <p className={styles.text}>
+                    Pedido confirmado: o rastreador segue para você e avisamos cada passo no app. Entre com o e-mail e a
+                    senha que você criou.
+                  </p>
+                  <a className={base.primary} href="/app/">
+                    Abrir o app
+                  </a>
+                </>
+              ) : (
+                <p className={styles.text}>
+                  {invoice.paidAt ? `Paga em ${formatDateTime(invoice.paidAt)}. ` : ''}Se o acesso estava suspenso, ele já
+                  foi liberado.
+                </p>
+              )}
             </section>
           )}
 

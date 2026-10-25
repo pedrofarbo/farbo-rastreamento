@@ -93,6 +93,9 @@ func TestLandingAnalyticsEndToEnd(t *testing.T) {
 	event(windows, "section_view", "beneficios")
 	event(windows, "pageview", "")
 	event(windows, "waitlist_submit", "")
+	// ... e contratou pelo site.
+	event(windows, "checkout_open", "")
+	event(windows, "checkout_submit", "normal-compra")
 	// Robô e evento desconhecido: aceitos (204), mas não contam. Corpo errado: 400.
 	event(bot, "pageview", "")
 	event(windows, "inventado", "x")
@@ -116,7 +119,8 @@ func TestLandingAnalyticsEndToEnd(t *testing.T) {
 	}
 	summary := func() analytics.Summary { return summaryOf("") }
 	s := summary()
-	if s.Visitors != 2 || s.Pageviews != 4 || s.Leads != 1 || s.LeadOpens != 1 || s.Waitlist != 1 || s.ActiveNow != 2 {
+	if s.Visitors != 2 || s.Pageviews != 4 || s.Leads != 1 || s.LeadOpens != 1 || s.Waitlist != 1 || s.ActiveNow != 2 ||
+		s.CheckoutOpens != 1 || s.Checkouts != 1 {
 		t.Fatalf("totais = %+v", s)
 	}
 	if len(s.Days) != 7 || s.Days[6].Day != "2026-10-04" || s.Days[6].Visitors != 2 || s.Days[0].Visitors != 0 {
@@ -138,7 +142,7 @@ func TestLandingAnalyticsEndToEnd(t *testing.T) {
 	if o := byChannel["instagram"]; o.Visitors != 1 || o.LeadOpens != 1 || o.Leads != 1 || o.Converted != 1 || o.Clicked != 1 {
 		t.Errorf("origem instagram = %+v", o)
 	}
-	if o := byChannel["direto"]; o.Visitors != 1 || o.Waitlist != 1 || o.Leads != 0 || o.Converted != 1 || o.Clicked != 0 {
+	if o := byChannel["direto"]; o.Visitors != 1 || o.Waitlist != 1 || o.Checkouts != 1 || o.Leads != 0 || o.Converted != 1 || o.Clicked != 0 {
 		t.Errorf("origem direto = %+v", o)
 	}
 	if len(s.Origins) != 2 || s.Channel != "" {

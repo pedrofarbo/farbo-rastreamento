@@ -1,26 +1,23 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { WHATSAPP_NUMBER, whatsappUrl } from '@/config/contact';
 
 import {
   ANATEL_HOMOLOGATION,
-  INSANOS_MONTHLY,
-  LAUNCH_ANCHOR,
-  LAUNCH_OFFER,
-  PRE_LAUNCH,
+  CHECKOUT_PATH,
+  checkoutPath,
   installmentsOf,
   installmentsPhrase,
+  priceLabel,
   priceParts,
 } from '@/config/landing';
+import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
+import type { CheckoutOffer } from '@/types';
 
 import { FleetFeatures } from './FleetFeatures';
 import { WhatsAppIcon } from './WhatsAppFloat';
 import styles from './PricingSection.module.css';
-
-const monthlyPromo = priceParts(LAUNCH_OFFER.monthlyCents);
-const equipmentPromo = priceParts(LAUNCH_OFFER.equipmentCents);
-const insanosPromo = priceParts(LAUNCH_OFFER.insanosMonthlyCents);
-const insanosRegular = priceParts(INSANOS_MONTHLY.cents);
 
 /** O tamanho da frota (opcional): vai na mensagem do WhatsApp. */
 const FLEET_SIZES = [
@@ -44,66 +41,51 @@ interface PricingSectionProps {
 
 export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) => {
   const [fleetSize, setFleetSize] = useState('');
+  // Os preços vêm da oferta do servidor: com a contratação pelo site aberta,
+  // os do site (com os normais riscados); fechada, os normais.
+  const { offer, open } = useCheckoutOffer();
+  const plan = offer && (open ? offer.planCents : offer.planRegularCents);
+  const insanos = offer && (open ? offer.insanosCents : offer.insanosRegularCents);
+  const equipment = offer && (open ? offer.equipmentCents : offer.equipmentRegularCents);
+  const showInsanos = !offer || offer.insanosPlanName !== '';
   return (
     <section className={styles.pricingSection} id="planos">
       <div className={styles.container}>
-        {/* Pré-lançamento: o preço da lista em destaque, com o convite para
-            se cadastrar (a seção da lista fica mais abaixo). */}
-        {PRE_LAUNCH && (
+        {/* A contratação pelo site: o preço em destaque, com o botão que abre
+            o funil (Pix na hora). */}
+        {open && (
           <div className={styles.launchBanner}>
             <div className={styles.launchBannerText}>
-              <span className={styles.launchBannerTag}>Preço de pré-lançamento</span>
-              <strong>
-                Cadastre-se na lista e pague {LAUNCH_OFFER.monthly}/mês nos {LAUNCH_OFFER.months} primeiros meses e{' '}
-                {LAUNCH_OFFER.equipment} no rastreador, ou {installmentsPhrase(LAUNCH_OFFER.equipmentCents)}.
-              </strong>
+              <span className={styles.launchBannerTag}>Contrate pelo site</span>
+              <strong>{bannerHeadline(offer)}</strong>
               <span>
-                Só para quem está na lista de pré-lançamento · integrantes do Insanos MC pagam{' '}
-                {LAUNCH_OFFER.insanosMonthly}/mês · limitado aos {LAUNCH_OFFER.slots} primeiros clientes · em quantos
-                veículos quiser.
+                O preço da mensalidade vale enquanto a assinatura durar
+                {offer && showInsanos && ` · integrantes do Insanos MC pagam ${priceLabel(offer.insanosCents)}/mês`}
+                {offer?.loan && ' · ou o rastreador em comodato, sem comprar'}.
               </span>
             </div>
-            <a className={styles.launchBannerBtn} href={LAUNCH_ANCHOR} data-analytics="planos-banner">
-              Quero me cadastrar
-            </a>
+            <Link className={styles.launchBannerBtn} to={CHECKOUT_PATH} data-analytics="planos-banner">
+              Contratar agora
+            </Link>
           </div>
         )}
 
         <div className={styles.cardsGrid}>
           {/* Card 1: PLANO MENSAL */}
-          <div className={`${styles.card} ${PRE_LAUNCH ? styles.launchCard : ''}`}>
-            {PRE_LAUNCH && <div className={styles.badgeTop}>PRÉ-LANÇAMENTO</div>}
+          <div className={`${styles.card} ${open ? styles.launchCard : ''}`}>
+            {open && <div className={styles.badgeTop}>PREÇO PROMOCIONAL</div>}
             <div className={styles.cardHeader}>
               <h3 className={styles.cardTitle}>PLANO MENSAL</h3>
-              {PRE_LAUNCH ? (
-                <>
-                  <div className={styles.priceStrikethrough}>
-                    De <span>{LAUNCH_OFFER.monthlyRegular}</span>
-                  </div>
-                  <div className={styles.priceMain}>
-                    <span className={styles.currency}>R$</span>
-                    <span className={styles.amount}>{monthlyPromo.reais}</span>
-                    <span className={styles.cents}>{monthlyPromo.cents}</span>
-                  </div>
-                  <div className={styles.priceSub}>
-                    /mês nos {LAUNCH_OFFER.months} primeiros meses
+              <CardPrice cents={plan} regular={open ? offer?.planRegularCents : undefined} />
+              <div className={styles.priceSub}>
+                /mês por veículo
+                {open && (
+                  <>
                     <br />
-                    depois, {LAUNCH_OFFER.monthlyRegular}/mês por veículo
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className={styles.priceStrikethrough}>
-                    De R$ <span>119,90</span>
-                  </div>
-                  <div className={styles.priceMain}>
-                    <span className={styles.currency}>R$</span>
-                    <span className={styles.amount}>69</span>
-                    <span className={styles.cents}>,90</span>
-                  </div>
-                  <div className={styles.priceSub}>/mês por veículo</div>
-                </>
-              )}
+                    enquanto a assinatura durar
+                  </>
+                )}
+              </div>
             </div>
 
             <ul className={styles.checkList}>
@@ -133,21 +115,19 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
               </li>
             </ul>
 
-            {PRE_LAUNCH ? (
-              <a className={styles.neonBtn} href={LAUNCH_ANCHOR} data-analytics="plano-mensal">
-                Garantir preço de pré-lançamento
-              </a>
+            {open ? (
+              <Link className={styles.neonBtn} to={CHECKOUT_PATH} data-analytics="plano-mensal">
+                Contratar agora
+              </Link>
             ) : (
-              <button
-                className={styles.whiteBtn}
-                onClick={() => onOpenModal('Plano Mensal - R$ 69,90')}
-              >
+              <button className={styles.whiteBtn} onClick={() => onOpenModal('Plano Mensal')} data-analytics="plano-mensal">
                 Quero esse plano
               </button>
             )}
           </div>
 
           {/* Card 2: PREÇO ESPECIAL (MOTOCLUBE INSANOS) */}
+          {showInsanos && (
           <div className={`${styles.card} ${styles.featuredCard}`}>
             <div className={styles.badgeTop}>PREÇO ESPECIAL</div>
 
@@ -155,34 +135,16 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
               <div className={styles.insanosSubtitle}>
                 INTEGRANTES DO MOTOCLUBE INSANOS
               </div>
-              {/* A promoção de pré-lançamento vale também para o Insanos, com
-                  a mensalidade deles; depois dela, o preço especial deles. */}
-              {PRE_LAUNCH ? (
-                <>
-                  <div className={styles.priceStrikethrough}>
-                    De <span>{INSANOS_MONTHLY.label}</span>
-                  </div>
-                  <div className={styles.priceMainFeatured}>
-                    <span className={styles.currency}>R$</span>
-                    <span className={styles.amount}>{insanosPromo.reais}</span>
-                    <span className={styles.cents}>{insanosPromo.cents}</span>
-                  </div>
-                  <div className={styles.priceSubFeatured}>
-                    /mês nos {LAUNCH_OFFER.months} primeiros meses
+              <CardPrice cents={insanos} regular={open ? offer?.insanosRegularCents : undefined} featured />
+              <div className={styles.priceSubFeatured}>
+                /mês por veículo
+                {open && (
+                  <>
                     <br />
-                    depois, {INSANOS_MONTHLY.label}/mês por veículo
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className={styles.priceMainFeatured}>
-                    <span className={styles.currency}>R$</span>
-                    <span className={styles.amount}>{insanosRegular.reais}</span>
-                    <span className={styles.cents}>{insanosRegular.cents}</span>
-                  </div>
-                  <div className={styles.priceSubFeatured}>/mês por veículo</div>
-                </>
-              )}
+                    enquanto a assinatura durar
+                  </>
+                )}
+              </div>
             </div>
 
             <ul className={styles.checkList}>
@@ -231,16 +193,23 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
               </div>
             </div>
 
-            {/* Abre o pré-cadastro com o plano do Insanos (a equipe confere quem
-                é integrante); a lista de pré-lançamento já vem marcada lá. */}
-            <button
-              className={styles.neonBtn}
-              onClick={() => onOpenModal('Preço Especial Insanos MC - R$ 39,90')}
-              data-analytics="plano-insanos"
-            >
-              {PRE_LAUNCH ? 'Garantir preço de pré-lançamento' : 'Quero meu desconto'}
-            </button>
+            {/* A contratação já com o plano do Insanos marcado (quem marca se
+                declara integrante); fechada, o pré-cadastro com o plano deles. */}
+            {open ? (
+              <Link className={styles.neonBtn} to={checkoutPath({ insanos: true })} data-analytics="plano-insanos">
+                Contratar com o preço do Insanos
+              </Link>
+            ) : (
+              <button
+                className={styles.neonBtn}
+                onClick={() => onOpenModal('Preço Especial Insanos MC')}
+                data-analytics="plano-insanos"
+              >
+                Quero meu desconto
+              </button>
+            )}
           </div>
+          )}
 
           {/* Card 3: FROTAS. Preço sob consulta: o botão abre o WhatsApp com a
               mensagem já escrita (e o tamanho da frota, se escolhido). */}
@@ -329,34 +298,33 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
           <div className={styles.cardHeader}>
             <h3 className={styles.cardTitle}>EQUIPAMENTO</h3>
             <div className={styles.deviceSubtitle}>Rastreador J16 GT06</div>
-            {PRE_LAUNCH ? (
+            <CardPrice cents={equipment} regular={open ? offer?.equipmentRegularCents : undefined} />
+            {offer && equipment !== undefined && (
+              <div className={styles.priceSub}>
+                {offer.maxInstallments > 1 ? (
+                  <>
+                    à vista, ou {installmentsOf(equipment, offer.maxInstallments)}
+                    <br />
+                    sem juros no Pix, direto na mensalidade
+                  </>
+                ) : (
+                  'à vista, no Pix'
+                )}
+              </div>
+            )}
+            {/* Quem instala, e o comodato para quem não quer comprar. */}
+            {open && offer && (
               <>
-                <div className={styles.priceStrikethrough}>
-                  De <span>{LAUNCH_OFFER.equipmentRegular},00</span>
-                </div>
-                <div className={styles.priceMain}>
-                  <span className={styles.currency}>R$</span>
-                  <span className={styles.amount}>{equipmentPromo.reais}</span>
-                  <span className={styles.cents}>{equipmentPromo.cents}</span>
-                </div>
-                <div className={styles.priceSub}>
-                  à vista, ou {installmentsOf(LAUNCH_OFFER.equipmentCents)}
-                  <br />
-                  sem juros no Pix, direto na mensalidade
-                </div>
-              </>
-            ) : (
-              <>
-                <div className={styles.priceMain}>
-                  <span className={styles.currency}>R$</span>
-                  <span className={styles.amount}>150</span>
-                  <span className={styles.cents}>,00</span>
-                </div>
-                <div className={styles.priceSub}>
-                  à vista, ou {installmentsOf(LAUNCH_OFFER.equipmentRegularCents)}
-                  <br />
-                  sem juros no Pix, direto na mensalidade
-                </div>
+                <p className={styles.equipmentNote}>
+                  {offer.install
+                    ? `Instale com o seu instalador ou com os nossos, por ${priceLabel(offer.install.priceCents)}.`
+                    : 'Instale com o instalador da sua preferência.'}
+                </p>
+                {offer.loan && (
+                  <p className={styles.equipmentNote}>
+                    <strong>Ou em comodato</strong>, sem comprar: {loanTerms(offer.loan)}.
+                  </p>
+                )}
               </>
             )}
           </div>
@@ -407,3 +375,47 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
     </section>
   );
 };
+
+/** O preço grande do cartão: o normal riscado (se maior) e o valor; carregando, só o lugar dele. */
+function CardPrice({ cents, regular, featured }: { cents?: number; regular?: number; featured?: boolean }) {
+  if (cents === undefined) {
+    return (
+      <div className={styles.pricePending} aria-busy="true">
+        R$ —
+      </div>
+    );
+  }
+  const parts = priceParts(cents);
+  return (
+    <>
+      {regular !== undefined && regular > cents && (
+        <div className={styles.priceStrikethrough}>
+          De <span>{priceLabel(regular)}</span>
+        </div>
+      )}
+      <div className={featured ? styles.priceMainFeatured : styles.priceMain}>
+        <span className={styles.currency}>R$</span>
+        <span className={styles.amount}>{parts.reais}</span>
+        <span className={styles.cents}>{parts.cents}</span>
+      </div>
+    </>
+  );
+}
+
+/** "R$ 34,90/mês e R$ 120 no rastreador, ou 10x de R$ 12,00 ...": o destaque da faixa. */
+export function bannerHeadline(offer: CheckoutOffer | undefined): string {
+  if (!offer) return 'Escolha o plano, pague com Pix e receba em casa.';
+  const installments = installmentsPhrase(offer.equipmentCents, offer.maxInstallments);
+  return `${priceLabel(offer.planCents)}/mês e ${priceLabel(offer.equipmentCents)} no rastreador${
+    installments ? `, ou ${installments}` : ''
+  }. Pague com Pix e receba em casa.`;
+}
+
+/** "instalação R$ 150 pelos nossos instaladores e + R$ 3/mês de garantia de troca do rastreador (desinstalação R$ 85 ao encerrar)". */
+export function loanTerms(loan: NonNullable<CheckoutOffer['loan']>): string {
+  const install = loan.installFeeCents > 0 ? `instalação ${priceLabel(loan.installFeeCents)}` : 'instalação sem custo';
+  const guarantee =
+    loan.surchargeCents > 0 ? ` e + ${priceLabel(loan.surchargeCents)}/mês de garantia de troca do rastreador` : '';
+  const uninstall = loan.uninstallFeeCents > 0 ? ` (desinstalação ${priceLabel(loan.uninstallFeeCents)} ao encerrar)` : '';
+  return `${install} pelos nossos instaladores${guarantee}${uninstall}`;
+}

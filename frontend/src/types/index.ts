@@ -1649,12 +1649,74 @@ export interface Catalog {
   payNow?: boolean;
 }
 
-/** O comodato que o cliente escolhe no pedido: a mensalidade (nula: a do plano) e as taxas. */
+/**
+ * O comodato que o cliente escolhe no pedido: as taxas e, para a pessoa
+ * física, a "garantia de troca do rastreador" somada à mensalidade do plano.
+ */
 export interface LoanOffer {
   enabled: boolean;
-  monthlyCents: number | null;
+  surchargeCents: number;
   installFeeCents: number;
   uninstallFeeCents: number;
+}
+
+/** Os preços da contratação pelo site (pessoa física): o plano normal, o do Insanos MC e o rastreador. */
+export interface CheckoutPrices {
+  enabled: boolean;
+  planCents: number;
+  insanosCents: number;
+  equipmentCents: number;
+}
+
+/** O que a contratação pelo site oferece. */
+export interface CheckoutOffer {
+  enabled: boolean;
+  planName: string;
+  planCents: number;
+  insanosPlanName: string;
+  insanosCents: number;
+  equipmentName: string;
+  equipmentCents: number;
+  /** Os preços normais (do catálogo): riscados ao lado dos do site; os cobrados com a contratação fechada. */
+  planRegularCents: number;
+  insanosRegularCents: number;
+  equipmentRegularCents: number;
+  /** Em até quantas vezes sem juros o rastreador comprado pode ser parcelado (1: só à vista). */
+  maxInstallments: number;
+  dueDay: number;
+  loan: LoanOffer | null;
+  install: InstallService | null;
+  contractVersion: string;
+  shippingEnabled: boolean;
+}
+
+/** A contratação pelo site: a escolha, o veículo, quem contrata, o endereço, a entrega e o aceite. */
+export interface CheckoutInput {
+  insanos: boolean;
+  equipmentMode: 'sale' | 'loan';
+  installments: number;
+  farboInstall: boolean;
+  vehicle: { kind: VehicleKind; name: string; brand: string; model: string; plate: string };
+  name: string;
+  email: string;
+  phone: string;
+  document: string;
+  password: string;
+  address: DeliveryAddress;
+  shippingServiceId?: number;
+  arrangeDelivery?: boolean;
+  contractVersion: string;
+  accept: boolean;
+  ref?: string;
+  /** O evento do QR Code de onde a pessoa veio (/evento/<nome>). */
+  event?: string;
+  website?: string;
+}
+
+/** O pedido feito pelo site, o link do Pix de todo o pedido e a sessão do app. */
+export interface CheckoutResult extends TrackerOrderResult {
+  payUrl: string;
+  tokens: AuthTokens | null;
 }
 
 /** A instalação pelos instaladores da Farbo no rastreador comprado (no comodato, ela é sempre da Farbo). */
@@ -1667,6 +1729,7 @@ export interface InstallService {
 export interface OrderOptions {
   loan: LoanOffer;
   install: InstallService;
+  checkout: CheckoutPrices;
   updatedAt?: string;
 }
 
@@ -2146,7 +2209,9 @@ export interface AnalyticsOrigin {
   leadOpens: number;
   leads: number;
   waitlist: number;
-  /** Viraram contato: mandaram o pré-cadastro ou entraram na lista. */
+  /** Contrataram pelo site. */
+  checkouts: number;
+  /** Viraram contato: mandaram o pré-cadastro, entraram na lista ou contrataram. */
   converted: number;
   clicked: number;
 }
@@ -2164,6 +2229,9 @@ export interface LandingAnalytics {
   leads: number;
   waitlist: number;
   installerOpens: number;
+  /** Abriram a contratação pelo site; contrataram. */
+  checkoutOpens: number;
+  checkouts: number;
   days: { day: string; visitors: number; pageviews: number }[];
   /** O funil de cada origem, sempre de todas. */
   origins: AnalyticsOrigin[];

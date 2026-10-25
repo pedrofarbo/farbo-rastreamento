@@ -2,12 +2,14 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { eventSlug, eventUrl } from '@/config/landing';
+import { OFFER, offerWith, withQuery } from '@/test/checkoutOffer';
 import type { WaitlistInput } from '@/types';
 
 const sent: WaitlistInput[] = [];
+let offer = OFFER;
 vi.mock('@/api/resources', () => ({
   publicApi: {
     joinLaunch: async (input: WaitlistInput) => {
@@ -15,6 +17,7 @@ vi.mock('@/api/resources', () => ({
       return { status: 'ok' };
     },
   },
+  checkoutApi: { offer: async () => offer },
 }));
 
 import { EventSignupPage } from './EventSignupPage';
@@ -29,10 +32,36 @@ function type(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+beforeEach(() => {
+  offer = OFFER;
+});
 afterEach(() => {
   document.body.innerHTML = '';
   sent.length = 0;
 });
+
+async function render(path: string) {
+  window.scrollTo = () => undefined;
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  await act(async () =>
+    createRoot(host).render(
+      withQuery(
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route path="/evento/:evento" element={<EventSignupPage />} />
+          </Routes>
+        </MemoryRouter>,
+      ),
+    ),
+  );
+  await flush();
+  return host;
+}
+
+const text = (host: HTMLElement) => (host.textContent ?? '').replace(/\u00a0/g, ' ');
+const button = (host: HTMLElement, label: string) =>
+  Array.from(host.querySelectorAll('button')).find((b) => b.textContent === label) as HTMLButtonElement;
 
 describe('nome do evento no link', () => {
   it('como o servidor faz', () => {
@@ -50,19 +79,24 @@ describe('nome do evento no link', () => {
 });
 
 describe('EventSignupPage', () => {
-  it('cadastra com o evento do link e deixa cadastrar a próxima pessoa', async () => {
-    window.scrollTo = () => undefined;
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    await act(async () =>
-      createRoot(host).render(
-        <MemoryRouter initialEntries={['/evento/Encontro-Insanos-MC']}>
-          <Routes>
-            <Route path="/evento/:evento" element={<EventSignupPage />} />
-          </Routes>
-        </MemoryRouter>,
-      ),
-    );
+  it('o QR Code do Insanos MC: o preço deles (do servidor) e o botão para contratar, com o evento', async () => {
+    const host = await render('/evento/Encontro-Insanos-MC');
+    expect(text(host)).toContain('Contrate o seu rastreador');
+    expect(text(host)).toContain('Preço exclusivo Insanos MC');
+    expect(text(host)).toContain('R$27,90/mês');
+    expect(text(host)).toContain('enquanto a assinatura durar · o normal é R$ 39,90');
+    expect(text(host)).toContain('Rastreador: R$ 150 R$ 120');
+    expect(text(host)).toContain('ou 10x de R$ 12,00 sem juros no Pix, direto na mensalidade');
+    expect(text(host)).toContain('Não é do Insanos MC? A mensalidade é R$ 34,90.');
+    // Sem o prazo nem o limite da promoção de pré-lançamento.
+    expect(text(host)).not.toMatch(/primeiros|pré-lançamento/);
+    const cta = Array.from(host.querySelectorAll('a')).find((a) => a.textContent === 'Contratar agora');
+    expect(cta?.getAttribute('href')).toBe('/contratar?plano=insanos&evento=encontro-insanos-mc');
+  });
+
+  it('quem prefere conversar deixa o contato, com o evento, e a equipe cadastra a próxima pessoa', async () => {
+    const host = await render('/evento/Encontro-Insanos-MC');
+    await act(async () => button(host, 'Prefiro que a Farbo fale comigo').click());
     const inputs = () => Array.from(host.querySelectorAll('input')) as HTMLInputElement[];
     const field = (type: string) => inputs().find((i) => i.type === type && i.name !== 'website') as HTMLInputElement;
     const city = () => inputs().find((i) => i.autocomplete === 'address-level2') as HTMLInputElement;
@@ -71,12 +105,6 @@ describe('EventSignupPage', () => {
       Array.from(host.querySelectorAll('label'))
         .find((l) => l.textContent?.includes(label))!
         .querySelector('input') as HTMLInputElement;
-    expect(host.textContent).toContain('Garanta o preço de pré-lançamento');
-    // O destaque é o preço do Insanos MC.
-    expect(host.textContent).toContain('Preço exclusivo Insanos MC');
-    expect(host.textContent).toContain('R$27,90/mês');
-    // O rastreador: à vista ou parcelado direto na mensalidade.
-    expect(host.textContent).toContain('ou 10x de R$ 12,00 sem juros no Pix, direto na mensalidade');
     expect(submit().disabled).toBe(true);
 
     await act(async () => {
@@ -87,7 +115,7 @@ describe('EventSignupPage', () => {
     expect(field('tel').value).toBe('(11) 9-8765-4321');
     // É do Insanos MC: marca (a conta nasce no plano deles).
     await act(async () => checkbox('Sou integrante do Insanos MC').click());
-    await act(async () => checkbox('Aceito receber o aviso').click());
+    await act(async () => checkbox('Aceito que a Farbo').click());
     expect(submit().disabled).toBe(true); // falta a cidade
     await act(async () => type(city(), 'São Paulo - SP'));
     expect(submit().disabled).toBe(false);
@@ -100,35 +128,32 @@ describe('EventSignupPage', () => {
         event: 'encontro-insanos-mc', city: 'São Paulo - SP', insanos: true,
       },
     ]);
-    expect(host.textContent).toContain('Pronto, Ana!');
-    expect(host.textContent).toContain('ana@cliente.test');
+    expect(text(host)).toContain('Pronto, Ana!');
+    expect(text(host)).toContain('ana@cliente.test');
 
     // A próxima pessoa: o formulário volta vazio.
-    const again = Array.from(host.querySelectorAll('button')).find((b) => b.textContent === 'Cadastrar outra pessoa') as HTMLButtonElement;
-    await act(async () => again.click());
+    await act(async () => button(host, 'Cadastrar outra pessoa').click());
     expect(field('text').value).toBe('');
     expect(city().value).toBe('');
-    expect(checkbox('Aceito receber o aviso').checked).toBe(false);
+    expect(checkbox('Aceito que a Farbo').checked).toBe(false);
     expect(checkbox('Sou integrante do Insanos MC').checked).toBe(false);
     expect(submit().disabled).toBe(true);
   });
 
-  it('o QR Code do público geral destaca o preço de pré-lançamento, sem o Insanos', async () => {
-    window.scrollTo = () => undefined;
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    await act(async () =>
-      createRoot(host).render(
-        <MemoryRouter initialEntries={['/evento/feira-de-motos?publico=geral']}>
-          <Routes>
-            <Route path="/evento/:evento" element={<EventSignupPage />} />
-          </Routes>
-        </MemoryRouter>,
-      ),
-    );
-    expect(host.textContent).toContain('Preço de pré-lançamento');
-    expect(host.textContent).toContain('R$34,90/mês');
-    expect(host.textContent).toContain('ou 10x de R$ 12,00 sem juros no Pix, direto na mensalidade');
-    expect(host.textContent).not.toContain('Insanos');
+  it('o QR Code do público geral destaca o plano normal, sem o Insanos', async () => {
+    const host = await render('/evento/feira-de-motos?publico=geral');
+    expect(text(host)).toContain('Preço promocional');
+    expect(text(host)).toContain('R$34,90/mês');
+    expect(text(host)).not.toContain('Insanos');
+    const cta = Array.from(host.querySelectorAll('a')).find((a) => a.textContent === 'Contratar agora');
+    expect(cta?.getAttribute('href')).toBe('/contratar?evento=feira-de-motos');
+  });
+
+  it('fechada na central: os preços normais e o contato direto', async () => {
+    offer = offerWith({ enabled: false });
+    const host = await render('/evento/feira-de-motos?publico=geral');
+    expect(text(host)).toContain('R$69,90/mês');
+    expect(text(host)).not.toContain('Contratar agora');
+    expect(host.querySelector('button[type=submit]')).not.toBeNull();
   });
 });

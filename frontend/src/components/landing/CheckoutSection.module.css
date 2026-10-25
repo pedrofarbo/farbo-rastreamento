@@ -1,0 +1,238 @@
+/* A chamada para a contratação pelo site: o fundo escuro e o cartão com
+   brilho verde; a oferta à esquerda, os passos e os botões à direita; no
+   celular, um embaixo do outro. */
+
+.section {
+  padding: 5rem 1.5rem;
+  background: #060907;
+  /* Os links para #contratar pulam para cá: o menu fixo não cobre o topo. */
+  scroll-margin-top: 4rem;
+}
+
+.container {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.card {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 3rem;
+  align-items: center;
+  background: radial-gradient(circle at 15% 30%, rgba(59, 229, 88, 0.14) 0%, rgba(13, 19, 14, 1) 65%);
+  border: 1px solid rgba(59, 229, 88, 0.25);
+  border-radius: 24px;
+  padding: 3rem;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.8125rem;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  color: var(--color-neon-green);
+  text-transform: uppercase;
+}
+
+.title {
+  font-size: 2.5rem;
+  font-weight: 900;
+  line-height: 1.15;
+  color: #ffffff;
+  margin: 0.5rem 0 1rem;
+}
+
+.subtitle {
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  color: #94a3b8;
+  max-width: 520px;
+}
+
+.offer {
+  margin-top: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  border-radius: 16px;
+  border: 1px solid var(--color-neon-green);
+  background: rgba(59, 229, 88, 0.08);
+  box-shadow: 0 0 24px rgba(59, 229, 88, 0.15);
+}
+
+.offerTag {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--color-neon-green);
+}
+
+.offerPrices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.offerItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.offerLabel {
+  font-size: 0.8125rem;
+  color: #94a3b8;
+}
+
+.offerOld {
+  font-size: 0.9375rem;
+  color: #64748b;
+}
+
+.offerPrice {
+  font-size: 1.75rem;
+  font-weight: 900;
+  color: #ffffff;
+}
+
+.offerInstallments {
+  font-size: 0.8125rem;
+  color: var(--color-neon-green);
+}
+
+.offerNote {
+  margin-top: 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  background: #0d130e;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.steps li {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
+.steps strong {
+  color: #ffffff;
+}
+
+.number {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--color-neon-soft);
+  color: var(--color-neon-green);
+  font-size: 0.875rem;
+  font-weight: 800;
+}
+
+.primary,
+.secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  padding: 0.875rem 1.5rem;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 800;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.primary {
+  border: none;
+  background: var(--color-neon-green);
+  color: #060907;
+  box-shadow: 0 4px 20px rgba(59, 229, 88, 0.4);
+  transition: all 0.2s ease;
+}
+
+.primary:hover {
+  background: var(--color-neon-green-hover);
+  text-decoration: none;
+  transform: translateY(-2px);
+}
+
+.secondary {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: #ffffff;
+}
+
+.secondary:hover {
+  border-color: var(--color-neon-green);
+}
+
+.small {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #94a3b8;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .card {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    padding: 2rem 1.5rem;
+  }
+
+  .title {
+    font-size: 2rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .offerPrices {
+    grid-template-columns: 1fr;
+  }
+
+  .section {
+    padding: 3.5rem 1rem;
+  }
+
+  .card {
+    padding: 1.5rem 1rem;
+    border-radius: 20px;
+  }
+
+  .title {
+    font-size: 1.75rem;
+  }
+
+  .panel {
+    padding: 1.5rem 1.25rem;
+  }
+}

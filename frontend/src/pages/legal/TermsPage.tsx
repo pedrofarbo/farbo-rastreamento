@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 
 import { COMPANY, CONTRACT_PATH, LEGAL_FACTS, PRIVACY_PATH } from '@/config/legal';
-import { INSANOS_MONTHLY, LAUNCH_OFFER, PRE_LAUNCH } from '@/config/landing';
+import { CHECKOUT_PATH } from '@/config/landing';
 
 import styles from './Legal.module.css';
 import { CompanyIdentity, ContactChannels, LegalLayout } from './LegalLayout';
@@ -112,27 +112,32 @@ const SECTIONS: LegalSection[] = [
           um veículo. Os preços são os da tabela vigente, mostrados no site e no próprio pedido antes da
           confirmação.
         </p>
-        {PRE_LAUNCH && (
-          <>
-            <h3>Promoção de pré-lançamento</h3>
-            <p>
-              Quem se inscreve na lista de pré-lançamento contrata cada rastreador por{' '}
-              {LAUNCH_OFFER.equipment} e paga {LAUNCH_OFFER.monthly} de mensalidade nos {LAUNCH_OFFER.months}{' '}
-              primeiros meses. Para os integrantes do Insanos MC, a mensalidade da promoção é{' '}
-              {LAUNCH_OFFER.insanosMonthly}.
-            </p>
-            <p>
-              Depois desse período, vale o preço do plano ({LAUNCH_OFFER.monthlyRegular}, ou{' '}
-              {INSANOS_MONTHLY.label} para o Insanos MC).
-            </p>
-            <p>Regras da promoção:</p>
-            <ul>
-              <li>vale para todos os veículos do Cliente, quantos ele quiser;</li>
-              <li>é limitada aos {LAUNCH_OFFER.slots} primeiros Clientes da lista a contratar;</li>
-              <li>exige que a conta use o mesmo e-mail da inscrição.</li>
-            </ul>
-          </>
-        )}
+        {/* Sem valores aqui: os preços são os mostrados no site e no pedido,
+            que vêm do servidor (as opções do pedido, na central). */}
+        <h3>Contratação pelo site</h3>
+        <p>
+          A pessoa física também pode contratar pelo site, em <Link to={CHECKOUT_PATH}>Contratar</Link>: escolhe o
+          plano e o rastreador, informa o veículo, os dados e o endereço, aceita o contrato e paga com Pix, na hora, a
+          1ª mensalidade, o frete e o rastreador (ou a instalação, no comodato). A conta na plataforma é criada no
+          mesmo pedido.
+        </p>
+        <p>
+          Valem os preços mostrados na página de contratação e no resumo do pedido, antes do pagamento. O preço da
+          mensalidade contratada pelo site vale enquanto a assinatura durar, com o reajuste anual descrito abaixo. O
+          rastreador comprado pode ser pago à vista ou parcelado sem juros nas mensalidades, e a instalação pelos
+          instaladores da Farbo é opcional. Os integrantes do Insanos MC têm a mensalidade do plano deles.
+        </p>
+        <p>
+          No comodato (o rastreador emprestado, devolvido ao encerrar), a instalação é feita pelos instaladores da
+          Farbo, a mensalidade inclui a garantia de troca do rastreador e a desinstalação, ao encerrar, tem a taxa
+          mostrada no pedido.
+        </p>
+        <h3>Promoção de pré-lançamento</h3>
+        <p>
+          Quem se inscreveu na lista de pré-lançamento e contrata pela plataforma tem a promoção nas condições
+          informadas na inscrição (os valores, o prazo e as vagas), para todos os seus veículos, desde que a conta use
+          o mesmo e-mail da inscrição.
+        </p>
         <p>
           A mensalidade tem <strong>reajuste anual em agosto pelo IPCA</strong> (IBGE) acumulado nos 12 meses até
           maio, avisado por e-mail com pelo menos 30 dias de antecedência. Só é reajustada a assinatura com pelo

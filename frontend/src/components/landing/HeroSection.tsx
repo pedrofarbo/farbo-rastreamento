@@ -1,6 +1,8 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 
-import { LAUNCH_ANCHOR, PRE_LAUNCH } from '@/config/landing';
+import { CHECKOUT_PATH, priceLabel } from '@/config/landing';
+import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 
 import styles from './HeroSection.module.css';
 
@@ -9,6 +11,9 @@ interface HeroSectionProps {
 }
 
 export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenModal }) => {
+  const { offer, open } = useCheckoutOffer();
+  // O menor preço do site (o do Insanos MC, quando há o plano deles).
+  const from = offer && Math.min(offer.planCents, offer.insanosPlanName ? offer.insanosCents : offer.planCents);
   return (
     <section className={styles.heroSection} id="beneficios">
       <div className={styles.container}>
@@ -29,11 +34,17 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenModal }) => {
             em tempo real para motos e carros.
           </p>
 
-          {/* No pré-lançamento, o convite é entrar na lista (com a promoção). */}
-          {PRE_LAUNCH ? (
-            <a className={styles.heroCtaBtn} href={LAUNCH_ANCHOR} data-analytics="hero-pre-lancamento">
-              Entrar no pré-lançamento
-            </a>
+          {/* Com a contratação pelo site aberta, o convite é contratar;
+              fechada na central, o pré-cadastro. */}
+          {open ? (
+            <div className={styles.heroCta}>
+              <Link className={styles.heroCtaBtn} to={CHECKOUT_PATH} data-analytics="hero-contratar">
+                Contratar agora
+              </Link>
+              <span className={styles.heroCtaNote}>
+                {from ? `A partir de ${priceLabel(from)}/mês · pague` : 'Pague'} com Pix e receba em casa
+              </span>
+            </div>
           ) : (
             <button
               className={styles.heroCtaBtn}

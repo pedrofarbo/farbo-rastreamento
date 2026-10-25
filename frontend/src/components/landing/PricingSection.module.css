@@ -227,6 +227,27 @@
   color: var(--color-neon-green);
 }
 
+/* O preço enquanto a oferta carrega do servidor (o lugar dele, sem pular). */
+.pricePending {
+  margin: 0.5rem 0;
+  font-size: 2.75rem;
+  font-weight: 900;
+  line-height: 1;
+  color: #334155;
+}
+
+/* No cartão do rastreador: a instalação e o comodato. */
+.equipmentNote {
+  margin: 0.75rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #cbd5e1;
+}
+
+.equipmentNote strong {
+  color: #ffffff;
+}
+
 .checkList {
   list-style: none;
   padding: 0;

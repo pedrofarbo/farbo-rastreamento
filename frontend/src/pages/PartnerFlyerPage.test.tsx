@@ -4,12 +4,16 @@ import { createRoot } from 'react-dom/client';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { OFFER, withQuery } from '@/test/checkoutOffer';
 import type { PartnerReport } from '@/types';
 
 let respond: () => Promise<PartnerReport>;
 vi.mock('@/api/resources', async () => {
   const actual = await vi.importActual<typeof import('@/api/resources')>('@/api/resources');
-  return { publicApi: { partner: () => respond(), partnerQrUrl: actual.publicApi.partnerQrUrl } };
+  return {
+    publicApi: { partner: () => respond(), partnerQrUrl: actual.publicApi.partnerQrUrl },
+    checkoutApi: { offer: async () => OFFER },
+  };
 });
 
 import { PartnerFlyerPage } from './PartnerFlyerPage';
@@ -27,11 +31,13 @@ async function render() {
   document.body.appendChild(host);
   await act(async () =>
     createRoot(host).render(
-      <MemoryRouter initialEntries={['/parceiro/segredo-do-joao-0123456789/flyer']}>
-        <Routes>
-          <Route path="/parceiro/:token/flyer" element={<PartnerFlyerPage />} />
-        </Routes>
-      </MemoryRouter>,
+      withQuery(
+        <MemoryRouter initialEntries={['/parceiro/segredo-do-joao-0123456789/flyer']}>
+          <Routes>
+            <Route path="/parceiro/:token/flyer" element={<PartnerFlyerPage />} />
+          </Routes>
+        </MemoryRouter>,
+      ),
     ),
   );
   await flush();

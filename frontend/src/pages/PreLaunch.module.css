@@ -1,6 +1,6 @@
-/* As telas do pré-lançamento fora da landing (o cadastro do evento e o do
-   link de indicação, e a página do afiliado): celular primeiro, o mesmo fundo
-   escuro e o verde da landing. Campos com 16px ou mais (o iPhone não dá zoom
+/* As telas públicas fora da landing (o convite do evento e o do link de
+   indicação, a contratação, a página do afiliado...): celular primeiro, o
+   mesmo fundo escuro e o verde da landing. Campos com 16px ou mais (o iPhone não dá zoom
    ao tocar) e botões grandes para o polegar. */
 .page {
   min-height: 100dvh;
@@ -406,6 +406,21 @@
   .doneIcon {
     animation: none;
   }
+}
+
+/* O preço grande enquanto a oferta carrega do servidor (o lugar dele). */
+.pricePending {
+  font-size: 3rem;
+  font-weight: 900;
+  color: #334155;
+}
+
+/* O título do formulário de contato. */
+.formTitle {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.0625rem;
+  font-weight: 800;
 }
 
 /* Um valor ("R$ 39,90") nunca se parte na quebra de linha. */

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { offerWith } from '@/test/checkoutOffer';
+
 import { FLYER_FORMATS, flyerFileName, flyerLayout, flyerOffer, jpegToPdf } from './flyer';
 import type { FlyerFormat } from './flyer';
 
@@ -24,15 +26,20 @@ describe('flyer do afiliado', () => {
     expect(FLYER_FORMATS.a5.width / FLYER_FORMATS.a5.height).toBeCloseTo(148 / 210, 2);
   });
 
-  it('a oferta segue a landing: no pré-lançamento, a promoção', () => {
-    const launch = flyerOffer(true);
-    expect(launch.tag).toBe('PREÇO DE PRÉ-LANÇAMENTO');
-    expect(launch.monthlyCents).toBe(3490);
-    expect(launch.equipment.map((s) => s.text).join('')).toBe('Rastreador R$ 150 R$ 120 ou 10x de R$ 12,00 sem juros no Pix');
-    expect(launch.fine).toContain('500 primeiros');
-    const regular = flyerOffer(false);
-    expect(regular.monthlyCents).toBe(6990);
-    expect(regular.equipment.map((s) => s.text).join('')).toBe('Rastreador R$ 150 ou 10x de R$ 15,00 sem juros no Pix');
+  it('a oferta é a do site (do servidor): aberta, o preço dela com o normal riscado; fechada, o normal', () => {
+    const site = flyerOffer(offerWith());
+    expect(site.tag).toBe('PREÇO PROMOCIONAL');
+    expect(site.monthlyCents).toBe(3490);
+    expect(site.note.map((s) => s.text).join('')).toBe('enquanto a assinatura durar · o normal é R$ 69,90');
+    expect(site.equipment.map((s) => s.text).join('')).toBe('Rastreador R$ 150 R$ 120 ou 10x de R$ 12,00 sem juros no Pix');
+    expect(site.fine).not.toMatch(/primeiros|meses/);
+    // Outros valores na central: o flyer acompanha.
+    const other = flyerOffer(offerWith({ planCents: 2990, equipmentCents: 15000, maxInstallments: 1 }));
+    expect(other.monthlyCents).toBe(2990);
+    expect(other.equipment.map((s) => s.text).join('')).toBe('Rastreador R$ 150');
+    const closed = flyerOffer(offerWith({ enabled: false }));
+    expect(closed.monthlyCents).toBe(6990);
+    expect(closed.equipment.map((s) => s.text).join('')).toBe('Rastreador R$ 150 ou 10x de R$ 15,00 sem juros no Pix');
   });
 
   it('o nome do arquivo', () => {

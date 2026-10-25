@@ -45,6 +45,7 @@ const OrgInstallationsPage = page(() => import('@/pages/org/OrgInstallationsPage
 const TheftReportPage = page(() => import('@/pages/TheftReportPage'), 'TheftReportPage');
 const ClaimReportPage = page(() => import('@/pages/ClaimReportPage'), 'ClaimReportPage');
 const PublicPayPage = page(() => import('@/pages/PublicPayPage'), 'PublicPayPage');
+const CheckoutPage = page(() => import('@/pages/CheckoutPage'), 'CheckoutPage');
 const InstallGuidePage = page(() => import('@/pages/InstallGuidePage'), 'InstallGuidePage');
 const ContractPage = page(() => import('@/pages/legal/ContractPage'), 'ContractPage');
 const AssociateTermPage = page(() => import('@/pages/legal/ContractPage'), 'AssociateTermPage');
@@ -126,6 +127,8 @@ export function App() {
                 <Route path="/instalador/:token" element={<InstallerPage />} />
                 {/* O link de pagamento dos lembretes de fatura (sem login). */}
                 <Route path="/pagar/:token" element={<PublicPayPage />} />
+                {/* A contratação rápida pela landing, com Pix. */}
+                <Route path="/contratar" element={<CheckoutPage />} />
                 {/* A instalação do J16 (o QR Code do folheto da embalagem). */}
                 <Route path="/instalacao" element={<InstallGuidePage />} />
 
