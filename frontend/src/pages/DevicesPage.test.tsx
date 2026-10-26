@@ -113,6 +113,15 @@ vi.mock('@/api/resources', () => ({
     list: async () => [MOCK_VEHICLE],
     create: async () => MOCK_VEHICLE,
   },
+  // O estoque: um chip livre e o que já está no MOCK_DEVICE.
+  chipsApi: {
+    list: async () => [
+      { id: 'chip-livre', iccid: '89553202100093795348', phoneNumber: '(34) 99999-0001', carrier: 'Algar', apn: 'ss.algar.br',
+        apnUser: 'algar', apnPasswordSet: true, notes: '', device: null, createdAt: '', updatedAt: '' },
+      { id: 'chip-em-uso', iccid: '89553202100093795330', phoneNumber: '', carrier: '', apn: '', apnUser: '', apnPasswordSet: false,
+        notes: '', device: { id: MOCK_DEVICE.id, imei: MOCK_DEVICE.imei }, createdAt: '', updatedAt: '' },
+    ],
+  },
   customersApi: {
     list: async () => [MOCK_CUSTOMER],
   },
@@ -371,6 +380,34 @@ describe('DevicesPage', () => {
     await flush();
     expect(document.body.textContent).not.toContain('Este IMEI');
     expect(buttonNamed('Salvar')!.disabled).toBe(false);
+  });
+
+  it('o chip do estoque: escolhido, os dados vêm dele; o que está em outro rastreador não aparece', async () => {
+    await render();
+    act(() => buttonNamed('Novo rastreador')!.click());
+    await flush();
+    const chip = Array.from(document.querySelectorAll('label'))
+      .find((l) => l.textContent === 'Chip')!
+      .parentElement!.querySelector('select') as HTMLSelectElement;
+    const options = Array.from(chip.options).map((o) => o.textContent);
+    expect(options).toEqual(['Digitar os dados do chip', '8955 3202 1000 9379 5348 · (34) 9-9999-0001 · Algar']);
+    expect(document.body.textContent).toContain('Linha do chip');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(chip, 'chip-livre');
+      chip.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flush();
+    // Os campos digitados saem; fica o resumo do chip.
+    expect(document.body.textContent).not.toContain('Linha do chip');
+    expect(document.body.textContent).toContain('Linha (34) 9-9999-0001 · ICCID 8955 3202 1000 9379 5348 · APN ss.algar.br (algar, com senha)');
+    const imei = Array.from(document.querySelectorAll('label'))
+      .find((l) => l.textContent === 'IMEI')!
+      .parentElement!.querySelector('input') as HTMLInputElement;
+    act(() => typeInto(imei, '869247061230055'));
+    await flush();
+    act(() => buttonNamed('Salvar')!.click());
+    await flush();
+    expect(saved[0]).toEqual({ op: 'create', input: expect.objectContaining({ chipId: 'chip-livre', iccid: '89553202100093795348' }) });
   });
 
   it('o rastreador recusado sem cadastro: corrige o cadastro parecido ou abre um novo', async () => {

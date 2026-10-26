@@ -364,6 +364,24 @@ export interface TeamMember extends User {
  * visualizador recebem só identificação e situação; os campos de
  * configuração chegam vazios. Nos overrides, a senha aparece como `***`.
  */
+/** Um chip M2M do estoque. Em uso é o que está num rastreador (device). */
+export interface Chip {
+  id: string;
+  iccid: string;
+  phoneNumber: string;
+  /** A operadora (Algar, Vivo...). */
+  carrier: string;
+  apn: string;
+  apnUser: string;
+  /** A senha do APN nunca vem: só se está definida. */
+  apnPasswordSet: boolean;
+  notes: string;
+  /** O rastreador com o chip; nulo se está livre. */
+  device: { id: string; imei: string } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Device {
   id: string;
   imei: string;
@@ -482,6 +500,48 @@ export function retentionLabel(days: number): string {
   if (days === 365) return '1 ano';
   if (days === 180) return '6 meses';
   return `${days} dias`;
+}
+
+/** Um veículo na listagem da central: o dono, a associação que paga por ele e o rastreador. */
+export interface VehicleDirectoryEntry {
+  id: string;
+  name: string;
+  plate: string;
+  kind: VehicleKind;
+  brand: string;
+  model: string;
+  year: number | null;
+  /** Nulo nos veículos da central, sem dono. */
+  customerId: string | null;
+  customerName: string;
+  customerEmail: string;
+  customerDocument: string;
+  /** A associação (ou seguradora) do dono; nulo se ele não é associado. */
+  organizationId: string | null;
+  organizationName: string;
+  deviceId: string | null;
+  deviceImei: string;
+  /** ONLINE, STALE ou OFFLINE; vazio sem rastreador. */
+  deviceStatus: string;
+  lastSeenAt: string | null;
+  createdAt: string;
+}
+
+/** Os filtros da listagem (vazios não filtram). organization: o id, ou 'none' para quem não é associado. */
+export interface VehicleDirectoryFilter {
+  plate: string;
+  organization: string;
+  customer: string;
+  document: string;
+  email: string;
+}
+
+export interface VehicleDirectoryPage {
+  items: VehicleDirectoryEntry[];
+  /** Quantos passam nos filtros (em todas as páginas). */
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 /** O que a lista do painel consome: veículo com o estado do rastreador junto. */

@@ -44,6 +44,10 @@ func (s *Service) GetByIMEI(ctx context.Context, imei string) (*Device, error) {
 }
 
 func (s *Service) Create(ctx context.Context, in Input) (*Device, error) {
+	in, err := s.applyChip(ctx, uuid.Nil, in)
+	if err != nil {
+		return nil, err
+	}
 	merged, err := mergeInput(nil, in)
 	if err != nil {
 		return nil, err
@@ -55,11 +59,19 @@ func (s *Service) Create(ctx context.Context, in Input) (*Device, error) {
 	if err := s.checkICCID(ctx, uuid.Nil, normalized.ICCID); err != nil {
 		return nil, err
 	}
-	return s.repo.Create(ctx, normalized)
+	d, err := s.repo.Create(ctx, normalized)
+	if err != nil {
+		return nil, err
+	}
+	return d, s.stockChip(ctx, d)
 }
 
 func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Device, error) {
 	current, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	in, err = s.applyChip(ctx, id, in)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +86,11 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Device, 
 	if err := s.checkICCID(ctx, id, normalized.ICCID); err != nil {
 		return nil, err
 	}
-	return s.repo.Update(ctx, id, normalized)
+	d, err := s.repo.Update(ctx, id, normalized)
+	if err != nil {
+		return nil, err
+	}
+	return d, s.stockChip(ctx, d)
 }
 
 // checkICCID recusa o chip que já está em outro rastreador, dizendo qual (o

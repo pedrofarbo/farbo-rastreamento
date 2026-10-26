@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 
-import { customersApi, deviceInputFrom, devicesApi, diagnosticsApi, vehiclesApi } from '@/api/resources';
+import { chipsApi, customersApi, deviceInputFrom, devicesApi, diagnosticsApi, vehiclesApi } from '@/api/resources';
 import type { DeviceInput, VehicleInput } from '@/api/resources';
 import billing from '@/components/billing/Billing.module.css';
 import { Badge } from '@/components/ui/Badge';
@@ -20,7 +20,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { isDeviceActivated } from '@/services/deviceBulk';
 import { imeiProblem } from '@/services/imei';
-import { formatDeviceStatus, formatPhoneInput, formatRelative } from '@/services/format';
+import { formatDeviceStatus, formatICCID, formatPhoneInput, formatRelative } from '@/services/format';
 import { useAuth } from '@/stores/AuthContext';
 import type { Device } from '@/types';
 
@@ -107,6 +107,7 @@ export function DevicesPage() {
   const vehicles = useQuery({ queryKey: ['vehicles'], queryFn: vehiclesApi.list });
   const customers = useQuery({ queryKey: ['customers'], queryFn: customersApi.list });
   const protocols = useQuery({ queryKey: ['protocols'], queryFn: diagnosticsApi.protocols });
+  const chips = useQuery({ queryKey: ['chips'], queryFn: chipsApi.list });
 
   const provisioning = useQuery({
     queryKey: ['provisioning', provisioningFor?.id],
@@ -119,6 +120,7 @@ export function DevicesPage() {
       editingId ? devicesApi.update(editingId, input) : devicesApi.create(input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['devices'] });
+      queryClient.invalidateQueries({ queryKey: ['chips'] });
       notify({ tone: 'success', title: editingId ? 'Rastreador atualizado' : 'Rastreador cadastrado' });
       setDeviceForm(null);
       setEditing(null);
@@ -151,6 +153,15 @@ export function DevicesPage() {
   const allDevices = devices.data ?? [];
   const activatedCount = allDevices.filter(isDeviceActivated).length;
   const pendingCount = allDevices.length - activatedCount;
+
+  // O chip do estoque: o escolhido no formulário ou, sem escolha, o que o
+  // rastreador em edição já tem. Os livres (e o dele) podem ser escolhidos.
+  const chipList = chips.data ?? [];
+  const selectableChips = chipList.filter((c) => !c.device || c.device.id === editingId);
+  const selectedChip =
+    deviceForm?.chipId !== undefined
+      ? (chipList.find((c) => c.id === deviceForm.chipId) ?? null)
+      : (chipList.find((c) => c.iccid !== '' && c.iccid === deviceForm?.iccid) ?? null);
 
   // IMEI fora do padrão: o aviso aparece já no formulário e o salvar pede a
   // conferência na etiqueta (com ele errado, a configuração por SMS se perde).
@@ -468,7 +479,7 @@ export function DevicesPage() {
               loading={saveDevice.isPending}
               disabled={imeiBlocked}
               title={imeiBlocked ? 'Confira o IMEI na etiqueta antes de salvar.' : undefined}
-              onClick={() => deviceForm && saveDevice.mutate(deviceForm)}
+              onClick={() => deviceForm && saveDevice.mutate({ ...deviceForm, chipId: selectedChip?.id ?? null })}
             >
               Salvar
             </Button>
@@ -524,28 +535,78 @@ export function DevicesPage() {
               ))}
             </SelectField>
 
-            <div className={styles.formRow}>
-              <TextField
-                label="Linha do chip"
-                placeholder="(34) 99999-0000"
-                hint="O número de telefone do chip, com DDD: é para ele que vai a configuração por SMS."
-                value={deviceForm.phoneNumber ?? ''}
-                onChange={(event) =>
-                  setDeviceForm({
-                    ...deviceForm,
-                    phoneNumber: formatPhoneInput(event.target.value, deviceForm.phoneNumber ?? ''),
-                  })
-                }
-              />
-              <TextField
-                label="ICCID do chip"
-                placeholder="89553202100093795330"
-                inputMode="numeric"
-                hint="Os 19 ou 20 números impressos no chip (começam com 89). Se colar com o SP da etiqueta, ele sai."
-                value={deviceForm.iccid ?? ''}
-                onChange={(event) => setDeviceForm({ ...deviceForm, iccid: event.target.value })}
-              />
-            </div>
+            <SelectField
+              label="Chip"
+              hint={
+                selectedChip
+                  ? 'A linha, o ICCID e o APN vêm do estoque. Para corrigir, edite o chip em Chips.'
+                  : selectableChips.length === 0
+                    ? 'Nenhum chip livre no estoque: digite os dados abaixo (o chip entra no estoque) ou cadastre em Chips.'
+                    : 'Escolha um chip livre do estoque, ou digite os dados abaixo (o chip entra no estoque).'
+              }
+              value={selectedChip?.id ?? ''}
+              onChange={(event) => {
+                const chip = chipList.find((c) => c.id === event.target.value);
+                setDeviceForm(
+                  chip
+                    ? {
+                        ...deviceForm,
+                        chipId: chip.id,
+                        phoneNumber: chip.phoneNumber,
+                        iccid: chip.iccid,
+                        apn: chip.apn,
+                        apnUser: chip.apnUser,
+                        apnPassword: '',
+                        clearApnPassword: false,
+                      }
+                    : { ...deviceForm, chipId: null, phoneNumber: '', iccid: '', apn: '', apnUser: '', apnPassword: '' },
+                );
+              }}
+            >
+              <option value="">Digitar os dados do chip</option>
+              {selectableChips.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {formatICCID(c.iccid)}
+                  {c.phoneNumber ? ` · ${formatPhoneInput(c.phoneNumber)}` : ''}
+                  {c.carrier ? ` · ${c.carrier}` : ''}
+                </option>
+              ))}
+            </SelectField>
+
+            {selectedChip && (
+              <p className={styles.note}>
+                Linha {selectedChip.phoneNumber ? formatPhoneInput(selectedChip.phoneNumber) : 'não cadastrada'} · ICCID{' '}
+                {formatICCID(selectedChip.iccid)}
+                {selectedChip.apn
+                  ? ` · APN ${selectedChip.apn}${selectedChip.apnUser ? ` (${selectedChip.apnUser}${selectedChip.apnPasswordSet ? ', com senha' : ''})` : ''}`
+                  : ' · APN padrão da central'}
+              </p>
+            )}
+
+            {!selectedChip && (
+              <div className={styles.formRow}>
+                <TextField
+                  label="Linha do chip"
+                  placeholder="(34) 99999-0000"
+                  hint="O número de telefone do chip, com DDD: é para ele que vai a configuração por SMS."
+                  value={deviceForm.phoneNumber ?? ''}
+                  onChange={(event) =>
+                    setDeviceForm({
+                      ...deviceForm,
+                      phoneNumber: formatPhoneInput(event.target.value, deviceForm.phoneNumber ?? ''),
+                    })
+                  }
+                />
+                <TextField
+                  label="ICCID do chip"
+                  placeholder="89553202100093795330"
+                  inputMode="numeric"
+                  hint="Os 19 ou 20 números impressos no chip (começam com 89). Se colar com o SP da etiqueta, ele sai."
+                  value={deviceForm.iccid ?? ''}
+                  onChange={(event) => setDeviceForm({ ...deviceForm, iccid: event.target.value })}
+                />
+              </div>
+            )}
 
             <div
               style={{
@@ -561,7 +622,9 @@ export function DevicesPage() {
               }}
             >
               <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                Servidor Farbo + chip Algar (tcp.farborastreadores.com.br:5000, APN ss.algar.br)
+                {selectedChip
+                  ? 'Servidor Farbo (tcp.farborastreadores.com.br:5000); o APN vem do chip'
+                  : 'Servidor Farbo + chip Algar (tcp.farborastreadores.com.br:5000, APN ss.algar.br)'}
               </span>
               <Button
                 size="small"
@@ -606,32 +669,36 @@ export function DevicesPage() {
               />
             </div>
 
-            <div className={styles.formRow}>
-              <TextField
-                label="APN do chip"
-                placeholder="zap.vivo.com.br"
-                value={deviceForm.apn ?? ''}
-                onChange={(event) => setDeviceForm({ ...deviceForm, apn: event.target.value })}
-              />
-              <TextField
-                label="Usuário APN"
-                value={deviceForm.apnUser ?? ''}
-                onChange={(event) => setDeviceForm({ ...deviceForm, apnUser: event.target.value })}
-              />
-            </div>
+            {!selectedChip && (
+              <div className={styles.formRow}>
+                <TextField
+                  label="APN do chip"
+                  placeholder="zap.vivo.com.br"
+                  value={deviceForm.apn ?? ''}
+                  onChange={(event) => setDeviceForm({ ...deviceForm, apn: event.target.value })}
+                />
+                <TextField
+                  label="Usuário APN"
+                  value={deviceForm.apnUser ?? ''}
+                  onChange={(event) => setDeviceForm({ ...deviceForm, apnUser: event.target.value })}
+                />
+              </div>
+            )}
 
             <div className={styles.formRow}>
-              <SecretField
-                label="Senha APN"
-                hint="Só se a operadora exigir."
-                isSet={Boolean(editing?.apnPasswordSet)}
-                value={deviceForm.apnPassword ?? ''}
-                clear={Boolean(deviceForm.clearApnPassword)}
-                onChange={(apnPassword) => setDeviceForm({ ...deviceForm, apnPassword })}
-                onClear={(clearApnPassword) =>
-                  setDeviceForm({ ...deviceForm, clearApnPassword, apnPassword: '' })
-                }
-              />
+              {!selectedChip && (
+                <SecretField
+                  label="Senha APN"
+                  hint="Só se a operadora exigir."
+                  isSet={Boolean(editing?.apnPasswordSet)}
+                  value={deviceForm.apnPassword ?? ''}
+                  clear={Boolean(deviceForm.clearApnPassword)}
+                  onChange={(apnPassword) => setDeviceForm({ ...deviceForm, apnPassword })}
+                  onClear={(clearApnPassword) =>
+                    setDeviceForm({ ...deviceForm, clearApnPassword, apnPassword: '' })
+                  }
+                />
+              )}
               <SecretField
                 label="Senha de comando"
                 hint="Apenas se o firmware exigir."

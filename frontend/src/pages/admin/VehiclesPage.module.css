@@ -1,0 +1,105 @@
+/* A listagem de veículos da central: os filtros, a tabela e as páginas. */
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-3);
+}
+
+/* Onde a lista começa (a troca de página rola até aqui), com folga para o topo. */
+.anchor {
+  scroll-margin-top: var(--space-4);
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 32px;
+  margin-top: var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+
+.link {
+  color: var(--text-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.plate,
+.imei {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.plate {
+  letter-spacing: 0.04em;
+}
+
+/* No celular, cada veículo vira um cartão, com o nome de cada coluna. */
+@media (max-width: 640px) {
+  table.list thead {
+    display: none;
+  }
+
+  table.list,
+  table.list tbody,
+  table.list tr,
+  table.list td {
+    display: block;
+    width: 100%;
+  }
+
+  table.list tr {
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  table.list td {
+    padding: var(--space-1) 0;
+    border-bottom: none;
+  }
+
+  table.list td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+}
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
+}
+
+.pagerButtons {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}

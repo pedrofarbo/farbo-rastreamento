@@ -187,6 +187,9 @@ type Input struct {
 	ClearCommandPassword     bool              `json:"clearCommandPassword"`
 	CommandOverrides         map[string]string `json:"commandOverrides"`
 	Notes                    string            `json:"notes"`
+	// ChipID: o chip escolhido no estoque; a linha, o ICCID, o APN e a senha
+	// vêm dele (e os digitados nesses campos não valem).
+	ChipID *uuid.UUID `json:"chipId"`
 }
 
 // StatusChange descreve uma transição detectada pela varredura de status.

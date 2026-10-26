@@ -781,6 +781,15 @@ func (s *Server) routes() chi.Router {
 				r.Get("/protocols", s.handleListProtocols)
 				r.Get("/events", s.handleRecentEvents)
 
+				// O estoque de chips: escolhidos no cadastro do rastreador.
+				r.Route("/chips", func(r chi.Router) {
+					r.Use(auth.RequireRole(auth.RoleAdmin))
+					r.Get("/", s.handleListChips)
+					r.Post("/", s.handleCreateChip)
+					r.Patch("/{id}", s.handleUpdateChip)
+					r.Delete("/{id}", s.handleDeleteChip)
+				})
+
 				r.Route("/devices", func(r chi.Router) {
 					r.Get("/", s.handleListDevices)
 					r.With(auth.RequireRole(auth.RoleAdmin)).Post("/", s.handleCreateDevice)
@@ -913,6 +922,9 @@ func (s *Server) routes() chi.Router {
 						r.Get("/price-adjustments", s.handlePriceAdjustments)
 						r.Post("/price-adjustments/{year}/cancel", s.handleCancelPriceAdjustment)
 					}
+
+					// Os veículos de todas as contas, paginados e com filtros.
+					r.Get("/vehicle-directory", s.handleVehicleDirectory)
 
 					r.Route("/customers", func(r chi.Router) {
 						r.Get("/", s.handleListCustomers)

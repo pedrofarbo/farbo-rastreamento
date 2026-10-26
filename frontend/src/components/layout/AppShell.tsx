@@ -51,6 +51,14 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m-4 6h4m12-6h4m-4 6h4" />
     </>
   ),
+  // O chip SIM: o cartão com o canto cortado e os contatos.
+  sim: (
+    <>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" />
+      <rect x="8.5" y="11" width="7" height="6" rx="1" />
+      <path d="M12 11v6M8.5 14h7" />
+    </>
+  ),
   pulse: (
     <>
       <circle cx="12" cy="12" r="9" />
@@ -353,10 +361,12 @@ export function AppShell() {
                 {canManage && (
                   <>
                     {item('/clientes', 'users', 'Clientes', newLeads, `${newLeads} pré-cliente(s) novo(s)`)}
+                    {item('/veiculos', 'car', 'Veículos')}
                     {item('/associacoes', 'shield', 'Associações')}
                     {item('/empresa', 'building', 'Empresa', billsDue, `${billsDue} conta(s) vencida(s) ou vencendo hoje`)}
                     {item('/prestadores', 'wrench', 'Prestadores')}
                     {item('/dispositivos', 'chip', 'Rastreadores')}
+                    {item('/chips', 'sim', 'Chips')}
                     {item('/diagnostico', 'pulse', 'Diagnóstico')}
                     {item('/usuarios', 'userCog', 'Usuários')}
                   </>

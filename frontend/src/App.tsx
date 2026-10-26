@@ -79,6 +79,8 @@ const OrgInspectionsPage = page(() => import('@/pages/org/OrgInspectionsPage'), 
 const OrgInspectionPage = page(() => import('@/pages/org/OrgInspectionsPage'), 'OrgInspectionPage');
 const OrgInvoicesPage = page(() => import('@/pages/org/OrgInvoicesPage'), 'OrgInvoicesPage');
 const OrganizationsPage = page(() => import('@/pages/admin/OrganizationsPage'), 'OrganizationsPage');
+const VehiclesPage = page(() => import('@/pages/admin/VehiclesPage'), 'VehiclesPage');
+const ChipsPage = page(() => import('@/pages/admin/ChipsPage'), 'ChipsPage');
 const OrganizationDetailsPage = page(() => import('@/pages/admin/OrganizationDetailsPage'), 'OrganizationDetailsPage');
 
 const queryClient = new QueryClient({
@@ -193,7 +195,9 @@ export function App() {
 
                     <Route element={<RequireAdmin />}>
                       <Route path="dispositivos" element={<DevicesPage />} />
+                      <Route path="chips" element={<ChipsPage />} />
                       <Route path="diagnostico" element={<DiagnosticsPage />} />
+                      <Route path="veiculos" element={<VehiclesPage />} />
                       <Route path="clientes" element={<CustomersPage />} />
                       <Route path="clientes/:id" element={<CustomerDetailsPage />} />
                       <Route path="clientes/:id/relatorios" element={<CustomerReportsPage />} />

@@ -5,6 +5,7 @@ import type { TeamRole } from '@/services/roles';
 import { api, apiUrl, download, fetchBlob, request, tokens } from './client';
 import type {
   CancelOrderResult,
+  Chip,
   AccountMember,
   AwaitingInstall,
   AwaitingUninstall,
@@ -121,6 +122,8 @@ import type {
   User,
   VehicleShare,
   Vehicle,
+  VehicleDirectoryFilter,
+  VehicleDirectoryPage,
   VehicleEvent,
   VehicleView,
   ConversationMode,
@@ -363,6 +366,12 @@ export const fleetApi = {
 
 export const vehiclesApi = {
   list: () => api.get<VehicleView[]>('/api/vehicles'),
+  /** Central (administrador): os veículos de todas as contas, paginados e filtrados. */
+  directory: (filter: VehicleDirectoryFilter, page: number) => {
+    const query = new URLSearchParams({ page: String(page) });
+    for (const [key, value] of Object.entries(filter)) if (value.trim()) query.set(key, value.trim());
+    return api.get<VehicleDirectoryPage>(`/api/vehicle-directory?${query}`);
+  },
   get: (id: string) => api.get<VehicleView>(`/api/vehicles/${id}`),
   create: (input: VehicleInput) => api.post<Vehicle>('/api/vehicles', input),
   update: (id: string, input: VehicleInput) => api.patch<Vehicle>(`/api/vehicles/${id}`, input),
@@ -730,7 +739,29 @@ export interface DeviceInput {
   clearCommandPassword?: boolean;
   commandOverrides?: Record<string, string>;
   notes?: string;
+  /** O chip escolhido no estoque: a linha, o ICCID, o APN e a senha vêm dele. */
+  chipId?: string | null;
 }
+
+/** O cadastro de um chip do estoque. A senha do APN é só de escrita (em branco mantém). */
+export interface ChipInput {
+  iccid: string;
+  phoneNumber: string;
+  carrier: string;
+  apn: string;
+  apnUser: string;
+  apnPassword?: string;
+  clearApnPassword?: boolean;
+  notes: string;
+}
+
+/** O estoque de chips (administrador). */
+export const chipsApi = {
+  list: () => api.get<Chip[]>('/api/chips'),
+  create: (input: ChipInput) => api.post<Chip>('/api/chips', input),
+  update: (id: string, input: ChipInput) => api.patch<Chip>(`/api/chips/${id}`, input),
+  remove: (id: string) => api.delete<void>(`/api/chips/${id}`),
+};
 
 /**
  * Formulário de edição a partir do rastreador lido. Copia campo a campo só o

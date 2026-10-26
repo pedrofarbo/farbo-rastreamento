@@ -314,3 +314,8 @@ export function formatBytes(bytes: number | null | undefined): string {
   const digits = unit === 0 || value >= 100 ? 0 : 1;
   return `${value.toLocaleString('pt-BR', { minimumFractionDigits: digits, maximumFractionDigits: digits })} ${units[unit]}`;
 }
+
+/** "89553202100093795348" → "8955 3202 1000 9379 5348" (como vem impresso no chip). */
+export function formatICCID(iccid: string): string {
+  return iccid.replace(/(\d{4})(?=\d)/g, '$1 ');
+}
