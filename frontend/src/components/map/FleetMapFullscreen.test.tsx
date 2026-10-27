@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from 'react';
+import { StrictMode, act } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
@@ -64,25 +64,24 @@ afterEach(() => {
   exitFullscreen.mockClear();
 });
 
-function render(selectedId: string | null, onClose = vi.fn(), onSelect = vi.fn(), customerLinks = false) {
+function render(selectedId: string | null, onClose = vi.fn(), onSelect = vi.fn(), customerLinks = false, strict = false) {
   const host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
-  act(() =>
-    root!.render(
-      <MemoryRouter>
-        <FleetMapFullscreen
-          vehicles={VEHICLES}
-          selectedId={selectedId}
-          onSelect={onSelect}
-          geofences={FENCES}
-          title="Rota Norte"
-          customerLinks={customerLinks}
-          onClose={onClose}
-        />
-      </MemoryRouter>,
-    ),
+  const map = (
+    <MemoryRouter>
+      <FleetMapFullscreen
+        vehicles={VEHICLES}
+        selectedId={selectedId}
+        onSelect={onSelect}
+        geofences={FENCES}
+        title="Rota Norte"
+        customerLinks={customerLinks}
+        onClose={onClose}
+      />
+    </MemoryRouter>
   );
+  act(() => root!.render(strict ? <StrictMode>{map}</StrictMode> : map));
   return { onClose, onSelect };
 }
 
@@ -150,11 +149,14 @@ describe('o mapa da central em tela cheia', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('sair da tela cheia do navegador fecha o mapa; fechar o mapa sai dela', () => {
+  it('sair da tela cheia do navegador fecha o mapa; fechar o mapa sai dela', async () => {
     fullscreenElement = document.documentElement;
     const { onClose } = render('1');
+    const now = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(now + 10_000);
     fullscreenElement = null;
     act(() => void document.dispatchEvent(new Event('fullscreenchange')));
+    vi.restoreAllMocks();
     expect(onClose).toHaveBeenCalledTimes(1);
 
     act(() => root?.unmount());
@@ -163,6 +165,32 @@ describe('o mapa da central em tela cheia', () => {
     render('1');
     act(() => root?.unmount());
     root = null;
-    expect(exitFullscreen).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(exitFullscreen).toHaveBeenCalledTimes(1));
+  });
+
+  it('o sistema desfaz a tela cheia logo depois de entrar (Chrome no Linux): o mapa fica aberto, na janela', () => {
+    const { onClose } = render('1');
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+    fullscreenElement = document.documentElement;
+    act(() => void document.dispatchEvent(new Event('fullscreenchange')));
+    clock.mockReturnValue(now + 1_000);
+    fullscreenElement = null;
+    act(() => void document.dispatchEvent(new Event('fullscreenchange')));
+    vi.restoreAllMocks();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.querySelector('[aria-label="Mapa da frota em tela cheia"]')).toBeTruthy();
+    // Na janela, o Esc chega à página e fecha.
+    key('Escape');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('o navegador já em tela cheia quando o mapa monta (o React monta duas vezes): ela continua e o mapa fica', async () => {
+    fullscreenElement = document.documentElement;
+    const { onClose } = render('1', vi.fn(), vi.fn(), false, true);
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
+    expect(exitFullscreen).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(fullscreenElement).toBe(document.documentElement);
   });
 });

@@ -17,14 +17,13 @@ import { useFleet } from '@/hooks/useFleet';
 import { STATUS_LABEL, intervalLabel, remainingLabel } from '@/services/maintenance';
 import { useAuth } from '@/stores/AuthContext';
 import type { MaintenanceItem, MaintenanceStatus } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import pageStyles from '../Page.module.css';
 import styles from './MaintenancePage.module.css';
 
 export const maintenanceKey = ['me', 'maintenance'] as const;
-
-/** Quantas linhas aparecem de cada vez. */
-const PAGE = 50;
 
 const FILTERS: { id: MaintenanceStatus | 'all'; label: string }[] = [
   { id: 'all', label: 'Todas' },
@@ -50,7 +49,6 @@ export function MaintenancePage({ backTo }: { backTo?: string } = {}) {
   const [filter, setFilter] = useState<MaintenanceStatus | 'all'>('all');
   const [group, setGroup] = useState('');
   const [search, setSearch] = useState('');
-  const [limit, setLimit] = useState(PAGE);
   const [selected, setSelected] = useState<string[]>([]);
   const [form, setForm] = useState<{ item: MaintenanceItem | null } | null>(null);
   const [doing, setDoing] = useState<MaintenanceItem[]>([]);
@@ -70,6 +68,7 @@ export function MaintenancePage({ backTo }: { backTo?: string } = {}) {
         (!q || `${it.vehicleName} ${it.plate} ${it.name}`.toLowerCase().includes(q)),
     );
   }, [items, filter, group, search]);
+  const paged = usePagedList(shown, 'maintenance', [filter, group, search]);
   const pickable = (vehicles.data ?? []).filter((v) => !v.shared).map((v) => ({ id: v.id, name: v.name, plate: v.plate, groupId: v.groupId }));
   const selectedItems = items.filter((it) => selected.includes(it.id));
   const toggle = (id: string, on: boolean) => setSelected(on ? [...selected, id] : selected.filter((s) => s !== id));
@@ -134,10 +133,7 @@ export function MaintenancePage({ backTo }: { backTo?: string } = {}) {
                 type="search"
                 placeholder="Buscar veículo, placa ou manutenção"
                 value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setLimit(PAGE);
-                }}
+                onChange={(e) => setSearch(e.target.value)}
               />
               <select className={fieldStyles.select} value={filter} onChange={(e) => setFilter(e.target.value as MaintenanceStatus | 'all')}>
                 {FILTERS.map((f) => (
@@ -176,7 +172,7 @@ export function MaintenancePage({ backTo }: { backTo?: string } = {}) {
               <p className={styles.empty}>Nada com esse filtro.</p>
             ) : (
               <ul className={styles.list}>
-                {shown.slice(0, limit).map((it) => (
+                {paged.items.map((it) => (
                   <li key={it.id} className={styles.row}>
                     {canOperateAccount && (
                       <input
@@ -215,13 +211,7 @@ export function MaintenancePage({ backTo }: { backTo?: string } = {}) {
                 ))}
               </ul>
             )}
-            {shown.length > limit && (
-              <div className={styles.more}>
-                <Button variant="ghost" onClick={() => setLimit(limit + PAGE)}>
-                  Mostrar mais ({shown.length - limit})
-                </Button>
-              </div>
-            )}
+            {shown.length > 0 && <Pager {...paged.pager} />}
           </Card>
         )}
       </div>

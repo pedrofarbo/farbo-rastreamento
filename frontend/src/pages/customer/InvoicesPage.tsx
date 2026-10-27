@@ -30,6 +30,8 @@ import {
 } from '@/services/invoiceGroups';
 import type { HistoryDay, InvoiceGroup } from '@/services/invoiceGroups';
 import type { Invoice } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import styles from '../Page.module.css';
 
@@ -82,6 +84,8 @@ export function InvoicesPage() {
   const [olderError, setOlderError] = useState('');
   const all = useMemo(() => [...(invoices.data ?? []), ...older], [invoices.data, older]);
   const rows = useMemo(() => historyRows(all), [all]);
+  const pagedRows = usePagedList(rows, 'invoices');
+  const pagedSubscriptions = usePagedList(subscriptions.data ?? [], 'subscriptions');
   const firstClosed = useMemo(() => (invoices.data ?? []).filter((i) => i.status !== 'OPEN').length, [invoices.data]);
   const canLoadOlder = !olderDone && firstClosed >= CLOSED_PAGE;
   const loadOlder = async () => {
@@ -230,39 +234,42 @@ export function InvoicesPage() {
               description="A fatura do mês aparece aqui assim que o rastreador é contratado."
             />
           ) : (
-            <div className={styles.tableWrap}>
-              <table className={`${styles.table} ${styles.stackTable}`}>
-                <thead>
-                  <tr>
-                    <th>Descrição</th>
-                    <th>Vencimento</th>
-                    <th>Valor</th>
-                    <th>Situação</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) =>
-                    row.kind === 'invoice' ? (
-                      <InvoiceRow
-                        key={row.invoice.id}
-                        invoice={row.invoice}
-                        onlinePayment={onlinePayment}
-                        onPay={setPaying}
-                      />
-                    ) : (
-                      <DayRows
-                        key={row.dueDate}
-                        day={row}
-                        onlinePayment={onlinePayment}
-                        onPay={setPaying}
-                        onPayDay={payDay}
-                      />
-                    ),
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div className={styles.tableWrap}>
+                <table className={`${styles.table} ${styles.stackTable}`}>
+                  <thead>
+                    <tr>
+                      <th>Descrição</th>
+                      <th>Vencimento</th>
+                      <th>Valor</th>
+                      <th>Situação</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedRows.items.map((row) =>
+                      row.kind === 'invoice' ? (
+                        <InvoiceRow
+                          key={row.invoice.id}
+                          invoice={row.invoice}
+                          onlinePayment={onlinePayment}
+                          onPay={setPaying}
+                        />
+                      ) : (
+                        <DayRows
+                          key={row.dueDate}
+                          day={row}
+                          onlinePayment={onlinePayment}
+                          onPay={setPaying}
+                          onPayDay={payDay}
+                        />
+                      ),
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...pagedRows.pager} />
+            </>
           )}
           {(canLoadOlder || olderError) && (
             <div className={billing.olderBar}>
@@ -286,40 +293,43 @@ export function InvoicesPage() {
               description="Contrate o rastreamento do seu veículo em Meus veículos, no botão Novo veículo."
             />
           ) : (
-            <div className={styles.tableWrap}>
-              <table className={`${styles.table} ${styles.stackTable}`}>
-                <thead>
-                  <tr>
-                    <th>Plano</th>
-                    <th>Valor mensal</th>
-                    <th>Vencimento</th>
-                    <th>Situação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(subscriptions.data ?? []).map((subscription) => (
-                    <tr key={subscription.id}>
-                      <td>{subscription.planName}</td>
-                      <td data-label="Valor mensal">
-                        <MonthlyPrice sub={subscription} />
-                      </td>
-                      <td data-label="Vencimento">
-                        {isFree(subscription) ? 'sem cobrança' : `todo dia ${subscription.dueDay}`}
-                      </td>
-                      <td data-label="Situação">
-                        {subscription.status === 'ACTIVE' ? (
-                          <Badge tone="success" dot>
-                            Ativa
-                          </Badge>
-                        ) : (
-                          <Badge tone="neutral">Cancelada</Badge>
-                        )}
-                      </td>
+            <>
+              <div className={styles.tableWrap}>
+                <table className={`${styles.table} ${styles.stackTable}`}>
+                  <thead>
+                    <tr>
+                      <th>Plano</th>
+                      <th>Valor mensal</th>
+                      <th>Vencimento</th>
+                      <th>Situação</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {pagedSubscriptions.items.map((subscription) => (
+                      <tr key={subscription.id}>
+                        <td>{subscription.planName}</td>
+                        <td data-label="Valor mensal">
+                          <MonthlyPrice sub={subscription} />
+                        </td>
+                        <td data-label="Vencimento">
+                          {isFree(subscription) ? 'sem cobrança' : `todo dia ${subscription.dueDay}`}
+                        </td>
+                        <td data-label="Situação">
+                          {subscription.status === 'ACTIVE' ? (
+                            <Badge tone="success" dot>
+                              Ativa
+                            </Badge>
+                          ) : (
+                            <Badge tone="neutral">Cancelada</Badge>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...pagedSubscriptions.pager} />
+            </>
           )}
           {activeSubscriptions.length > 0 && (
             <p className={billing.muted} style={{ padding: 'var(--space-3) var(--space-4)' }}>

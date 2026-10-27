@@ -51,6 +51,8 @@ import { historyRows } from '@/services/invoiceGroups';
 import { accountDueDay, activeDueDays, subscriptionsByVehicle, subscriptionsWithoutVehicle } from '@/services/subscriptions';
 import { HISTORY_RETENTION_OPTIONS, retentionLabel } from '@/types';
 import type { HistoryRetention, Invoice, PixPayment, ReminderKind, Subscription, VehicleView } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import styles from '../Page.module.css';
 import { CustomerReferralCard } from './affiliates/CustomerReferralCard';
@@ -167,6 +169,10 @@ export function CustomerDetailsPage() {
     },
   });
   const run = (success: string, fn: () => Promise<unknown>) => action.mutate({ run: fn, success });
+
+  const pagedVehicles = usePagedList(customer.data?.vehicles ?? [], 'customer-vehicles');
+  const pagedPayments = usePagedList(customer.data?.payments ?? [], 'customer-payments');
+  const pagedInvoices = usePagedList(customer.data ? historyRows(customer.data.invoices) : [], 'customer-invoices');
 
   if (customer.isLoading) return <Spinner label="Carregando cliente" />;
   const data = customer.data;
@@ -443,262 +449,265 @@ export function CustomerDetailsPage() {
               description="Novo veículo cadastra o veículo, lança o rastreador e começa a assinatura de uma vez."
             />
           ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Veículo</th>
-                    <th>Rastreador</th>
-                    <th>Assinatura</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.vehicles.map((vehicle) => {
-                    const sub = byVehicle.get(vehicle.id);
-                    const active = sub?.status === 'ACTIVE';
-                    return (
-                      <tr key={vehicle.id}>
-                        <td>
-                          <Link to={`/veiculos/${vehicle.id}`}>
-                            <strong>{vehicle.name}</strong>
-                          </Link>
-                          <div className={billing.muted}>
-                            {[vehicle.plate, vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(' · ') || '—'}
-                          </div>
-                          <select
-                            className={`${fieldStyles.select} ${billing.inlineSelect}`}
-                            aria-label={`Histórico de ${vehicle.name}`}
-                            value={vehicle.historyRetentionDays ?? ''}
-                            disabled={action.isPending}
-                            onChange={(event) => {
-                              const days = event.target.value ? (Number(event.target.value) as HistoryRetention) : null;
-                              run(`Histórico de ${vehicle.name}: ${days ? `${days} dias` : 'prazo do cliente'}`, () =>
-                                vehiclesApi.setHistoryRetention(vehicle.id, days),
-                              );
-                            }}
-                          >
-                            <option value="">
-                              Histórico: do cliente ({retentionLabel(data.historyRetentionDays ?? data.defaultHistoryDays)})
-                            </option>
-                            {HISTORY_RETENTION_OPTIONS.map((days) => (
-                              <option key={days} value={days}>
-                                Histórico: {retentionLabel(days)}
+            <>
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Veículo</th>
+                      <th>Rastreador</th>
+                      <th>Assinatura</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedVehicles.items.map((vehicle) => {
+                      const sub = byVehicle.get(vehicle.id);
+                      const active = sub?.status === 'ACTIVE';
+                      return (
+                        <tr key={vehicle.id}>
+                          <td>
+                            <Link to={`/veiculos/${vehicle.id}`}>
+                              <strong>{vehicle.name}</strong>
+                            </Link>
+                            <div className={billing.muted}>
+                              {[vehicle.plate, vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(' · ') || '—'}
+                            </div>
+                            <select
+                              className={`${fieldStyles.select} ${billing.inlineSelect}`}
+                              aria-label={`Histórico de ${vehicle.name}`}
+                              value={vehicle.historyRetentionDays ?? ''}
+                              disabled={action.isPending}
+                              onChange={(event) => {
+                                const days = event.target.value ? (Number(event.target.value) as HistoryRetention) : null;
+                                run(`Histórico de ${vehicle.name}: ${days ? `${days} dias` : 'prazo do cliente'}`, () =>
+                                  vehiclesApi.setHistoryRetention(vehicle.id, days),
+                                );
+                              }}
+                            >
+                              <option value="">
+                                Histórico: do cliente ({retentionLabel(data.historyRetentionDays ?? data.defaultHistoryDays)})
                               </option>
-                            ))}
-                          </select>
-                          {sub?.deliveryAddress && (
-                            <span className={billing.subAddress} title={formatAddress(sub.deliveryAddress)}>
-                              Enviado para {sub.deliveryAddress.street}, {sub.deliveryAddress.number} ·{' '}
-                              {sub.deliveryAddress.city}/{sub.deliveryAddress.state}
-                            </span>
-                          )}
-                        </td>
-                        <td>
-                          <select
-                            className={fieldStyles.select}
-                            aria-label={`Rastreador de ${vehicle.name}`}
-                            value={vehicle.deviceId ?? ''}
-                            disabled={action.isPending}
-                            onChange={(event) => {
-                              // Lido agora: quando a chamada rodar, o select controlado já
-                              // terá voltado ao valor antigo.
-                              const deviceId = event.target.value || null;
-                              run(deviceId ? 'Rastreador vinculado' : 'Rastreador desvinculado', () =>
-                                vehiclesApi.update(vehicle.id, vehicleInputFrom(vehicle, { deviceId })),
-                              );
-                            }}
-                          >
-                            <option value="">aguardando instalação</option>
-                            {availableDevices(vehicle).map((device) => (
-                              <option key={device.id} value={device.id}>
-                                {device.imei} {device.model ? `· ${device.model}` : ''}
-                              </option>
-                            ))}
-                          </select>
-                          <div style={{ marginTop: 'var(--space-1)', display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
-                            {vehicle.device?.lastSeenAt ? (
-                              <Badge
-                                tone={vehicle.device.status === 'ONLINE' ? 'success' : vehicle.device.status === 'STALE' ? 'warning' : 'neutral'}
-                                dot
-                              >
-                                {formatDeviceStatus(vehicle.device.status)}
-                              </Badge>
-                            ) : orderOf.get(vehicle.id) ? (
-                              <Badge tone={trackerTone(orderOf.get(vehicle.id)!.trackerStatus)}>
-                                {stepOf('TRACKER', orderOf.get(vehicle.id)!.trackerStatus)?.short}
-                              </Badge>
+                              {HISTORY_RETENTION_OPTIONS.map((days) => (
+                                <option key={days} value={days}>
+                                  Histórico: {retentionLabel(days)}
+                                </option>
+                              ))}
+                            </select>
+                            {sub?.deliveryAddress && (
+                              <span className={billing.subAddress} title={formatAddress(sub.deliveryAddress)}>
+                                Enviado para {sub.deliveryAddress.street}, {sub.deliveryAddress.number} ·{' '}
+                                {sub.deliveryAddress.city}/{sub.deliveryAddress.state}
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            <select
+                              className={fieldStyles.select}
+                              aria-label={`Rastreador de ${vehicle.name}`}
+                              value={vehicle.deviceId ?? ''}
+                              disabled={action.isPending}
+                              onChange={(event) => {
+                                // Lido agora: quando a chamada rodar, o select controlado já
+                                // terá voltado ao valor antigo.
+                                const deviceId = event.target.value || null;
+                                run(deviceId ? 'Rastreador vinculado' : 'Rastreador desvinculado', () =>
+                                  vehiclesApi.update(vehicle.id, vehicleInputFrom(vehicle, { deviceId })),
+                                );
+                              }}
+                            >
+                              <option value="">aguardando instalação</option>
+                              {availableDevices(vehicle).map((device) => (
+                                <option key={device.id} value={device.id}>
+                                  {device.imei} {device.model ? `· ${device.model}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <div style={{ marginTop: 'var(--space-1)', display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
+                              {vehicle.device?.lastSeenAt ? (
+                                <Badge
+                                  tone={vehicle.device.status === 'ONLINE' ? 'success' : vehicle.device.status === 'STALE' ? 'warning' : 'neutral'}
+                                  dot
+                                >
+                                  {formatDeviceStatus(vehicle.device.status)}
+                                </Badge>
+                              ) : orderOf.get(vehicle.id) ? (
+                                <Badge tone={trackerTone(orderOf.get(vehicle.id)!.trackerStatus)}>
+                                  {stepOf('TRACKER', orderOf.get(vehicle.id)!.trackerStatus)?.short}
+                                </Badge>
+                              ) : (
+                                <Badge tone="warning">Aguardando instalação</Badge>
+                              )}
+                              {orderOf.get(vehicle.id) && (
+                                <Button size="small" variant="ghost" onClick={() => setFollowing(orderOf.get(vehicle.id)!.id)}>
+                                  Pedido
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                          <td>
+                            {active && sub ? (
+                              <>
+                                <div className={billing.subscriptionLine}>
+                                  {sub.planName} · <MonthlyPrice sub={sub} staff />
+                                </div>
+                                <div className={billing.muted}>
+                                  dia {sub.dueDay} · próxima fatura {formatDateOnly(sub.nextDueDate)}
+                                </div>
+                                {installmentProgress(sub) && <div className={billing.muted}>{installmentProgress(sub)}</div>}
+                              </>
+                            ) : sub ? (
+                              <Badge tone="neutral">Encerrada</Badge>
                             ) : (
-                              <Badge tone="warning">Aguardando instalação</Badge>
+                              <Badge tone="warning">Sem assinatura</Badge>
                             )}
-                            {orderOf.get(vehicle.id) && (
-                              <Button size="small" variant="ghost" onClick={() => setFollowing(orderOf.get(vehicle.id)!.id)}>
-                                Pedido
+                          </td>
+                          <td>
+                            <div className={styles.actions}>
+                              <Button
+                                size="small"
+                                variant="ghost"
+                                onClick={() => openModal(() => setEditing({ vehicle, input: vehicleInputFrom(vehicle) }))}
+                              >
+                                Editar veículo
                               </Button>
-                            )}
-                          </div>
-                        </td>
+                              {active && sub ? (
+                                <>
+                                  <Button
+                                    size="small"
+                                    variant="ghost"
+                                    onClick={() =>
+                                      openModal(() =>
+                                        setEditSubscription({ sub, planName: sub.planName, price: centsToInput(sub.priceCents), dueDay: sub.dueDay }),
+                                      )
+                                    }
+                                  >
+                                    Editar assinatura
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    variant="ghost"
+                                    onClick={() =>
+                                      sub.installmentsDueCents > 0
+                                        ? openModal(() => setEndFinanced({ sub, vehicle: vehicle.name, balance: 'CHARGE' }))
+                                        : setConfirmation({
+                                            title: 'Encerrar assinatura?',
+                                            body:
+                                              `As faturas de ${vehicle.name} que ainda não venceram são canceladas; as vencidas continuam em aberto. O veículo continua na ficha, sem assinatura.` +
+                                              (sub.equipmentMode === 'loan' && sub.uninstallFeeCents > 0
+                                                ? ` Rastreador em comodato: a desinstalação (${formatMoney(sub.uninstallFeeCents)}) entra na próxima fatura do cliente, a não ser que você dispense.`
+                                                : ''),
+                                            label:
+                                              sub.equipmentMode === 'loan' && sub.uninstallFeeCents > 0
+                                                ? 'Encerrar e cobrar a desinstalação'
+                                                : 'Encerrar assinatura',
+                                            success: 'Assinatura encerrada',
+                                            tone: 'danger',
+                                            run: () => customersApi.cancelSubscription(sub.id),
+                                            alternative:
+                                              sub.equipmentMode === 'loan' && sub.uninstallFeeCents > 0
+                                                ? {
+                                                    label: 'Encerrar sem a taxa',
+                                                    success: 'Assinatura encerrada, sem a taxa de desinstalação',
+                                                    run: () => customersApi.cancelSubscription(sub.id, undefined, true),
+                                                  }
+                                                : undefined,
+                                          })
+                                    }
+                                  >
+                                    Encerrar
+                                  </Button>
+                                </>
+                              ) : (
+                                <>
+                                  <Button
+                                    size="small"
+                                    variant="secondary"
+                                    onClick={() =>
+                                      openModal(() =>
+                                        setReactivate({
+                                          vehicle,
+                                          draft: sub
+                                            ? { preset: 'custom', planName: sub.planName, price: centsToInput(sub.priceCents), dueDay: sub.dueDay }
+                                            : DEFAULT_SUBSCRIPTION,
+                                        }),
+                                      )
+                                    }
+                                  >
+                                    Reativar assinatura
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    variant="ghost"
+                                    onClick={() =>
+                                      setConfirmation({
+                                        title: 'Excluir veículo?',
+                                        body: `${vehicle.name} sai da ficha do cliente e o rastreador dele fica livre para outro veículo.`,
+                                        label: 'Excluir veículo',
+                                        success: 'Veículo excluído',
+                                        tone: 'danger',
+                                        run: () => vehiclesApi.remove(vehicle.id),
+                                      })
+                                    }
+                                  >
+                                    Excluir
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {withoutVehicle.map((sub) => (
+                      <tr key={sub.id}>
                         <td>
-                          {active && sub ? (
-                            <>
-                              <div className={billing.subscriptionLine}>
-                                {sub.planName} · <MonthlyPrice sub={sub} staff />
-                              </div>
-                              <div className={billing.muted}>
-                                dia {sub.dueDay} · próxima fatura {formatDateOnly(sub.nextDueDate)}
-                              </div>
-                              {installmentProgress(sub) && <div className={billing.muted}>{installmentProgress(sub)}</div>}
-                            </>
-                          ) : sub ? (
-                            <Badge tone="neutral">Encerrada</Badge>
-                          ) : (
-                            <Badge tone="warning">Sem assinatura</Badge>
-                          )}
+                          <strong>Sem veículo</strong>
+                          <div className={billing.muted}>Assinatura de antes do cadastro por veículo.</div>
+                        </td>
+                        <td>—</td>
+                        <td>
+                          <div className={billing.subscriptionLine}>
+                            {sub.planName} · <MonthlyPrice sub={sub} staff />
+                          </div>
+                          <div className={billing.muted}>
+                            dia {sub.dueDay} · próxima fatura {formatDateOnly(sub.nextDueDate)}
+                          </div>
                         </td>
                         <td>
                           <div className={styles.actions}>
                             <Button
                               size="small"
-                              variant="ghost"
-                              onClick={() => openModal(() => setEditing({ vehicle, input: vehicleInputFrom(vehicle) }))}
+                              variant="primary"
+                              onClick={() => openModal(() => setAttach({ subscription: sub, input: EMPTY_VEHICLE }))}
                             >
-                              Editar veículo
+                              Informar veículo
                             </Button>
-                            {active && sub ? (
-                              <>
-                                <Button
-                                  size="small"
-                                  variant="ghost"
-                                  onClick={() =>
-                                    openModal(() =>
-                                      setEditSubscription({ sub, planName: sub.planName, price: centsToInput(sub.priceCents), dueDay: sub.dueDay }),
-                                    )
-                                  }
-                                >
-                                  Editar assinatura
-                                </Button>
-                                <Button
-                                  size="small"
-                                  variant="ghost"
-                                  onClick={() =>
-                                    sub.installmentsDueCents > 0
-                                      ? openModal(() => setEndFinanced({ sub, vehicle: vehicle.name, balance: 'CHARGE' }))
-                                      : setConfirmation({
-                                          title: 'Encerrar assinatura?',
-                                          body:
-                                            `As faturas de ${vehicle.name} que ainda não venceram são canceladas; as vencidas continuam em aberto. O veículo continua na ficha, sem assinatura.` +
-                                            (sub.equipmentMode === 'loan' && sub.uninstallFeeCents > 0
-                                              ? ` Rastreador em comodato: a desinstalação (${formatMoney(sub.uninstallFeeCents)}) entra na próxima fatura do cliente, a não ser que você dispense.`
-                                              : ''),
-                                          label:
-                                            sub.equipmentMode === 'loan' && sub.uninstallFeeCents > 0
-                                              ? 'Encerrar e cobrar a desinstalação'
-                                              : 'Encerrar assinatura',
-                                          success: 'Assinatura encerrada',
-                                          tone: 'danger',
-                                          run: () => customersApi.cancelSubscription(sub.id),
-                                          alternative:
-                                            sub.equipmentMode === 'loan' && sub.uninstallFeeCents > 0
-                                              ? {
-                                                  label: 'Encerrar sem a taxa',
-                                                  success: 'Assinatura encerrada, sem a taxa de desinstalação',
-                                                  run: () => customersApi.cancelSubscription(sub.id, undefined, true),
-                                                }
-                                              : undefined,
-                                        })
-                                  }
-                                >
-                                  Encerrar
-                                </Button>
-                              </>
-                            ) : (
-                              <>
-                                <Button
-                                  size="small"
-                                  variant="secondary"
-                                  onClick={() =>
-                                    openModal(() =>
-                                      setReactivate({
-                                        vehicle,
-                                        draft: sub
-                                          ? { preset: 'custom', planName: sub.planName, price: centsToInput(sub.priceCents), dueDay: sub.dueDay }
-                                          : DEFAULT_SUBSCRIPTION,
-                                      }),
-                                    )
-                                  }
-                                >
-                                  Reativar assinatura
-                                </Button>
-                                <Button
-                                  size="small"
-                                  variant="ghost"
-                                  onClick={() =>
-                                    setConfirmation({
-                                      title: 'Excluir veículo?',
-                                      body: `${vehicle.name} sai da ficha do cliente e o rastreador dele fica livre para outro veículo.`,
-                                      label: 'Excluir veículo',
-                                      success: 'Veículo excluído',
-                                      tone: 'danger',
-                                      run: () => vehiclesApi.remove(vehicle.id),
-                                    })
-                                  }
-                                >
-                                  Excluir
-                                </Button>
-                              </>
-                            )}
+                            <Button
+                              size="small"
+                              variant="ghost"
+                              onClick={() =>
+                                setConfirmation({
+                                  title: 'Encerrar assinatura?',
+                                  body: 'As faturas desta assinatura que ainda não venceram são canceladas; as vencidas continuam em aberto.',
+                                  label: 'Encerrar assinatura',
+                                  success: 'Assinatura encerrada',
+                                  tone: 'danger',
+                                  run: () => customersApi.cancelSubscription(sub.id),
+                                })
+                              }
+                            >
+                              Encerrar
+                            </Button>
                           </div>
                         </td>
                       </tr>
-                    );
-                  })}
-                  {withoutVehicle.map((sub) => (
-                    <tr key={sub.id}>
-                      <td>
-                        <strong>Sem veículo</strong>
-                        <div className={billing.muted}>Assinatura de antes do cadastro por veículo.</div>
-                      </td>
-                      <td>—</td>
-                      <td>
-                        <div className={billing.subscriptionLine}>
-                          {sub.planName} · <MonthlyPrice sub={sub} staff />
-                        </div>
-                        <div className={billing.muted}>
-                          dia {sub.dueDay} · próxima fatura {formatDateOnly(sub.nextDueDate)}
-                        </div>
-                      </td>
-                      <td>
-                        <div className={styles.actions}>
-                          <Button
-                            size="small"
-                            variant="primary"
-                            onClick={() => openModal(() => setAttach({ subscription: sub, input: EMPTY_VEHICLE }))}
-                          >
-                            Informar veículo
-                          </Button>
-                          <Button
-                            size="small"
-                            variant="ghost"
-                            onClick={() =>
-                              setConfirmation({
-                                title: 'Encerrar assinatura?',
-                                body: 'As faturas desta assinatura que ainda não venceram são canceladas; as vencidas continuam em aberto.',
-                                label: 'Encerrar assinatura',
-                                success: 'Assinatura encerrada',
-                                tone: 'danger',
-                                run: () => customersApi.cancelSubscription(sub.id),
-                              })
-                            }
-                          >
-                            Encerrar
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...pagedVehicles.pager} />
+            </>
           )}
         </Card>
 
@@ -747,60 +756,63 @@ export function CustomerDetailsPage() {
             subtitle="Pix, boletos e cartões recebidos pela AbacatePay. O estorno do Pix e do cartão devolve o valor integral ao cliente; o boleto não tem estorno pela AbacatePay."
             flush
           >
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Pago em</th>
-                    <th>Fatura</th>
-                    <th>Forma</th>
-                    <th>Valor</th>
-                    <th>Situação</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.payments.map((payment) => (
-                    <tr key={payment.id}>
-                      <td>{formatDateTime(payment.paidAt)}</td>
-                      <td>
-                        {payment.invoiceDescription}
-                        {!payment.settledInvoice && payment.status !== 'REFUNDED' && (
-                          <div className={billing.muted}>pagamento a mais — a fatura foi quitada por outro meio</div>
-                        )}
-                        {payment.refundReason && <div className={billing.muted}>estorno: {payment.refundReason}</div>}
-                      </td>
-                      <td>
-                        {payment.method === 'BOLETO'
-                          ? 'Boleto'
-                          : payment.method === 'CARD'
-                            ? `Cartão ${payment.cardBrand} ${payment.cardLast4}`.trim()
-                            : 'Pix'}
-                      </td>
-                      <td className={billing.amount}>{formatMoney(payment.amountCents)}</td>
-                      <td>
-                        <PaymentStatus payment={payment} />
-                      </td>
-                      <td>
-                        {payment.method !== 'BOLETO' &&
-                          (payment.status === 'PAID' || (payment.method === 'CARD' && payment.status === 'APPROVED')) &&
-                          !payment.refundRequestedAt && (
-                          <div className={styles.actions}>
-                            <Button
-                              size="small"
-                              variant="ghost"
-                              onClick={() => openModal(() => setRefund({ payment, reason: '' }))}
-                            >
-                              Estornar
-                            </Button>
-                          </div>
-                        )}
-                      </td>
+            <>
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Pago em</th>
+                      <th>Fatura</th>
+                      <th>Forma</th>
+                      <th>Valor</th>
+                      <th>Situação</th>
+                      <th />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {pagedPayments.items.map((payment) => (
+                      <tr key={payment.id}>
+                        <td>{formatDateTime(payment.paidAt)}</td>
+                        <td>
+                          {payment.invoiceDescription}
+                          {!payment.settledInvoice && payment.status !== 'REFUNDED' && (
+                            <div className={billing.muted}>pagamento a mais — a fatura foi quitada por outro meio</div>
+                          )}
+                          {payment.refundReason && <div className={billing.muted}>estorno: {payment.refundReason}</div>}
+                        </td>
+                        <td>
+                          {payment.method === 'BOLETO'
+                            ? 'Boleto'
+                            : payment.method === 'CARD'
+                              ? `Cartão ${payment.cardBrand} ${payment.cardLast4}`.trim()
+                              : 'Pix'}
+                        </td>
+                        <td className={billing.amount}>{formatMoney(payment.amountCents)}</td>
+                        <td>
+                          <PaymentStatus payment={payment} />
+                        </td>
+                        <td>
+                          {payment.method !== 'BOLETO' &&
+                            (payment.status === 'PAID' || (payment.method === 'CARD' && payment.status === 'APPROVED')) &&
+                            !payment.refundRequestedAt && (
+                            <div className={styles.actions}>
+                              <Button
+                                size="small"
+                                variant="ghost"
+                                onClick={() => openModal(() => setRefund({ payment, reason: '' }))}
+                              >
+                                Estornar
+                              </Button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...pagedPayments.pager} />
+            </>
           </Card>
         )}
 
@@ -823,132 +835,135 @@ export function CustomerDetailsPage() {
           {data.invoices.length === 0 ? (
             <EmptyState icon="🧾" title="Nenhuma fatura" />
           ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Descrição</th>
-                    <th>Vencimento</th>
-                    <th>Valor</th>
-                    <th>Situação</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {(() => {
-                    // Numa frota, cada vencimento numa linha só, que abre as faturas.
-                    const invoiceRow = (invoice: Invoice, sub = false) => (
-                        <tr key={invoice.id} className={sub ? billing.subRow : undefined}>
-                          <td>
-                            {invoice.description}
-                            {invoice.status === 'OPEN' && !data.onlinePayment && !invoice.paymentUrl && !invoice.pixCode && (
-                              <div className={billing.muted}>sem link nem Pix informado</div>
-                            )}
-                            {invoice.paidAt && <div className={billing.muted}>paga em {formatDateTime(invoice.paidAt)}</div>}
-                            {invoice.status === 'OPEN' && data.reminders?.[invoice.id] && (
-                              <div className={billing.muted}>
-                                lembrete: {reminderLabel(data.reminders[invoice.id].kind)} ·{' '}
-                                {formatDateTime(data.reminders[invoice.id].createdAt)}
-                                {!data.reminders[invoice.id].emailed && ' (e-mail não saiu)'}
-                              </div>
-                            )}
-                          </td>
-                          <td>{formatDateOnly(invoice.dueDate)}</td>
-                          <td className={billing.amount}>{formatMoney(invoice.amountCents)}</td>
-                          <td>
-                            <InvoiceStatus invoice={invoice} />
-                          </td>
-                          <td>
-                            {invoice.status === 'OPEN' && (
-                              <div className={styles.actions}>
-                                <Button
-                                  size="small"
-                                  variant="primary"
-                                  onClick={() =>
-                                    setConfirmation({
-                                      title: 'Dar baixa na fatura?',
-                                      body: (
-                                        <>
-                                          Confirme que <strong>{formatMoney(invoice.amountCents)}</strong> de “{invoice.description}” foi recebido.
-                                          {data.suspended && ' Se era o motivo da suspensão, o acesso do cliente volta na hora.'}
-                                        </>
-                                      ),
-                                      label: 'Dar baixa',
-                                      success: 'Baixa registrada',
-                                      tone: 'primary',
-                                      run: () => customersApi.payInvoice(invoice.id),
-                                    })
-                                  }
-                                >
-                                  Dar baixa
-                                </Button>
-                                {data.onlinePayment && (
-                                  <Button size="small" variant="secondary" onClick={() => setPix(invoice)}>
-                                    Gerar Pix ou boleto
+            <>
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Descrição</th>
+                      <th>Vencimento</th>
+                      <th>Valor</th>
+                      <th>Situação</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      // Numa frota, cada vencimento numa linha só, que abre as faturas.
+                      const invoiceRow = (invoice: Invoice, sub = false) => (
+                          <tr key={invoice.id} className={sub ? billing.subRow : undefined}>
+                            <td>
+                              {invoice.description}
+                              {invoice.status === 'OPEN' && !data.onlinePayment && !invoice.paymentUrl && !invoice.pixCode && (
+                                <div className={billing.muted}>sem link nem Pix informado</div>
+                              )}
+                              {invoice.paidAt && <div className={billing.muted}>paga em {formatDateTime(invoice.paidAt)}</div>}
+                              {invoice.status === 'OPEN' && data.reminders?.[invoice.id] && (
+                                <div className={billing.muted}>
+                                  lembrete: {reminderLabel(data.reminders[invoice.id].kind)} ·{' '}
+                                  {formatDateTime(data.reminders[invoice.id].createdAt)}
+                                  {!data.reminders[invoice.id].emailed && ' (e-mail não saiu)'}
+                                </div>
+                              )}
+                            </td>
+                            <td>{formatDateOnly(invoice.dueDate)}</td>
+                            <td className={billing.amount}>{formatMoney(invoice.amountCents)}</td>
+                            <td>
+                              <InvoiceStatus invoice={invoice} />
+                            </td>
+                            <td>
+                              {invoice.status === 'OPEN' && (
+                                <div className={styles.actions}>
+                                  <Button
+                                    size="small"
+                                    variant="primary"
+                                    onClick={() =>
+                                      setConfirmation({
+                                        title: 'Dar baixa na fatura?',
+                                        body: (
+                                          <>
+                                            Confirme que <strong>{formatMoney(invoice.amountCents)}</strong> de “{invoice.description}” foi recebido.
+                                            {data.suspended && ' Se era o motivo da suspensão, o acesso do cliente volta na hora.'}
+                                          </>
+                                        ),
+                                        label: 'Dar baixa',
+                                        success: 'Baixa registrada',
+                                        tone: 'primary',
+                                        run: () => customersApi.payInvoice(invoice.id),
+                                      })
+                                    }
+                                  >
+                                    Dar baixa
                                   </Button>
-                                )}
-                                {data.paymentLinks?.[invoice.id] && (
+                                  {data.onlinePayment && (
+                                    <Button size="small" variant="secondary" onClick={() => setPix(invoice)}>
+                                      Gerar Pix ou boleto
+                                    </Button>
+                                  )}
+                                  {data.paymentLinks?.[invoice.id] && (
+                                    <Button
+                                      size="small"
+                                      variant="ghost"
+                                      title="O link abre o Pix desta fatura sem login: mande pelo WhatsApp"
+                                      onClick={() => void copyPayLink(data.paymentLinks[invoice.id])}
+                                    >
+                                      Copiar link
+                                    </Button>
+                                  )}
                                   <Button
                                     size="small"
                                     variant="ghost"
-                                    title="O link abre o Pix desta fatura sem login: mande pelo WhatsApp"
-                                    onClick={() => void copyPayLink(data.paymentLinks[invoice.id])}
+                                    loading={remind.isPending && remind.variables === invoice.id}
+                                    onClick={() => remind.mutate(invoice.id)}
                                   >
-                                    Copiar link
+                                    Lembrar
                                   </Button>
-                                )}
-                                <Button
-                                  size="small"
-                                  variant="ghost"
-                                  loading={remind.isPending && remind.variables === invoice.id}
-                                  onClick={() => remind.mutate(invoice.id)}
-                                >
-                                  Lembrar
-                                </Button>
-                                <Button
-                                  size="small"
-                                  variant="ghost"
-                                  onClick={() =>
-                                    openModal(() => setPayment({ invoice, paymentUrl: invoice.paymentUrl, pixCode: invoice.pixCode }))
-                                  }
-                                >
-                                  {data.onlinePayment ? 'Outro meio' : 'Pagamento'}
-                                </Button>
-                                <Button size="small" variant="ghost" onClick={() => openModal(() => setAdjusting(invoice))}>
-                                  Alterar
-                                </Button>
-                                <Button
-                                  size="small"
-                                  variant="ghost"
-                                  onClick={() =>
-                                    setConfirmation({
-                                      title: 'Cancelar fatura?',
-                                      body: `“${invoice.description}” deixa de ser cobrada. Não dá para reabrir depois.`,
-                                      label: 'Cancelar fatura',
-                                      success: 'Fatura cancelada',
-                                      tone: 'danger',
-                                      run: () => customersApi.cancelInvoice(invoice.id),
-                                    })
-                                  }
-                                >
-                                  Cancelar
-                                </Button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                    );
-                    return historyRows(data.invoices).map((row) =>
-                      row.kind === 'invoice' ? (
-                        invoiceRow(row.invoice)
-                      ) : (
-                        <InvoiceDayRows key={row.dueDate} day={row} renderInvoice={(invoice) => invoiceRow(invoice, true)} />
-                      ),
-                    );
-                  })()}
-                </tbody>
-              </table>
-            </div>
+                                  <Button
+                                    size="small"
+                                    variant="ghost"
+                                    onClick={() =>
+                                      openModal(() => setPayment({ invoice, paymentUrl: invoice.paymentUrl, pixCode: invoice.pixCode }))
+                                    }
+                                  >
+                                    {data.onlinePayment ? 'Outro meio' : 'Pagamento'}
+                                  </Button>
+                                  <Button size="small" variant="ghost" onClick={() => openModal(() => setAdjusting(invoice))}>
+                                    Alterar
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    variant="ghost"
+                                    onClick={() =>
+                                      setConfirmation({
+                                        title: 'Cancelar fatura?',
+                                        body: `“${invoice.description}” deixa de ser cobrada. Não dá para reabrir depois.`,
+                                        label: 'Cancelar fatura',
+                                        success: 'Fatura cancelada',
+                                        tone: 'danger',
+                                        run: () => customersApi.cancelInvoice(invoice.id),
+                                      })
+                                    }
+                                  >
+                                    Cancelar
+                                  </Button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                      );
+                      return pagedInvoices.items.map((row) =>
+                        row.kind === 'invoice' ? (
+                          invoiceRow(row.invoice)
+                        ) : (
+                          <InvoiceDayRows key={row.dueDate} day={row} renderInvoice={(invoice) => invoiceRow(invoice, true)} />
+                        ),
+                      );
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...pagedInvoices.pager} />
+            </>
           )}
         </Card>
 

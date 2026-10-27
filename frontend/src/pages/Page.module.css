@@ -7,22 +7,11 @@
 }
 
 .inner {
-  max-width: 1100px;
+  max-width: 1680px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-}
-
-/* As listagens da central (muitas colunas, com os botões de ação na ponta)
-   aproveitam a largura das telas grandes. */
-.inner.wide {
-  max-width: 1680px;
-}
-
-/* Onde a lista começa (a troca de página rola até aqui), com folga para o topo. */
-.anchor {
-  scroll-margin-top: var(--space-4);
 }
 
 .header {

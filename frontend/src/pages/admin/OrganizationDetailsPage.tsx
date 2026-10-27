@@ -20,6 +20,8 @@ import { formatMoney, formatRelative } from '@/services/format';
 import { ORG_KIND_LABELS } from '@/services/roles';
 import { formatTaxId } from '@/services/taxid';
 import type { AssociateInput, OrganizationInput, OrgInvoice } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import styles from '../Page.module.css';
 import { organizationsKey, termsLabel } from './OrganizationsPage';
@@ -72,6 +74,8 @@ export function OrganizationDetailsPage() {
     },
     onError: failed('Não deu para cadastrar'),
   });
+
+  const pagedAssociates = usePagedList(detail.data?.associateList ?? [], 'organization-associates');
 
   if (detail.isLoading) return <Spinner label="Carregando" />;
   const o = detail.data;
@@ -161,35 +165,38 @@ export function OrganizationDetailsPage() {
           {o.associateList.length === 0 ? (
             <EmptyState icon="👥" title="Nenhum associado ainda" description="Um cliente que já existe entra pela ficha dele, em Clientes." />
           ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Associado</th>
-                    <th>Veículos</th>
-                    <th>App</th>
-                    <th>Situação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {o.associateList.map((a) => (
-                    <tr key={a.id}>
-                      <td>
-                        <Link to={`/clientes/${a.id}`} className={org.rowLink}>
-                          {a.name}
-                        </Link>
-                        <div className={org.muted}>{a.email}</div>
-                      </td>
-                      <td>
-                        {a.installed} de {a.vehicles}
-                      </td>
-                      <td className={org.muted}>{a.lastSeenAt ? `entrou ${formatRelative(a.lastSeenAt)}` : 'ainda não entrou'}</td>
-                      <td>{a.active ? <Badge tone="success">Ativo</Badge> : <Badge tone="neutral">Desligado</Badge>}</td>
+            <>
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Associado</th>
+                      <th>Veículos</th>
+                      <th>App</th>
+                      <th>Situação</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {pagedAssociates.items.map((a) => (
+                      <tr key={a.id}>
+                        <td>
+                          <Link to={`/clientes/${a.id}`} className={org.rowLink}>
+                            {a.name}
+                          </Link>
+                          <div className={org.muted}>{a.email}</div>
+                        </td>
+                        <td>
+                          {a.installed} de {a.vehicles}
+                        </td>
+                        <td className={org.muted}>{a.lastSeenAt ? `entrou ${formatRelative(a.lastSeenAt)}` : 'ainda não entrou'}</td>
+                        <td>{a.active ? <Badge tone="success">Ativo</Badge> : <Badge tone="neutral">Desligado</Badge>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...pagedAssociates.pager} />
+            </>
           )}
         </Card>
 

@@ -15,6 +15,8 @@ import { useToast } from '@/components/ui/Toast';
 import { centsToInput, formatDateOnly, formatMoney, parseMoney } from '@/services/format';
 import { monthLabel, referralUrl } from '@/services/referral';
 import type { Affiliate, AffiliatePayout } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import styles from '../../Page.module.css';
 import company from '../company/Company.module.css';
@@ -54,6 +56,7 @@ export function AffiliatesTab() {
   const [creating, setCreating] = useState(false);
 
   const list = affiliates.data ?? [];
+  const paged = usePagedList(list, 'affiliates');
   const defaultCents = settings.data?.defaultCommissionCents ?? 600;
   const sum = (pick: (a: Affiliate) => number) => list.reduce((total, a) => total + pick(a), 0);
 
@@ -124,71 +127,74 @@ export function AffiliatesTab() {
             description="Crie o primeiro: ele recebe um link de cadastro para divulgar e uma página para acompanhar as indicações."
           />
         ) : (
-          <div className={styles.tableWrap}>
-            <table className={`${styles.table} ${styles.stackTable}`}>
-              <thead>
-                <tr>
-                  <th>Afiliado</th>
-                  <th>Link</th>
-                  <th className={company.right}>Por veículo/mês</th>
-                  <th className={company.right}>Cadastros</th>
-                  <th className={company.right}>Clientes</th>
-                  <th className={company.right}>Veículos</th>
-                  <th className={company.right}>A receber</th>
-                  <th className={company.right}>Pago</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((a) => (
-                  <tr key={a.id}>
-                    <td data-label="Afiliado">
-                      <span className={local.who}>
-                        <strong>{a.name}</strong>
-                        <span className={company.muted}>
-                          {a.handle ? `@${a.handle}` : 'sem Instagram'}
-                          {!a.active && ' · '}
-                          {!a.active && <Badge tone="neutral">Inativo</Badge>}
-                        </span>
-                      </span>
-                    </td>
-                    <td data-label="Link">
-                      <span className={local.code}>
-                        /indicacao/{a.code}
-                        <button type="button" className={local.copy} onClick={() => void copy(referralUrl(a.code))}>
-                          Copiar
-                        </button>
-                      </span>
-                    </td>
-                    <td data-label="Por veículo/mês" className={company.right}>
-                      {formatMoney(a.commissionCents)}
-                    </td>
-                    <td data-label="Cadastros" className={company.right}>
-                      {a.signups}
-                    </td>
-                    <td data-label="Clientes" className={company.right} title={`${a.activeCustomers} ativos de ${a.customers}`}>
-                      {a.activeCustomers}
-                      {a.customers !== a.activeCustomers && <span className={company.muted}> / {a.customers}</span>}
-                    </td>
-                    <td data-label="Veículos" className={company.right} title={`${a.activeVehicles} veículos ativos`}>
-                      {a.activeVehicles}
-                    </td>
-                    <td data-label="A receber" className={company.right}>
-                      {formatMoney(a.pendingCents + a.openCents)}
-                    </td>
-                    <td data-label="Pago" className={company.right}>
-                      {formatMoney(a.paidCents)}
-                    </td>
-                    <td className={company.right}>
-                      <Button size="small" variant="secondary" onClick={() => setEditing(a)}>
-                        Abrir
-                      </Button>
-                    </td>
+          <>
+            <div className={styles.tableWrap}>
+              <table className={`${styles.table} ${styles.stackTable}`}>
+                <thead>
+                  <tr>
+                    <th>Afiliado</th>
+                    <th>Link</th>
+                    <th className={company.right}>Por veículo/mês</th>
+                    <th className={company.right}>Cadastros</th>
+                    <th className={company.right}>Clientes</th>
+                    <th className={company.right}>Veículos</th>
+                    <th className={company.right}>A receber</th>
+                    <th className={company.right}>Pago</th>
+                    <th />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {paged.items.map((a) => (
+                    <tr key={a.id}>
+                      <td data-label="Afiliado">
+                        <span className={local.who}>
+                          <strong>{a.name}</strong>
+                          <span className={company.muted}>
+                            {a.handle ? `@${a.handle}` : 'sem Instagram'}
+                            {!a.active && ' · '}
+                            {!a.active && <Badge tone="neutral">Inativo</Badge>}
+                          </span>
+                        </span>
+                      </td>
+                      <td data-label="Link">
+                        <span className={local.code}>
+                          /indicacao/{a.code}
+                          <button type="button" className={local.copy} onClick={() => void copy(referralUrl(a.code))}>
+                            Copiar
+                          </button>
+                        </span>
+                      </td>
+                      <td data-label="Por veículo/mês" className={company.right}>
+                        {formatMoney(a.commissionCents)}
+                      </td>
+                      <td data-label="Cadastros" className={company.right}>
+                        {a.signups}
+                      </td>
+                      <td data-label="Clientes" className={company.right} title={`${a.activeCustomers} ativos de ${a.customers}`}>
+                        {a.activeCustomers}
+                        {a.customers !== a.activeCustomers && <span className={company.muted}> / {a.customers}</span>}
+                      </td>
+                      <td data-label="Veículos" className={company.right} title={`${a.activeVehicles} veículos ativos`}>
+                        {a.activeVehicles}
+                      </td>
+                      <td data-label="A receber" className={company.right}>
+                        {formatMoney(a.pendingCents + a.openCents)}
+                      </td>
+                      <td data-label="Pago" className={company.right}>
+                        {formatMoney(a.paidCents)}
+                      </td>
+                      <td className={company.right}>
+                        <Button size="small" variant="secondary" onClick={() => setEditing(a)}>
+                          Abrir
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pager {...paged.pager} />
+          </>
         )}
       </Card>
 
@@ -319,6 +325,7 @@ function ClosingCard() {
     enabled: /^\d{4}-\d{2}$/.test(month),
   });
   const payouts = useQuery({ queryKey: ['affiliates', 'payouts'], queryFn: affiliatesApi.payouts });
+  const pagedPayouts = usePagedList(payouts.data ?? [], 'affiliate-payouts');
   // Pagar por Pix pela AbacatePay: a conta do fechamento é baixada na Empresa.
   const pixInfo = useQuery({ queryKey: [...financeKey, 'pix-info'], queryFn: financeApi.pixInfo, staleTime: 60_000 });
   const pixOn = pixInfo.data?.enabled === true;
@@ -398,73 +405,76 @@ function ClosingCard() {
         )}
 
         {(payouts.data?.length ?? 0) > 0 && (
-          <div className={styles.tableWrap}>
-            <table className={`${styles.table} ${styles.stackTable}`}>
-              <thead>
-                <tr>
-                  <th>Fechamento</th>
-                  <th>Afiliado</th>
-                  <th className={company.right}>Valor</th>
-                  <th>Vencimento</th>
-                  <th>Situação</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {payouts.data!.map((p) => {
-                  // Um Pix sem resposta ou em andamento: confere-se em Empresa.
-                  const pixLive = p.pixStatus === 'SENDING' || p.pixStatus === 'UNKNOWN';
-                  return (
-                    <tr key={p.id}>
-                      <td data-label="Fechamento">até {monthLabel(p.month)}</td>
-                      <td data-label="Afiliado">
-                        {p.affiliateName}
-                        <div className={company.muted}>
-                          {p.commissions} {p.commissions === 1 ? 'comissão' : 'comissões'}
-                        </div>
-                      </td>
-                      <td data-label="Valor" className={company.right}>
-                        {formatMoney(p.amountCents)}
-                      </td>
-                      <td data-label="Vencimento">{p.dueDate ? formatDateOnly(p.dueDate) : '—'}</td>
-                      <td data-label="Situação">
-                        <Badge tone={PAYOUT_STATUS[p.status].tone}>{PAYOUT_STATUS[p.status].label}</Badge>
-                        {p.paidOn && (
+          <>
+            <div className={styles.tableWrap}>
+              <table className={`${styles.table} ${styles.stackTable}`}>
+                <thead>
+                  <tr>
+                    <th>Fechamento</th>
+                    <th>Afiliado</th>
+                    <th className={company.right}>Valor</th>
+                    <th>Vencimento</th>
+                    <th>Situação</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedPayouts.items.map((p) => {
+                    // Um Pix sem resposta ou em andamento: confere-se em Empresa.
+                    const pixLive = p.pixStatus === 'SENDING' || p.pixStatus === 'UNKNOWN';
+                    return (
+                      <tr key={p.id}>
+                        <td data-label="Fechamento">até {monthLabel(p.month)}</td>
+                        <td data-label="Afiliado">
+                          {p.affiliateName}
                           <div className={company.muted}>
-                            {p.pixStatus === 'COMPLETE' ? 'por Pix ' : ''}em {formatDateOnly(p.paidOn)}
+                            {p.commissions} {p.commissions === 1 ? 'comissão' : 'comissões'}
                           </div>
-                        )}
-                      </td>
-                      <td className={company.right}>
-                        <span className={local.actions}>
-                          {p.status === 'OPEN' && pixLive && (
-                            <Link to="/empresa?aba=pagar" className={company.muted}>
-                              Pix a conferir
-                            </Link>
+                        </td>
+                        <td data-label="Valor" className={company.right}>
+                          {formatMoney(p.amountCents)}
+                        </td>
+                        <td data-label="Vencimento">{p.dueDate ? formatDateOnly(p.dueDate) : '—'}</td>
+                        <td data-label="Situação">
+                          <Badge tone={PAYOUT_STATUS[p.status].tone}>{PAYOUT_STATUS[p.status].label}</Badge>
+                          {p.paidOn && (
+                            <div className={company.muted}>
+                              {p.pixStatus === 'COMPLETE' ? 'por Pix ' : ''}em {formatDateOnly(p.paidOn)}
+                            </div>
                           )}
-                          {p.status === 'OPEN' && !pixLive && pixOn && p.entryId && (
-                            <Button size="small" variant="primary" onClick={() => setPaying(p)}>
-                              Pagar por Pix
-                            </Button>
-                          )}
-                          {p.status === 'PAID' && p.receiptUrl && (
-                            <a href={p.receiptUrl} target="_blank" rel="noopener noreferrer">
-                              Comprovante
-                            </a>
-                          )}
-                          {p.status !== 'PAID' && !pixLive && (
-                            <Button size="small" variant="ghost" loading={undo.isPending && undo.variables === p.id} onClick={() => undo.mutate(p.id)}>
-                              Desfazer
-                            </Button>
-                          )}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                        <td className={company.right}>
+                          <span className={local.actions}>
+                            {p.status === 'OPEN' && pixLive && (
+                              <Link to="/empresa?aba=pagar" className={company.muted}>
+                                Pix a conferir
+                              </Link>
+                            )}
+                            {p.status === 'OPEN' && !pixLive && pixOn && p.entryId && (
+                              <Button size="small" variant="primary" onClick={() => setPaying(p)}>
+                                Pagar por Pix
+                              </Button>
+                            )}
+                            {p.status === 'PAID' && p.receiptUrl && (
+                              <a href={p.receiptUrl} target="_blank" rel="noopener noreferrer">
+                                Comprovante
+                              </a>
+                            )}
+                            {p.status !== 'PAID' && !pixLive && (
+                              <Button size="small" variant="ghost" loading={undo.isPending && undo.variables === p.id} onClick={() => undo.mutate(p.id)}>
+                                Desfazer
+                              </Button>
+                            )}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <Pager {...pagedPayouts.pager} />
+          </>
         )}
       </div>
       {paying?.entryId && (

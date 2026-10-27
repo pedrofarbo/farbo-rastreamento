@@ -187,12 +187,6 @@
   padding-bottom: 0;
 }
 
-.more {
-  display: flex;
-  justify-content: center;
-  padding: var(--space-3);
-}
-
 .stopRow td {
   font-size: var(--text-sm);
   color: var(--text-muted);

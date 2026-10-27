@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 
@@ -81,18 +81,13 @@ export function VehiclesPage() {
 
   const set = (key: keyof VehicleDirectoryFilter) => (value: string) => setDraft((d) => ({ ...d, [key]: value }));
   const filtering = KEYS.some((k) => draft[k].trim());
-  // Trocando de página, a lista volta ao começo.
-  const top = useRef<HTMLDivElement>(null);
-  const goTo = (next: number) => {
-    setParams(paramsOf(applied, next), { replace: true });
-    top.current?.scrollIntoView?.({ block: 'start' });
-  };
+  const goTo = (next: number) => setParams(paramsOf(applied, next), { replace: true });
 
   const data = list.data;
 
   return (
     <div className={pageStyles.page}>
-      <div className={`${pageStyles.inner} ${pageStyles.wide}`}>
+      <div className={pageStyles.inner}>
         <header className={pageStyles.header}>
           <div>
             <h1 className={pageStyles.title}>Veículos</h1>
@@ -153,58 +148,56 @@ export function VehiclesPage() {
           </div>
         </Card>
 
-        <div ref={top} className={pageStyles.anchor}>
-          <Card flush>
-            {list.isLoading ? (
-              <Spinner label="Carregando os veículos" />
-            ) : list.isError ? (
-              <EmptyState icon="⚠️" title="Não deu para carregar os veículos" description={(list.error as Error).message} />
-            ) : !data || data.items.length === 0 ? (
-              <EmptyState
-                icon="🚗"
-                title={filtering ? 'Nenhum veículo com esses filtros' : 'Nenhum veículo cadastrado'}
-                action={
-                  page > 1 && data && data.total > 0 ? (
-                    <Button size="small" onClick={() => goTo(1)}>
-                      Voltar à primeira página
-                    </Button>
-                  ) : undefined
-                }
+        <Card flush>
+          {list.isLoading ? (
+            <Spinner label="Carregando os veículos" />
+          ) : list.isError ? (
+            <EmptyState icon="⚠️" title="Não deu para carregar os veículos" description={(list.error as Error).message} />
+          ) : !data || data.items.length === 0 ? (
+            <EmptyState
+              icon="🚗"
+              title={filtering ? 'Nenhum veículo com esses filtros' : 'Nenhum veículo cadastrado'}
+              action={
+                page > 1 && data && data.total > 0 ? (
+                  <Button size="small" onClick={() => goTo(1)}>
+                    Voltar à primeira página
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <>
+              <div className={pageStyles.tableWrap}>
+                <table className={`${pageStyles.table} ${styles.list}`}>
+                  <thead>
+                    <tr>
+                      <th>Veículo</th>
+                      <th>Cliente</th>
+                      <th>Associação</th>
+                      <th>Rastreador</th>
+                      <th>Cadastro</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.items.map((v) => (
+                      <Row key={v.id} vehicle={v} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager
+                page={page}
+                pageSize={pageSize}
+                total={data.total}
+                onPage={goTo}
+                onPageSize={(size) => {
+                  choosePageSize(size);
+                  goTo(pageKeepingFirst(page, pageSize, size));
+                }}
               />
-            ) : (
-              <>
-                <div className={pageStyles.tableWrap}>
-                  <table className={`${pageStyles.table} ${styles.list}`}>
-                    <thead>
-                      <tr>
-                        <th>Veículo</th>
-                        <th>Cliente</th>
-                        <th>Associação</th>
-                        <th>Rastreador</th>
-                        <th>Cadastro</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.items.map((v) => (
-                        <Row key={v.id} vehicle={v} />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <Pager
-                  page={page}
-                  pageSize={pageSize}
-                  total={data.total}
-                  onPage={goTo}
-                  onPageSize={(size) => {
-                    choosePageSize(size);
-                    goTo(pageKeepingFirst(page, pageSize, size));
-                  }}
-                />
-              </>
-            )}
-          </Card>
-        </div>
+            </>
+          )}
+        </Card>
       </div>
     </div>
   );

@@ -16,6 +16,8 @@ import { formatDateTime } from '@/services/format';
 import { CLAIM_STATUS, claimKindLabel } from '@/services/occurrences';
 import { useAuth } from '@/stores/AuthContext';
 import type { ClaimStatus } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import pageStyles from '../Page.module.css';
 import styles from './OrgOccurrences.module.css';
@@ -27,6 +29,7 @@ export function OrgClaimsPage() {
   const [status, setStatus] = useState<ClaimStatus | ''>('');
   const list = useQuery({ queryKey: [...claimsKey, status], queryFn: () => orgApi.claims(status) });
   const claims = list.data ?? [];
+  const paged = usePagedList(claims, 'claims', status);
   return (
     <div className={pageStyles.page}>
       <div className={pageStyles.inner}>
@@ -56,41 +59,44 @@ export function OrgClaimsPage() {
           ) : claims.length === 0 ? (
             <EmptyState icon="📋" title="Nenhuma ocorrência" description="Quando um associado abrir uma ocorrência pelo app, ela aparece aqui e a equipe recebe um e-mail." />
           ) : (
-            <div className={pageStyles.tableWrap}>
-              <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
-                <thead>
-                  <tr>
-                    <th>Ocorrência</th>
-                    <th>Associado</th>
-                    <th>Veículo</th>
-                    <th>Quando</th>
-                    <th>Fotos</th>
-                    <th>Situação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {claims.map((c) => (
-                    <tr key={c.id}>
-                      <td>
-                        <Link to={`/organizacao/ocorrencias/${c.id}`} className={styles.rowLink}>
-                          {claimKindLabel(c.kind)}
-                        </Link>
-                      </td>
-                      <td data-label="Associado">{c.associateName}</td>
-                      <td data-label="Veículo">
-                        {c.vehicleName || '—'}
-                        {c.plate && <span className={styles.plate}>{c.plate}</span>}
-                      </td>
-                      <td data-label="Quando">{formatDateTime(c.occurredAt)}</td>
-                      <td data-label="Fotos">{c.photos}</td>
-                      <td data-label="Situação">
-                        <Badge tone={CLAIM_STATUS[c.status].tone}>{CLAIM_STATUS[c.status].label}</Badge>
-                      </td>
+            <>
+              <div className={pageStyles.tableWrap}>
+                <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+                  <thead>
+                    <tr>
+                      <th>Ocorrência</th>
+                      <th>Associado</th>
+                      <th>Veículo</th>
+                      <th>Quando</th>
+                      <th>Fotos</th>
+                      <th>Situação</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {paged.items.map((c) => (
+                      <tr key={c.id}>
+                        <td>
+                          <Link to={`/organizacao/ocorrencias/${c.id}`} className={styles.rowLink}>
+                            {claimKindLabel(c.kind)}
+                          </Link>
+                        </td>
+                        <td data-label="Associado">{c.associateName}</td>
+                        <td data-label="Veículo">
+                          {c.vehicleName || '—'}
+                          {c.plate && <span className={styles.plate}>{c.plate}</span>}
+                        </td>
+                        <td data-label="Quando">{formatDateTime(c.occurredAt)}</td>
+                        <td data-label="Fotos">{c.photos}</td>
+                        <td data-label="Situação">
+                          <Badge tone={CLAIM_STATUS[c.status].tone}>{CLAIM_STATUS[c.status].label}</Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...paged.pager} />
+            </>
           )}
         </Card>
       </div>

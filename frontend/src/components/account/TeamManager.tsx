@@ -10,6 +10,8 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { fleetKey } from '@/hooks/useFleet';
 import type { AccountMember, MemberRole, VehicleGroup } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import styles from './TeamManager.module.css';
 
@@ -148,6 +150,7 @@ export function TeamManager() {
   const fleet = useQuery({ queryKey: fleetKey, queryFn: fleetApi.get, staleTime: 60_000 });
   const groups = fleet.data?.groups ?? [];
   const list = team.data ?? [];
+  const paged = usePagedList(list, 'team');
   const refresh = () => queryClient.invalidateQueries({ queryKey: teamKey });
 
   const add = useMutation({
@@ -261,85 +264,88 @@ export function TeamManager() {
         ) : list.length === 0 ? (
           <p className={styles.muted}>Ninguém além de você acessa esta conta.</p>
         ) : (
-          <ul className={styles.people}>
-            {list.map((member) => (
-              <li key={member.userId} className={styles.person}>
-                <div className={styles.who}>
-                  <strong>{member.name}</strong>
-                  <span className={styles.muted}>{member.email}</span>
-                  <span className={member.restricted ? styles.scoped : styles.muted}>{accessLabel(member, groups)}</span>
-                </div>
-                <Badge tone={member.role === 'manager' ? 'success' : 'neutral'}>{ROLES[member.role].label}</Badge>
-                <div className={styles.personActions}>
-                  {editing?.userId === member.userId ? (
-                    <div className={styles.editAccess}>
-                      <AccessFields
-                        value={editing.access}
-                        onChange={(access) => setEditing({ userId: member.userId, access })}
-                        groups={groups}
-                        name={`access-${member.userId}`}
-                      />
-                      <div className={styles.editActions}>
+          <>
+            <ul className={styles.people}>
+              {paged.items.map((member) => (
+                <li key={member.userId} className={styles.person}>
+                  <div className={styles.who}>
+                    <strong>{member.name}</strong>
+                    <span className={styles.muted}>{member.email}</span>
+                    <span className={member.restricted ? styles.scoped : styles.muted}>{accessLabel(member, groups)}</span>
+                  </div>
+                  <Badge tone={member.role === 'manager' ? 'success' : 'neutral'}>{ROLES[member.role].label}</Badge>
+                  <div className={styles.personActions}>
+                    {editing?.userId === member.userId ? (
+                      <div className={styles.editAccess}>
+                        <AccessFields
+                          value={editing.access}
+                          onChange={(access) => setEditing({ userId: member.userId, access })}
+                          groups={groups}
+                          name={`access-${member.userId}`}
+                        />
+                        <div className={styles.editActions}>
+                          <Button
+                            size="small"
+                            variant="primary"
+                            loading={setGroups.isPending}
+                            disabled={editing.access.restricted && editing.access.groups.length === 0}
+                            onClick={() => setGroups.mutate(editing)}
+                          >
+                            Salvar
+                          </Button>
+                          <Button size="small" variant="ghost" onClick={() => setEditing(null)}>
+                            Cancelar
+                          </Button>
+                        </div>
+                      </div>
+                    ) : removing === member.userId ? (
+                      <span className={styles.confirm}>
+                        Tirar {member.name} da equipe? O acesso acaba na hora.
+                        <Button size="small" variant="danger" loading={remove.isPending} onClick={() => remove.mutate(member)}>
+                          Tirar
+                        </Button>
+                        <Button size="small" variant="ghost" onClick={() => setRemoving(null)}>
+                          Não
+                        </Button>
+                      </span>
+                    ) : (
+                      <>
+                        <select
+                          className={styles.roleSelect}
+                          aria-label={`Papel de ${member.name}`}
+                          value={member.role}
+                          disabled={setRole.isPending}
+                          onChange={(e) => setRole.mutate({ member, role: e.target.value as MemberRole })}
+                        >
+                          {(Object.keys(ROLES) as MemberRole[]).map((role) => (
+                            <option key={role} value={role}>
+                              {ROLES[role].label}
+                            </option>
+                          ))}
+                        </select>
                         <Button
                           size="small"
-                          variant="primary"
-                          loading={setGroups.isPending}
-                          disabled={editing.access.restricted && editing.access.groups.length === 0}
-                          onClick={() => setGroups.mutate(editing)}
+                          variant="ghost"
+                          onClick={() =>
+                            setEditing({
+                              userId: member.userId,
+                              access: { restricted: member.restricted, groups: member.groups ?? [] },
+                            })
+                          }
                         >
-                          Salvar
+                          Veículos
                         </Button>
-                        <Button size="small" variant="ghost" onClick={() => setEditing(null)}>
-                          Cancelar
+                        <Button size="small" variant="ghost" onClick={() => setRemoving(member.userId)}>
+                          Tirar da equipe
                         </Button>
-                      </div>
-                    </div>
-                  ) : removing === member.userId ? (
-                    <span className={styles.confirm}>
-                      Tirar {member.name} da equipe? O acesso acaba na hora.
-                      <Button size="small" variant="danger" loading={remove.isPending} onClick={() => remove.mutate(member)}>
-                        Tirar
-                      </Button>
-                      <Button size="small" variant="ghost" onClick={() => setRemoving(null)}>
-                        Não
-                      </Button>
-                    </span>
-                  ) : (
-                    <>
-                      <select
-                        className={styles.roleSelect}
-                        aria-label={`Papel de ${member.name}`}
-                        value={member.role}
-                        disabled={setRole.isPending}
-                        onChange={(e) => setRole.mutate({ member, role: e.target.value as MemberRole })}
-                      >
-                        {(Object.keys(ROLES) as MemberRole[]).map((role) => (
-                          <option key={role} value={role}>
-                            {ROLES[role].label}
-                          </option>
-                        ))}
-                      </select>
-                      <Button
-                        size="small"
-                        variant="ghost"
-                        onClick={() =>
-                          setEditing({
-                            userId: member.userId,
-                            access: { restricted: member.restricted, groups: member.groups ?? [] },
-                          })
-                        }
-                      >
-                        Veículos
-                      </Button>
-                      <Button size="small" variant="ghost" onClick={() => setRemoving(member.userId)}>
-                        Tirar da equipe
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+                      </>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <Pager {...paged.pager} />
+          </>
         )}
       </section>
 

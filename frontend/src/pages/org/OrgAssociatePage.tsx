@@ -21,6 +21,8 @@ import { KIND_LABEL, dayKey, dayLabel, hourLabel } from '@/services/installation
 import { formatTaxId } from '@/services/taxid';
 import { useAuth } from '@/stores/AuthContext';
 import type { AssociateDetail, AssociateInput, VehicleView } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import styles from '../Page.module.css';
 import { RequestInspectionModal } from './OrgInspectionsPage';
@@ -113,6 +115,8 @@ export function OrgAssociatePage() {
     },
     onError: (err: Error) => notify({ tone: 'error', title: 'Não deu para cadastrar', description: err.message }),
   });
+
+  const pagedVehicles = usePagedList(detail.data?.vehicleList ?? [], 'associate-vehicles');
 
   if (detail.isLoading) return <Spinner label="Carregando o associado" />;
   const a = detail.data;
@@ -208,68 +212,71 @@ export function OrgAssociatePage() {
           {a.vehicleList.length === 0 ? (
             <EmptyState icon="🚗" title="Nenhum veículo ainda" />
           ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Veículo</th>
-                    <th>Placa</th>
-                    <th>Rastreador</th>
-                    <th>Voltagem</th>
-                    <th>Última comunicação</th>
-                    {canOperateOrg && <th aria-label="Ações" />}
-                  </tr>
-                </thead>
-                <tbody>
-                  {a.vehicleList.map((v) => (
-                    <tr key={v.id}>
-                      <td>
-                        {v.device ? (
-                          <Link to={`/veiculos/${v.id}`} className={org.rowLink}>
-                            {v.name}
-                          </Link>
-                        ) : (
-                          v.name
-                        )}
-                        <div className={org.muted}>{[v.brand, v.model, v.year].filter(Boolean).join(' ')}</div>
-                      </td>
-                      <td>{v.plate || '—'}</td>
-                      <td>
-                        {vehicleStatus(v)}
-                        {serviceOf(a, v)}
-                      </td>
-                      <td>{v.device ? formatVoltage(vehicleVoltage(v)) : '—'}</td>
-                      <td className={org.muted}>{v.device?.lastSeenAt ? formatRelative(v.device.lastSeenAt) : '—'}</td>
-                      {canOperateOrg && (
-                        <td>
-                          <div className={styles.actions}>
-                            <Button variant="ghost" size="small" onClick={() => setInspecting({ id: v.id, name: v.name })}>
-                              Pedir vistoria
-                            </Button>
-                            {v.device &&
-                              a.active &&
-                              (a.uninstallRequests[v.id] ? (
-                                <Button
-                                  variant="ghost"
-                                  size="small"
-                                  loading={cancelRemoval.isPending && cancelRemoval.variables === v.id}
-                                  onClick={() => cancelRemoval.mutate(v.id)}
-                                >
-                                  Cancelar a retirada
-                                </Button>
-                              ) : (
-                                <Button variant="ghost" size="small" onClick={() => setRemoving(v)}>
-                                  Pedir retirada
-                                </Button>
-                              ))}
-                          </div>
-                        </td>
-                      )}
+            <>
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Veículo</th>
+                      <th>Placa</th>
+                      <th>Rastreador</th>
+                      <th>Voltagem</th>
+                      <th>Última comunicação</th>
+                      {canOperateOrg && <th aria-label="Ações" />}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {pagedVehicles.items.map((v) => (
+                      <tr key={v.id}>
+                        <td>
+                          {v.device ? (
+                            <Link to={`/veiculos/${v.id}`} className={org.rowLink}>
+                              {v.name}
+                            </Link>
+                          ) : (
+                            v.name
+                          )}
+                          <div className={org.muted}>{[v.brand, v.model, v.year].filter(Boolean).join(' ')}</div>
+                        </td>
+                        <td>{v.plate || '—'}</td>
+                        <td>
+                          {vehicleStatus(v)}
+                          {serviceOf(a, v)}
+                        </td>
+                        <td>{v.device ? formatVoltage(vehicleVoltage(v)) : '—'}</td>
+                        <td className={org.muted}>{v.device?.lastSeenAt ? formatRelative(v.device.lastSeenAt) : '—'}</td>
+                        {canOperateOrg && (
+                          <td>
+                            <div className={styles.actions}>
+                              <Button variant="ghost" size="small" onClick={() => setInspecting({ id: v.id, name: v.name })}>
+                                Pedir vistoria
+                              </Button>
+                              {v.device &&
+                                a.active &&
+                                (a.uninstallRequests[v.id] ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="small"
+                                    loading={cancelRemoval.isPending && cancelRemoval.variables === v.id}
+                                    onClick={() => cancelRemoval.mutate(v.id)}
+                                  >
+                                    Cancelar a retirada
+                                  </Button>
+                                ) : (
+                                  <Button variant="ghost" size="small" onClick={() => setRemoving(v)}>
+                                    Pedir retirada
+                                  </Button>
+                                ))}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...pagedVehicles.pager} />
+            </>
           )}
         </Card>
       </div>

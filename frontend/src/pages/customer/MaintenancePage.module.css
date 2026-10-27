@@ -158,12 +158,6 @@
   color: var(--text-muted);
 }
 
-.more {
-  display: flex;
-  justify-content: center;
-  padding: var(--space-3);
-}
-
 /* No celular: o que fazer e quanto falta, um embaixo do outro. */
 @media (max-width: 720px) {
   .row {

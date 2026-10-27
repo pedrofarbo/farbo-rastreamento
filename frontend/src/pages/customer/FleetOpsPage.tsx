@@ -17,6 +17,8 @@ import { useVehicles } from '@/hooks/useVehicles';
 import { centsToInput, formatDateOnly, formatDateTime, formatMoney, parseMoney, todayISO } from '@/services/format';
 import { EXPENSE_KINDS, FINE_STATUS, expenseKindLabel, monthStart, rentalKm, rentalStatus } from '@/services/fleetOps';
 import { useAuth } from '@/stores/AuthContext';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 import type {
   ExpenseKind,
   FineStatus,
@@ -153,6 +155,7 @@ function DriversTab({ vehicles }: { vehicles: VehicleView[] }) {
     onError: (err: Error) => notify({ tone: 'error', title: 'Não deu para trocar', description: err.message }),
   });
   const list = drivers.data ?? [];
+  const paged = usePagedList(list, 'drivers');
   return (
     <>
       <Card
@@ -172,73 +175,76 @@ function DriversTab({ vehicles }: { vehicles: VehicleView[] }) {
         ) : list.length === 0 ? (
           <EmptyState icon="🧑‍✈️" title="Nenhum motorista ainda" description="Cadastre os motoristas e diga quem dirige cada veículo." />
         ) : (
-          <div className={pageStyles.tableWrap}>
-            <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
-              <thead>
-                <tr>
-                  <th>Motorista</th>
-                  <th>CNH</th>
-                  <th>Dirige agora</th>
-                  <th aria-label="Ações" />
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((d) => {
-                  const days = licenseDays(d.licenseExpires);
-                  return (
-                    <tr key={d.id} className={d.active ? undefined : styles.inactive}>
-                      <td>
-                        <strong>{d.name}</strong>
-                        {!d.active && <Badge tone="neutral">Desativado</Badge>}
-                        <div className={styles.muted}>{[d.phone, d.document].filter(Boolean).join(' · ')}</div>
-                      </td>
-                      <td data-label="CNH">
-                        {d.licenseCategory || d.licenseNumber ? `${d.licenseCategory || '—'} · ${d.licenseNumber || '—'}` : '—'}
-                        {d.licenseExpires && (
-                          <div className={days !== null && days <= 30 ? styles.warn : styles.muted}>
-                            {days !== null && days < 0 ? 'vencida em ' : 'vale até '}
-                            {formatDateOnly(d.licenseExpires)}
-                          </div>
-                        )}
-                      </td>
-                      <td data-label="Dirige agora">
-                        {canOperateAccount && d.active ? (
-                          <select
-                            className={fieldStyles.select}
-                            aria-label={`Veículo de ${d.name}`}
-                            value={d.vehicleId ?? ''}
-                            onChange={(e) => {
-                              const vehicleId = e.target.value;
-                              if (vehicleId) assign.mutate({ vehicleId, driverId: d.id });
-                              else if (d.vehicleId) assign.mutate({ vehicleId: d.vehicleId, driverId: null });
-                            }}
-                          >
-                            <option value="">Nenhum veículo</option>
-                            {vehicles.map((v) => (
-                              <option key={v.id} value={v.id}>
-                                {v.name}
-                                {v.plate ? ` · ${v.plate}` : ''}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          d.vehicleName || '—'
-                        )}
-                        {d.since && <div className={styles.muted}>desde {formatDateTime(d.since)}</div>}
-                      </td>
-                      <td>
-                        {canOperateAccount && (
-                          <Button size="small" variant="ghost" onClick={() => setEditing(d)}>
-                            Editar
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className={pageStyles.tableWrap}>
+              <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+                <thead>
+                  <tr>
+                    <th>Motorista</th>
+                    <th>CNH</th>
+                    <th>Dirige agora</th>
+                    <th aria-label="Ações" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {paged.items.map((d) => {
+                    const days = licenseDays(d.licenseExpires);
+                    return (
+                      <tr key={d.id} className={d.active ? undefined : styles.inactive}>
+                        <td>
+                          <strong>{d.name}</strong>
+                          {!d.active && <Badge tone="neutral">Desativado</Badge>}
+                          <div className={styles.muted}>{[d.phone, d.document].filter(Boolean).join(' · ')}</div>
+                        </td>
+                        <td data-label="CNH">
+                          {d.licenseCategory || d.licenseNumber ? `${d.licenseCategory || '—'} · ${d.licenseNumber || '—'}` : '—'}
+                          {d.licenseExpires && (
+                            <div className={days !== null && days <= 30 ? styles.warn : styles.muted}>
+                              {days !== null && days < 0 ? 'vencida em ' : 'vale até '}
+                              {formatDateOnly(d.licenseExpires)}
+                            </div>
+                          )}
+                        </td>
+                        <td data-label="Dirige agora">
+                          {canOperateAccount && d.active ? (
+                            <select
+                              className={fieldStyles.select}
+                              aria-label={`Veículo de ${d.name}`}
+                              value={d.vehicleId ?? ''}
+                              onChange={(e) => {
+                                const vehicleId = e.target.value;
+                                if (vehicleId) assign.mutate({ vehicleId, driverId: d.id });
+                                else if (d.vehicleId) assign.mutate({ vehicleId: d.vehicleId, driverId: null });
+                              }}
+                            >
+                              <option value="">Nenhum veículo</option>
+                              {vehicles.map((v) => (
+                                <option key={v.id} value={v.id}>
+                                  {v.name}
+                                  {v.plate ? ` · ${v.plate}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            d.vehicleName || '—'
+                          )}
+                          {d.since && <div className={styles.muted}>desde {formatDateTime(d.since)}</div>}
+                        </td>
+                        <td>
+                          {canOperateAccount && (
+                            <Button size="small" variant="ghost" onClick={() => setEditing(d)}>
+                              Editar
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <Pager {...paged.pager} />
+          </>
         )}
       </Card>
       {editing && <DriverModal driver={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
@@ -334,6 +340,8 @@ function CostsTab({ vehicles }: { vehicles: VehicleView[] }) {
   });
   const names = new Map(vehicles.map((v) => [v.id, v]));
   const rows = (costs.data?.rows ?? []).filter((r) => r.totalCents > 0 || r.distanceKm > 0);
+  const pagedRows = usePagedList(rows, 'fleet-costs', [from, to]);
+  const pagedExpenses = usePagedList(expenses.data ?? [], 'expenses', [from, to]);
   const total = rows.reduce((t, r) => t + r.totalCents, 0);
   return (
     <>
@@ -359,41 +367,44 @@ function CostsTab({ vehicles }: { vehicles: VehicleView[] }) {
         ) : rows.length === 0 ? (
           <EmptyState icon="⛽" title="Nada no período" description="Lance o abastecimento, os pedágios e as outras despesas de cada veículo." />
         ) : (
-          <div className={pageStyles.tableWrap}>
-            <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
-              <thead>
-                <tr>
-                  <th>Veículo</th>
-                  <th>Total</th>
-                  <th>Combustível</th>
-                  <th>Km rodados</th>
-                  <th>Custo por km</th>
-                  <th>Consumo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const v = names.get(r.vehicleId);
-                  return (
-                    <tr key={r.vehicleId}>
-                      <td>
-                        <strong>{v?.name ?? 'Veículo'}</strong>
-                        {v?.plate && <span className={styles.plate}>{v.plate}</span>}
-                      </td>
-                      <td data-label="Total">{formatMoney(r.totalCents)}</td>
-                      <td data-label="Combustível">
-                        {formatMoney(r.byKind.fuel ?? 0)}
-                        {r.liters > 0 && <div className={styles.muted}>{r.liters.toLocaleString('pt-BR')} l</div>}
-                      </td>
-                      <td data-label="Km rodados">{r.distanceKm.toLocaleString('pt-BR')} km</td>
-                      <td data-label="Custo por km">{r.centsPerKm !== null ? formatMoney(Math.round(r.centsPerKm)) : '—'}</td>
-                      <td data-label="Consumo">{r.kmPerLiter !== null ? `${r.kmPerLiter.toLocaleString('pt-BR')} km/l` : '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className={pageStyles.tableWrap}>
+              <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+                <thead>
+                  <tr>
+                    <th>Veículo</th>
+                    <th>Total</th>
+                    <th>Combustível</th>
+                    <th>Km rodados</th>
+                    <th>Custo por km</th>
+                    <th>Consumo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedRows.items.map((r) => {
+                    const v = names.get(r.vehicleId);
+                    return (
+                      <tr key={r.vehicleId}>
+                        <td>
+                          <strong>{v?.name ?? 'Veículo'}</strong>
+                          {v?.plate && <span className={styles.plate}>{v.plate}</span>}
+                        </td>
+                        <td data-label="Total">{formatMoney(r.totalCents)}</td>
+                        <td data-label="Combustível">
+                          {formatMoney(r.byKind.fuel ?? 0)}
+                          {r.liters > 0 && <div className={styles.muted}>{r.liters.toLocaleString('pt-BR')} l</div>}
+                        </td>
+                        <td data-label="Km rodados">{r.distanceKm.toLocaleString('pt-BR')} km</td>
+                        <td data-label="Custo por km">{r.centsPerKm !== null ? formatMoney(Math.round(r.centsPerKm)) : '—'}</td>
+                        <td data-label="Consumo">{r.kmPerLiter !== null ? `${r.kmPerLiter.toLocaleString('pt-BR')} km/l` : '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <Pager {...pagedRows.pager} />
+          </>
         )}
       </Card>
       <Card title="Lançamentos" flush>
@@ -402,47 +413,50 @@ function CostsTab({ vehicles }: { vehicles: VehicleView[] }) {
         ) : (expenses.data ?? []).length === 0 ? (
           <p className={styles.empty}>Nenhum lançamento no período.</p>
         ) : (
-          <div className={pageStyles.tableWrap}>
-            <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
-              <thead>
-                <tr>
-                  <th>Data</th>
-                  <th>Veículo</th>
-                  <th>Tipo</th>
-                  <th>Valor</th>
-                  <th>Detalhe</th>
-                  <th aria-label="Ações" />
-                </tr>
-              </thead>
-              <tbody>
-                {(expenses.data ?? []).map((e) => (
-                  <tr key={e.id}>
-                    <td>{formatDateOnly(e.spentOn)}</td>
-                    <td data-label="Veículo">{e.vehicleName}</td>
-                    <td data-label="Tipo">{expenseKindLabel(e.kind)}</td>
-                    <td data-label="Valor">{formatMoney(e.amountCents)}</td>
-                    <td data-label="Detalhe" className={styles.muted}>
-                      {[
-                        e.liters !== null ? `${e.liters.toLocaleString('pt-BR')} l` : '',
-                        e.odometerKm !== null ? `${e.odometerKm.toLocaleString('pt-BR')} km` : '',
-                        e.fullTank ? 'tanque cheio' : '',
-                        e.description,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ') || '—'}
-                    </td>
-                    <td>
-                      {canOperateAccount && (
-                        <Button size="small" variant="ghost" loading={remove.isPending && remove.variables === e.id} onClick={() => remove.mutate(e.id)}>
-                          Apagar
-                        </Button>
-                      )}
-                    </td>
+          <>
+            <div className={pageStyles.tableWrap}>
+              <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Veículo</th>
+                    <th>Tipo</th>
+                    <th>Valor</th>
+                    <th>Detalhe</th>
+                    <th aria-label="Ações" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {pagedExpenses.items.map((e) => (
+                    <tr key={e.id}>
+                      <td>{formatDateOnly(e.spentOn)}</td>
+                      <td data-label="Veículo">{e.vehicleName}</td>
+                      <td data-label="Tipo">{expenseKindLabel(e.kind)}</td>
+                      <td data-label="Valor">{formatMoney(e.amountCents)}</td>
+                      <td data-label="Detalhe" className={styles.muted}>
+                        {[
+                          e.liters !== null ? `${e.liters.toLocaleString('pt-BR')} l` : '',
+                          e.odometerKm !== null ? `${e.odometerKm.toLocaleString('pt-BR')} km` : '',
+                          e.fullTank ? 'tanque cheio' : '',
+                          e.description,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ') || '—'}
+                      </td>
+                      <td>
+                        {canOperateAccount && (
+                          <Button size="small" variant="ghost" loading={remove.isPending && remove.variables === e.id} onClick={() => remove.mutate(e.id)}>
+                            Apagar
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pager {...pagedExpenses.pager} />
+          </>
         )}
       </Card>
       {adding && <ExpenseModal vehicles={vehicles} onClose={() => setAdding(false)} />}
@@ -559,6 +573,7 @@ function FinesTab({ vehicles }: { vehicles: VehicleView[] }) {
   const [editing, setEditing] = useState<TrafficFine | 'new' | null>(null);
   const fines = useQuery({ queryKey: [...fleetKey, 'fines'], queryFn: fleetOpsApi.fines });
   const list = fines.data ?? [];
+  const paged = usePagedList(list, 'fines');
   const pending = list.filter((f) => f.status === 'pending');
   return (
     <>
@@ -583,55 +598,58 @@ function FinesTab({ vehicles }: { vehicles: VehicleView[] }) {
         ) : list.length === 0 ? (
           <EmptyState icon="🧾" title="Nenhuma multa" />
         ) : (
-          <div className={pageStyles.tableWrap}>
-            <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
-              <thead>
-                <tr>
-                  <th>Infração</th>
-                  <th>Veículo</th>
-                  <th>Motorista</th>
-                  <th>Valor</th>
-                  <th>Vencimento</th>
-                  <th>Situação</th>
-                  <th aria-label="Ações" />
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((f) => (
-                  <tr key={f.id}>
-                    <td>
-                      <strong>{f.description}</strong>
-                      <div className={styles.muted}>
-                        {formatDateTime(f.occurredAt)}
-                        {f.place ? ` · ${f.place}` : ''}
-                        {f.code ? ` · ${f.code}` : ''}
-                      </div>
-                    </td>
-                    <td data-label="Veículo">{f.vehicleName}</td>
-                    <td data-label="Motorista">
-                      {f.driverName || '—'}
-                      {f.driverIndicated && <div className={styles.muted}>indicado ao órgão</div>}
-                    </td>
-                    <td data-label="Valor">
-                      {formatMoney(f.amountCents)}
-                      {f.points > 0 && <div className={styles.muted}>{f.points} pontos</div>}
-                    </td>
-                    <td data-label="Vencimento">{f.dueOn ? formatDateOnly(f.dueOn) : '—'}</td>
-                    <td data-label="Situação">
-                      <Badge tone={FINE_STATUS[f.status].tone}>{FINE_STATUS[f.status].label}</Badge>
-                    </td>
-                    <td>
-                      {canOperateAccount && (
-                        <Button size="small" variant="ghost" onClick={() => setEditing(f)}>
-                          Editar
-                        </Button>
-                      )}
-                    </td>
+          <>
+            <div className={pageStyles.tableWrap}>
+              <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+                <thead>
+                  <tr>
+                    <th>Infração</th>
+                    <th>Veículo</th>
+                    <th>Motorista</th>
+                    <th>Valor</th>
+                    <th>Vencimento</th>
+                    <th>Situação</th>
+                    <th aria-label="Ações" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {paged.items.map((f) => (
+                    <tr key={f.id}>
+                      <td>
+                        <strong>{f.description}</strong>
+                        <div className={styles.muted}>
+                          {formatDateTime(f.occurredAt)}
+                          {f.place ? ` · ${f.place}` : ''}
+                          {f.code ? ` · ${f.code}` : ''}
+                        </div>
+                      </td>
+                      <td data-label="Veículo">{f.vehicleName}</td>
+                      <td data-label="Motorista">
+                        {f.driverName || '—'}
+                        {f.driverIndicated && <div className={styles.muted}>indicado ao órgão</div>}
+                      </td>
+                      <td data-label="Valor">
+                        {formatMoney(f.amountCents)}
+                        {f.points > 0 && <div className={styles.muted}>{f.points} pontos</div>}
+                      </td>
+                      <td data-label="Vencimento">{f.dueOn ? formatDateOnly(f.dueOn) : '—'}</td>
+                      <td data-label="Situação">
+                        <Badge tone={FINE_STATUS[f.status].tone}>{FINE_STATUS[f.status].label}</Badge>
+                      </td>
+                      <td>
+                        {canOperateAccount && (
+                          <Button size="small" variant="ghost" onClick={() => setEditing(f)}>
+                            Editar
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pager {...paged.pager} />
+          </>
         )}
       </Card>
       {editing && <FineModal vehicles={vehicles} fine={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
@@ -769,6 +787,7 @@ function RentalsTab({ vehicles }: { vehicles: VehicleView[] }) {
   const [returning, setReturning] = useState<Rental | null>(null);
   const rentals = useQuery({ queryKey: [...fleetKey, 'rentals'], queryFn: fleetOpsApi.rentals, refetchInterval: 60_000 });
   const list = rentals.data ?? [];
+  const paged = usePagedList(list, 'rentals');
   const busy = new Set(list.filter((r) => !r.returnedAt).map((r) => r.vehicleId));
   const extend = useMutation({
     mutationFn: ({ id, endsAt }: { id: string; endsAt: string }) => fleetOpsApi.extendRental(id, endsAt),
@@ -797,66 +816,69 @@ function RentalsTab({ vehicles }: { vehicles: VehicleView[] }) {
         ) : list.length === 0 ? (
           <EmptyState icon="🔑" title="Nenhuma locação" />
         ) : (
-          <div className={pageStyles.tableWrap}>
-            <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
-              <thead>
-                <tr>
-                  <th>Veículo</th>
-                  <th>Locatário</th>
-                  <th>Retirada</th>
-                  <th>Devolução</th>
-                  <th>Km</th>
-                  <th>Situação</th>
-                  <th aria-label="Ações" />
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((r) => {
-                  const st = rentalStatus(r);
-                  const km = rentalKm(r);
-                  return (
-                    <tr key={r.id}>
-                      <td>
-                        <strong>{r.vehicleName}</strong>
-                        {r.plate && <span className={styles.plate}>{r.plate}</span>}
-                      </td>
-                      <td data-label="Locatário">
-                        {r.renterName}
-                        {r.renterPhone && <div className={styles.muted}>{r.renterPhone}</div>}
-                      </td>
-                      <td data-label="Retirada">{formatDateTime(r.startsAt)}</td>
-                      <td data-label="Devolução">
-                        {r.returnedAt ? formatDateTime(r.returnedAt) : `até ${formatDateTime(r.endsAt)}`}
-                      </td>
-                      <td data-label="Km">{km !== null ? `${km.toLocaleString('pt-BR')} km` : '—'}</td>
-                      <td data-label="Situação">
-                        <Badge tone={st.tone}>{st.label}</Badge>
-                      </td>
-                      <td>
-                        {canOperateAccount && !r.returnedAt && (
-                          <div className={styles.actions}>
-                            <Button size="small" variant="secondary" onClick={() => setReturning(r)}>
-                              Devolvido
-                            </Button>
-                            <Button
-                              size="small"
-                              variant="ghost"
-                              onClick={() => {
-                                const end = new Date(Math.max(Date.parse(r.endsAt), Date.now()) + 24 * 3_600_000);
-                                extend.mutate({ id: r.id, endsAt: end.toISOString() });
-                              }}
-                            >
-                              +1 dia
-                            </Button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className={pageStyles.tableWrap}>
+              <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+                <thead>
+                  <tr>
+                    <th>Veículo</th>
+                    <th>Locatário</th>
+                    <th>Retirada</th>
+                    <th>Devolução</th>
+                    <th>Km</th>
+                    <th>Situação</th>
+                    <th aria-label="Ações" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {paged.items.map((r) => {
+                    const st = rentalStatus(r);
+                    const km = rentalKm(r);
+                    return (
+                      <tr key={r.id}>
+                        <td>
+                          <strong>{r.vehicleName}</strong>
+                          {r.plate && <span className={styles.plate}>{r.plate}</span>}
+                        </td>
+                        <td data-label="Locatário">
+                          {r.renterName}
+                          {r.renterPhone && <div className={styles.muted}>{r.renterPhone}</div>}
+                        </td>
+                        <td data-label="Retirada">{formatDateTime(r.startsAt)}</td>
+                        <td data-label="Devolução">
+                          {r.returnedAt ? formatDateTime(r.returnedAt) : `até ${formatDateTime(r.endsAt)}`}
+                        </td>
+                        <td data-label="Km">{km !== null ? `${km.toLocaleString('pt-BR')} km` : '—'}</td>
+                        <td data-label="Situação">
+                          <Badge tone={st.tone}>{st.label}</Badge>
+                        </td>
+                        <td>
+                          {canOperateAccount && !r.returnedAt && (
+                            <div className={styles.actions}>
+                              <Button size="small" variant="secondary" onClick={() => setReturning(r)}>
+                                Devolvido
+                              </Button>
+                              <Button
+                                size="small"
+                                variant="ghost"
+                                onClick={() => {
+                                  const end = new Date(Math.max(Date.parse(r.endsAt), Date.now()) + 24 * 3_600_000);
+                                  extend.mutate({ id: r.id, endsAt: end.toISOString() });
+                                }}
+                              >
+                                +1 dia
+                              </Button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <Pager {...paged.pager} />
+          </>
         )}
       </Card>
       {adding && <RentalModal vehicles={vehicles.filter((v) => !busy.has(v.id))} onClose={() => setAdding(false)} />}

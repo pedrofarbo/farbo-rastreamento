@@ -14,6 +14,8 @@ import { useToast } from '@/components/ui/Toast';
 import { formatMoney } from '@/services/format';
 import { ORG_KIND_LABELS } from '@/services/roles';
 import type { Organization } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import styles from '../Page.module.css';
 
@@ -34,6 +36,7 @@ export function OrganizationsPage() {
   const { notify } = useToast();
   const [creating, setCreating] = useState(false);
   const list = useQuery({ queryKey: organizationsKey, queryFn: organizationsApi.list });
+  const paged = usePagedList(list.data ?? [], 'organizations');
 
   const create = useMutation({
     mutationFn: ({ input, admin }: { input: Parameters<typeof organizationsApi.create>[0]; admin?: { name: string; email: string } }) =>
@@ -75,50 +78,53 @@ export function OrganizationsPage() {
           ) : (list.data ?? []).length === 0 ? (
             <EmptyState icon="🛡️" title="Nenhuma organização ainda" />
           ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Organização</th>
-                    <th>Associados</th>
-                    <th>Instalados</th>
-                    <th>Mensalidade</th>
-                    <th>Faturas</th>
-                    <th>Situação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(list.data ?? []).map((o) => (
-                    <tr key={o.id}>
-                      <td>
-                        <Link to={`/associacoes/${o.id}`} className={org.rowLink}>
-                          {o.name}
-                        </Link>
-                        <div className={org.muted}>
-                          {ORG_KIND_LABELS[o.kind]} · {termsLabel(o)}
-                        </div>
-                      </td>
-                      <td>{o.associates}</td>
-                      <td>{o.installed}</td>
-                      <td>
-                        {formatMoney(o.priceCents)}
-                        <div className={org.muted}>dia {o.dueDay}</div>
-                      </td>
-                      <td>
-                        {o.overdueInvoices > 0 ? (
-                          <Badge tone="danger">{o.overdueInvoices} vencida(s)</Badge>
-                        ) : o.openInvoices > 0 ? (
-                          <Badge tone="warning">{o.openInvoices} em aberto</Badge>
-                        ) : (
-                          <span className={org.muted}>em dia</span>
-                        )}
-                      </td>
-                      <td>{o.active ? <Badge tone="success">Ativa</Badge> : <Badge tone="neutral">Desativada</Badge>}</td>
+            <>
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Organização</th>
+                      <th>Associados</th>
+                      <th>Instalados</th>
+                      <th>Mensalidade</th>
+                      <th>Faturas</th>
+                      <th>Situação</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {paged.items.map((o) => (
+                      <tr key={o.id}>
+                        <td>
+                          <Link to={`/associacoes/${o.id}`} className={org.rowLink}>
+                            {o.name}
+                          </Link>
+                          <div className={org.muted}>
+                            {ORG_KIND_LABELS[o.kind]} · {termsLabel(o)}
+                          </div>
+                        </td>
+                        <td>{o.associates}</td>
+                        <td>{o.installed}</td>
+                        <td>
+                          {formatMoney(o.priceCents)}
+                          <div className={org.muted}>dia {o.dueDay}</div>
+                        </td>
+                        <td>
+                          {o.overdueInvoices > 0 ? (
+                            <Badge tone="danger">{o.overdueInvoices} vencida(s)</Badge>
+                          ) : o.openInvoices > 0 ? (
+                            <Badge tone="warning">{o.openInvoices} em aberto</Badge>
+                          ) : (
+                            <span className={org.muted}>em dia</span>
+                          )}
+                        </td>
+                        <td>{o.active ? <Badge tone="success">Ativa</Badge> : <Badge tone="neutral">Desativada</Badge>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...paged.pager} />
+            </>
           )}
         </Card>
       </div>

@@ -11,6 +11,8 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateOnly, formatMoney } from '@/services/format';
 import type { EntryKind, FinanceEntry } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import pageStyles from '../../Page.module.css';
 import { AttachmentsModal, EntryModal, KIND_WORDS, PayModal, financeKey, useFinanceLookups, useRefreshFinance } from './EntryModals';
@@ -71,6 +73,7 @@ export function EntriesTab({ kind }: { kind: EntryKind }) {
     placeholderData: keepPreviousData,
   });
   const list = entries.data ?? [];
+  const paged = usePagedList(list, 'finance-entries', filter);
   const sum = totals(list);
 
   const action = useMutation({
@@ -179,111 +182,114 @@ export function EntriesTab({ kind }: { kind: EntryKind }) {
             }
           />
         ) : (
-          <div className={pageStyles.tableWrap}>
-            <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
-              <thead>
-                <tr>
-                  <th>Vencimento</th>
-                  <th>Descrição</th>
-                  <th className={styles.right}>Valor</th>
-                  <th>Situação</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((e) => {
-                  const situation = entrySituation(e, today);
-                  const part = installmentLabel(e);
-                  // Com Pix enviado ou sem confirmação, a conta não se mexe à mão.
-                  const pixLocked = e.pix !== null && e.pix.status !== 'FAILED';
-                  return (
-                    <tr key={e.id}>
-                      <td data-label="Vencimento">{formatDateOnly(e.dueDate)}</td>
-                      <td data-label="Descrição">
-                        <span className={styles.desc}>
-                          <strong>
-                            {e.description}
-                            {part && <span className={styles.muted}> · {part}</span>}
-                          </strong>
-                          <span className={styles.muted}>
-                            {[e.categoryName, e.supplierName, e.recurrenceId ? 'recorrente' : ''].filter(Boolean).join(' · ')}
+          <>
+            <div className={pageStyles.tableWrap}>
+              <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+                <thead>
+                  <tr>
+                    <th>Vencimento</th>
+                    <th>Descrição</th>
+                    <th className={styles.right}>Valor</th>
+                    <th>Situação</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {paged.items.map((e) => {
+                    const situation = entrySituation(e, today);
+                    const part = installmentLabel(e);
+                    // Com Pix enviado ou sem confirmação, a conta não se mexe à mão.
+                    const pixLocked = e.pix !== null && e.pix.status !== 'FAILED';
+                    return (
+                      <tr key={e.id}>
+                        <td data-label="Vencimento">{formatDateOnly(e.dueDate)}</td>
+                        <td data-label="Descrição">
+                          <span className={styles.desc}>
+                            <strong>
+                              {e.description}
+                              {part && <span className={styles.muted}> · {part}</span>}
+                            </strong>
+                            <span className={styles.muted}>
+                              {[e.categoryName, e.supplierName, e.recurrenceId ? 'recorrente' : ''].filter(Boolean).join(' · ')}
+                            </span>
                           </span>
-                        </span>
-                      </td>
-                      <td data-label="Valor" className={styles.right}>
-                        <span className={styles.amount}>{formatMoney(e.amountCents)}</span>
-                        {e.status === 'PAID' && e.paidCents !== null && (
-                          <div className={styles.muted}>
-                            {e.paidCents !== e.amountCents ? `${formatMoney(e.paidCents)} · ` : ''}
-                            {formatDateOnly(e.paidOn)}
-                            {e.paymentMethod ? ` · ${METHOD_LABELS[e.paymentMethod]}` : ''}
+                        </td>
+                        <td data-label="Valor" className={styles.right}>
+                          <span className={styles.amount}>{formatMoney(e.amountCents)}</span>
+                          {e.status === 'PAID' && e.paidCents !== null && (
+                            <div className={styles.muted}>
+                              {e.paidCents !== e.amountCents ? `${formatMoney(e.paidCents)} · ` : ''}
+                              {formatDateOnly(e.paidOn)}
+                              {e.paymentMethod ? ` · ${METHOD_LABELS[e.paymentMethod]}` : ''}
+                            </div>
+                          )}
+                        </td>
+                        <td data-label="Situação">
+                          <Badge tone={situation.tone} dot={situation.tone === 'danger'}>
+                            {situation.label}
+                          </Badge>
+                          {e.pix && <PixNote pix={e.pix} />}
+                        </td>
+                        <td data-label="">
+                          <div className={styles.rowActions}>
+                            {e.pix && (e.pix.status === 'UNKNOWN' || e.pix.status === 'SENDING') ? (
+                              <Button size="small" variant="primary" onClick={() => setPixChecking(e)}>
+                                Conferir Pix
+                              </Button>
+                            ) : (
+                              <>
+                                {e.status === 'OPEN' && pixOn && (
+                                  <Button size="small" variant="primary" onClick={() => setPixPaying(e)}>
+                                    Pagar por Pix
+                                  </Button>
+                                )}
+                                {e.status === 'OPEN' && (
+                                  <Button size="small" variant={pixOn ? 'secondary' : 'primary'} onClick={() => setPaying(e)}>
+                                    {words.pay}
+                                  </Button>
+                                )}
+                              </>
+                            )}
+                            {e.status === 'OPEN' && !pixLocked && (
+                              <Button size="small" variant="ghost" onClick={() => setEditing(e)}>
+                                Editar
+                              </Button>
+                            )}
+                            <Button size="small" variant="ghost" onClick={() => setFiles(e)}>
+                              Anexos{e.attachments.length > 0 ? ` (${e.attachments.length})` : ''}
+                            </Button>
+                            {pixLocked ? null : e.status === 'OPEN' ? (
+                              <Button size="small" variant="ghost" onClick={() => action.mutate({ op: 'cancel', entry: e })}>
+                                Cancelar
+                              </Button>
+                            ) : (
+                              <Button size="small" variant="ghost" onClick={() => action.mutate({ op: 'reopen', entry: e })}>
+                                Reabrir
+                              </Button>
+                            )}
+                            {e.status !== 'PAID' && !pixLocked && (
+                              <Button
+                                size="small"
+                                variant="ghost"
+                                onClick={() => {
+                                  if (window.confirm(`Excluir "${e.description}"? Os anexos vão junto.`)) {
+                                    action.mutate({ op: 'remove', entry: e });
+                                  }
+                                }}
+                              >
+                                Excluir
+                              </Button>
+                            )}
                           </div>
-                        )}
-                      </td>
-                      <td data-label="Situação">
-                        <Badge tone={situation.tone} dot={situation.tone === 'danger'}>
-                          {situation.label}
-                        </Badge>
-                        {e.pix && <PixNote pix={e.pix} />}
-                      </td>
-                      <td data-label="">
-                        <div className={styles.rowActions}>
-                          {e.pix && (e.pix.status === 'UNKNOWN' || e.pix.status === 'SENDING') ? (
-                            <Button size="small" variant="primary" onClick={() => setPixChecking(e)}>
-                              Conferir Pix
-                            </Button>
-                          ) : (
-                            <>
-                              {e.status === 'OPEN' && pixOn && (
-                                <Button size="small" variant="primary" onClick={() => setPixPaying(e)}>
-                                  Pagar por Pix
-                                </Button>
-                              )}
-                              {e.status === 'OPEN' && (
-                                <Button size="small" variant={pixOn ? 'secondary' : 'primary'} onClick={() => setPaying(e)}>
-                                  {words.pay}
-                                </Button>
-                              )}
-                            </>
-                          )}
-                          {e.status === 'OPEN' && !pixLocked && (
-                            <Button size="small" variant="ghost" onClick={() => setEditing(e)}>
-                              Editar
-                            </Button>
-                          )}
-                          <Button size="small" variant="ghost" onClick={() => setFiles(e)}>
-                            Anexos{e.attachments.length > 0 ? ` (${e.attachments.length})` : ''}
-                          </Button>
-                          {pixLocked ? null : e.status === 'OPEN' ? (
-                            <Button size="small" variant="ghost" onClick={() => action.mutate({ op: 'cancel', entry: e })}>
-                              Cancelar
-                            </Button>
-                          ) : (
-                            <Button size="small" variant="ghost" onClick={() => action.mutate({ op: 'reopen', entry: e })}>
-                              Reabrir
-                            </Button>
-                          )}
-                          {e.status !== 'PAID' && !pixLocked && (
-                            <Button
-                              size="small"
-                              variant="ghost"
-                              onClick={() => {
-                                if (window.confirm(`Excluir "${e.description}"? Os anexos vão junto.`)) {
-                                  action.mutate({ op: 'remove', entry: e });
-                                }
-                              }}
-                            >
-                              Excluir
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <Pager {...paged.pager} />
+          </>
         )}
       </Card>
 

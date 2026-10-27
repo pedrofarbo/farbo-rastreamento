@@ -15,6 +15,8 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { centsToInput, formatMoney, parseMoney } from '@/services/format';
 import type { Installer } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import styles from '../Page.module.css';
 
@@ -155,6 +157,7 @@ export function InstallersPage() {
   };
 
   const list = installers.data ?? [];
+  const paged = usePagedList(list, 'installers');
 
   return (
     <div className={styles.page}>
@@ -194,77 +197,80 @@ export function InstallersPage() {
               description="Cadastre os técnicos parceiros para eles aparecerem na landing page como recomendados."
             />
           ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Prestador</th>
-                    <th>Atende</th>
-                    <th>Valores</th>
-                    <th>WhatsApp</th>
-                    <th>Situação</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.map((i) => (
-                    <tr key={i.id}>
-                      <td>
-                        <strong>{i.name}</strong>
-                        <div className={billing.muted}>
-                          {[i.city, i.serviceArea].filter(Boolean).join(' · ') || '—'}
-                        </div>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
-                          {i.servesMoto && <Badge tone="accent">Moto</Badge>}
-                          {i.servesCar && <Badge tone="accent">Carro</Badge>}
-                        </div>
-                      </td>
-                      <td className={billing.muted}>
-                        {i.servesMoto && <div>Moto: {i.priceMotoCents === null ? 'a combinar' : formatMoney(i.priceMotoCents)}</div>}
-                        {i.servesCar && <div>Carro: {i.priceCarCents === null ? 'a combinar' : formatMoney(i.priceCarCents)}</div>}
-                      </td>
-                      <td>
-                        <a href={`https://wa.me/${i.whatsapp}`} target="_blank" rel="noopener noreferrer">
-                          {formatPhone(i.whatsapp)}
-                        </a>
-                      </td>
-                      <td>
-                        {i.active ? (
-                          <Badge tone="success" dot>
-                            Na landing
-                          </Badge>
-                        ) : (
-                          <Badge tone="neutral">Oculto</Badge>
-                        )}
-                      </td>
-                      <td>
-                        <div className={styles.actions}>
-                          <Button
-                            size="small"
-                            variant="ghost"
-                            onClick={() => {
-                              setEditing(i);
-                              setFormError('');
-                              setDraft(draftFrom(i));
-                            }}
-                          >
-                            Editar
-                          </Button>
-                          <Button size="small" variant="ghost" loading={toggle.isPending && toggle.variables?.id === i.id} onClick={() => toggle.mutate(i)}>
-                            {i.active ? 'Ocultar' : 'Mostrar'}
-                          </Button>
-                          <Button size="small" variant="ghost" onClick={() => setRemoving(i)}>
-                            Excluir
-                          </Button>
-                        </div>
-                      </td>
+            <>
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Prestador</th>
+                      <th>Atende</th>
+                      <th>Valores</th>
+                      <th>WhatsApp</th>
+                      <th>Situação</th>
+                      <th />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {paged.items.map((i) => (
+                      <tr key={i.id}>
+                        <td>
+                          <strong>{i.name}</strong>
+                          <div className={billing.muted}>
+                            {[i.city, i.serviceArea].filter(Boolean).join(' · ') || '—'}
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
+                            {i.servesMoto && <Badge tone="accent">Moto</Badge>}
+                            {i.servesCar && <Badge tone="accent">Carro</Badge>}
+                          </div>
+                        </td>
+                        <td className={billing.muted}>
+                          {i.servesMoto && <div>Moto: {i.priceMotoCents === null ? 'a combinar' : formatMoney(i.priceMotoCents)}</div>}
+                          {i.servesCar && <div>Carro: {i.priceCarCents === null ? 'a combinar' : formatMoney(i.priceCarCents)}</div>}
+                        </td>
+                        <td>
+                          <a href={`https://wa.me/${i.whatsapp}`} target="_blank" rel="noopener noreferrer">
+                            {formatPhone(i.whatsapp)}
+                          </a>
+                        </td>
+                        <td>
+                          {i.active ? (
+                            <Badge tone="success" dot>
+                              Na landing
+                            </Badge>
+                          ) : (
+                            <Badge tone="neutral">Oculto</Badge>
+                          )}
+                        </td>
+                        <td>
+                          <div className={styles.actions}>
+                            <Button
+                              size="small"
+                              variant="ghost"
+                              onClick={() => {
+                                setEditing(i);
+                                setFormError('');
+                                setDraft(draftFrom(i));
+                              }}
+                            >
+                              Editar
+                            </Button>
+                            <Button size="small" variant="ghost" loading={toggle.isPending && toggle.variables?.id === i.id} onClick={() => toggle.mutate(i)}>
+                              {i.active ? 'Ocultar' : 'Mostrar'}
+                            </Button>
+                            <Button size="small" variant="ghost" onClick={() => setRemoving(i)}>
+                              Excluir
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...paged.pager} />
+            </>
           )}
         </Card>
       </div>

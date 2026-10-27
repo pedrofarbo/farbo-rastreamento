@@ -19,6 +19,8 @@ import { whatsappLink } from '@/config/contact';
 import { formatDateTime, formatMoney, formatRelative } from '@/services/format';
 import { useAuth } from '@/stores/AuthContext';
 import type { Lead, LeadStatus, PromoOffer, PromoUsage } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import styles from '../Page.module.css';
 import { EventQrCard } from './EventQrCard';
@@ -244,6 +246,7 @@ export function LeadsTab({ onConvert }: { onConvert: (lead: Lead) => void }) {
       (!origin || originLabel(l) === origin) &&
       matches(l, search),
   );
+  const paged = usePagedList(list, 'leads', [status, onList, origin, search]);
   const usage = promo.data;
   const filtered = list.length !== all.length;
   const onLaunch = all.filter((l) => l.onLaunchList).length;
@@ -354,64 +357,67 @@ export function LeadsTab({ onConvert }: { onConvert: (lead: Lead) => void }) {
             }
           />
         ) : (
-          <div className={styles.tableWrap}>
-            <table className={`${styles.table} ${styles.stackTable}`}>
-              <thead>
-                <tr>
-                  <th>Pré-cliente</th>
-                  <th>Cidade</th>
-                  <th>Origem</th>
-                  <th>Interesse</th>
-                  <th>Recebido</th>
-                  <th>Situação</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((lead) => (
-                  <tr key={lead.id}>
-                    <td data-label="Pré-cliente">
-                      <span className={local.who}>
-                        <strong>{lead.name || <span className={billing.muted}>sem nome</span>}</strong>
-                        <span className={billing.muted}>{lead.email}</span>
-                        {lead.phone && (
-                          <a href={whatsappLink(lead.phone)} target="_blank" rel="noreferrer">
-                            {lead.phone}
-                          </a>
-                        )}
-                      </span>
-                    </td>
-                    <td data-label="Cidade">{lead.city || <span className={billing.muted}>—</span>}</td>
-                    <td data-label="Origem">
-                      <Badge tone={lead.referrer ? 'success' : lead.event ? 'accent' : 'neutral'}>{originLabel(lead)}</Badge>
-                    </td>
-                    <td data-label="Interesse">{interest(lead) || <span className={billing.muted}>—</span>}</td>
-                    <td data-label="Recebido" title={formatDateTime(lead.createdAt)}>
-                      {formatRelative(lead.createdAt)}
-                    </td>
-                    <td data-label="Situação">
-                      <span className={local.badges}>
-                        <Badge tone={LEAD_STATUS[lead.status].tone}>{LEAD_STATUS[lead.status].label}</Badge>
-                        {lead.promoClaimed ? (
-                          <Badge tone="success">Usou a promoção</Badge>
-                        ) : (
-                          lead.onLaunchList && <Badge tone="accent">Na lista</Badge>
-                        )}
-                      </span>
-                    </td>
-                    <td>
-                      <div className={styles.actions}>
-                        <WhatsAppButton lead={lead} sender={sender} promo={usage} />
-                        <Button size="small" variant="secondary" onClick={() => setOpened(lead)}>
-                          Abrir
-                        </Button>
-                      </div>
-                    </td>
+          <>
+            <div className={styles.tableWrap}>
+              <table className={`${styles.table} ${styles.stackTable}`}>
+                <thead>
+                  <tr>
+                    <th>Pré-cliente</th>
+                    <th>Cidade</th>
+                    <th>Origem</th>
+                    <th>Interesse</th>
+                    <th>Recebido</th>
+                    <th>Situação</th>
+                    <th />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {paged.items.map((lead) => (
+                    <tr key={lead.id}>
+                      <td data-label="Pré-cliente">
+                        <span className={local.who}>
+                          <strong>{lead.name || <span className={billing.muted}>sem nome</span>}</strong>
+                          <span className={billing.muted}>{lead.email}</span>
+                          {lead.phone && (
+                            <a href={whatsappLink(lead.phone)} target="_blank" rel="noreferrer">
+                              {lead.phone}
+                            </a>
+                          )}
+                        </span>
+                      </td>
+                      <td data-label="Cidade">{lead.city || <span className={billing.muted}>—</span>}</td>
+                      <td data-label="Origem">
+                        <Badge tone={lead.referrer ? 'success' : lead.event ? 'accent' : 'neutral'}>{originLabel(lead)}</Badge>
+                      </td>
+                      <td data-label="Interesse">{interest(lead) || <span className={billing.muted}>—</span>}</td>
+                      <td data-label="Recebido" title={formatDateTime(lead.createdAt)}>
+                        {formatRelative(lead.createdAt)}
+                      </td>
+                      <td data-label="Situação">
+                        <span className={local.badges}>
+                          <Badge tone={LEAD_STATUS[lead.status].tone}>{LEAD_STATUS[lead.status].label}</Badge>
+                          {lead.promoClaimed ? (
+                            <Badge tone="success">Usou a promoção</Badge>
+                          ) : (
+                            lead.onLaunchList && <Badge tone="accent">Na lista</Badge>
+                          )}
+                        </span>
+                      </td>
+                      <td>
+                        <div className={styles.actions}>
+                          <WhatsAppButton lead={lead} sender={sender} promo={usage} />
+                          <Button size="small" variant="secondary" onClick={() => setOpened(lead)}>
+                            Abrir
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pager {...paged.pager} />
+          </>
         )}
       </Card>
 

@@ -8,6 +8,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { formatDateOnly, formatDateTime, formatMoney } from '@/services/format';
 import type { CustomerPaymentMethod } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import pageStyles from '../../Page.module.css';
 import { financeKey } from './EntryModals';
@@ -39,6 +41,7 @@ export function CustomerPaymentsPanel() {
   });
   const data = payments.data;
   const filtered = Boolean(filter.q || method);
+  const paged = usePagedList(data?.payments ?? [], 'payments-received', filter);
 
   return (
     <>
@@ -117,39 +120,42 @@ export function CustomerPaymentsPanel() {
             }
           />
         ) : (
-          <div className={pageStyles.tableWrap}>
-            <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
-              <thead>
-                <tr>
-                  <th>Pago em</th>
-                  <th>Cliente</th>
-                  <th>Fatura</th>
-                  <th>Forma</th>
-                  <th className={styles.right}>Valor</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.payments.map((p) => (
-                  <tr key={p.invoiceId}>
-                    <td data-label="Pago em">{formatDateTime(p.paidAt)}</td>
-                    <td data-label="Cliente">
-                      <Link to={`/clientes/${p.customerId}`}>{p.customerName || 'Cliente'}</Link>
-                    </td>
-                    <td data-label="Fatura">
-                      <span className={styles.desc}>
-                        <strong>{p.description}</strong>
-                        <span className={styles.muted}>vencimento {formatDateOnly(p.dueDate)}</span>
-                      </span>
-                    </td>
-                    <td data-label="Forma">{PAID_VIA_LABELS[p.method]}</td>
-                    <td data-label="Valor" className={styles.right}>
-                      <span className={styles.amount}>{formatMoney(p.amountCents)}</span>
-                    </td>
+          <>
+            <div className={pageStyles.tableWrap}>
+              <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+                <thead>
+                  <tr>
+                    <th>Pago em</th>
+                    <th>Cliente</th>
+                    <th>Fatura</th>
+                    <th>Forma</th>
+                    <th className={styles.right}>Valor</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {paged.items.map((p) => (
+                    <tr key={p.invoiceId}>
+                      <td data-label="Pago em">{formatDateTime(p.paidAt)}</td>
+                      <td data-label="Cliente">
+                        <Link to={`/clientes/${p.customerId}`}>{p.customerName || 'Cliente'}</Link>
+                      </td>
+                      <td data-label="Fatura">
+                        <span className={styles.desc}>
+                          <strong>{p.description}</strong>
+                          <span className={styles.muted}>vencimento {formatDateOnly(p.dueDate)}</span>
+                        </span>
+                      </td>
+                      <td data-label="Forma">{PAID_VIA_LABELS[p.method]}</td>
+                      <td data-label="Valor" className={styles.right}>
+                        <span className={styles.amount}>{formatMoney(p.amountCents)}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pager {...paged.pager} />
+          </>
         )}
       </Card>
       {data?.truncated && (

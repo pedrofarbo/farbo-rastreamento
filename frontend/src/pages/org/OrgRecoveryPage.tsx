@@ -10,6 +10,8 @@ import fieldStyles from '@/components/ui/Field.module.css';
 import { Spinner } from '@/components/ui/Spinner';
 import { formatDateTime, formatRelative } from '@/services/format';
 import type { OrgTheftCase } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import pageStyles from '../Page.module.css';
 import styles from './OrgRecovery.module.css';
@@ -60,6 +62,7 @@ export function OrgRecoveryPage() {
   const data = q.data;
   const active = data?.cases.filter((c) => c.outcome === '') ?? [];
   const history = data?.cases.filter((c) => c.outcome !== '') ?? [];
+  const pagedHistory = usePagedList(history, 'recoveries', months);
 
   return (
     <div className={pageStyles.page}>
@@ -164,7 +167,7 @@ export function OrgRecoveryPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {history.map((c) => (
+                      {pagedHistory.items.map((c) => (
                         <tr key={c.id}>
                           <td>
                             <Link to={`/veiculos/${c.vehicleId}`} className={styles.vehicle}>
@@ -185,6 +188,7 @@ export function OrgRecoveryPage() {
                     </tbody>
                   </table>
                 </div>
+                <Pager {...pagedHistory.pager} />
               </Card>
             )}
           </>

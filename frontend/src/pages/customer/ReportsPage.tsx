@@ -31,6 +31,8 @@ import {
 import type { PeriodPreset } from '@/services/reports';
 import { JOURNEY_VIOLATIONS } from '@/services/fleetOps';
 import type { ReportDrivingRow, ReportSummaryRow, ReportUsageRow } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import pageStyles from '../Page.module.css';
 import styles from './ReportsPage.module.css';
@@ -47,8 +49,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'overspeed', label: 'Excessos de velocidade' },
 ];
 
-/** Linhas por vez nas tabelas (numa frota, centenas de veículos). */
-const ROWS_PAGE = 50;
 /** Com mais veículos que isso, as tabelas ganham a busca. */
 const SEARCH_FROM = 12;
 
@@ -288,15 +288,15 @@ export function ReportsPage({
   );
 }
 
-/** A busca pelo nome ou placa e quantas linhas aparecem (de 50 em 50). */
+/** A busca pelo nome ou placa e as páginas da tabela (numa frota, centenas de veículos). */
 function useRows<T>(rows: T[], text: (row: T) => string) {
   const [search, setSearch] = useState('');
-  const [limit, setLimit] = useState(ROWS_PAGE);
   const found = useMemo(() => {
     const term = search.trim().toLowerCase();
     return term ? rows.filter((r) => text(r).toLowerCase().includes(term)) : rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, search]);
+  const paged = usePagedList(found, 'reports', search);
   const searchBox = (
     <input
       className={`${fieldStyles.input} ${styles.search}`}
@@ -304,22 +304,11 @@ function useRows<T>(rows: T[], text: (row: T) => string) {
       placeholder="Buscar por nome ou placa"
       aria-label="Buscar veículo"
       value={search}
-      onChange={(e) => {
-        setSearch(e.target.value);
-        setLimit(ROWS_PAGE);
-      }}
+      onChange={(e) => setSearch(e.target.value)}
     />
   );
-  const left = found.length - limit;
-  const more =
-    left > 0 ? (
-      <div className={styles.more}>
-        <Button variant="ghost" onClick={() => setLimit((n) => n + ROWS_PAGE)}>
-          {left > ROWS_PAGE ? `Mostrar mais ${ROWS_PAGE} (faltam ${left})` : `Mostrar as ${left} restantes`}
-        </Button>
-      </div>
-    ) : null;
-  return { visible: found.slice(0, limit), found, searchBox, more };
+  const more = found.length > 0 ? <Pager {...paged.pager} /> : null;
+  return { visible: paged.items, found, searchBox, more };
 }
 
 function SummaryTab({ rows }: { rows: ReportSummaryRow[] }) {

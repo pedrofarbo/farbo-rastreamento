@@ -13,6 +13,8 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { centsToInput, formatDateOnly, formatMoney, parseMoney } from '@/services/format';
 import type { DreGroup, EntryKind, FinanceCategory, FinanceRecurrence, PixKeyType, Supplier } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import pageStyles from '../../Page.module.css';
 import { financeKey, useFinanceLookups, useRefreshFinance } from './EntryModals';
@@ -56,6 +58,7 @@ function RecurrencesCard() {
     onError: (err: Error) => notify({ tone: 'error', title: 'Não foi possível encerrar', description: err.message }),
   });
   const list = recurrences.data ?? [];
+  const paged = usePagedList(list, 'recurrences');
 
   return (
     <Card
@@ -73,67 +76,70 @@ function RecurrencesCard() {
       ) : list.length === 0 ? (
         <EmptyState icon="🔁" title="Nenhuma conta recorrente" description="Cadastre as contas que se repetem todo mês." />
       ) : (
-        <div className={pageStyles.tableWrap}>
-          <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
-            <thead>
-              <tr>
-                <th>Descrição</th>
-                <th>Todo dia</th>
-                <th className={styles.right}>Valor</th>
-                <th>Próxima</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((r) => (
-                <tr key={r.id}>
-                  <td data-label="Descrição">
-                    <span className={styles.desc}>
-                      <strong>{r.description}</strong>
-                      <span className={styles.muted}>
-                        {[r.kind === 'PAYABLE' ? 'A pagar' : 'A receber', r.categoryName, r.supplierName].filter(Boolean).join(' · ')}
-                      </span>
-                    </span>
-                  </td>
-                  <td data-label="Todo dia">{r.dueDay}</td>
-                  <td data-label="Valor" className={`${styles.right} ${styles.amount}`}>
-                    {formatMoney(r.amountCents)}
-                  </td>
-                  <td data-label="Próxima">
-                    {r.active ? (
-                      <>
-                        {formatDateOnly(r.nextDueDate)}
-                        {r.endsOn && <div className={styles.muted}>até {formatDateOnly(r.endsOn)}</div>}
-                      </>
-                    ) : (
-                      <Badge tone="neutral">Encerrada</Badge>
-                    )}
-                  </td>
-                  <td data-label="">
-                    {r.active && (
-                      <div className={styles.rowActions}>
-                        <Button size="small" variant="ghost" onClick={() => setEditing(r)}>
-                          Editar
-                        </Button>
-                        <Button
-                          size="small"
-                          variant="ghost"
-                          onClick={() => {
-                            if (window.confirm(`Encerrar "${r.description}"? As contas dela que ainda não venceram saem; as vencidas e as pagas ficam.`)) {
-                              end.mutate(r);
-                            }
-                          }}
-                        >
-                          Encerrar
-                        </Button>
-                      </div>
-                    )}
-                  </td>
+        <>
+          <div className={pageStyles.tableWrap}>
+            <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+              <thead>
+                <tr>
+                  <th>Descrição</th>
+                  <th>Todo dia</th>
+                  <th className={styles.right}>Valor</th>
+                  <th>Próxima</th>
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {paged.items.map((r) => (
+                  <tr key={r.id}>
+                    <td data-label="Descrição">
+                      <span className={styles.desc}>
+                        <strong>{r.description}</strong>
+                        <span className={styles.muted}>
+                          {[r.kind === 'PAYABLE' ? 'A pagar' : 'A receber', r.categoryName, r.supplierName].filter(Boolean).join(' · ')}
+                        </span>
+                      </span>
+                    </td>
+                    <td data-label="Todo dia">{r.dueDay}</td>
+                    <td data-label="Valor" className={`${styles.right} ${styles.amount}`}>
+                      {formatMoney(r.amountCents)}
+                    </td>
+                    <td data-label="Próxima">
+                      {r.active ? (
+                        <>
+                          {formatDateOnly(r.nextDueDate)}
+                          {r.endsOn && <div className={styles.muted}>até {formatDateOnly(r.endsOn)}</div>}
+                        </>
+                      ) : (
+                        <Badge tone="neutral">Encerrada</Badge>
+                      )}
+                    </td>
+                    <td data-label="">
+                      {r.active && (
+                        <div className={styles.rowActions}>
+                          <Button size="small" variant="ghost" onClick={() => setEditing(r)}>
+                            Editar
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="ghost"
+                            onClick={() => {
+                              if (window.confirm(`Encerrar "${r.description}"? As contas dela que ainda não venceram saem; as vencidas e as pagas ficam.`)) {
+                                end.mutate(r);
+                              }
+                            }}
+                          >
+                            Encerrar
+                          </Button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pager {...paged.pager} />
+        </>
       )}
       {editing !== undefined && <RecurrenceModal recurrence={editing} onClose={() => setEditing(undefined)} />}
     </Card>
@@ -267,6 +273,7 @@ const EMPTY_SUPPLIER: SupplierInput = {
 function SuppliersCard() {
   const { suppliers } = useFinanceLookups();
   const [editing, setEditing] = useState<Supplier | null | undefined>(undefined);
+  const paged = usePagedList(suppliers, 'suppliers');
   return (
     <Card
       title="Fornecedores"
@@ -280,48 +287,51 @@ function SuppliersCard() {
       {suppliers.length === 0 ? (
         <EmptyState icon="🏢" title="Nenhum fornecedor" description="Operadora dos chips, fábrica dos rastreadores, contador..." />
       ) : (
-        <div className={pageStyles.tableWrap}>
-          <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
-            <thead>
-              <tr>
-                <th>Fornecedor</th>
-                <th>Documento</th>
-                <th>Contato</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {suppliers.map((x) => (
-                <tr key={x.id}>
-                  <td data-label="Fornecedor">
-                    <span className={styles.desc}>
-                      <strong>{x.name}</strong>
-                      {!x.active && <span className={styles.muted}>Inativo</span>}
-                    </span>
-                  </td>
-                  <td data-label="Documento">{x.document ? formatDocument(x.document) : '—'}</td>
-                  <td data-label="Contato">
-                    <span className={styles.desc}>
-                      <span>{[x.email, x.phone].filter(Boolean).join(' · ') || '—'}</span>
-                      {x.pixKey && (
-                        <span className={styles.muted}>
-                          Pix{x.pixKeyType ? ` (${KEY_TYPE_LABELS[x.pixKeyType]})` : ''}: {x.pixKey}
-                        </span>
-                      )}
-                    </span>
-                  </td>
-                  <td data-label="">
-                    <div className={styles.rowActions}>
-                      <Button size="small" variant="ghost" onClick={() => setEditing(x)}>
-                        Editar
-                      </Button>
-                    </div>
-                  </td>
+        <>
+          <div className={pageStyles.tableWrap}>
+            <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+              <thead>
+                <tr>
+                  <th>Fornecedor</th>
+                  <th>Documento</th>
+                  <th>Contato</th>
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {paged.items.map((x) => (
+                  <tr key={x.id}>
+                    <td data-label="Fornecedor">
+                      <span className={styles.desc}>
+                        <strong>{x.name}</strong>
+                        {!x.active && <span className={styles.muted}>Inativo</span>}
+                      </span>
+                    </td>
+                    <td data-label="Documento">{x.document ? formatDocument(x.document) : '—'}</td>
+                    <td data-label="Contato">
+                      <span className={styles.desc}>
+                        <span>{[x.email, x.phone].filter(Boolean).join(' · ') || '—'}</span>
+                        {x.pixKey && (
+                          <span className={styles.muted}>
+                            Pix{x.pixKeyType ? ` (${KEY_TYPE_LABELS[x.pixKeyType]})` : ''}: {x.pixKey}
+                          </span>
+                        )}
+                      </span>
+                    </td>
+                    <td data-label="">
+                      <div className={styles.rowActions}>
+                        <Button size="small" variant="ghost" onClick={() => setEditing(x)}>
+                          Editar
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pager {...paged.pager} />
+        </>
       )}
       {editing !== undefined && <SupplierModal supplier={editing} onClose={() => setEditing(undefined)} />}
     </Card>

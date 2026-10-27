@@ -38,11 +38,12 @@ import { SharesModal, sharesKey } from '@/components/vehicle/SharesModal';
 import { EMPTY_VEHICLE, VehicleFields } from '@/components/vehicle/VehicleFields';
 import { orderPayment } from '@/services/invoiceGroups';
 import type { ChargeMethod, CustomerAccount, CustomerFulfillment, Invoice, Subscription, VehicleView } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import styles from '../Page.module.css';
 
 /** Cartões por vez: numa frota são centenas (cada um com rastreador, assinatura e pedido). */
-const VEHICLES_PAGE = 30;
 /** Com mais que isso, a lista ganha a busca e o filtro por situação. */
 const FILTERS_FROM = 12;
 
@@ -82,7 +83,6 @@ export function MyVehiclesPage() {
   const [search, setSearch] = useState('');
   const [situation, setSituation] = useState<Situation | ''>('');
   const [groupFilter, setGroupFilter] = useState('');
-  const [limit, setLimit] = useState(VEHICLES_PAGE);
   const [managing, setManaging] = useState(false);
   const { fleet, groups, groupName } = useFleet();
 
@@ -126,13 +126,20 @@ export function MyVehiclesPage() {
       notify({ tone: 'error', title: 'Não foi possível salvar', description: error.message }),
   });
 
+  // Os do cliente e os que outros clientes compartilharam com ele; a busca e
+  // os filtros valem para os dele.
+  const all = vehicles.data ?? [];
+  const list = all.filter((v) => !v.shared);
+  const filtering = Boolean(search.trim() || situation || groupFilter);
+  const found = filtering
+    ? list.filter((v) => matchesVehicle(v, search) && (!situation || situationOf(v) === situation) && inGroup(v, groupFilter))
+    : list;
+  const paged = usePagedList(found, 'my-vehicles', [search, situation, groupFilter]);
+
   if (isSuspendedError(vehicles.error)) {
     return <SuspendedNotice message={(vehicles.error as Error).message} />;
   }
 
-  // Os do cliente e os que outros clientes compartilharam com ele.
-  const all = vehicles.data ?? [];
-  const list = all.filter((v) => !v.shared);
   const sharedWithMe = all.filter((v) => v.shared);
   const sharesOf = new Map<string, number>();
   for (const share of shares.data ?? []) sharesOf.set(share.vehicleId, (sharesOf.get(share.vehicleId) ?? 0) + 1);
@@ -145,13 +152,8 @@ export function MyVehiclesPage() {
   // O pedido mais recente de cada veículo (a lista vem do mais novo).
   const orderOf = new Map<string, CustomerFulfillment>();
   for (const f of fulfillments.data ?? []) if (!orderOf.has(f.vehicleId)) orderOf.set(f.vehicleId, f);
-  const filtering = Boolean(search.trim() || situation || groupFilter);
-  const found = filtering
-    ? list.filter((v) => matchesVehicle(v, search) && (!situation || situationOf(v) === situation) && inGroup(v, groupFilter))
-    : list;
   const counts = { online: 0, offline: 0, pending: 0 };
   for (const v of list) counts[situationOf(v)] += 1;
-  const left = found.length - limit;
 
   return (
     <div className={styles.page}>
@@ -240,19 +242,13 @@ export function MyVehiclesPage() {
                       : 'Buscar por nome, placa, modelo ou IMEI'
                   }
                   value={search}
-                  onChange={(e) => {
-                    setSearch(e.target.value);
-                    setLimit(VEHICLES_PAGE);
-                  }}
+                  onChange={(e) => setSearch(e.target.value)}
                 />
                 <select
                   className={fieldStyles.select}
                   aria-label="Situação"
                   value={situation}
-                  onChange={(e) => {
-                    setSituation(e.target.value as Situation | '');
-                    setLimit(VEHICLES_PAGE);
-                  }}
+                  onChange={(e) => setSituation(e.target.value as Situation | '')}
                 >
                   <option value="">Todos ({list.length})</option>
                   <option value="online">Comunicando ({counts.online})</option>
@@ -264,10 +260,7 @@ export function MyVehiclesPage() {
                     className={fieldStyles.select}
                     aria-label="Grupo"
                     value={groupFilter}
-                    onChange={(e) => {
-                      setGroupFilter(e.target.value);
-                      setLimit(VEHICLES_PAGE);
-                    }}
+                    onChange={(e) => setGroupFilter(e.target.value)}
                   >
                     <option value="">Todos os grupos</option>
                     {groups.map((g) => (
@@ -282,7 +275,7 @@ export function MyVehiclesPage() {
             )}
             {filtering && found.length === 0 && <p className={billing.muted}>Nenhum veículo com esse filtro.</p>}
             <div className={billing.vehicleGrid}>
-              {found.slice(0, limit).map((vehicle) => (
+              {paged.items.map((vehicle) => (
                 <VehicleCard
                   key={vehicle.id}
                   vehicle={vehicle}
@@ -334,13 +327,7 @@ export function MyVehiclesPage() {
                 </article>
               ))}
             </div>
-            {left > 0 && (
-              <div className={billing.vehicleMore}>
-                <Button variant="ghost" onClick={() => setLimit((n) => n + VEHICLES_PAGE)}>
-                  {left > VEHICLES_PAGE ? `Mostrar mais ${VEHICLES_PAGE} (faltam ${left})` : `Mostrar os ${left} restantes`}
-                </Button>
-              </div>
-            )}
+            {found.length > 0 && <Pager {...paged.pager} />}
           </>
         )}
 

@@ -30,6 +30,17 @@ export function enterBrowserFullscreen() {
   }
 }
 
+// Quantos mapas em tela cheia estão montados. Desmontar não sai da tela cheia
+// do navegador na hora: se o mapa montar de novo logo em seguida (o React, em
+// desenvolvimento, monta, desmonta e monta), ela continua.
+let mounted = 0;
+
+// A saída da tela cheia do navegador logo depois de entrar não fecha o mapa.
+// No Linux (Chrome com a área de trabalho COSMIC), o sistema a desfaz sozinho
+// cerca de 1 s depois de entrar: o mapa continua aberto, na janela. O Esc
+// depois disso fecha (o navegador já não o segura).
+const SETTLE_MS = 3000;
+
 interface FleetMapFullscreenProps {
   /** Os veículos do mapa, na ordem da lista (a do anterior e do próximo). */
   vehicles: VehicleView[];
@@ -80,13 +91,20 @@ export function FleetMapFullscreen({
   closeOnce.current = close;
 
   useEffect(() => {
+    mounted += 1;
     const opener = document.activeElement as HTMLElement | null;
     closeRef.current?.focus({ preventScroll: true });
-    // Saiu da tela cheia do navegador (Esc, voltar do Android): fecha o mapa.
-    let entered = Boolean(document.fullscreenElement);
+    // Saiu da tela cheia do navegador (Esc, voltar do Android): fecha o mapa
+    // (menos logo depois de entrar, ver SETTLE_MS).
+    let enteredAt = document.fullscreenElement ? Date.now() : null;
     const onChange = () => {
-      if (document.fullscreenElement) entered = true;
-      else if (entered) closeOnce.current();
+      if (document.fullscreenElement) {
+        enteredAt = Date.now();
+      } else if (enteredAt !== null) {
+        const settled = Date.now() - enteredAt >= SETTLE_MS;
+        enteredAt = null;
+        if (settled) closeOnce.current();
+      }
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !event.defaultPrevented) closeOnce.current();
@@ -94,9 +112,12 @@ export function FleetMapFullscreen({
     document.addEventListener('fullscreenchange', onChange);
     window.addEventListener('keydown', onKey);
     return () => {
+      mounted -= 1;
       document.removeEventListener('fullscreenchange', onChange);
       window.removeEventListener('keydown', onKey);
-      if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+      setTimeout(() => {
+        if (mounted === 0 && document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+      }, 0);
       opener?.focus?.({ preventScroll: true });
     };
   }, []);

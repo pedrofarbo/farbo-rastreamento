@@ -934,11 +934,6 @@
   }
 }
 
-.vehicleMore {
-  display: flex;
-  justify-content: center;
-}
-
 /* O grupo do veículo, no cartão. */
 .vehicleGroup {
   display: inline-block;

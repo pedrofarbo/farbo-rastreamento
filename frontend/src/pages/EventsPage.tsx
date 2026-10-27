@@ -5,6 +5,8 @@ import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { eventSeverity, formatDateTime, formatEvent, formatSpeed } from '@/services/format';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import styles from './Page.module.css';
 
@@ -21,6 +23,8 @@ export function EventsPage() {
     queryFn: () => eventsApi.recent(200),
     refetchInterval: 30_000,
   });
+
+  const paged = usePagedList(events.data ?? [], 'events');
 
   const vehicles = useQuery({ queryKey: ['vehicles'], queryFn: vehiclesApi.list });
 
@@ -49,47 +53,50 @@ export function EventsPage() {
           ) : (events.data ?? []).length === 0 ? (
             <EmptyState icon="🗒" title="Nenhum evento registrado ainda" />
           ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Evento</th>
-                    <th>Veículo</th>
-                    <th>Velocidade</th>
-                    <th>Local</th>
-                    <th>Quando</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(events.data ?? []).map((event) => (
-                    <tr key={event.id}>
-                      <td>
-                        <span
-                          style={{
-                            display: 'inline-block',
-                            width: 8,
-                            height: 8,
-                            borderRadius: '50%',
-                            marginRight: 8,
-                            background: TONE_COLORS[eventSeverity(event.type)],
-                          }}
-                          aria-hidden="true"
-                        />
-                        {formatEvent(event.type)}
-                      </td>
-                      <td>{nameByDevice.get(event.deviceId) ?? '—'}</td>
-                      <td>{event.speedKmh !== null ? formatSpeed(event.speedKmh) : '—'}</td>
-                      <td className={styles.mono}>
-                        {event.latitude !== null && event.longitude !== null
-                          ? `${event.latitude.toFixed(5)}, ${event.longitude.toFixed(5)}`
-                          : '—'}
-                      </td>
-                      <td>{formatDateTime(event.timestamp)}</td>
+            <>
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Evento</th>
+                      <th>Veículo</th>
+                      <th>Velocidade</th>
+                      <th>Local</th>
+                      <th>Quando</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {paged.items.map((event) => (
+                      <tr key={event.id}>
+                        <td>
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              width: 8,
+                              height: 8,
+                              borderRadius: '50%',
+                              marginRight: 8,
+                              background: TONE_COLORS[eventSeverity(event.type)],
+                            }}
+                            aria-hidden="true"
+                          />
+                          {formatEvent(event.type)}
+                        </td>
+                        <td>{nameByDevice.get(event.deviceId) ?? '—'}</td>
+                        <td>{event.speedKmh !== null ? formatSpeed(event.speedKmh) : '—'}</td>
+                        <td className={styles.mono}>
+                          {event.latitude !== null && event.longitude !== null
+                            ? `${event.latitude.toFixed(5)}, ${event.longitude.toFixed(5)}`
+                            : '—'}
+                        </td>
+                        <td>{formatDateTime(event.timestamp)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...paged.pager} />
+            </>
           )}
         </Card>
       </div>

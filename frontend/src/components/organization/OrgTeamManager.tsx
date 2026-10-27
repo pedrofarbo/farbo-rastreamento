@@ -12,6 +12,8 @@ import { useToast } from '@/components/ui/Toast';
 import { ORG_ROLES } from '@/services/roles';
 import { formatRelative } from '@/services/format';
 import type { OrgMember, OrgRole } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 const EMPTY: OrgMemberInput = { name: '', email: '', role: 'operator' };
 
@@ -59,6 +61,7 @@ export function OrgTeamManager({
 
   const team = useQuery({ queryKey, queryFn: api.list });
   const list = team.data ?? [];
+  const paged = usePagedList(list, 'org-team');
   const refresh = () => queryClient.invalidateQueries({ queryKey });
 
   const add = useMutation({
@@ -147,62 +150,65 @@ export function OrgTeamManager({
         ) : list.length === 0 ? (
           <p className={styles.muted}>Ninguém entra no painel ainda.</p>
         ) : (
-          <ul className={styles.people}>
-            {list.map((member) => (
-              <li key={member.userId} className={styles.person}>
-                <div className={styles.who}>
-                  <strong>
-                    {member.name}
-                    {member.userId === selfId ? ' (você)' : ''}
-                  </strong>
-                  <span className={styles.muted}>{member.email}</span>
-                  <span className={styles.muted}>
-                    {member.lastSeenAt ? `Entrou ${formatRelative(member.lastSeenAt)}` : 'Ainda não entrou (convite pendente)'}
-                  </span>
-                </div>
-                <Badge tone={ROLE_TONE[member.role]}>{ORG_ROLES[member.role].label}</Badge>
-                {member.userId !== selfId && (
-                  <div className={styles.personActions}>
-                    {removing === member.userId ? (
-                      <span className={styles.confirm}>
-                        Tirar {member.name} da equipe? O acesso acaba na hora.
-                        <Button size="small" variant="danger" loading={remove.isPending} onClick={() => remove.mutate(member)}>
-                          Tirar
-                        </Button>
-                        <Button size="small" variant="ghost" onClick={() => setRemoving(null)}>
-                          Não
-                        </Button>
-                      </span>
-                    ) : (
-                      <>
-                        <select
-                          className={styles.roleSelect}
-                          aria-label={`Papel de ${member.name}`}
-                          value={member.role}
-                          disabled={setRole.isPending}
-                          onChange={(e) => setRole.mutate({ member, role: e.target.value as OrgRole })}
-                        >
-                          {(Object.keys(ORG_ROLES) as OrgRole[]).map((role) => (
-                            <option key={role} value={role}>
-                              {ORG_ROLES[role].label}
-                            </option>
-                          ))}
-                        </select>
-                        {!member.lastSeenAt && (
-                          <Button size="small" variant="ghost" loading={invite.isPending} onClick={() => invite.mutate(member)}>
-                            Reenviar convite
-                          </Button>
-                        )}
-                        <Button size="small" variant="ghost" onClick={() => setRemoving(member.userId)}>
-                          Tirar da equipe
-                        </Button>
-                      </>
-                    )}
+          <>
+            <ul className={styles.people}>
+              {paged.items.map((member) => (
+                <li key={member.userId} className={styles.person}>
+                  <div className={styles.who}>
+                    <strong>
+                      {member.name}
+                      {member.userId === selfId ? ' (você)' : ''}
+                    </strong>
+                    <span className={styles.muted}>{member.email}</span>
+                    <span className={styles.muted}>
+                      {member.lastSeenAt ? `Entrou ${formatRelative(member.lastSeenAt)}` : 'Ainda não entrou (convite pendente)'}
+                    </span>
                   </div>
-                )}
-              </li>
-            ))}
-          </ul>
+                  <Badge tone={ROLE_TONE[member.role]}>{ORG_ROLES[member.role].label}</Badge>
+                  {member.userId !== selfId && (
+                    <div className={styles.personActions}>
+                      {removing === member.userId ? (
+                        <span className={styles.confirm}>
+                          Tirar {member.name} da equipe? O acesso acaba na hora.
+                          <Button size="small" variant="danger" loading={remove.isPending} onClick={() => remove.mutate(member)}>
+                            Tirar
+                          </Button>
+                          <Button size="small" variant="ghost" onClick={() => setRemoving(null)}>
+                            Não
+                          </Button>
+                        </span>
+                      ) : (
+                        <>
+                          <select
+                            className={styles.roleSelect}
+                            aria-label={`Papel de ${member.name}`}
+                            value={member.role}
+                            disabled={setRole.isPending}
+                            onChange={(e) => setRole.mutate({ member, role: e.target.value as OrgRole })}
+                          >
+                            {(Object.keys(ORG_ROLES) as OrgRole[]).map((role) => (
+                              <option key={role} value={role}>
+                                {ORG_ROLES[role].label}
+                              </option>
+                            ))}
+                          </select>
+                          {!member.lastSeenAt && (
+                            <Button size="small" variant="ghost" loading={invite.isPending} onClick={() => invite.mutate(member)}>
+                              Reenviar convite
+                            </Button>
+                          )}
+                          <Button size="small" variant="ghost" onClick={() => setRemoving(member.userId)}>
+                            Tirar da equipe
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <Pager {...paged.pager} />
+          </>
         )}
       </section>
 

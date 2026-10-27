@@ -38,23 +38,32 @@ export function pageKeepingFirst(page: number, oldSize: number, newSize: number)
 }
 
 /**
- * A paginação de uma lista que já veio inteira do servidor. A página volta
- * para dentro do limite quando a lista encolhe (um filtro, uma exclusão).
+ * A paginação de uma lista que já veio inteira do servidor. Mudando o filtro
+ * (a busca, a aba), volta para a primeira página; a página também volta para
+ * dentro do limite quando a lista encolhe. pager vai direto para o <Pager>.
  */
-export function usePagedList<T>(all: T[], list: string) {
+export function usePagedList<T>(all: T[], list: string, filter: unknown = null) {
   const [pageSize, choosePageSize] = usePageSize(list);
   const [wanted, setPage] = useState(1);
+  const filterKey = JSON.stringify(filter);
+  const [lastFilter, setLastFilter] = useState(filterKey);
+  if (filterKey !== lastFilter) {
+    setLastFilter(filterKey);
+    setPage(1);
+  }
   const pages = Math.max(1, Math.ceil(all.length / pageSize));
   const page = Math.min(wanted, pages);
+  const setPageSize = (size: number) => {
+    setPage(pageKeepingFirst(page, pageSize, size));
+    choosePageSize(size);
+  };
   return {
     items: all.slice((page - 1) * pageSize, page * pageSize),
     page,
     pageSize,
     total: all.length,
     setPage,
-    setPageSize: (size: number) => {
-      setPage(pageKeepingFirst(page, pageSize, size));
-      choosePageSize(size);
-    },
+    setPageSize,
+    pager: { page, pageSize, total: all.length, onPage: setPage, onPageSize: setPageSize },
   };
 }

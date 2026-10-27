@@ -18,6 +18,8 @@ import { useToast } from '@/components/ui/Toast';
 import { formatMoney, formatPhoneInput } from '@/services/format';
 import { formatTaxId } from '@/services/taxid';
 import type { Lead } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import styles from '../Page.module.css';
 import { AffiliatesTab } from './affiliates/AffiliatesTab';
@@ -94,6 +96,7 @@ export function CustomersPage() {
       [c.name, c.email, c.document, c.phone].some((value) => value.toLowerCase().includes(term)),
     );
   }, [customers.data, search]);
+  const paged = usePagedList(filtered, 'customers', search);
 
   const submit = () => {
     if (!draft) return;
@@ -258,59 +261,62 @@ export function CustomersPage() {
                   }
                 />
               ) : (
-                <div className={styles.tableWrap}>
-                  <table className={styles.table}>
-                    <thead>
-                      <tr>
-                        <th>Cliente</th>
-                        <th>Contato</th>
-                        <th>Veículos</th>
-                        <th>Assinaturas ativas</th>
-                        <th>Em aberto</th>
-                        <th>Situação</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.map((customer) => (
-                        <tr key={customer.id}>
-                          <td>
-                            <Link to={`/clientes/${customer.id}`}>
-                              <strong>{customer.name}</strong>
-                            </Link>
-                            {customer.document && <div className={billing.muted}>{formatTaxId(customer.document)}</div>}
-                            {customer.organizationId && (
-                              <div className={billing.muted}>Associado da {customer.organizationName}</div>
-                            )}
-                          </td>
-                          <td>
-                            {customer.email}
-                            {customer.phone && <div className={billing.muted}>{customer.phone}</div>}
-                          </td>
-                          <td>
-                            {customer.vehicleCount}
-                            {customer.sharedVehicles > 0 && (
-                              <div className={billing.muted}>
-                                + acompanha {customer.sharedVehicles} de outro cliente
-                              </div>
-                            )}
-                          </td>
-                          <td>
-                            {customer.activeSubscriptions - customer.freeSubscriptions}
-                            {customer.freeSubscriptions > 0 && (
-                              <div className={billing.muted}>+ {customer.freeSubscriptions} grátis</div>
-                            )}
-                          </td>
-                          <td className={billing.amount}>
-                            {customer.openInvoices > 0 ? formatMoney(customer.openAmountCents) : '—'}
-                          </td>
-                          <td>
-                            <CustomerStatus customer={customer} />
-                          </td>
+                <>
+                  <div className={styles.tableWrap}>
+                    <table className={styles.table}>
+                      <thead>
+                        <tr>
+                          <th>Cliente</th>
+                          <th>Contato</th>
+                          <th>Veículos</th>
+                          <th>Assinaturas ativas</th>
+                          <th>Em aberto</th>
+                          <th>Situação</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {paged.items.map((customer) => (
+                          <tr key={customer.id}>
+                            <td>
+                              <Link to={`/clientes/${customer.id}`}>
+                                <strong>{customer.name}</strong>
+                              </Link>
+                              {customer.document && <div className={billing.muted}>{formatTaxId(customer.document)}</div>}
+                              {customer.organizationId && (
+                                <div className={billing.muted}>Associado da {customer.organizationName}</div>
+                              )}
+                            </td>
+                            <td>
+                              {customer.email}
+                              {customer.phone && <div className={billing.muted}>{customer.phone}</div>}
+                            </td>
+                            <td>
+                              {customer.vehicleCount}
+                              {customer.sharedVehicles > 0 && (
+                                <div className={billing.muted}>
+                                  + acompanha {customer.sharedVehicles} de outro cliente
+                                </div>
+                              )}
+                            </td>
+                            <td>
+                              {customer.activeSubscriptions - customer.freeSubscriptions}
+                              {customer.freeSubscriptions > 0 && (
+                                <div className={billing.muted}>+ {customer.freeSubscriptions} grátis</div>
+                              )}
+                            </td>
+                            <td className={billing.amount}>
+                              {customer.openInvoices > 0 ? formatMoney(customer.openAmountCents) : '—'}
+                            </td>
+                            <td>
+                              <CustomerStatus customer={customer} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <Pager {...paged.pager} />
+                </>
               )}
             </Card>
 

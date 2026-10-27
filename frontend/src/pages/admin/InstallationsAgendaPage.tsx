@@ -16,6 +16,8 @@ import { whatsappLink } from '@/config/contact';
 import { formatDateOnly, formatDateTime, todayISO } from '@/services/format';
 import { KIND_LABEL, dayKey, defaultSlot, installerMessage, isOpen, localInput } from '@/services/installations';
 import type { InstallationAppointment, InstallationKind, Installer } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import pageStyles from '../Page.module.css';
 
@@ -78,6 +80,8 @@ export function InstallationsAgendaPage() {
   const pending = waiting.filter((w) => !w.scheduledFor);
   const toRemove = removals.data ?? [];
   const removalsPending = toRemove.filter((w) => !w.scheduledFor);
+  const pagedWaiting = usePagedList(waiting, 'awaiting-install');
+  const pagedRemovals = usePagedList(toRemove, 'awaiting-removal');
 
   return (
     <div className={pageStyles.page}>
@@ -108,62 +112,65 @@ export function InstallationsAgendaPage() {
           ) : waiting.length === 0 ? (
             <p className={styles.empty}>Nenhum veículo esperando a instalação.</p>
           ) : (
-            <div className={pageStyles.tableWrap}>
-              <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
-                <thead>
-                  <tr>
-                    <th>Veículo</th>
-                    <th>Cliente</th>
-                    <th>Endereço</th>
-                    <th>Desde</th>
-                    <th aria-label="Ações" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {waiting.map((w) => (
-                    <tr key={w.vehicleId}>
-                      <td>
-                        <strong>{w.vehicleName}</strong>
-                        {w.plate && <span className={styles.plate}>{w.plate}</span>}
-                        <div>
-                          {w.farboInstall ? (
-                            <Badge tone="accent">Instalação Farbo</Badge>
-                          ) : (
-                            <span className={styles.muted}>cliente instala por conta própria</span>
-                          )}
-                        </div>
-                      </td>
-                      <td data-label="Cliente">
-                        {w.customerName}
-                        <div className={styles.muted}>
-                          {[w.customerPhone, w.organizationName].filter(Boolean).join(' · ')}
-                        </div>
-                      </td>
-                      <td data-label="Endereço">{w.address || <span className={styles.muted}>sem endereço</span>}</td>
-                      <td data-label="Desde">{formatDateOnly(w.createdAt.slice(0, 10))}</td>
-                      <td>
-                        {w.scheduledFor ? (
-                          <Badge tone="accent">Agendada {formatDateTime(w.scheduledFor).slice(0, 17)}</Badge>
-                        ) : (
-                          <Button
-                            size="small"
-                            variant="primary"
-                            onClick={() =>
-                              setScheduling({
-                                target: { kind: 'install', vehicleId: w.vehicleId, vehicleName: w.vehicleName, address: w.address },
-                                appointment: null,
-                              })
-                            }
-                          >
-                            Agendar
-                          </Button>
-                        )}
-                      </td>
+            <>
+              <div className={pageStyles.tableWrap}>
+                <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+                  <thead>
+                    <tr>
+                      <th>Veículo</th>
+                      <th>Cliente</th>
+                      <th>Endereço</th>
+                      <th>Desde</th>
+                      <th aria-label="Ações" />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {pagedWaiting.items.map((w) => (
+                      <tr key={w.vehicleId}>
+                        <td>
+                          <strong>{w.vehicleName}</strong>
+                          {w.plate && <span className={styles.plate}>{w.plate}</span>}
+                          <div>
+                            {w.farboInstall ? (
+                              <Badge tone="accent">Instalação Farbo</Badge>
+                            ) : (
+                              <span className={styles.muted}>cliente instala por conta própria</span>
+                            )}
+                          </div>
+                        </td>
+                        <td data-label="Cliente">
+                          {w.customerName}
+                          <div className={styles.muted}>
+                            {[w.customerPhone, w.organizationName].filter(Boolean).join(' · ')}
+                          </div>
+                        </td>
+                        <td data-label="Endereço">{w.address || <span className={styles.muted}>sem endereço</span>}</td>
+                        <td data-label="Desde">{formatDateOnly(w.createdAt.slice(0, 10))}</td>
+                        <td>
+                          {w.scheduledFor ? (
+                            <Badge tone="accent">Agendada {formatDateTime(w.scheduledFor).slice(0, 17)}</Badge>
+                          ) : (
+                            <Button
+                              size="small"
+                              variant="primary"
+                              onClick={() =>
+                                setScheduling({
+                                  target: { kind: 'install', vehicleId: w.vehicleId, vehicleName: w.vehicleName, address: w.address },
+                                  appointment: null,
+                                })
+                              }
+                            >
+                              Agendar
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...pagedWaiting.pager} />
+            </>
           )}
         </Card>
 
@@ -181,66 +188,69 @@ export function InstallationsAgendaPage() {
           ) : toRemove.length === 0 ? (
             <p className={styles.empty}>Nenhum rastreador para retirar.</p>
           ) : (
-            <div className={pageStyles.tableWrap}>
-              <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
-                <thead>
-                  <tr>
-                    <th>Veículo</th>
-                    <th>Associado</th>
-                    <th>Motivo</th>
-                    <th>Endereço</th>
-                    <th aria-label="Ações" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {toRemove.map((w) => (
-                    <tr key={w.vehicleId}>
-                      <td>
-                        <strong>{w.vehicleName}</strong>
-                        {w.plate && <span className={styles.plate}>{w.plate}</span>}
-                        <div className={styles.muted}>IMEI {w.imei}</div>
-                      </td>
-                      <td data-label="Associado">
-                        {w.customerName}
-                        <div className={styles.muted}>{[w.customerPhone, w.organizationName].filter(Boolean).join(' · ')}</div>
-                      </td>
-                      <td data-label="Motivo">
-                        {w.reason === 'inactive' ? (
-                          <Badge tone="neutral">Associado desligado</Badge>
-                        ) : (
-                          <>
-                            <Badge tone="warning">Pedido da associação</Badge>
-                            <div className={styles.muted}>
-                              {w.requestedAt ? formatDateTime(w.requestedAt).slice(0, 10) : ''}
-                              {w.note ? ` · ${w.note}` : ''}
-                            </div>
-                          </>
-                        )}
-                      </td>
-                      <td data-label="Endereço">{w.address || <span className={styles.muted}>sem endereço</span>}</td>
-                      <td>
-                        {w.scheduledFor ? (
-                          <Badge tone="accent">Agendada {formatDateTime(w.scheduledFor).slice(0, 17)}</Badge>
-                        ) : (
-                          <Button
-                            size="small"
-                            variant="primary"
-                            onClick={() =>
-                              setScheduling({
-                                target: { kind: 'uninstall', vehicleId: w.vehicleId, vehicleName: w.vehicleName, address: w.address },
-                                appointment: null,
-                              })
-                            }
-                          >
-                            Agendar retirada
-                          </Button>
-                        )}
-                      </td>
+            <>
+              <div className={pageStyles.tableWrap}>
+                <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+                  <thead>
+                    <tr>
+                      <th>Veículo</th>
+                      <th>Associado</th>
+                      <th>Motivo</th>
+                      <th>Endereço</th>
+                      <th aria-label="Ações" />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {pagedRemovals.items.map((w) => (
+                      <tr key={w.vehicleId}>
+                        <td>
+                          <strong>{w.vehicleName}</strong>
+                          {w.plate && <span className={styles.plate}>{w.plate}</span>}
+                          <div className={styles.muted}>IMEI {w.imei}</div>
+                        </td>
+                        <td data-label="Associado">
+                          {w.customerName}
+                          <div className={styles.muted}>{[w.customerPhone, w.organizationName].filter(Boolean).join(' · ')}</div>
+                        </td>
+                        <td data-label="Motivo">
+                          {w.reason === 'inactive' ? (
+                            <Badge tone="neutral">Associado desligado</Badge>
+                          ) : (
+                            <>
+                              <Badge tone="warning">Pedido da associação</Badge>
+                              <div className={styles.muted}>
+                                {w.requestedAt ? formatDateTime(w.requestedAt).slice(0, 10) : ''}
+                                {w.note ? ` · ${w.note}` : ''}
+                              </div>
+                            </>
+                          )}
+                        </td>
+                        <td data-label="Endereço">{w.address || <span className={styles.muted}>sem endereço</span>}</td>
+                        <td>
+                          {w.scheduledFor ? (
+                            <Badge tone="accent">Agendada {formatDateTime(w.scheduledFor).slice(0, 17)}</Badge>
+                          ) : (
+                            <Button
+                              size="small"
+                              variant="primary"
+                              onClick={() =>
+                                setScheduling({
+                                  target: { kind: 'uninstall', vehicleId: w.vehicleId, vehicleName: w.vehicleName, address: w.address },
+                                  appointment: null,
+                                })
+                              }
+                            >
+                              Agendar retirada
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...pagedRemovals.pager} />
+            </>
           )}
         </Card>
 

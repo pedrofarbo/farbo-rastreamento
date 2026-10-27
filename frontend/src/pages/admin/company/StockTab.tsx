@@ -14,6 +14,8 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateOnly, formatMoney, parseMoney } from '@/services/format';
 import type { PaymentMethod, StockItem, StockKind, StockMoveType } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import pageStyles from '../../Page.module.css';
 import { financeKey, useFinanceLookups, useRefreshFinance } from './EntryModals';
@@ -26,6 +28,9 @@ export function StockTab() {
   const movements = useQuery({ queryKey: [...financeKey, 'movements'], queryFn: () => financeApi.movements() });
   const [editing, setEditing] = useState<StockItem | null | undefined>(undefined);
   const [moving, setMoving] = useState<{ item: StockItem | null; type: StockMoveType } | null>(null);
+
+  const pagedItems = usePagedList(stock.data?.items ?? [], 'stock-items');
+  const pagedMoves = usePagedList(movements.data ?? [], 'stock-movements');
 
   if (stock.isLoading) return <Spinner label="Carregando o estoque" />;
   const items = stock.data?.items ?? [];
@@ -75,65 +80,68 @@ export function StockTab() {
             description="Cadastre o que a empresa estoca (o modelo de rastreador, o chip da operadora) e registre as compras."
           />
         ) : (
-          <div className={pageStyles.tableWrap}>
-            <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th className={styles.right}>Em estoque</th>
-                  <th className={styles.right}>Custo médio</th>
-                  <th className={styles.right}>Valor</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((i) => (
-                  <tr key={i.id}>
-                    <td data-label="Item">
-                      <span className={styles.desc}>
-                        <strong>{i.name}</strong>
-                        <span className={styles.muted}>
-                          {STOCK_KIND_LABELS[i.kind]}
-                          {i.minQuantity > 0 ? ` · mínimo ${i.minQuantity}` : ''}
-                          {!i.active ? ' · inativo' : ''}
-                        </span>
-                      </span>
-                    </td>
-                    <td data-label="Em estoque" className={styles.right}>
-                      <span className={styles.amount}>{i.quantity}</span>{' '}
-                      {i.low && (
-                        <Badge tone="warning" dot>
-                          Comprar
-                        </Badge>
-                      )}
-                    </td>
-                    <td data-label="Custo médio" className={styles.right}>
-                      {formatMoney(i.avgCostCents)}
-                    </td>
-                    <td data-label="Valor" className={`${styles.right} ${styles.amount}`}>
-                      {formatMoney(i.valueCents)}
-                    </td>
-                    <td data-label="">
-                      <div className={styles.rowActions}>
-                        <Button size="small" variant="primary" onClick={() => setMoving({ item: i, type: 'IN' })}>
-                          Entrada
-                        </Button>
-                        <Button size="small" variant="ghost" onClick={() => setMoving({ item: i, type: 'OUT' })} disabled={i.quantity === 0}>
-                          Saída
-                        </Button>
-                        <Button size="small" variant="ghost" onClick={() => setMoving({ item: i, type: 'ADJUST' })}>
-                          Acertar
-                        </Button>
-                        <Button size="small" variant="ghost" onClick={() => setEditing(i)}>
-                          Editar
-                        </Button>
-                      </div>
-                    </td>
+          <>
+            <div className={pageStyles.tableWrap}>
+              <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th className={styles.right}>Em estoque</th>
+                    <th className={styles.right}>Custo médio</th>
+                    <th className={styles.right}>Valor</th>
+                    <th />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {pagedItems.items.map((i) => (
+                    <tr key={i.id}>
+                      <td data-label="Item">
+                        <span className={styles.desc}>
+                          <strong>{i.name}</strong>
+                          <span className={styles.muted}>
+                            {STOCK_KIND_LABELS[i.kind]}
+                            {i.minQuantity > 0 ? ` · mínimo ${i.minQuantity}` : ''}
+                            {!i.active ? ' · inativo' : ''}
+                          </span>
+                        </span>
+                      </td>
+                      <td data-label="Em estoque" className={styles.right}>
+                        <span className={styles.amount}>{i.quantity}</span>{' '}
+                        {i.low && (
+                          <Badge tone="warning" dot>
+                            Comprar
+                          </Badge>
+                        )}
+                      </td>
+                      <td data-label="Custo médio" className={styles.right}>
+                        {formatMoney(i.avgCostCents)}
+                      </td>
+                      <td data-label="Valor" className={`${styles.right} ${styles.amount}`}>
+                        {formatMoney(i.valueCents)}
+                      </td>
+                      <td data-label="">
+                        <div className={styles.rowActions}>
+                          <Button size="small" variant="primary" onClick={() => setMoving({ item: i, type: 'IN' })}>
+                            Entrada
+                          </Button>
+                          <Button size="small" variant="ghost" onClick={() => setMoving({ item: i, type: 'OUT' })} disabled={i.quantity === 0}>
+                            Saída
+                          </Button>
+                          <Button size="small" variant="ghost" onClick={() => setMoving({ item: i, type: 'ADJUST' })}>
+                            Acertar
+                          </Button>
+                          <Button size="small" variant="ghost" onClick={() => setEditing(i)}>
+                            Editar
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pager {...pagedItems.pager} />
+          </>
         )}
       </Card>
 
@@ -141,40 +149,43 @@ export function StockTab() {
         {(movements.data ?? []).length === 0 ? (
           <EmptyState icon="🔄" title="Nenhum movimento" description="As compras, instalações e acertos aparecem aqui." />
         ) : (
-          <div className={pageStyles.tableWrap}>
-            <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
-              <thead>
-                <tr>
-                  <th>Data</th>
-                  <th>Item</th>
-                  <th>Movimento</th>
-                  <th className={styles.right}>Quantidade</th>
-                  <th className={styles.right}>Custo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(movements.data ?? []).map((m) => (
-                  <tr key={m.id}>
-                    <td data-label="Data">{formatDateOnly(m.occurredOn)}</td>
-                    <td data-label="Item">
-                      <span className={styles.desc}>
-                        <strong>{m.itemName}</strong>
-                        {(m.notes || m.supplierName) && <span className={styles.muted}>{[m.supplierName, m.notes].filter(Boolean).join(' · ')}</span>}
-                      </span>
-                    </td>
-                    <td data-label="Movimento">{MOVE_LABELS[m.type]}</td>
-                    <td data-label="Quantidade" className={`${styles.right} ${styles.amount} ${m.quantity < 0 ? styles.negative : styles.positive}`}>
-                      {m.quantity > 0 ? `+${m.quantity}` : m.quantity}
-                    </td>
-                    <td data-label="Custo" className={styles.right}>
-                      {formatMoney(Math.abs(m.totalCents))}
-                      <div className={styles.muted}>{formatMoney(m.unitCostCents)} / un.</div>
-                    </td>
+          <>
+            <div className={pageStyles.tableWrap}>
+              <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Item</th>
+                    <th>Movimento</th>
+                    <th className={styles.right}>Quantidade</th>
+                    <th className={styles.right}>Custo</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {pagedMoves.items.map((m) => (
+                    <tr key={m.id}>
+                      <td data-label="Data">{formatDateOnly(m.occurredOn)}</td>
+                      <td data-label="Item">
+                        <span className={styles.desc}>
+                          <strong>{m.itemName}</strong>
+                          {(m.notes || m.supplierName) && <span className={styles.muted}>{[m.supplierName, m.notes].filter(Boolean).join(' · ')}</span>}
+                        </span>
+                      </td>
+                      <td data-label="Movimento">{MOVE_LABELS[m.type]}</td>
+                      <td data-label="Quantidade" className={`${styles.right} ${styles.amount} ${m.quantity < 0 ? styles.negative : styles.positive}`}>
+                        {m.quantity > 0 ? `+${m.quantity}` : m.quantity}
+                      </td>
+                      <td data-label="Custo" className={styles.right}>
+                        {formatMoney(Math.abs(m.totalCents))}
+                        <div className={styles.muted}>{formatMoney(m.unitCostCents)} / un.</div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pager {...pagedMoves.pager} />
+          </>
         )}
       </Card>
 

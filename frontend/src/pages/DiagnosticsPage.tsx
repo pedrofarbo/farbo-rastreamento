@@ -6,6 +6,8 @@ import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { formatDateTime, formatRelative } from '@/services/format';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import { ServerTab } from './admin/ServerTab';
 import styles from './Page.module.css';
@@ -141,6 +143,7 @@ function RawPacketsTab() {
     queryFn: () => diagnosticsApi.rawPackets(100),
     refetchInterval: 15_000,
   });
+  const paged = usePagedList(packets.data?.packets ?? [], 'raw-packets');
 
   return (
     <Card flush>
@@ -155,38 +158,41 @@ function RawPacketsTab() {
           description="Todo o tráfego recebido até agora foi reconhecido por algum protocolo."
         />
       ) : (
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Quando</th>
-                <th>Origem</th>
-                <th>Motivo</th>
-                <th>Conteúdo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(packets.data?.packets ?? []).map((packet) => (
-                <tr key={packet.id}>
-                  <td style={{ whiteSpace: 'nowrap' }}>{formatDateTime(packet.receivedAt)}</td>
-                  <td className={styles.mono}>
-                    {packet.remoteAddr}
-                    {packet.imei && <div>IMEI {packet.imei}</div>}
-                    {packet.protocol && <div>{packet.protocol}</div>}
-                  </td>
-                  <td style={{ fontSize: 'var(--text-xs)', maxWidth: 220 }}>{packet.reason}</td>
-                  <td>
-                    <div className={styles.ascii}>{packet.payloadAscii}</div>
-                    <div className={styles.hexdump}>{packet.payloadHex}</div>
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-                      {packet.byteCount} bytes
-                    </div>
-                  </td>
+        <>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>Quando</th>
+                  <th>Origem</th>
+                  <th>Motivo</th>
+                  <th>Conteúdo</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {paged.items.map((packet) => (
+                  <tr key={packet.id}>
+                    <td style={{ whiteSpace: 'nowrap' }}>{formatDateTime(packet.receivedAt)}</td>
+                    <td className={styles.mono}>
+                      {packet.remoteAddr}
+                      {packet.imei && <div>IMEI {packet.imei}</div>}
+                      {packet.protocol && <div>{packet.protocol}</div>}
+                    </td>
+                    <td style={{ fontSize: 'var(--text-xs)', maxWidth: 220 }}>{packet.reason}</td>
+                    <td>
+                      <div className={styles.ascii}>{packet.payloadAscii}</div>
+                      <div className={styles.hexdump}>{packet.payloadHex}</div>
+                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+                        {packet.byteCount} bytes
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pager {...paged.pager} />
+        </>
       )}
     </Card>
   );
@@ -198,6 +204,7 @@ function ConnectionsTab() {
     queryFn: diagnosticsApi.connections,
     refetchInterval: 10_000,
   });
+  const paged = usePagedList(connections.data?.connections ?? [], 'connections');
 
   return (
     <Card flush title={`${connections.data?.count ?? 0} sessões abertas`}>
@@ -206,30 +213,33 @@ function ConnectionsTab() {
       ) : (connections.data?.connections ?? []).length === 0 ? (
         <EmptyState icon="🔌" title="Nenhum rastreador conectado agora" />
       ) : (
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>IMEI</th>
-                <th>Protocolo</th>
-                <th>Origem</th>
-                <th>Conectado</th>
-                <th>Último pacote</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(connections.data?.connections ?? []).map((connection) => (
-                <tr key={connection.imei}>
-                  <td className={styles.mono}>{connection.imei}</td>
-                  <td className={styles.mono}>{connection.protocol}</td>
-                  <td className={styles.mono}>{connection.remoteAddr}</td>
-                  <td>{formatRelative(connection.connectedAt)}</td>
-                  <td>{formatRelative(connection.lastSeenAt)}</td>
+        <>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>IMEI</th>
+                  <th>Protocolo</th>
+                  <th>Origem</th>
+                  <th>Conectado</th>
+                  <th>Último pacote</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {paged.items.map((connection) => (
+                  <tr key={connection.imei}>
+                    <td className={styles.mono}>{connection.imei}</td>
+                    <td className={styles.mono}>{connection.protocol}</td>
+                    <td className={styles.mono}>{connection.remoteAddr}</td>
+                    <td>{formatRelative(connection.connectedAt)}</td>
+                    <td>{formatRelative(connection.lastSeenAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pager {...paged.pager} />
+        </>
       )}
     </Card>
   );
@@ -240,6 +250,7 @@ function AuditTab() {
     queryKey: ['audit-logs'],
     queryFn: () => diagnosticsApi.auditLogs(200),
   });
+  const paged = usePagedList(logs.data ?? [], 'audit');
 
   return (
     <Card flush>
@@ -253,30 +264,33 @@ function AuditTab() {
       ) : (logs.data ?? []).length === 0 ? (
         <EmptyState icon="📋" title="Sem registros de auditoria" />
       ) : (
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Quando</th>
-                <th>Ação</th>
-                <th>Resultado</th>
-                <th>Origem</th>
-                <th>Detalhes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(logs.data ?? []).map((entry) => (
-                <tr key={entry.id}>
-                  <td style={{ whiteSpace: 'nowrap' }}>{formatDateTime(entry.createdAt)}</td>
-                  <td className={styles.mono}>{entry.action}</td>
-                  <td>{entry.result}</td>
-                  <td className={styles.mono}>{entry.ipAddress || '—'}</td>
-                  <td className={styles.hexdump}>{JSON.stringify(entry.metadata)}</td>
+        <>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>Quando</th>
+                  <th>Ação</th>
+                  <th>Resultado</th>
+                  <th>Origem</th>
+                  <th>Detalhes</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {paged.items.map((entry) => (
+                  <tr key={entry.id}>
+                    <td style={{ whiteSpace: 'nowrap' }}>{formatDateTime(entry.createdAt)}</td>
+                    <td className={styles.mono}>{entry.action}</td>
+                    <td>{entry.result}</td>
+                    <td className={styles.mono}>{entry.ipAddress || '—'}</td>
+                    <td className={styles.hexdump}>{JSON.stringify(entry.metadata)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pager {...paged.pager} />
+        </>
       )}
     </Card>
   );

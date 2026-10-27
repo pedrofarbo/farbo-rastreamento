@@ -23,7 +23,8 @@ import { NO_GROUP, inGroup, sortVehicles } from '@/services/vehicleFilters';
 import styles from './DashboardPage.module.css';
 
 export function DashboardPage() {
-  const { data: all = [], isLoading, error } = useVehicles();
+  const { data, isLoading, error } = useVehicles();
+  const all = data ?? [];
   // O admin abre a ficha do cliente pelo nome dele; a associação, a do associado.
   const { canManage, isOrgMember } = useAuth();
   // O grupo escolhido filtra a lista e o mapa.
@@ -70,7 +71,9 @@ export function DashboardPage() {
   if (isLoading) {
     return <Spinner label="Carregando veículos" />;
   }
-  if (error) {
+  // Uma atualização que falhou, com a lista já na tela: o mapa continua (e a
+  // tela cheia também); a próxima atualização tenta de novo.
+  if (error && (!data || isSuspendedError(error))) {
     if (isSuspendedError(error)) return <SuspendedNotice message={error.message} />;
     return <Spinner label="Falha ao carregar. Tentando novamente…" />;
   }

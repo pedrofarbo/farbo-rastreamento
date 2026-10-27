@@ -18,6 +18,8 @@ import { formatRelative } from '@/services/format';
 import { ORG_KIND_LABELS } from '@/services/roles';
 import { useAuth } from '@/stores/AuthContext';
 import type { Associate, AssociateInput } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import styles from '../Page.module.css';
 
@@ -55,6 +57,7 @@ export function OrgAssociatesPage() {
     : undefined;
   const showBroker = !isOrgBroker && (associates.data ?? []).some((a) => a.brokerId);
   const list = useMemo(() => (associates.data ?? []).filter((a) => matchesAssociate(a, search)), [associates.data, search]);
+  const paged = usePagedList(list, 'associates', search);
 
   const create = useMutation({
     mutationFn: (input: AssociateInput) => orgApi.createAssociate(input),
@@ -139,37 +142,40 @@ export function OrgAssociatesPage() {
               description={canRegisterOrg && !search ? 'Cadastre o primeiro: ele recebe o convite do app por e-mail.' : undefined}
             />
           ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Associado</th>
-                    {showBroker && <th>Corretor</th>}
-                    <th>Veículos</th>
-                    <th>App</th>
-                    <th>Situação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.map((a) => (
-                    <tr key={a.id}>
-                      <td>
-                        <Link to={`/associados/${a.id}`} className={org.rowLink}>
-                          {a.name}
-                        </Link>
-                        <div className={org.muted}>{a.email}</div>
-                      </td>
-                      {showBroker && <td className={org.muted}>{a.brokerName || '—'}</td>}
-                      <td>
-                        {a.installed} de {a.vehicles} {a.vehicles === 1 ? 'instalado' : 'instalados'}
-                      </td>
-                      <td className={org.muted}>{a.lastSeenAt ? `entrou ${formatRelative(a.lastSeenAt)}` : 'ainda não entrou'}</td>
-                      <td>{a.active ? <Badge tone="success">Ativo</Badge> : <Badge tone="neutral">Desligado</Badge>}</td>
+            <>
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Associado</th>
+                      {showBroker && <th>Corretor</th>}
+                      <th>Veículos</th>
+                      <th>App</th>
+                      <th>Situação</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {paged.items.map((a) => (
+                      <tr key={a.id}>
+                        <td>
+                          <Link to={`/associados/${a.id}`} className={org.rowLink}>
+                            {a.name}
+                          </Link>
+                          <div className={org.muted}>{a.email}</div>
+                        </td>
+                        {showBroker && <td className={org.muted}>{a.brokerName || '—'}</td>}
+                        <td>
+                          {a.installed} de {a.vehicles} {a.vehicles === 1 ? 'instalado' : 'instalados'}
+                        </td>
+                        <td className={org.muted}>{a.lastSeenAt ? `entrou ${formatRelative(a.lastSeenAt)}` : 'ainda não entrou'}</td>
+                        <td>{a.active ? <Badge tone="success">Ativo</Badge> : <Badge tone="neutral">Desligado</Badge>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...paged.pager} />
+            </>
           )}
         </Card>
       </div>

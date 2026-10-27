@@ -10,6 +10,8 @@
      disponível, o navegador os espreme até caberem — cortando botões e texto
      — em vez de deixar a rolagem do contêiner pai assumir o excesso. */
   flex-shrink: 0;
+  /* A troca de página de uma lista rola até o cartão, com folga no topo. */
+  scroll-margin-top: var(--space-4);
 }
 
 /* Sem espaço (celular), as ações descem para baixo do título em vez de

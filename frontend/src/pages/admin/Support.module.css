@@ -1,9 +1,5 @@
 /* Atendimento: lista de conversas à esquerda, a conversa à direita. No
    celular, uma coisa de cada vez. */
-.inner {
-  max-width: 1280px;
-}
-
 .layout {
   display: grid;
   grid-template-columns: minmax(260px, 340px) 1fr;

@@ -68,7 +68,7 @@ export function SupportPage() {
 
   return (
     <div className={pageStyles.page}>
-      <div className={`${pageStyles.inner} ${styles.inner}`}>
+      <div className={pageStyles.inner}>
         <header className={pageStyles.header}>
           <div>
             <h1 className={pageStyles.title}>Atendimento</h1>

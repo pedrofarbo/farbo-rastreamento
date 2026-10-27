@@ -12,6 +12,8 @@ import { useToast } from '@/components/ui/Toast';
 import { formatDateTime } from '@/services/format';
 import { useAuth } from '@/stores/AuthContext';
 import type { OrgAnnouncement } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import pageStyles from '../Page.module.css';
 import styles from './OrgAnnouncements.module.css';
@@ -81,6 +83,7 @@ export function OrgAnnouncementsPage() {
   };
 
   const sent = list.data?.announcements ?? [];
+  const paged = usePagedList(sent, 'announcements');
 
   return (
     <div className={pageStyles.page}>
@@ -160,23 +163,26 @@ export function OrgAnnouncementsPage() {
           ) : sent.length === 0 ? (
             <EmptyState icon="📣" title="Nenhum comunicado ainda" description="Os comunicados enviados aparecem aqui, com quantos receberam." />
           ) : (
-            <ul className={styles.list}>
-              {sent.map((a) => (
-                <li key={a.id} className={styles.item}>
-                  <div className={styles.head}>
-                    <strong>{a.title}</strong>
-                    <time className={styles.muted} dateTime={a.createdAt}>
-                      {formatDateTime(a.createdAt)}
-                    </time>
-                  </div>
-                  <p className={styles.body}>{a.body}</p>
-                  <span className={styles.muted}>
-                    {a.createdByName ? `${a.createdByName} · ` : ''}
-                    {deliveryLabel(a)}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className={styles.list}>
+                {paged.items.map((a) => (
+                  <li key={a.id} className={styles.item}>
+                    <div className={styles.head}>
+                      <strong>{a.title}</strong>
+                      <time className={styles.muted} dateTime={a.createdAt}>
+                        {formatDateTime(a.createdAt)}
+                      </time>
+                    </div>
+                    <p className={styles.body}>{a.body}</p>
+                    <span className={styles.muted}>
+                      {a.createdByName ? `${a.createdByName} · ` : ''}
+                      {deliveryLabel(a)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <Pager {...paged.pager} />
+            </>
           )}
         </Card>
       </div>

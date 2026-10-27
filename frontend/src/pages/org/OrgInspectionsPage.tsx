@@ -17,6 +17,8 @@ import { formatCoordinates, formatDateTime } from '@/services/format';
 import { INSPECTION_SLOTS, INSPECTION_STATUS, photosLabel } from '@/services/occurrences';
 import { useAuth } from '@/stores/AuthContext';
 import type { InspectionStatus } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import pageStyles from '../Page.module.css';
 import styles from './OrgOccurrences.module.css';
@@ -28,6 +30,7 @@ export function OrgInspectionsPage() {
   const [status, setStatus] = useState<InspectionStatus | ''>('');
   const list = useQuery({ queryKey: [...orgInspectionsKey, status], queryFn: () => orgApi.inspections(status) });
   const rows = list.data ?? [];
+  const paged = usePagedList(rows, 'inspections', status);
   return (
     <div className={pageStyles.page}>
       <div className={pageStyles.inner}>
@@ -57,37 +60,40 @@ export function OrgInspectionsPage() {
           ) : rows.length === 0 ? (
             <EmptyState icon="📷" title="Nenhuma vistoria" description="Peça a primeira na ficha de um associado." />
           ) : (
-            <div className={pageStyles.tableWrap}>
-              <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
-                <thead>
-                  <tr>
-                    <th>Veículo</th>
-                    <th>Associado</th>
-                    <th>Pedida em</th>
-                    <th>Fotos</th>
-                    <th>Situação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((i) => (
-                    <tr key={i.id}>
-                      <td>
-                        <Link to={`/organizacao/vistorias/${i.id}`} className={styles.rowLink}>
-                          {i.vehicleName}
-                        </Link>
-                        {i.plate && <span className={styles.plate}>{i.plate}</span>}
-                      </td>
-                      <td data-label="Associado">{i.associateName}</td>
-                      <td data-label="Pedida em">{formatDateTime(i.createdAt)}</td>
-                      <td data-label="Fotos">{photosLabel(i.photos.length)}</td>
-                      <td data-label="Situação">
-                        <Badge tone={INSPECTION_STATUS[i.status].tone}>{INSPECTION_STATUS[i.status].label}</Badge>
-                      </td>
+            <>
+              <div className={pageStyles.tableWrap}>
+                <table className={`${pageStyles.table} ${pageStyles.stackTable}`}>
+                  <thead>
+                    <tr>
+                      <th>Veículo</th>
+                      <th>Associado</th>
+                      <th>Pedida em</th>
+                      <th>Fotos</th>
+                      <th>Situação</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {paged.items.map((i) => (
+                      <tr key={i.id}>
+                        <td>
+                          <Link to={`/organizacao/vistorias/${i.id}`} className={styles.rowLink}>
+                            {i.vehicleName}
+                          </Link>
+                          {i.plate && <span className={styles.plate}>{i.plate}</span>}
+                        </td>
+                        <td data-label="Associado">{i.associateName}</td>
+                        <td data-label="Pedida em">{formatDateTime(i.createdAt)}</td>
+                        <td data-label="Fotos">{photosLabel(i.photos.length)}</td>
+                        <td data-label="Situação">
+                          <Badge tone={INSPECTION_STATUS[i.status].tone}>{INSPECTION_STATUS[i.status].label}</Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...paged.pager} />
+            </>
           )}
         </Card>
       </div>

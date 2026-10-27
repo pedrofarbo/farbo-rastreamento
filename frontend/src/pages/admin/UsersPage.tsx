@@ -17,6 +17,8 @@ import { ROLE_LABELS, TEAM_ROLES } from '@/services/roles';
 import type { TeamRole } from '@/services/roles';
 import { useAuth } from '@/stores/AuthContext';
 import type { User } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import styles from '../Page.module.css';
 import own from './Users.module.css';
@@ -152,6 +154,7 @@ export function UsersPage() {
   };
 
   const list = users.data ?? [];
+  const paged = usePagedList(list, 'users');
   const ready =
     draft !== null &&
     typeof (editing ? updateInputFrom(draft) : createInputFrom(draft)) !== 'string';
@@ -182,95 +185,98 @@ export function UsersPage() {
           ) : list.length === 0 ? (
             <EmptyState icon="👥" title="Nenhum usuário" description="Cadastre a equipe que vai usar o painel." />
           ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Usuário</th>
-                    <th>Perfil</th>
-                    <th>Situação</th>
-                    <th>Duas etapas</th>
-                    <th>Desde</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.map((u) => {
-                    const role = u.role as TeamRole;
-                    return (
-                      <tr key={u.id}>
-                        <td>
-                          <strong>{u.name || u.email}</strong>
-                          {u.id === me?.id && <span className={own.you}>você</span>}
-                          <div className={billing.muted}>{u.email}</div>
-                        </td>
-                        <td>
-                          <Badge tone={ROLE_TONE[role] ?? 'neutral'} title={TEAM_ROLES.find((r) => r.role === role)?.description}>
-                            {ROLE_LABELS[role] ?? u.role}
-                          </Badge>
-                        </td>
-                        <td>
-                          {u.active ? (
-                            <Badge tone="success" dot>
-                              Ativo
+            <>
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Usuário</th>
+                      <th>Perfil</th>
+                      <th>Situação</th>
+                      <th>Duas etapas</th>
+                      <th>Desde</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paged.items.map((u) => {
+                      const role = u.role as TeamRole;
+                      return (
+                        <tr key={u.id}>
+                          <td>
+                            <strong>{u.name || u.email}</strong>
+                            {u.id === me?.id && <span className={own.you}>você</span>}
+                            <div className={billing.muted}>{u.email}</div>
+                          </td>
+                          <td>
+                            <Badge tone={ROLE_TONE[role] ?? 'neutral'} title={TEAM_ROLES.find((r) => r.role === role)?.description}>
+                              {ROLE_LABELS[role] ?? u.role}
                             </Badge>
-                          ) : (
-                            <Badge tone="neutral">Desativado</Badge>
-                          )}
-                        </td>
-                        <td>
-                          {u.twoFactor?.enabled ? (
-                            <Badge tone="success">Ativa</Badge>
-                          ) : (
-                            <Badge tone="warning" title="A pessoa ativa no próximo login (é obrigatória para a equipe).">
-                              Pendente
-                            </Badge>
-                          )}
-                        </td>
-                        <td className={billing.muted}>{new Date(u.createdAt).toLocaleDateString('pt-BR')}</td>
-                        <td>
-                          <div className={styles.actions}>
-                            <Button size="small" variant="ghost" onClick={() => open(u)}>
-                              Editar
-                            </Button>
-                            {u.active && (
-                              <Button
-                                size="small"
-                                variant="ghost"
-                                title="Manda de novo o link para criar a senha; o anterior deixa de valer."
-                                loading={invite.isPending && invite.variables?.id === u.id}
-                                onClick={() => invite.mutate(u)}
-                              >
-                                Reenviar convite
-                              </Button>
+                          </td>
+                          <td>
+                            {u.active ? (
+                              <Badge tone="success" dot>
+                                Ativo
+                              </Badge>
+                            ) : (
+                              <Badge tone="neutral">Desativado</Badge>
                             )}
-                            {u.twoFactor?.enabled && (
-                              <Button
-                                size="small"
-                                variant="ghost"
-                                title="Para quem perdeu o celular e os códigos de recuperação: ativa de novo no próximo login."
-                                loading={resetTwoFactor.isPending && resetTwoFactor.variables?.id === u.id}
-                                onClick={() => {
-                                  if (
-                                    window.confirm(
-                                      `Redefinir a verificação em duas etapas de ${u.name || u.email}? O app autenticador, os códigos de recuperação e os aparelhos confiáveis deixam de valer, e a pessoa ativa de novo no próximo login.`,
-                                    )
-                                  ) {
-                                    resetTwoFactor.mutate(u);
-                                  }
-                                }}
-                              >
-                                Redefinir duas etapas
-                              </Button>
+                          </td>
+                          <td>
+                            {u.twoFactor?.enabled ? (
+                              <Badge tone="success">Ativa</Badge>
+                            ) : (
+                              <Badge tone="warning" title="A pessoa ativa no próximo login (é obrigatória para a equipe).">
+                                Pendente
+                              </Badge>
                             )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          </td>
+                          <td className={billing.muted}>{new Date(u.createdAt).toLocaleDateString('pt-BR')}</td>
+                          <td>
+                            <div className={styles.actions}>
+                              <Button size="small" variant="ghost" onClick={() => open(u)}>
+                                Editar
+                              </Button>
+                              {u.active && (
+                                <Button
+                                  size="small"
+                                  variant="ghost"
+                                  title="Manda de novo o link para criar a senha; o anterior deixa de valer."
+                                  loading={invite.isPending && invite.variables?.id === u.id}
+                                  onClick={() => invite.mutate(u)}
+                                >
+                                  Reenviar convite
+                                </Button>
+                              )}
+                              {u.twoFactor?.enabled && (
+                                <Button
+                                  size="small"
+                                  variant="ghost"
+                                  title="Para quem perdeu o celular e os códigos de recuperação: ativa de novo no próximo login."
+                                  loading={resetTwoFactor.isPending && resetTwoFactor.variables?.id === u.id}
+                                  onClick={() => {
+                                    if (
+                                      window.confirm(
+                                        `Redefinir a verificação em duas etapas de ${u.name || u.email}? O app autenticador, os códigos de recuperação e os aparelhos confiáveis deixam de valer, e a pessoa ativa de novo no próximo login.`,
+                                      )
+                                    ) {
+                                      resetTwoFactor.mutate(u);
+                                    }
+                                  }}
+                                >
+                                  Redefinir duas etapas
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...paged.pager} />
+            </>
           )}
         </Card>
 

@@ -5,6 +5,8 @@ import { InvoiceStatus } from '@/components/billing/InvoiceStatus';
 import { Button } from '@/components/ui/Button';
 import { formatDateOnly, formatMoney } from '@/services/format';
 import type { OrgEstimate, OrgInvoice, OrgInvoiceItem } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import styles from './Organization.module.css';
 
@@ -85,38 +87,42 @@ export function OrgInvoices({
   actions?: (invoice: OrgInvoice) => ReactNode;
 }) {
   const [open, setOpen] = useState<string | null>(null);
+  const sorted = [...invoices].sort((a, b) => b.dueDate.localeCompare(a.dueDate));
+  const paged = usePagedList(sorted, 'org-invoices');
   if (invoices.length === 0) {
     return <p className={styles.muted}>Nenhuma fatura ainda.</p>;
   }
-  const sorted = [...invoices].sort((a, b) => b.dueDate.localeCompare(a.dueDate));
   return (
-    <ul className={styles.invoices}>
-      {sorted.map((inv) => (
-        <li key={inv.id} className={styles.invoice}>
-          <div className={styles.invoiceHead}>
-            <div className={styles.invoiceMain}>
-              <strong>{inv.description}</strong>
-              <span className={styles.muted}>Vence em {formatDateOnly(inv.dueDate)}</span>
+    <>
+      <ul className={styles.invoices}>
+        {paged.items.map((inv) => (
+          <li key={inv.id} className={styles.invoice}>
+            <div className={styles.invoiceHead}>
+              <div className={styles.invoiceMain}>
+                <strong>{inv.description}</strong>
+                <span className={styles.muted}>Vence em {formatDateOnly(inv.dueDate)}</span>
+              </div>
+              <span className={styles.amount}>{formatMoney(inv.amountCents)}</span>
+              <InvoiceStatus invoice={inv} />
+              {onPay && inv.status === 'OPEN' && (
+                <Button size="small" variant="primary" onClick={() => onPay(inv)}>
+                  Pagar
+                </Button>
+              )}
+              {actions?.(inv)}
             </div>
-            <span className={styles.amount}>{formatMoney(inv.amountCents)}</span>
-            <InvoiceStatus invoice={inv} />
-            {onPay && inv.status === 'OPEN' && (
-              <Button size="small" variant="primary" onClick={() => onPay(inv)}>
-                Pagar
-              </Button>
+            {inv.items.length > 0 && (
+              <>
+                <button type="button" className={styles.toggle} onClick={() => setOpen(open === inv.id ? null : inv.id)}>
+                  {open === inv.id ? 'Esconder o extrato' : `Ver o extrato (${inv.items.length} ${inv.items.length === 1 ? 'linha' : 'linhas'})`}
+                </button>
+                {open === inv.id && <Statement items={inv.items} totalCents={inv.amountCents} />}
+              </>
             )}
-            {actions?.(inv)}
-          </div>
-          {inv.items.length > 0 && (
-            <>
-              <button type="button" className={styles.toggle} onClick={() => setOpen(open === inv.id ? null : inv.id)}>
-                {open === inv.id ? 'Esconder o extrato' : `Ver o extrato (${inv.items.length} ${inv.items.length === 1 ? 'linha' : 'linhas'})`}
-              </button>
-              {open === inv.id && <Statement items={inv.items} totalCents={inv.amountCents} />}
-            </>
-          )}
-        </li>
-      ))}
-    </ul>
+          </li>
+        ))}
+      </ul>
+      <Pager {...paged.pager} />
+    </>
   );
 }

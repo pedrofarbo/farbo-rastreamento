@@ -20,6 +20,8 @@ import { formatDateTime, formatMoney, formatRelative } from '@/services/format';
 import { stepOf, trackerTone } from '@/services/fulfillment';
 import { useAuth } from '@/stores/AuthContext';
 import type { Fulfillment, TrackerStatus } from '@/types';
+import { Pager } from '@/components/ui/Pager';
+import { usePagedList } from '@/hooks/usePagination';
 
 import styles from '../Page.module.css';
 
@@ -77,6 +79,7 @@ export function OrdersPage() {
   );
   const current = STAGES.find((s) => s.id === stage);
   const rows = current ? all.filter((f) => current.statuses.includes(f.trackerStatus)) : all;
+  const paged = usePagedList(rows, 'orders', [stage, showAll]);
 
   return (
     <div className={styles.page}>
@@ -127,31 +130,34 @@ export function OrdersPage() {
           ) : rows.length === 0 ? (
             <EmptyState icon="📦" title="Nenhum pedido aqui" description="Os pedidos entram por Novo veículo." />
           ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Cliente</th>
-                    <th>Veículo</th>
-                    <th>Chip M2M</th>
-                    <th>Rastreador</th>
-                    <th>Envio</th>
-                    <th>Atualizado</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((f) => (
-                    <OrderRow
-                      key={f.id}
-                      f={f}
-                      onOpen={() => setOpened(f.id)}
-                      onCancel={canManage && cancelable(f) ? () => setCanceling(f) : undefined}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Cliente</th>
+                      <th>Veículo</th>
+                      <th>Chip M2M</th>
+                      <th>Rastreador</th>
+                      <th>Envio</th>
+                      <th>Atualizado</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paged.items.map((f) => (
+                      <OrderRow
+                        key={f.id}
+                        f={f}
+                        onOpen={() => setOpened(f.id)}
+                        onCancel={canManage && cancelable(f) ? () => setCanceling(f) : undefined}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...paged.pager} />
+            </>
           )}
         </Card>
       </div>
