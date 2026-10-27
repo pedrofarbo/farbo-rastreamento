@@ -755,10 +755,18 @@ export interface ChipInput {
   notes: string;
 }
 
+/** A importação de um lote de chips: os recusados voltam com a posição na lista. */
+export interface ChipBulkResult {
+  total: number;
+  created: number;
+  errors: { index: number; iccid: string; error: string }[];
+}
+
 /** O estoque de chips (administrador). */
 export const chipsApi = {
   list: () => api.get<Chip[]>('/api/chips'),
   create: (input: ChipInput) => api.post<Chip>('/api/chips', input),
+  createBulk: (chips: ChipInput[]) => api.post<ChipBulkResult>('/api/chips/bulk', { chips }),
   update: (id: string, input: ChipInput) => api.patch<Chip>(`/api/chips/${id}`, input),
   remove: (id: string) => api.delete<void>(`/api/chips/${id}`),
 };

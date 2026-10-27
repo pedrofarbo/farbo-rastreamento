@@ -786,6 +786,7 @@ func (s *Server) routes() chi.Router {
 					r.Use(auth.RequireRole(auth.RoleAdmin))
 					r.Get("/", s.handleListChips)
 					r.Post("/", s.handleCreateChip)
+					r.Post("/bulk", s.handleCreateChipsBulk)
 					r.Patch("/{id}", s.handleUpdateChip)
 					r.Delete("/{id}", s.handleDeleteChip)
 				})

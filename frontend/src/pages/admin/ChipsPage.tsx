@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { chipsApi } from '@/api/resources';
+import { ChipBulkModal } from '@/components/chips/ChipBulkModal';
 import type { ChipInput } from '@/api/resources';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -36,6 +37,7 @@ export function ChipsPage() {
   const [form, setForm] = useState<ChipInput | null>(null);
   const [formError, setFormError] = useState('');
   const [removing, setRemoving] = useState<Chip | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const all = list.data ?? [];
   const free = all.filter((c) => !c.device).length;
@@ -104,6 +106,7 @@ export function ChipsPage() {
             </p>
           </div>
           <div className={pageStyles.actions}>
+            <Button onClick={() => setImporting(true)}>Importar em massa</Button>
             <Button variant="primary" onClick={() => open(null)}>
               Novo chip
             </Button>
@@ -318,6 +321,8 @@ export function ChipsPage() {
           </form>
         )}
       </Modal>
+
+      <ChipBulkModal open={importing} onClose={() => setImporting(false)} existingIccids={all.map((c) => c.iccid)} />
 
       <Modal
         open={removing !== null}

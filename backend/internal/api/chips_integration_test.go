@@ -124,3 +124,60 @@ func TestChips(t *testing.T) {
 		t.Errorf("depois de apagar = %+v", list)
 	}
 }
+
+// TestChipsBulk: a importação de um lote de chips — os bons entram, os
+// recusados voltam com o motivo e a posição; o limite por envio. Precisa de
+// FARBO_TEST_DATABASE_URL.
+func TestChipsBulk(t *testing.T) {
+	env := newCredEnv(t)
+	ctx := context.Background()
+	authSvc := auth.NewService(auth.NewRepository(env.db), config.Auth{BcryptCost: bcrypt.MinCost}, nil,
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	for _, role := range []string{auth.RoleAdmin, auth.RoleOperator} {
+		if _, err := authSvc.CreateUser(ctx, role+"@lote.test", role, role, userPassword); err != nil {
+			t.Fatal(err)
+		}
+	}
+	admin := env.login(auth.RoleAdmin + "@lote.test")
+	env.must(env.login(auth.RoleOperator+"@lote.test"), http.MethodPost, "/api/chips/bulk", map[string]any{"chips": []any{}}, http.StatusForbidden)
+	env.must(admin, http.MethodPost, "/api/chips", map[string]any{"iccid": "89553202100093795330"}, http.StatusCreated)
+
+	lote := func(iccid string) map[string]any {
+		return map[string]any{"iccid": iccid, "carrier": "Algar", "apn": "ss.algar.br", "apnUser": "algar", "apnPassword": "algar", "notes": "Lote 12"}
+	}
+	var res struct {
+		Total   int `json:"total"`
+		Created int `json:"created"`
+		Errors  []struct {
+			Index int    `json:"index"`
+			ICCID string `json:"iccid"`
+			Error string `json:"error"`
+		} `json:"errors"`
+	}
+	_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/chips/bulk", map[string]any{"chips": []any{
+		lote("89553202100093795348"), lote("89553202100093795330"), lote("89553202100093795349"), lote("8955 3202 1000 9379 5355 SP"),
+	}}, http.StatusCreated), &res)
+	if res.Total != 4 || res.Created != 2 || len(res.Errors) != 2 ||
+		res.Errors[0].Index != 1 || !strings.Contains(res.Errors[0].Error, "já está cadastrado") ||
+		res.Errors[1].Index != 2 || !strings.Contains(res.Errors[1].Error, "último dígito não confere") {
+		t.Fatalf("lote = %+v", res)
+	}
+	var list []devices.Chip
+	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/chips", nil, http.StatusOK), &list)
+	var fromLot int
+	for _, c := range list {
+		if c.Notes == "Lote 12" && c.Carrier == "Algar" && c.APN == "ss.algar.br" && c.APNPasswordSet {
+			fromLot++
+		}
+	}
+	if len(list) != 3 || fromLot != 2 {
+		t.Errorf("estoque = %+v", list)
+	}
+
+	big := make([]any, 1001)
+	for i := range big {
+		big[i] = lote("89553202100093795363")
+	}
+	env.must(admin, http.MethodPost, "/api/chips/bulk", map[string]any{"chips": big}, http.StatusBadRequest)
+	env.must(admin, http.MethodPost, "/api/chips/bulk", map[string]any{"chips": []any{}}, http.StatusBadRequest)
+}

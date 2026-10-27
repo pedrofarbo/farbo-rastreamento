@@ -1,0 +1,32 @@
+/* O que vale para todos os chips do lote. */
+.defaults {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+.defaults legend {
+  padding: 0 var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.defaultsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-3);
+  align-self: stretch;
+}
+
+/* O ICCID numa linha só, como vem impresso. */
+.iccid {
+  white-space: nowrap;
+  word-break: normal;
+}

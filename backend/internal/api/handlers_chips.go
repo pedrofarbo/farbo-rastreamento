@@ -35,6 +35,63 @@ func (s *Server) handleCreateChip(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, chip)
 }
 
+// O limite de chips por importação.
+const maxChipsBulk = 1000
+
+type bulkChipsRequest struct {
+	Chips []devices.ChipInput `json:"chips"`
+}
+
+type bulkChipError struct {
+	Index int    `json:"index"`
+	ICCID string `json:"iccid"`
+	Error string `json:"error"`
+}
+
+type bulkChipsResponse struct {
+	Total   int             `json:"total"`
+	Created int             `json:"created"`
+	Errors  []bulkChipError `json:"errors"`
+}
+
+// handleCreateChipsBulk: a importação em massa (um lote de chips). Cada chip
+// entra por conta própria; os recusados voltam com o motivo, pela posição na
+// lista.
+func (s *Server) handleCreateChipsBulk(w http.ResponseWriter, r *http.Request) {
+	var req bulkChipsRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	switch {
+	case len(req.Chips) == 0:
+		writeError(w, http.StatusBadRequest, "nenhum chip informado")
+		return
+	case len(req.Chips) > maxChipsBulk:
+		writeError(w, http.StatusBadRequest, "máximo de 1000 chips por importação")
+		return
+	}
+	res := bulkChipsResponse{Total: len(req.Chips), Errors: []bulkChipError{}}
+	for i, in := range req.Chips {
+		if _, err := s.Devices.CreateChip(r.Context(), in); err != nil {
+			msg := "erro ao cadastrar"
+			var v devices.ValidationError
+			if errors.As(err, &v) {
+				msg = v.Message
+			}
+			res.Errors = append(res.Errors, bulkChipError{Index: i, ICCID: in.ICCID, Error: msg})
+			continue
+		}
+		res.Created++
+	}
+	s.recordAudit(r, audit.ActionChipCreated, nil, nil, map[string]any{"bulk": true, "total": res.Total, "created": res.Created})
+	status := http.StatusCreated
+	if res.Created == 0 {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, res)
+}
+
 func (s *Server) handleUpdateChip(w http.ResponseWriter, r *http.Request) {
 	id, err := urlUUID(r, "id")
 	if err != nil {
