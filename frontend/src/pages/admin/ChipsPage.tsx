@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { chipsApi } from '@/api/resources';
@@ -10,8 +10,10 @@ import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { TextField } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
+import { Pager } from '@/components/ui/Pager';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
+import { usePagedList } from '@/hooks/usePagination';
 import { formatICCID, formatPhoneInput } from '@/services/format';
 import type { Chip } from '@/types';
 
@@ -54,6 +56,13 @@ export function ChipsPage() {
       );
     });
   }, [all, filter, search]);
+  const paged = usePagedList(shown, 'chips');
+  // Trocando de página, a lista volta ao começo.
+  const top = useRef<HTMLDivElement>(null);
+  const goTo = (page: number) => {
+    paged.setPage(page);
+    top.current?.scrollIntoView?.({ block: 'start' });
+  };
 
   const close = () => {
     setForm(null);
@@ -96,7 +105,7 @@ export function ChipsPage() {
 
   return (
     <div className={pageStyles.page}>
-      <div className={pageStyles.inner}>
+      <div className={`${pageStyles.inner} ${pageStyles.wide}`}>
         <header className={pageStyles.header}>
           <div>
             <h1 className={pageStyles.title}>Chips</h1>
@@ -129,7 +138,10 @@ export function ChipsPage() {
                   role="tab"
                   aria-selected={filter === key}
                   className={`${pageStyles.tab} ${filter === key ? pageStyles.tabActive : ''}`}
-                  onClick={() => setFilter(key)}
+                  onClick={() => {
+                    setFilter(key);
+                    paged.setPage(1);
+                  }}
                 >
                   {label}
                 </button>
@@ -141,77 +153,85 @@ export function ChipsPage() {
               placeholder="Buscar por ICCID, linha, IMEI ou operadora"
               aria-label="Buscar chip"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                paged.setPage(1);
+              }}
             />
           </div>
         </Card>
 
-        <Card flush>
-          {list.isLoading ? (
-            <Spinner label="Carregando os chips" />
-          ) : shown.length === 0 ? (
-            <EmptyState
-              icon="📶"
-              title={all.length === 0 ? 'Nenhum chip no estoque' : 'Nenhum chip com esse filtro'}
-              description={all.length === 0 ? 'Cadastre os chips quando chegarem, para escolher no cadastro do rastreador.' : undefined}
-            />
-          ) : (
-            <div className={pageStyles.tableWrap}>
-              <table className={`${pageStyles.table} ${styles.list}`}>
-                <thead>
-                  <tr>
-                    <th>ICCID</th>
-                    <th>Linha</th>
-                    <th>Operadora e APN</th>
-                    <th>Situação</th>
-                    <th aria-label="Ações" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {shown.map((c) => (
-                    <tr key={c.id}>
-                      <td>
-                        <span className={styles.iccid}>{formatICCID(c.iccid)}</span>
-                        {c.notes && <div className={styles.muted}>{c.notes}</div>}
-                      </td>
-                      <td data-label="Linha">{c.phoneNumber ? formatPhoneInput(c.phoneNumber) : <span className={styles.muted}>—</span>}</td>
-                      <td data-label="Operadora e APN">
-                        {c.carrier || <span className={styles.muted}>—</span>}
-                        {c.apn && (
-                          <div className={styles.muted}>
-                            {c.apn}
-                            {c.apnUser ? ` · ${c.apnUser}` : ''}
-                            {c.apnPasswordSet ? ' · com senha' : ''}
-                          </div>
-                        )}
-                      </td>
-                      <td data-label="Situação">
-                        {c.device ? (
-                          <>
-                            <Badge tone="neutral">Em uso</Badge>
-                            <div className={styles.muted}>rastreador {c.device.imei}</div>
-                          </>
-                        ) : (
-                          <Badge tone="success">Livre</Badge>
-                        )}
-                      </td>
-                      <td className={styles.rowActions}>
-                        <Button size="small" variant="ghost" onClick={() => open(c)}>
-                          Editar
-                        </Button>
-                        {!c.device && (
-                          <Button size="small" variant="ghost" onClick={() => setRemoving(c)}>
-                            Retirar
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
+        <div ref={top} className={pageStyles.anchor}>
+          <Card flush>
+            {list.isLoading ? (
+              <Spinner label="Carregando os chips" />
+            ) : shown.length === 0 ? (
+              <EmptyState
+                icon="📶"
+                title={all.length === 0 ? 'Nenhum chip no estoque' : 'Nenhum chip com esse filtro'}
+                description={all.length === 0 ? 'Cadastre os chips quando chegarem, para escolher no cadastro do rastreador.' : undefined}
+              />
+            ) : (
+              <>
+                <div className={pageStyles.tableWrap}>
+                  <table className={`${pageStyles.table} ${styles.list}`}>
+                    <thead>
+                      <tr>
+                        <th>ICCID</th>
+                        <th>Linha</th>
+                        <th>Operadora e APN</th>
+                        <th>Situação</th>
+                        <th aria-label="Ações" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paged.items.map((c) => (
+                        <tr key={c.id}>
+                          <td>
+                            <span className={styles.iccid}>{formatICCID(c.iccid)}</span>
+                            {c.notes && <div className={styles.muted}>{c.notes}</div>}
+                          </td>
+                          <td data-label="Linha">{c.phoneNumber ? formatPhoneInput(c.phoneNumber) : <span className={styles.muted}>—</span>}</td>
+                          <td data-label="Operadora e APN">
+                            {c.carrier || <span className={styles.muted}>—</span>}
+                            {c.apn && (
+                              <div className={styles.muted}>
+                                {c.apn}
+                                {c.apnUser ? ` · ${c.apnUser}` : ''}
+                                {c.apnPasswordSet ? ' · com senha' : ''}
+                              </div>
+                            )}
+                          </td>
+                          <td data-label="Situação">
+                            {c.device ? (
+                              <>
+                                <Badge tone="neutral">Em uso</Badge>
+                                <div className={styles.muted}>rastreador {c.device.imei}</div>
+                              </>
+                            ) : (
+                              <Badge tone="success">Livre</Badge>
+                            )}
+                          </td>
+                          <td className={styles.rowActions}>
+                            <Button size="small" variant="ghost" onClick={() => open(c)}>
+                              Editar
+                            </Button>
+                            {!c.device && (
+                              <Button size="small" variant="ghost" onClick={() => setRemoving(c)}>
+                                Retirar
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Pager page={paged.page} pageSize={paged.pageSize} total={paged.total} onPage={goTo} onPageSize={paged.setPageSize} />
+              </>
+            )}
+          </Card>
+        </div>
       </div>
 
       <Modal

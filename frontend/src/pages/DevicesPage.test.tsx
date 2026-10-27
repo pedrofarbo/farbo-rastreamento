@@ -93,11 +93,13 @@ const MOCK_CUSTOMER: CustomerSummary = {
 
 // Os rastreadores recusados por falta de cadastro, e o que foi salvo.
 let unknownAttempts: unknown[] = [];
+// A lista de rastreadores (null: os dois de sempre).
+let deviceList: Device[] | null = null;
 const saved: { op: string; id?: string; input: Record<string, unknown> }[] = [];
 
 vi.mock('@/api/resources', () => ({
   devicesApi: {
-    list: async () => [MOCK_DEVICE, MOCK_PENDING_DEVICE],
+    list: async () => deviceList ?? [MOCK_DEVICE, MOCK_PENDING_DEVICE],
     create: async (input: Record<string, unknown>) => {
       saved.push({ op: 'create', input });
       return MOCK_DEVICE;
@@ -196,6 +198,8 @@ async function render() {
 afterEach(() => {
   document.body.innerHTML = '';
   unknownAttempts = [];
+  deviceList = null;
+  localStorage.clear();
   saved.length = 0;
   vi.restoreAllMocks();
 });
@@ -347,6 +351,48 @@ describe('DevicesPage', () => {
 
     expect(host.textContent).toContain('1 rastreador(es) selecionado(s)');
     expect(host.textContent).toContain('Ativar selecionados');
+  });
+
+  it('pagina a lista; o marcar todos fica na página e a escolha de quantos por página fica guardada', async () => {
+    deviceList = Array.from({ length: 12 }, (_, i) => ({
+      ...MOCK_PENDING_DEVICE,
+      id: `dev-${i + 1}`,
+      imei: `8692470612300${String(i + 1).padStart(2, '0')}`,
+    }));
+    const host = await render();
+    expect(host.querySelectorAll('tbody tr')).toHaveLength(12);
+    expect(host.textContent).toContain('1–12 de 12');
+
+    const size = host.querySelector('nav[aria-label="Páginas"] select') as HTMLSelectElement;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(size, '10');
+      size.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flush();
+    expect(host.querySelectorAll('tbody tr')).toHaveLength(10);
+    expect(host.textContent).toContain('Página 1 de 2');
+    expect(localStorage.getItem('tracker.pageSize.devices')).toBe('10');
+
+    const all = host.querySelector('input[aria-label="Selecionar os rastreadores desta página"]') as HTMLInputElement;
+    act(() => all.click());
+    await flush();
+    expect(host.textContent).toContain('10 rastreador(es) selecionado(s)');
+
+    act(() => buttonNamed('Próxima')!.click());
+    await flush();
+    expect(Array.from(host.querySelectorAll('tbody tr')).map((r) => r.textContent?.slice(0, 15))).toEqual([
+      '869247061230011',
+      '869247061230012',
+    ]);
+    expect(all.checked).toBe(false);
+    act(() => all.click());
+    await flush();
+    expect(host.textContent).toContain('12 rastreador(es) selecionado(s)');
+
+    // Um filtro volta para a primeira página.
+    act(() => buttonNamed('Pendentes de ativação (12)')!.click());
+    await flush();
+    expect(host.textContent).toContain('Página 1 de 2');
   });
 
   it('IMEI fora do padrão (o caso de 16 dígitos): o aviso aparece e o salvar pede a conferência', async () => {

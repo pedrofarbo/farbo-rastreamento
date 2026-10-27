@@ -5,11 +5,6 @@
   gap: var(--space-3);
 }
 
-/* Onde a lista começa (a troca de página rola até aqui), com folga para o topo. */
-.anchor {
-  scroll-margin-top: var(--space-4);
-}
-
 .summary {
   display: flex;
   flex-wrap: wrap;
@@ -85,21 +80,4 @@
     text-transform: uppercase;
     color: var(--text-muted);
   }
-}
-
-.pager {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border-top: 1px solid var(--border-subtle);
-  font-size: var(--text-sm);
-}
-
-.pagerButtons {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
 }

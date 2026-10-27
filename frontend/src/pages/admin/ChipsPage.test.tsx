@@ -63,6 +63,7 @@ async function render() {
 afterEach(() => {
   document.body.innerHTML = '';
   calls.length = 0;
+  localStorage.clear();
 });
 
 describe('o estoque de chips', () => {
@@ -84,6 +85,35 @@ describe('o estoque de chips', () => {
     await type(document.querySelector('input[type="search"]') as HTMLInputElement, '869247');
     expect(text()).toContain('8955 3202 1000 9379 5330');
     expect(text()).not.toContain('8955 3202 1000 9379 5348');
+  });
+
+  it('pagina, com a quantidade por página; a busca volta para a primeira página', async () => {
+    chips = Array.from({ length: 30 }, (_, i) => chip({ id: `c${i + 1}`, iccid: `895532021000937${String(i + 1).padStart(5, '0')}`, notes: `Chip ${i + 1}` }));
+    await render();
+    expect(document.querySelectorAll('tbody tr')).toHaveLength(25);
+    expect(text()).toContain('1–25 de 30');
+    expect(text()).toContain('Página 1 de 2');
+    expect(button('Anterior')[0].disabled).toBe(true);
+
+    await act(async () => button('Próxima')[0].click());
+    expect(document.querySelectorAll('tbody tr')).toHaveLength(5);
+    expect(text()).toContain('26–30 de 30');
+    expect(text()).toContain('Chip 26');
+    expect(text()).not.toContain('Chip 25');
+
+    // Com 10 por página, a lista fica no trecho do chip 26.
+    const size = document.querySelector('nav[aria-label="Páginas"] select') as HTMLSelectElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(size, '10');
+      size.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(text()).toContain('21–30 de 30');
+    expect(text()).toContain('Página 3 de 3');
+    expect(localStorage.getItem('tracker.pageSize.chips')).toBe('10');
+
+    await type(document.querySelector('input[type="search"]') as HTMLInputElement, 'chip 1');
+    expect(text()).toContain('Página 1 de 2');
+    expect(text()).toContain('1–10 de 11');
   });
 
   it('cadastra um chip, com o atalho da Algar', async () => {

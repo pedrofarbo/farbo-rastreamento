@@ -8,7 +8,9 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SelectField, TextField } from '@/components/ui/Field';
+import { Pager } from '@/components/ui/Pager';
 import { Spinner } from '@/components/ui/Spinner';
+import { pageKeepingFirst, usePageSize } from '@/hooks/usePagination';
 import { formatDeviceStatus, formatRelative } from '@/services/format';
 import { formatTaxId } from '@/services/taxid';
 import type { VehicleDirectoryEntry, VehicleDirectoryFilter } from '@/types';
@@ -58,6 +60,7 @@ export function VehiclesPage() {
   const [params, setParams] = useSearchParams();
   const applied = filterOf(params);
   const page = Math.max(1, Math.floor(Number(params.get('pagina'))) || 1);
+  const [pageSize, choosePageSize] = usePageSize('vehicles');
   // O que está sendo digitado vai para a URL (e para a busca) depois de uma
   // pausa, voltando à primeira página.
   const [draft, setDraft] = useState(applied);
@@ -70,8 +73,8 @@ export function VehiclesPage() {
   }, [typed, setParams]);
 
   const list = useQuery({
-    queryKey: ['vehicle-directory', applied, page],
-    queryFn: () => vehiclesApi.directory(applied, page),
+    queryKey: ['vehicle-directory', applied, page, pageSize],
+    queryFn: () => vehiclesApi.directory(applied, page, pageSize),
     placeholderData: keepPreviousData,
   });
   const organizations = useQuery({ queryKey: ['organizations'], queryFn: organizationsApi.list });
@@ -86,13 +89,10 @@ export function VehiclesPage() {
   };
 
   const data = list.data;
-  const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
-  const from = data && data.items.length > 0 ? (data.page - 1) * data.pageSize + 1 : 0;
-  const to = data ? from + data.items.length - (from ? 1 : 0) : 0;
 
   return (
     <div className={pageStyles.page}>
-      <div className={pageStyles.inner}>
+      <div className={`${pageStyles.inner} ${pageStyles.wide}`}>
         <header className={pageStyles.header}>
           <div>
             <h1 className={pageStyles.title}>Veículos</h1>
@@ -153,7 +153,7 @@ export function VehiclesPage() {
           </div>
         </Card>
 
-        <div ref={top} className={styles.anchor}>
+        <div ref={top} className={pageStyles.anchor}>
           <Card flush>
             {list.isLoading ? (
               <Spinner label="Carregando os veículos" />
@@ -191,22 +191,16 @@ export function VehiclesPage() {
                     </tbody>
                   </table>
                 </div>
-                <nav className={styles.pager} aria-label="Páginas">
-                  <span className={styles.muted}>
-                    {from}–{to} de {data.total.toLocaleString('pt-BR')}
-                  </span>
-                  <div className={styles.pagerButtons}>
-                    <Button size="small" variant="ghost" disabled={page <= 1} onClick={() => goTo(page - 1)}>
-                      Anterior
-                    </Button>
-                    <span>
-                      Página {Math.min(page, pages)} de {pages}
-                    </span>
-                    <Button size="small" variant="ghost" disabled={page >= pages} onClick={() => goTo(page + 1)}>
-                      Próxima
-                    </Button>
-                  </div>
-                </nav>
+                <Pager
+                  page={page}
+                  pageSize={pageSize}
+                  total={data.total}
+                  onPage={goTo}
+                  onPageSize={(size) => {
+                    choosePageSize(size);
+                    goTo(pageKeepingFirst(page, pageSize, size));
+                  }}
+                />
               </>
             )}
           </Card>

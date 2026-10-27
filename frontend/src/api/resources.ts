@@ -367,8 +367,8 @@ export const fleetApi = {
 export const vehiclesApi = {
   list: () => api.get<VehicleView[]>('/api/vehicles'),
   /** Central (administrador): os veículos de todas as contas, paginados e filtrados. */
-  directory: (filter: VehicleDirectoryFilter, page: number) => {
-    const query = new URLSearchParams({ page: String(page) });
+  directory: (filter: VehicleDirectoryFilter, page: number, pageSize: number) => {
+    const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     for (const [key, value] of Object.entries(filter)) if (value.trim()) query.set(key, value.trim());
     return api.get<VehicleDirectoryPage>(`/api/vehicle-directory?${query}`);
   },

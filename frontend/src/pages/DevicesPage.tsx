@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 
@@ -15,9 +15,12 @@ import { UnknownDevicesCard } from '@/components/devices/UnknownDevicesCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { fieldStyles, SelectField, TextField } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
+import { Pager } from '@/components/ui/Pager';
 import { SmsCounter } from '@/components/fulfillment/SmsCounter';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
+import { useOverflowX } from '@/hooks/useOverflowX';
+import { usePagedList } from '@/hooks/usePagination';
 import { isDeviceActivated } from '@/services/deviceBulk';
 import { imeiProblem } from '@/services/imei';
 import { formatDeviceStatus, formatICCID, formatPhoneInput, formatRelative } from '@/services/format';
@@ -173,10 +176,23 @@ export function DevicesPage() {
     if (activationFilter === 'activated') return allDevices.filter(isDeviceActivated);
     return allDevices;
   }, [allDevices, activationFilter]);
+  const paged = usePagedList(displayedDevices, 'devices');
+  const pageIds = paged.items.map((d) => d.id);
+  const filterBy = (filter: typeof activationFilter) => {
+    setActivationFilter(filter);
+    paged.setPage(1);
+  };
+  // Trocando de página, a lista volta ao começo.
+  const top = useRef<HTMLDivElement>(null);
+  const goTo = (page: number) => {
+    paged.setPage(page);
+    top.current?.scrollIntoView?.({ block: 'start' });
+  };
+  const [tableWrap, tableOverflowing] = useOverflowX<HTMLDivElement>();
 
   return (
     <div className={styles.page}>
-      <div className={styles.inner}>
+      <div className={`${styles.inner} ${styles.wide}`}>
         <header className={styles.header}>
           <div>
             <h1 className={styles.title}>Rastreadores</h1>
@@ -226,21 +242,21 @@ export function DevicesPage() {
               <Button
                 size="small"
                 variant={activationFilter === 'all' ? 'primary' : 'ghost'}
-                onClick={() => setActivationFilter('all')}
+                onClick={() => filterBy('all')}
               >
                 Todos ({allDevices.length})
               </Button>
               <Button
                 size="small"
                 variant={activationFilter === 'pending' ? 'primary' : 'ghost'}
-                onClick={() => setActivationFilter('pending')}
+                onClick={() => filterBy('pending')}
               >
                 Pendentes de ativação ({pendingCount})
               </Button>
               <Button
                 size="small"
                 variant={activationFilter === 'activated' ? 'primary' : 'ghost'}
-                onClick={() => setActivationFilter('activated')}
+                onClick={() => filterBy('activated')}
               >
                 Já ativados ({activatedCount})
               </Button>
@@ -284,183 +300,198 @@ export function DevicesPage() {
           </div>
         )}
 
-        <Card flush>
-          {devices.isLoading ? (
-            <Spinner label="Carregando rastreadores" />
-          ) : (devices.data ?? []).length === 0 ? (
-            <EmptyState
-              icon="📡"
-              title="Nenhum rastreador cadastrado"
-              description="Cadastre o IMEI impresso no aparelho para que ele possa se conectar."
-            />
-          ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={{ width: 36, textAlign: 'center' }}>
-                      <input
-                        type="checkbox"
-                        aria-label="Selecionar todos os rastreadores"
-                        checked={
-                          displayedDevices.length > 0 &&
-                          displayedDevices.every((d) => selectedDeviceIds.has(d.id))
-                        }
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedDeviceIds(new Set(displayedDevices.map((d) => d.id)));
-                          } else {
-                            setSelectedDeviceIds(new Set());
-                          }
-                        }}
-                      />
-                    </th>
-                    <th>IMEI</th>
-                    <th>Veículo</th>
-                    <th>Placa</th>
-                    <th>Cliente</th>
-                    <th>Número</th>
-                    <th>Protocolo</th>
-                    <th>Situação</th>
-                    <th>Último contato</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayedDevices.map((device) => {
-                    const vehicle = vehicleByDevice.get(device.id);
-                    const customer = vehicle?.ownerId ? customerById.get(vehicle.ownerId) : null;
-                    return (
-                      <tr key={device.id}>
-                        <td style={{ textAlign: 'center' }}>
-                          <input
-                            type="checkbox"
-                            aria-label={`Selecionar ${device.imei}`}
-                            checked={selectedDeviceIds.has(device.id)}
-                            onChange={() => {
-                              setSelectedDeviceIds((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(device.id)) next.delete(device.id);
-                                else next.add(device.id);
-                                return next;
-                              });
-                            }}
-                          />
-                        </td>
-                        <td className={styles.mono} style={{ whiteSpace: 'nowrap' }}>
-                          {device.imei}
-                          {device.iccid && (
-                            <div className={billing.muted} title="ICCID do chip">
-                              chip {device.iccid}
-                            </div>
-                          )}
-                        </td>
+        <div ref={top} className={styles.anchor}>
+          <Card flush>
+            {devices.isLoading ? (
+              <Spinner label="Carregando rastreadores" />
+            ) : (devices.data ?? []).length === 0 ? (
+              <EmptyState
+                icon="📡"
+                title="Nenhum rastreador cadastrado"
+                description="Cadastre o IMEI impresso no aparelho para que ele possa se conectar."
+              />
+            ) : (
+              <div ref={tableWrap} className={`${styles.tableWrap} ${tableOverflowing ? styles.overflowing : ''}`}>
+                <table className={`${styles.table} ${styles.dense}`}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 36, textAlign: 'center' }}>
+                        {/* Marca (ou desmarca) os desta página; os das outras ficam como estão. */}
+                        <input
+                          type="checkbox"
+                          aria-label="Selecionar os rastreadores desta página"
+                          checked={pageIds.length > 0 && pageIds.every((id) => selectedDeviceIds.has(id))}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setSelectedDeviceIds((prev) => {
+                              const next = new Set(prev);
+                              for (const id of pageIds) {
+                                if (checked) next.add(id);
+                                else next.delete(id);
+                              }
+                              return next;
+                            });
+                          }}
+                        />
+                      </th>
+                      <th>IMEI</th>
+                      <th>Veículo</th>
+                      <th>Placa</th>
+                      <th>Cliente</th>
+                      <th>Número</th>
+                      <th>Protocolo</th>
+                      <th>Situação</th>
+                      <th style={{ whiteSpace: 'normal' }}>Último contato</th>
+                      <th className={styles.stickyEnd} />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paged.items.map((device) => {
+                      const vehicle = vehicleByDevice.get(device.id);
+                      const customer = vehicle?.ownerId ? customerById.get(vehicle.ownerId) : null;
+                      return (
+                        <tr key={device.id}>
+                          <td style={{ textAlign: 'center' }}>
+                            <input
+                              type="checkbox"
+                              aria-label={`Selecionar ${device.imei}`}
+                              checked={selectedDeviceIds.has(device.id)}
+                              onChange={() => {
+                                setSelectedDeviceIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(device.id)) next.delete(device.id);
+                                  else next.add(device.id);
+                                  return next;
+                                });
+                              }}
+                            />
+                          </td>
+                          <td className={styles.mono}>
+                            <span style={{ whiteSpace: 'nowrap' }}>{device.imei}</span>
+                            {/* O ICCID quebra nos grupos de 4 para a coluna não alargar. */}
+                            {device.iccid && (
+                              <div className={billing.muted} title="ICCID do chip" style={{ wordBreak: 'normal' }}>
+                                chip {formatICCID(device.iccid)}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ minWidth: 140 }}>
+                            {vehicle ? (
+                              <Link
+                                to={`/veiculos/${vehicle.id}`}
+                                style={{ color: 'var(--text-primary)', textDecoration: 'none', fontWeight: 500 }}
+                              >
+                                {vehicle.name}
+                              </Link>
+                            ) : (
+                              <span className={billing.muted}>— sem vínculo —</span>
+                            )}
+                          </td>
+                          <td className={styles.mono} style={{ whiteSpace: 'nowrap' }}>
+                            {vehicle?.plate ? (
+                              vehicle.plate
+                            ) : (
+                              <span className={billing.muted}>—</span>
+                            )}
+                          </td>
+                          <td style={{ minWidth: 140 }}>
+                            {customer ? (
+                              <Link
+                                to={`/clientes/${customer.id}`}
+                                style={{ color: 'var(--accent)', textDecoration: 'none' }}
+                                title={`Ver cliente ${customer.name}`}
+                              >
+                                {customer.name}
+                              </Link>
+                            ) : vehicle ? (
+                              <span className={billing.muted}>Central</span>
+                            ) : (
+                              <span className={billing.muted}>—</span>
+                            )}
+                          </td>
+                          <td className={styles.mono} style={{ whiteSpace: 'nowrap' }}>
+                            {device.phoneNumber ? (
+                              formatPhoneInput(device.phoneNumber)
+                            ) : (
+                              <span className={billing.muted}>—</span>
+                            )}
+                          </td>
+                          <td className={styles.mono}>{device.protocol || 'aguardando'}</td>
                         <td>
-                          {vehicle ? (
-                            <Link
-                              to={`/veiculos/${vehicle.id}`}
-                              style={{ color: 'var(--text-primary)', textDecoration: 'none', fontWeight: 500 }}
-                            >
-                              {vehicle.name}
-                            </Link>
-                          ) : (
-                            <span className={billing.muted}>— sem vínculo —</span>
-                          )}
+                          <Badge
+                            tone={
+                              device.status === 'ONLINE'
+                                ? 'success'
+                                : device.status === 'STALE'
+                                  ? 'warning'
+                                  : 'neutral'
+                            }
+                            dot
+                          >
+                            {formatDeviceStatus(device.status)}
+                          </Badge>
                         </td>
-                        <td className={styles.mono} style={{ whiteSpace: 'nowrap' }}>
-                          {vehicle?.plate ? (
-                            vehicle.plate
-                          ) : (
-                            <span className={billing.muted}>—</span>
-                          )}
-                        </td>
-                        <td style={{ whiteSpace: 'nowrap' }}>
-                          {customer ? (
-                            <Link
-                              to={`/clientes/${customer.id}`}
-                              style={{ color: 'var(--accent)', textDecoration: 'none' }}
-                              title={`Ver cliente ${customer.name}`}
-                            >
-                              {customer.name}
-                            </Link>
-                          ) : vehicle ? (
-                            <span className={billing.muted}>Central</span>
-                          ) : (
-                            <span className={billing.muted}>—</span>
-                          )}
-                        </td>
-                        <td className={styles.mono} style={{ whiteSpace: 'nowrap' }}>
-                          {device.phoneNumber ? (
-                            formatPhoneInput(device.phoneNumber)
-                          ) : (
-                            <span className={billing.muted}>—</span>
-                          )}
-                        </td>
-                        <td className={styles.mono}>{device.protocol || 'aguardando'}</td>
-                      <td>
-                        <Badge
-                          tone={
-                            device.status === 'ONLINE'
-                              ? 'success'
-                              : device.status === 'STALE'
-                                ? 'warning'
-                                : 'neutral'
-                          }
-                          dot
-                        >
-                          {formatDeviceStatus(device.status)}
-                        </Badge>
-                      </td>
-                      <td>{formatRelative(device.lastSeenAt)}</td>
-                      <td>
-                        <div className={styles.actions}>
-                          {isDeviceActivated(device) ? (
+                        <td>{formatRelative(device.lastSeenAt)}</td>
+                        <td className={styles.stickyEnd}>
+                          {/* Os botões numa linha só: as outras colunas é que quebram. */}
+                          <div className={styles.actions} style={{ flexWrap: 'nowrap' }}>
+                            {isDeviceActivated(device) ? (
+                              <Button
+                                size="small"
+                                variant="ghost"
+                                onClick={() => setActivatingDevice(device)}
+                                title="Rastreador já ativo e transmitindo. Clique para reconfigurar via SMS."
+                                style={{ opacity: 0.8 }}
+                              >
+                                Reativar
+                              </Button>
+                            ) : (
+                              <Button
+                                size="small"
+                                variant="primary"
+                                onClick={() => setActivatingDevice(device)}
+                                title="Ativar rastreador via comandos SMS"
+                              >
+                                Ativar
+                              </Button>
+                            )}
                             <Button
                               size="small"
                               variant="ghost"
-                              onClick={() => setActivatingDevice(device)}
-                              title="Rastreador já ativo e transmitindo. Clique para reconfigurar via SMS."
-                              style={{ opacity: 0.8 }}
+                              onClick={() => setProvisioningFor(device)}
                             >
-                              Reativar
+                              Configuração
                             </Button>
-                          ) : (
                             <Button
                               size="small"
-                              variant="primary"
-                              onClick={() => setActivatingDevice(device)}
-                              title="Ativar rastreador via comandos SMS"
+                              variant="ghost"
+                              onClick={() => {
+                                setEditing(device);
+                                setDeviceForm(deviceInputFrom(device));
+                              }}
                             >
-                              Ativar
+                              Editar
                             </Button>
-                          )}
-                          <Button
-                            size="small"
-                            variant="ghost"
-                            onClick={() => setProvisioningFor(device)}
-                          >
-                            Configuração
-                          </Button>
-                          <Button
-                            size="small"
-                            variant="ghost"
-                            onClick={() => {
-                              setEditing(device);
-                              setDeviceForm(deviceInputFrom(device));
-                            }}
-                          >
-                            Editar
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {displayedDevices.length > 0 && (
+              <Pager
+                page={paged.page}
+                pageSize={paged.pageSize}
+                total={paged.total}
+                onPage={goTo}
+                onPageSize={paged.setPageSize}
+              />
+            )}
+          </Card>
+        </div>
       </div>
 
       {/* Cadastro / edição de rastreador */}

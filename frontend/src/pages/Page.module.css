@@ -14,6 +14,17 @@
   gap: var(--space-4);
 }
 
+/* As listagens da central (muitas colunas, com os botões de ação na ponta)
+   aproveitam a largura das telas grandes. */
+.inner.wide {
+  max-width: 1680px;
+}
+
+/* Onde a lista começa (a troca de página rola até aqui), com folga para o topo. */
+.anchor {
+  scroll-margin-top: var(--space-4);
+}
+
 .header {
   display: flex;
   align-items: flex-end;
@@ -70,6 +81,13 @@
   border-bottom: none;
 }
 
+/* Tabela de muitas colunas: menos folga entre elas, para caber sem rolar. */
+.table.dense th,
+.table.dense td {
+  padding-left: var(--space-3);
+  padding-right: var(--space-3);
+}
+
 .mono {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
@@ -97,6 +115,23 @@
 
 .tableWrap {
   overflow-x: auto;
+}
+
+/* A coluna dos botões presa à direita: se a tabela não couber e rolar para o
+   lado, os botões de ação continuam à vista; a sombra marca o que passa por
+   baixo deles. No celular, não (ela tomaria a tela). */
+@media (min-width: 641px) {
+  .table .stickyEnd {
+    position: sticky;
+    right: 0;
+    background: var(--surface-raised);
+  }
+
+  .tableWrap.overflowing .stickyEnd {
+    box-shadow:
+      inset 1px 0 0 var(--border-subtle),
+      -10px 0 10px -10px rgba(0, 0, 0, 0.5);
+  }
 }
 
 .note {
