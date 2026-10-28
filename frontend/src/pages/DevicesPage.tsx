@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/Card';
 import { DeviceActivationModal } from '@/components/devices/DeviceActivationModal';
 import { DeviceBulkActivationModal } from '@/components/devices/DeviceBulkActivationModal';
 import { DeviceBulkModal } from '@/components/devices/DeviceBulkModal';
+import { ScanButton } from '@/components/scan/ScanButton';
 import { UnknownDevicesCard } from '@/components/devices/UnknownDevicesCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { fieldStyles, SelectField, TextField } from '@/components/ui/Field';
@@ -503,7 +504,10 @@ export function DevicesPage() {
               <TextField
                 label="IMEI"
                 value={deviceForm.imei}
-                hint="15 dígitos, impresso no aparelho."
+                hint="15 dígitos, impresso no aparelho. O botão no campo lê a etiqueta pela câmera."
+                action={
+                  <ScanButton kind="imei" onRead={(imei) => setDeviceForm((f) => f && { ...f, imei, imeiConfirmed: false })} />
+                }
                 error={
                   imeiIssue
                     ? `Este IMEI ${imeiIssue}. Confira na etiqueta: com o IMEI errado, o rastreador conecta e é recusado, e os SMS da ativação se perdem.`
@@ -614,6 +618,7 @@ export function DevicesPage() {
                   inputMode="numeric"
                   hint="Os 19 ou 20 números impressos no chip (começam com 89). Se colar com o SP da etiqueta, ele sai."
                   value={deviceForm.iccid ?? ''}
+                  action={<ScanButton kind="iccid" onRead={(iccid) => setDeviceForm((f) => f && { ...f, iccid })} />}
                   onChange={(event) => setDeviceForm({ ...deviceForm, iccid: event.target.value })}
                 />
               </div>

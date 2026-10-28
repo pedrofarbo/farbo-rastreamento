@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { chipsApi } from '@/api/resources';
 import { ChipBulkModal } from '@/components/chips/ChipBulkModal';
+import { ScanButton } from '@/components/scan/ScanButton';
 import type { ChipInput } from '@/api/resources';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -252,8 +253,9 @@ export function ChipsPage() {
               label="ICCID"
               placeholder="8955 3202 1000 9379 5330"
               inputMode="numeric"
-              hint="Os 19 ou 20 números impressos no chip (começam com 89). Se colar com o SP da etiqueta, ele sai."
+              hint="Os 19 ou 20 números impressos no chip (começam com 89). Se colar com o SP da etiqueta, ele sai. O botão no campo lê pela câmera."
               value={form.iccid}
+              action={<ScanButton kind="iccid" onRead={(iccid) => setForm((f) => f && { ...f, iccid })} />}
               onChange={(e) => setForm({ ...form, iccid: e.target.value })}
             />
             <div className={pageStyles.formRow}>

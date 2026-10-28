@@ -101,8 +101,33 @@ function landingHtml(): Plugin {
   };
 }
 
+/**
+ * O modelo do OCR (a leitura do IMEI e do ICCID pela câmera). O tesseract.js
+ * busca <pasta>/eng.traineddata.gz, com esse nome, então ele não pode levar o
+ * hash do Vite: vai para uma pasta com a versão do modelo (que não muda de
+ * conteúdo) e o cache longo de /assets continua valendo. Em desenvolvimento, o
+ * mesmo endereço vem direto do node_modules. O endereço está também em
+ * src/services/labelReaders.ts (OCR_LANG_PATH).
+ */
+function ocrLanguage(): Plugin {
+  const model = '4.0.0_best_int';
+  const file = path.resolve(__dirname, `node_modules/@tesseract.js-data/eng/${model}/eng.traineddata.gz`);
+  const url = `/assets/ocr/${model}/eng.traineddata.gz`;
+  return {
+    name: 'farbo-ocr-language',
+    configureServer: (server) =>
+      void server.middlewares.use(url, (_req, res) => {
+        res.setHeader('Content-Type', 'application/gzip');
+        res.end(readFileSync(file));
+      }),
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: url.slice(1), source: readFileSync(file) });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), appRoutes(), ...(trustedHttps ? [] : [basicSsl()]), pwaServiceWorker(), landingHtml()],
+  plugins: [react(), appRoutes(), ...(trustedHttps ? [] : [basicSsl()]), pwaServiceWorker(), landingHtml(), ocrLanguage()],
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },

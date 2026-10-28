@@ -1,0 +1,70 @@
+.scanner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* O quadro acompanha o tamanho do vídeo (sem faixas pretas), para a moldura
+   cair no mesmo lugar do quadro que o OCR recorta. */
+.viewer {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: #000;
+}
+
+.viewer[hidden] {
+  display: none;
+}
+
+.video {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 55vh;
+}
+
+/* A moldura (mesmas frações de GUIDE no componente); o resto escurece. */
+.guide {
+  position: absolute;
+  left: 5%;
+  top: 27.5%;
+  width: 90%;
+  height: 45%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.status {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.status:empty {
+  display: none;
+}
+
+.problem {
+  font-size: var(--text-sm);
+  color: var(--danger);
+  line-height: 1.5;
+}
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.code {
+  font-family: var(--font-mono);
+  letter-spacing: 0.03em;
+}

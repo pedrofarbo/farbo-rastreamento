@@ -63,16 +63,20 @@
   }
 }
 
-/* Senha: o "olhinho" fica dentro do campo, à direita. */
-.password {
+/* Senha: o "olhinho" fica dentro do campo, à direita. O botão de um campo
+   com ação (ler pela câmera, por exemplo) fica no mesmo lugar. */
+.password,
+.adorned {
   position: relative;
 }
 
-.password .input {
+.password .input,
+.adorned .input {
   padding-right: 44px;
 }
 
-.reveal {
+.reveal,
+.adornment {
   position: absolute;
   top: 0;
   right: 0;
@@ -89,21 +93,25 @@
   transition: color var(--transition-fast);
 }
 
-.reveal:hover:not(:disabled) {
+.reveal:hover:not(:disabled),
+.adornment:hover:not(:disabled) {
   color: var(--text-primary);
 }
 
-.reveal:focus-visible {
+.reveal:focus-visible,
+.adornment:focus-visible {
   outline-offset: -4px;
 }
 
-.reveal:disabled {
+.reveal:disabled,
+.adornment:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
 @media (pointer: coarse) {
-  .reveal {
+  .reveal,
+  .adornment {
     width: 44px;
   }
 }

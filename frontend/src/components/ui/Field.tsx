@@ -24,17 +24,24 @@ export function Field({ label, hint, error, children }: FieldProps) {
   );
 }
 
+/** action: um botão dentro do campo, à direita (com a classe fieldStyles.adornment). */
 export function TextField({
   label,
   hint,
   error,
+  action,
   ...rest
-}: { label: string; hint?: ReactNode; error?: string } & InputHTMLAttributes<HTMLInputElement>) {
+}: { label: string; hint?: ReactNode; error?: string; action?: ReactNode } & InputHTMLAttributes<HTMLInputElement>) {
   return (
     <Field label={label} hint={hint} error={error}>
       {(id) =>
         rest.type === 'password' ? (
           <PasswordInput id={id} {...rest} />
+        ) : action ? (
+          <div className={styles.adorned}>
+            <input id={id} className={styles.input} {...rest} />
+            {action}
+          </div>
         ) : (
           <input id={id} className={styles.input} {...rest} />
         )

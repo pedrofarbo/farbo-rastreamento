@@ -30,6 +30,15 @@ vi.mock('@/api/resources', () => ({
   },
 }));
 vi.mock('@/components/ui/Toast', () => ({ useToast: () => ({ notify: () => {} }) }));
+// A câmera e os leitores ficam no teste do LabelScanner: aqui, uma leitura pronta.
+vi.mock('@/components/scan/LabelScanner', () => ({
+  LabelScanner: ({ open, onRead }: { open: boolean; onRead: (code: string, source: string) => void }) =>
+    open ? (
+      <button type="button" onClick={() => onRead('89553202100093795348', 'barcode')}>
+        leitura simulada
+      </button>
+    ) : null,
+}));
 
 import { ChipsPage } from './ChipsPage';
 
@@ -130,6 +139,20 @@ describe('o estoque de chips', () => {
       'create',
       expect.objectContaining({ iccid: '8955 3202 1000 9379 5348 SP', carrier: 'Algar', apn: 'ss.algar.br', apnUser: 'algar', apnPassword: 'algar' }),
     ]);
+  });
+
+  it('preenche o ICCID lido pela câmera', async () => {
+    chips = [];
+    await render();
+    await act(async () => button('Novo chip')[0].click());
+    await type(field('Linha'), '34999990001');
+    const line = field('Linha').value;
+    await act(async () => (document.querySelector('button[aria-label="Ler o ICCID pela câmera"]') as HTMLButtonElement).click());
+    await act(async () => button('leitura simulada')[0].click());
+    expect(field('ICCID').value).toBe('89553202100093795348');
+    // O resto do formulário fica como estava.
+    expect(field('Linha').value).toBe(line);
+    expect(button('leitura simulada')).toHaveLength(0);
   });
 
   it('o chip em uso: a edição avisa que o rastreador muda junto; a senha em branco fica', async () => {
