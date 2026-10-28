@@ -1,11 +1,18 @@
-import type { DeviceStatus, Position, VehicleView } from '@/types';
+import type { DeviceState, DeviceStatus, Position, VehicleView } from '@/types';
 
 /** Uma mudança vinda do tempo real, aplicada a um veículo. */
 export type VehiclePatch = (vehicle: VehicleView) => VehicleView;
 
+/** A posição nova; a sem GPS (a guardada no aparelho) não move o veículo no mapa. */
 export const withPosition =
   (position: Position): VehiclePatch =>
-  (vehicle) => ({ ...vehicle, lastPosition: position, connected: true });
+  (vehicle) =>
+    position.gpsValid === false ? { ...vehicle, connected: true } : { ...vehicle, lastPosition: position, connected: true };
+
+/** O estado que veio com o sinal de vida (ignição, bateria, o GPS de agora). */
+export const withState =
+  (state: DeviceState): VehiclePatch =>
+  (vehicle) => ({ ...vehicle, state });
 
 export const withStatus =
   (status: DeviceStatus): VehiclePatch =>

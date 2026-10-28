@@ -22,10 +22,15 @@ func (s *Server) handleVehiclePosition(w http.ResponseWriter, r *http.Request) {
 	position, err := s.Positions.Latest(r.Context(), device.ID)
 	if err != nil {
 		if errors.Is(err, database.ErrNotFound) {
+			state := s.States.Get(device.ID)
+			message := "este rastreador ainda não enviou nenhuma posição"
+			if state != nil && state.GPSValid != nil && !*state.GPSValid {
+				message = "o rastreador está conectado, mas o GPS ainda não pegou sinal"
+			}
 			writeJSON(w, http.StatusOK, map[string]any{
 				"position": nil,
-				"state":    s.States.Get(device.ID),
-				"message":  "este rastreador ainda não enviou nenhuma posição",
+				"state":    state,
+				"message":  message,
 			})
 			return
 		}
@@ -89,11 +94,13 @@ func (s *Server) handleVehiclePositions(w http.ResponseWriter, r *http.Request) 
 	}
 
 	result, err := s.Positions.History(r.Context(), tracking.HistoryQuery{
-		DeviceID:        device.ID,
-		From:            from,
-		To:              to,
-		Limit:           limit,
-		OnlyValid:       queryBool(r, "onlyValid", false),
+		DeviceID: device.ID,
+		From:     from,
+		To:       to,
+		Limit:    limit,
+		// Sem GPS, a coordenada é a última guardada no aparelho: a rota não
+		// passa por ela (onlyValid=false traz tudo).
+		OnlyValid:       queryBool(r, "onlyValid", true),
 		Simplify:        queryBool(r, "simplify", true),
 		ToleranceMeters: s.Config.Tracking.SimplifyToleranceMeters,
 	})

@@ -3,9 +3,9 @@ import { useEffect, useState } from 'react';
 
 import { vehiclesApi } from '@/api/resources';
 import { useRealtimeEvent } from '@/hooks/useRealtime';
-import type { DeviceStatus, Position, VehicleView } from '@/types';
+import type { DeviceState, DeviceStatus, Position, VehicleView } from '@/types';
 
-import { applyVehiclePatches, createUpdateBatcher, withPosition, withRelay, withStatus } from './vehicleUpdates';
+import { applyVehiclePatches, createUpdateBatcher, withPosition, withRelay, withState, withStatus } from './vehicleUpdates';
 
 export const vehiclesKey = ['vehicles'] as const;
 export const vehicleKey = (id: string) => ['vehicle', id] as const;
@@ -46,9 +46,10 @@ export function useVehicles() {
   });
 
   useRealtimeEvent(['device.online', 'device.offline', 'device.stale'], (message) => {
-    const payload = message.data as { deviceId?: string; status?: DeviceStatus } | undefined;
+    const payload = message.data as { deviceId?: string; status?: DeviceStatus; state?: DeviceState } | undefined;
     const deviceId = payload?.deviceId ?? message.deviceId;
     if (!deviceId) return;
+    if (payload?.state) batcher.queue(deviceId, withState(payload.state));
 
     const status: DeviceStatus =
       payload?.status ??
@@ -86,9 +87,14 @@ export function useVehicle(id: string | undefined) {
     const position = message.data as Position | undefined;
     if (!deviceId || position?.deviceId !== deviceId || !id) return;
 
-    queryClient.setQueryData<VehicleView>(vehicleKey(id), (current) =>
-      current ? { ...current, lastPosition: position, connected: true } : current,
-    );
+    queryClient.setQueryData<VehicleView>(vehicleKey(id), (current) => (current ? withPosition(position)(current) : current));
+  });
+
+  useRealtimeEvent(['device.online'], (message) => {
+    const payload = message.data as { deviceId?: string; state?: DeviceState } | undefined;
+    if (!deviceId || !id || !payload?.state || (payload.deviceId ?? message.deviceId) !== deviceId) return;
+    const state = payload.state;
+    queryClient.setQueryData<VehicleView>(vehicleKey(id), (current) => (current ? withState(state)(current) : current));
   });
 
   useRealtimeEvent(['engine.status.changed'], (message) => {

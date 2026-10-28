@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { Position, VehicleView } from '@/types';
+import type { DeviceState, Position, VehicleView } from '@/types';
 
 import {
   applyVehiclePatches,
   createUpdateBatcher,
   withPosition,
   withRelay,
+  withState,
   withStatus,
   type VehiclePatch,
 } from './vehicleUpdates';
@@ -36,6 +37,19 @@ describe('applyVehiclePatches', () => {
     expect(v1).toMatchObject({ connected: false, lastPosition: { latitude: -23.1 }, device: { status: 'OFFLINE' } });
     expect(v2).toMatchObject({ connected: true, lastPosition: { latitude: -23.2 }, state: { relayOn: true } });
     expect(v3).toBe(list[2]); // sem rastreador: o mesmo objeto
+  });
+
+  it('sem GPS, o veículo não sai do lugar no mapa e o estado mostra o GPS sem fixo', () => {
+    // Recém-instalado: o rastreador repete a posição da fábrica (China) até o GPS pegar sinal.
+    const china = { ...position('d1', 22.6), longitude: 113.83, gpsValid: false };
+    const [v1] =
+      applyVehiclePatches(
+        [{ ...vehicle('v1', 'd1'), connected: false }],
+        new Map([['d1', [withPosition(china), withState({ gpsValid: false } as DeviceState)]]]),
+      ) ?? [];
+    expect(v1).toMatchObject({ connected: true, lastPosition: null, state: { gpsValid: false } });
+    const [v2] = applyVehiclePatches([v1], new Map([['d1', [withPosition({ ...position('d1', -23.5), gpsValid: true })]]])) ?? [];
+    expect(v2.lastPosition).toMatchObject({ latitude: -23.5 });
   });
 
   it('sem nada pendente ou sem lista, devolve o que já havia', () => {

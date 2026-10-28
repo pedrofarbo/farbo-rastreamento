@@ -4,7 +4,7 @@
  * passo a passo).
  */
 import type { BadgeTone } from '@/components/ui/Badge';
-import type { InstallationAppointment, InstallationKind, InstallationSlot, InstallationStatus } from '@/types';
+import type { InstallationAppointment, InstallationKind, InstallationSlot, InstallationStatus, InstallerLink } from '@/types';
 
 /** "Instalação" ou "Desinstalação". */
 export const KIND_LABEL: Record<InstallationKind, string> = { install: 'Instalação', uninstall: 'Desinstalação' };
@@ -94,6 +94,20 @@ export function installerMessage(a: InstallationAppointment): string {
     const steps = a.kind === 'uninstall' ? 'a foto do rastreador retirado' : 'o teste do rastreador e as fotos';
     lines.push('', `No local, siga o passo a passo (${steps}) por este link: ${a.url}`);
   }
+  return lines.join('\n');
+}
+
+/** A mensagem ao instalador da instalação avulsa, com o link do teste e da conclusão. */
+export function installerLinkMessage(l: InstallerLink): string {
+  const vehicle = [l.vehicleName, l.plate].filter(Boolean).join(' · ');
+  const lines = [
+    // O nome inteiro: o prestador costuma ser oficina ("Olá, Auto!" não).
+    `Olá${l.installerName ? `, ${l.installerName}` : ''}! Instalação Farbo:`,
+    `📟 Rastreador IMEI ${l.imei}${l.deviceModel ? ` (${l.deviceModel})` : ''}`,
+  ];
+  if (vehicle) lines.push(`🚗 ${vehicle}`);
+  if (l.notes) lines.push(`📝 ${l.notes}`);
+  if (l.url) lines.push('', `Depois de instalar, teste o sinal e conclua por este link: ${l.url}`);
   return lines.join('\n');
 }
 

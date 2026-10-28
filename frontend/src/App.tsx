@@ -40,6 +40,7 @@ const PublicTheftPage = page(() => import('@/pages/PublicTheftPage'), 'PublicThe
 const PublicLivePage = page(() => import('@/pages/PublicLivePage'), 'PublicLivePage');
 const PublicRoutePage = page(() => import('@/pages/PublicRoutePage'), 'PublicRoutePage');
 const InstallerPage = page(() => import('@/pages/InstallerPage'), 'InstallerPage');
+const StandaloneInstallPage = page(() => import('@/pages/StandaloneInstallPage'), 'StandaloneInstallPage');
 const InstallationsAgendaPage = page(() => import('@/pages/admin/InstallationsAgendaPage'), 'InstallationsAgendaPage');
 const OrgInstallationsPage = page(() => import('@/pages/org/OrgInstallationsPage'), 'OrgInstallationsPage');
 const TheftReportPage = page(() => import('@/pages/TheftReportPage'), 'TheftReportPage');
@@ -127,6 +128,8 @@ export function App() {
                 <Route path="/linha/:token" element={<PublicRoutePage />} />
                 {/* O link do instalador: o passo a passo da instalação (sem login). */}
                 <Route path="/instalador/:token" element={<InstallerPage />} />
+                {/* O link da instalação avulsa: o teste do sinal e a conclusão (sem login). */}
+                <Route path="/instalador/avulsa/:token" element={<StandaloneInstallPage />} />
                 {/* O link de pagamento dos lembretes de fatura (sem login). */}
                 <Route path="/pagar/:token" element={<PublicPayPage />} />
                 {/* A contratação rápida pela landing, com Pix. */}

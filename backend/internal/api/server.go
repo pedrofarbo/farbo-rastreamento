@@ -363,6 +363,13 @@ func (s *Server) routes() chi.Router {
 				r.Get("/photos/{slot}", s.handlePublicInstallPhotoFile)
 				r.Post("/complete", s.handlePublicInstallComplete)
 			})
+			// O link da instalação avulsa: o teste do sinal e a conclusão.
+			r.Route("/public/installer-links/{token}", func(r chi.Router) {
+				r.Use(theftLinkLimiter.middleware)
+				r.Get("/", s.handlePublicStandalone)
+				r.Post("/check", s.handlePublicStandaloneCheck)
+				r.Post("/complete", s.handlePublicStandaloneComplete)
+			})
 		}
 		// A localização ao vivo por um tempo, pelo link que o cliente mandou.
 		if s.LiveLinks != nil {
@@ -1094,6 +1101,13 @@ func (s *Server) routes() chi.Router {
 						r.Patch("/{id}", s.handleRescheduleInstallation)
 						r.Post("/{id}/close", s.handleCloseInstallation)
 						r.Get("/{id}/photos/{slot}", s.handleInstallationPhoto)
+					})
+					// A instalação avulsa: o link do rastreador escolhido.
+					r.Route("/installer-links", func(r chi.Router) {
+						r.Use(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator))
+						r.Get("/", s.handleStandaloneInstalls)
+						r.Post("/", s.handleCreateStandaloneInstall)
+						r.Post("/{id}/close", s.handleCloseStandaloneInstall)
 					})
 				}
 

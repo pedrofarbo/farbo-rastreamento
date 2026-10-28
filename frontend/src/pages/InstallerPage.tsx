@@ -255,7 +255,7 @@ export function InstallerPage() {
   );
 }
 
-function Shell({ children, label = 'Instalador' }: { children: ReactNode; label?: string }) {
+export function Shell({ children, label = 'Instalador' }: { children: ReactNode; label?: string }) {
   return (
     <main className={`${base.page} ${styles.page} ${styles.live}`}>
       <header className={base.header}>

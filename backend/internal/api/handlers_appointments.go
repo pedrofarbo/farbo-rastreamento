@@ -26,7 +26,8 @@ func writeAppointmentError(w http.ResponseWriter, err error, notFound string) bo
 		return true
 	case errors.As(err, &input):
 		writeError(w, http.StatusBadRequest, input.Message)
-	case errors.Is(err, appointments.ErrLinkEnded):
+	case errors.Is(err, appointments.ErrLinkEnded), errors.Is(err, appointments.ErrStandaloneDone),
+		errors.Is(err, appointments.ErrStandaloneClosed):
 		writeError(w, http.StatusGone, err.Error())
 	default:
 		handleStoreError(w, err, notFound)
@@ -312,13 +313,15 @@ func (s *Server) handlePublicInstallArrive(w http.ResponseWriter, r *http.Reques
 }
 
 // installCheck é o teste do rastreador pelo IMEI: cadastrado, livre,
-// conectado e com posição recente.
+// conectado e com o GPS no lugar.
 type installCheck struct {
-	Found        bool       `json:"found"`
-	OtherVehicle bool       `json:"otherVehicle"`
-	Online       bool       `json:"online"`
+	Found        bool `json:"found"`
+	OtherVehicle bool `json:"otherVehicle"`
+	Online       bool `json:"online"`
+	// GPSFix: o GPS pegou sinal (sem ele, a posição é a guardada no aparelho).
+	GPSFix       bool       `json:"gpsFix"`
 	LastPosition *time.Time `json:"lastPosition"`
-	// Ready: dá para concluir (cadastrado, livre e mandando posição há pouco).
+	// Ready: dá para concluir (cadastrado, livre e com o GPS mandando a posição).
 	Ready   bool   `json:"ready"`
 	Message string `json:"message"`
 }
@@ -345,22 +348,40 @@ func (s *Server) checkInstallDevice(r *http.Request, a *appointments.Appointment
 		out.Message = "Este rastreador já está ligado a outro veículo. Confira o IMEI."
 		return dev, out
 	}
+	return dev, s.signalOf(r, dev)
+}
+
+// signalOf é o teste do sinal do rastreador: conectado e com o GPS no lugar.
+// Só conectar não basta: antes de o GPS pegar sinal, o rastreador repete a
+// posição guardada (no recém-instalado, a do teste na fábrica, na China).
+func (s *Server) signalOf(r *http.Request, dev *devices.Device) installCheck {
+	out := installCheck{Found: true}
 	if s.Conns != nil {
 		_, out.Online = s.Conns.Get(dev.IMEI)
 	}
+	// A última posição com GPS (Latest deixa de fora as sem sinal).
 	if p, err := s.Positions.Latest(r.Context(), dev.ID); err == nil && p != nil {
 		at := p.ReceivedAt
 		out.LastPosition = &at
 	}
 	recent := out.LastPosition != nil && time.Since(*out.LastPosition) <= maxInstallPositionAge
-	out.Ready = out.Online || recent
+	// Parado, o rastreador pode mandar só o sinal de vida: vale o GPS do
+	// último pacote com posição.
+	state := s.States.Get(dev.ID)
+	stateFix := state != nil && state.GPSValid != nil && *state.GPSValid
+	out.GPSFix = recent || (out.Online && stateFix)
+	out.Ready = out.GPSFix
+	seen := dev.LastSeenAt != nil && time.Since(*dev.LastSeenAt) <= maxInstallPositionAge
 	switch {
 	case out.Ready:
-		out.Message = "Rastreador conectado e mandando a posição. Pode concluir."
+		out.Message = "Rastreador conectado e com sinal de GPS. Pode concluir."
+	case out.Online || seen:
+		out.Message = "O rastreador conectou, mas o GPS ainda não pegou sinal. Deixe o veículo em céu aberto, com o lado da " +
+			"antena do rastreador virado para cima, espere uns minutos e teste de novo."
 	default:
 		out.Message = "O rastreador ainda não conectou. Confira a alimentação e o chip, espere 2 minutos e teste de novo."
 	}
-	return dev, out
+	return out
 }
 
 func (s *Server) handlePublicInstallCheck(w http.ResponseWriter, r *http.Request) {

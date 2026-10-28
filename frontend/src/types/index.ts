@@ -3183,9 +3183,57 @@ export interface InstallCheck {
   found: boolean;
   otherVehicle: boolean;
   online: boolean;
+  /** O GPS pegou sinal (sem ele, a posição é a guardada no aparelho). */
+  gpsFix: boolean;
   lastPosition: string | null;
   ready: boolean;
   message: string;
+}
+
+/** A instalação avulsa: aberta (o link vale), concluída pelo instalador ou encerrada pela central. */
+export type InstallerLinkStatus = 'open' | 'done' | 'closed';
+
+/** A instalação avulsa: o link do rastreador escolhido, sem agendamento nem veículo. */
+export interface InstallerLink {
+  id: string;
+  deviceId: string;
+  imei: string;
+  deviceModel: string;
+  /** O veículo em que o rastreador está cadastrado (vazio se nenhum). */
+  vehicleName: string;
+  plate: string;
+  installerId: string | null;
+  installerName: string;
+  notes: string;
+  status: InstallerLinkStatus;
+  /** O último teste do sinal pelo link (nulo se ainda não testou). */
+  checkedAt: string | null;
+  checkReady: boolean;
+  completedAt: string | null;
+  installerNote: string;
+  closedAt: string | null;
+  createdAt: string;
+  /** O link do instalador (só enquanto aberto). */
+  url?: string;
+}
+
+export interface InstallerLinkInput {
+  deviceId: string;
+  installerId: string | null;
+  installerName: string;
+  notes: string;
+}
+
+/** O que o instalador vê no link avulso. */
+export interface PublicInstallerLinkView {
+  imei: string;
+  deviceModel: string;
+  vehicleName: string;
+  plate: string;
+  installerName: string;
+  notes: string;
+  status: InstallerLinkStatus;
+  completedAt: string | null;
 }
 
 // ---------------------------------------------------------------------------

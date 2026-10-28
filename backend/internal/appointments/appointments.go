@@ -118,19 +118,25 @@ type Pusher interface {
 }
 
 type Service struct {
-	db       *database.DB
-	appURL   string
-	key      []byte
-	pusher   Pusher
-	now      func() time.Time
-	runAsync func(func())
-	log      *slog.Logger
+	db     *database.DB
+	appURL string
+	key    []byte
+	// standaloneKey assina o link da instalação avulsa (standalone.go).
+	standaloneKey []byte
+	pusher        Pusher
+	now           func() time.Time
+	runAsync      func(func())
+	log           *slog.Logger
 }
 
 func NewService(db *database.DB, appURL string, secret []byte, log *slog.Logger) *Service {
-	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte("farbo-install-link-v1"))
-	return &Service{db: db, appURL: strings.TrimRight(appURL, "/"), key: mac.Sum(nil), now: time.Now,
+	derive := func(label string) []byte {
+		mac := hmac.New(sha256.New, secret)
+		mac.Write([]byte(label))
+		return mac.Sum(nil)
+	}
+	return &Service{db: db, appURL: strings.TrimRight(appURL, "/"), key: derive("farbo-install-link-v1"),
+		standaloneKey: derive("farbo-standalone-install-link-v1"), now: time.Now,
 		runAsync: func(f func()) { go f() }, log: log.With("component", "appointments")}
 }
 
@@ -142,10 +148,27 @@ func (s *Service) SetClock(now func() time.Time) { s.now = now }
 func (s *Service) SetSync()                      { s.runAsync = func(f func()) { f() } }
 
 // Token é a parte secreta do link do instalador.
-func (s *Service) Token(id uuid.UUID) string {
-	mac := hmac.New(sha256.New, s.key)
+func (s *Service) Token(id uuid.UUID) string { return sign(s.key, id) }
+
+// sign é o id com a assinatura (o link sem login).
+func sign(key []byte, id uuid.UUID) string {
+	mac := hmac.New(sha256.New, key)
 	mac.Write(id[:])
 	return encoding.EncodeToString(append(id[:], mac.Sum(nil)[:16]...))
+}
+
+// verify é o id de um link assinado com a chave (falso se não confere).
+func verify(key []byte, token string) (uuid.UUID, bool) {
+	token = strings.TrimSpace(token)
+	raw, err := encoding.DecodeString(token)
+	if err != nil || len(raw) != 32 {
+		return uuid.Nil, false
+	}
+	id, err := uuid.FromBytes(raw[:16])
+	if err != nil || !hmac.Equal([]byte(sign(key, id)), []byte(token)) {
+		return uuid.Nil, false
+	}
+	return id, true
 }
 
 // PublicURL é o link do instalador.
@@ -530,13 +553,8 @@ func (s *Service) Close(ctx context.Context, id uuid.UUID, status string) (*Appo
 // ByToken é o agendamento do link do instalador: em aberto, ou encerrado há
 // menos de linkGrace (só para ver).
 func (s *Service) ByToken(ctx context.Context, token string) (*Appointment, error) {
-	token = strings.TrimSpace(token)
-	raw, err := encoding.DecodeString(token)
-	if err != nil || len(raw) != 32 {
-		return nil, ErrLinkEnded
-	}
-	id, err := uuid.FromBytes(raw[:16])
-	if err != nil || !hmac.Equal([]byte(s.Token(id)), []byte(token)) {
+	id, ok := verify(s.key, token)
+	if !ok {
 		return nil, ErrLinkEnded
 	}
 	a, err := scan(s.db.QueryRow(ctx, selectAppointment+` WHERE a.id = $1`, id))

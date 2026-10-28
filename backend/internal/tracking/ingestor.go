@@ -296,7 +296,17 @@ func (i *Ingestor) processTelemetry(ctx context.Context, dev *devices.Device, ms
 	i.evaluateOverspeed(ctx, dev, vehicle, vehicleID, position)
 	i.evaluateGeofences(ctx, dev, vehicle, position)
 
-	i.publisher.PublishFor(websocket.TypePositionUpdated, vehicleID, &dev.ID, position)
+	if !msg.GPSValid {
+		// Sem GPS a coordenada é a última guardada no aparelho (no recém-
+		// instalado, a do teste na fábrica, na China): fica no histórico, mas
+		// o mapa não sai do lugar. Vai só o estado (o "GPS sem fixo").
+		i.publisher.PublishFor(websocket.TypeDeviceOnline, vehicleID, &dev.ID, map[string]any{
+			"deviceId": dev.ID,
+			"state":    after,
+		})
+	} else {
+		i.publisher.PublishFor(websocket.TypePositionUpdated, vehicleID, &dev.ID, position)
+	}
 	if i.positionObserver != nil {
 		i.positionObserver(dev.ID, position, after.ACC)
 	}

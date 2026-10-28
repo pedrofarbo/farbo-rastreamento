@@ -90,6 +90,14 @@ const statusLabels: Record<string, string> = {
   OFFLINE: 'Offline',
 };
 
+/**
+ * O rastreador já falou, mas sem GPS: até o primeiro sinal, o mapa não tem
+ * posição (a que ele repete é a guardada no aparelho, às vezes a da fábrica).
+ */
+export function waitingForGps(state: { gpsValid: boolean | null } | null | undefined): boolean {
+  return state?.gpsValid === false;
+}
+
 export function formatDeviceStatus(status: string | null | undefined): string {
   if (!status) return 'Sem rastreador';
   return statusLabels[status] ?? status;

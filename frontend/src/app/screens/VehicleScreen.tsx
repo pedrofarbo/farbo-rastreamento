@@ -19,7 +19,17 @@ import { LiveLinkPanel } from '@/components/vehicle/LiveLinkPanel';
 import { TheftPanel } from '@/components/vehicle/TheftPanel';
 import { useVehicle } from '@/hooks/useVehicles';
 import { useAuth } from '@/stores/AuthContext';
-import { eventSeverity, formatDateTime, formatDeviceStatus, formatDistance, formatEvent, formatRelative, formatSpeed, formatVoltage } from '@/services/format';
+import {
+  eventSeverity,
+  formatDateTime,
+  formatDeviceStatus,
+  formatDistance,
+  formatEvent,
+  formatRelative,
+  formatSpeed,
+  formatVoltage,
+  waitingForGps,
+} from '@/services/format';
 
 import { fencesOf, notifyLabel, shapeLabel } from '../fence';
 import { BackIcon, ChevronIcon, ExpandIcon } from '../icons';
@@ -212,7 +222,11 @@ export function VehicleScreen() {
         </>
       ) : (
         <p className={styles.muted}>
-          {vehicle.device ? 'Aguardando o primeiro sinal do rastreador.' : 'Este veículo ainda não tem rastreador instalado.'}
+          {!vehicle.device
+            ? 'Este veículo ainda não tem rastreador instalado.'
+            : waitingForGps(vehicle.state)
+              ? 'O rastreador já conectou e está aguardando o sinal do GPS. Em céu aberto costuma levar poucos minutos.'
+              : 'Aguardando o primeiro sinal do rastreador.'}
         </p>
       )}
 

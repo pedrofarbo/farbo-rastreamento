@@ -35,6 +35,7 @@ import {
   nowISO,
   todayISO,
   vehicleVoltage,
+  waitingForGps,
 } from '@/services/format';
 import { sortVehicles } from '@/services/vehicleFilters';
 import type { Position } from '@/types';
@@ -310,7 +311,15 @@ function VehicleDetails() {
               />
             </div>
           ) : (
-            <EmptyState icon="📍" title="Sem posição registrada" />
+            <EmptyState
+              icon="📍"
+              title={waitingForGps(vehicle.state) ? 'Aguardando o sinal do GPS' : 'Sem posição registrada'}
+              description={
+                waitingForGps(vehicle.state)
+                  ? 'O rastreador está conectado, mas o GPS ainda não pegou sinal. Em céu aberto costuma levar poucos minutos.'
+                  : undefined
+              }
+            />
           )}
         </Card>
 

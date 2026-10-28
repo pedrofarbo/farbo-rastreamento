@@ -21,6 +21,9 @@ import type {
   InstallationInput,
   InstallationSlot,
   PublicInstallView,
+  InstallerLink,
+  InstallerLinkInput,
+  PublicInstallerLinkView,
   PublicRouteView,
   RouteDay,
   FleetImportResult,
@@ -673,6 +676,28 @@ export const installLinkApi = {
     request<PublicInstallView>(`/api/public/install/${encodeURIComponent(token)}/complete`, {
       method: 'POST',
       body: { imei, note },
+      anonymous: true,
+    }),
+};
+
+/** A instalação avulsa: o link do rastreador escolhido, sem agendamento (admin e operador). */
+export const installerLinksApi = {
+  list: () => api.get<InstallerLink[]>('/api/installer-links'),
+  create: (input: InstallerLinkInput) => api.post<InstallerLink>('/api/installer-links', input),
+  /** Encerra o link: o instalador não abre mais. */
+  close: (id: string) => api.post<InstallerLink>(`/api/installer-links/${id}/close`),
+};
+
+/** O link da instalação avulsa (sem login): o teste do sinal e a conclusão. */
+export const installerLinkPublicApi = {
+  view: (token: string) =>
+    request<PublicInstallerLinkView>(`/api/public/installer-links/${encodeURIComponent(token)}`, { anonymous: true }),
+  check: (token: string) =>
+    request<InstallCheck>(`/api/public/installer-links/${encodeURIComponent(token)}/check`, { method: 'POST', anonymous: true }),
+  complete: (token: string, note: string) =>
+    request<PublicInstallerLinkView>(`/api/public/installer-links/${encodeURIComponent(token)}/complete`, {
+      method: 'POST',
+      body: { note },
       anonymous: true,
     }),
 };

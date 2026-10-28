@@ -21,7 +21,9 @@ export function TelemetryBar({ position, state, lastSeenAt }: TelemetryBarProps)
   const voltage = state?.batteryVoltage ?? position?.batteryVoltage ?? null;
   const gsm = state?.gsmLevel ?? position?.gsmLevel ?? null;
   const satellites = position?.satellites ?? null;
-  const gpsValid = position?.gpsValid ?? state?.gpsValid ?? null;
+  // O GPS de agora vem do estado: a posição é a última com GPS (as sem sinal
+  // não chegam ao mapa).
+  const gpsValid = state?.gpsValid ?? position?.gpsValid ?? null;
   const relayOn = state?.relayOn ?? position?.relayOn ?? null;
 
   return (

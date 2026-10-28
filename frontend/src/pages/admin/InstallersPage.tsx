@@ -19,6 +19,7 @@ import { Pager } from '@/components/ui/Pager';
 import { usePagedList } from '@/hooks/usePagination';
 
 import styles from '../Page.module.css';
+import { InstallerLinkModal, InstallerLinksCard } from './InstallerLinks';
 
 interface Draft {
   name: string;
@@ -95,6 +96,8 @@ function inputFrom(d: Draft): InstallerInput | string {
 /**
  * Prestadores de instalação recomendados. Os ativos aparecem na landing page
  * e no painel do cliente; a instalação é combinada e paga direto com eles.
+ * Daqui também sai o link da instalação avulsa (o rastreador escolhido, sem
+ * agendamento): o instalador testa o sinal e conclui.
  */
 export function InstallersPage() {
   const { notify } = useToast();
@@ -105,6 +108,8 @@ export function InstallersPage() {
   const [removing, setRemoving] = useState<Installer | null>(null);
   const [formError, setFormError] = useState('');
   const [preview, setPreview] = useState(false);
+  // O link da instalação avulsa (com o prestador já escolhido, se veio da linha).
+  const [linkFor, setLinkFor] = useState<{ installerId: string } | null>(null);
 
   const installers = useQuery({ queryKey: ['installers'], queryFn: installersApi.list });
 
@@ -173,6 +178,9 @@ export function InstallersPage() {
           <div className={styles.actions}>
             <Button variant="secondary" onClick={() => setPreview(true)}>
               Ver como o cliente vê
+            </Button>
+            <Button variant="secondary" onClick={() => setLinkFor({ installerId: '' })}>
+              Instalação avulsa
             </Button>
             <Button
               variant="primary"
@@ -245,6 +253,9 @@ export function InstallersPage() {
                         </td>
                         <td>
                           <div className={styles.actions}>
+                            <Button size="small" variant="ghost" onClick={() => setLinkFor({ installerId: i.id })}>
+                              Mandar link
+                            </Button>
                             <Button
                               size="small"
                               variant="ghost"
@@ -273,7 +284,11 @@ export function InstallersPage() {
             </>
           )}
         </Card>
+
+        <InstallerLinksCard installers={list} />
       </div>
+
+      {linkFor && <InstallerLinkModal installers={list} installerId={linkFor.installerId} onClose={() => setLinkFor(null)} />}
 
       <Modal
         open={draft !== null}

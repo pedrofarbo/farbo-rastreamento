@@ -15,7 +15,7 @@ import { useFleet } from '@/hooks/useFleet';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useAuth } from '@/stores/AuthContext';
 import { NO_GROUP, inGroup, matchesVehicle } from '@/services/vehicleFilters';
-import { formatDeviceStatus, formatRelative, formatSpeed } from '@/services/format';
+import { formatDeviceStatus, formatRelative, formatSpeed, waitingForGps } from '@/services/format';
 import type { VehicleView } from '@/types';
 
 import { BottomSheet } from '../BottomSheet';
@@ -185,7 +185,13 @@ export function MapScreen() {
                       Ignição {acc === null ? '—' : acc ? 'ligada' : 'desligada'}
                     </span>
                     {position && <span>{formatSpeed(position.speedKmh)}</span>}
-                    <span>{position ? formatRelative(position.gpsTimestamp) : 'aguardando o primeiro sinal'}</span>
+                    <span>
+                      {position
+                        ? formatRelative(position.gpsTimestamp)
+                        : waitingForGps(vehicle.state)
+                          ? 'aguardando o sinal do GPS'
+                          : 'aguardando o primeiro sinal'}
+                    </span>
                   </>
                 ) : (
                   <span>Acompanhe a entrega em Veículos</span>

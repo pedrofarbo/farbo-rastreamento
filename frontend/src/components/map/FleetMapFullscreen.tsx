@@ -7,7 +7,7 @@ import { Address } from '@/components/ui/Address';
 import { Badge } from '@/components/ui/Badge';
 import type { BadgeTone } from '@/components/ui/Badge';
 import { VehicleSwitcher } from '@/components/vehicle/VehicleSwitcher';
-import { formatDeviceStatus, formatRelative, formatSpeed } from '@/services/format';
+import { formatDeviceStatus, formatRelative, formatSpeed, waitingForGps } from '@/services/format';
 import type { Geofence, VehicleView } from '@/types';
 
 import { TrackerMap } from './TrackerMap';
@@ -219,7 +219,9 @@ export function FleetMapFullscreen({
                   <Address lat={position.latitude} lon={position.longitude} className={styles.address} />
                 </>
               ) : (
-                <span className={styles.muted}>Sem posição conhecida.</span>
+                <span className={styles.muted}>
+                  {waitingForGps(selected.state) ? 'Aguardando o sinal do GPS.' : 'Sem posição conhecida.'}
+                </span>
               )}
               <Link to={`/veiculos/${selected.id}`} className={styles.open}>
                 Abrir veículo

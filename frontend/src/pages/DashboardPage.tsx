@@ -18,6 +18,7 @@ import fieldStyles from '@/components/ui/Field.module.css';
 import { useFleet } from '@/hooks/useFleet';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useAuth } from '@/stores/AuthContext';
+import { waitingForGps } from '@/services/format';
 import { NO_GROUP, inGroup, sortVehicles } from '@/services/vehicleFilters';
 
 import styles from './DashboardPage.module.css';
@@ -158,6 +159,8 @@ export function DashboardPage() {
                       lat={selected.lastPosition.latitude}
                       lon={selected.lastPosition.longitude}
                     />
+                  ) : waitingForGps(selected.state) ? (
+                    'aguardando o sinal do GPS'
                   ) : (
                     'sem posição conhecida'
                   )}

@@ -200,6 +200,7 @@ type credEnv struct {
 	commands  *commands.Service
 	owners    *vehicles.OwnerIndex
 	positions *tracking.Repository
+	states    *tracking.StateStore
 	sender    *captureSender
 	stepUp    *stepup.Service
 	theft     *theft.Service
@@ -306,6 +307,7 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 	auditSvc := audit.NewService(audit.NewRepository(db), log)
 	eventSvc := events.NewService(events.NewRepository(db), hub, log)
 	states := tracking.NewStateStore(tracking.NewStateRepository(db))
+	env.states = states
 	var snapshots commands.TelemetryProvider = stoppedTelemetry{}
 	if opts.snapshotsFor != nil {
 		snapshots = opts.snapshotsFor(env.positions)
