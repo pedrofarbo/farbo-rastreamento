@@ -13,16 +13,17 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 )
 
-// Os tipos de veículo: o mapa desenha um carro ou uma moto.
+// Os tipos de veículo: o mapa desenha um carro, uma moto ou um caminhão.
 const (
 	KindCar        = "CAR"
 	KindMotorcycle = "MOTORCYCLE"
+	KindTruck      = "TRUCK"
 )
 
 type Vehicle struct {
 	ID   uuid.UUID `json:"id"`
 	Name string    `json:"name"`
-	// Kind é o tipo: CAR ou MOTORCYCLE.
+	// Kind é o tipo: CAR, MOTORCYCLE ou TRUCK.
 	Kind  string `json:"kind"`
 	Plate string `json:"plate"`
 	Brand string `json:"brand"`
@@ -275,8 +276,8 @@ func Validate(in Input) error {
 	if len(in.Name) > 100 {
 		return ValidationError{Message: "nome do veículo longo demais"}
 	}
-	if k := normalizeKind(in.Kind); k != "" && k != KindCar && k != KindMotorcycle {
-		return ValidationError{Message: "tipo do veículo: carro (CAR) ou moto (MOTORCYCLE)"}
+	if k := normalizeKind(in.Kind); k != "" && k != KindCar && k != KindMotorcycle && k != KindTruck {
+		return ValidationError{Message: "tipo do veículo: carro (CAR), moto (MOTORCYCLE) ou caminhão (TRUCK)"}
 	}
 	if in.Year != nil && (*in.Year < 1900 || *in.Year > time.Now().Year()+1) {
 		return ValidationError{Message: fmt.Sprintf("ano fora da faixa 1900..%d", time.Now().Year()+1)}

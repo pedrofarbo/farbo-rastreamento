@@ -33,7 +33,7 @@ describe('planilha de associados', () => {
     expect(parsed.problems.map((p) => [p.line, p.message])).toEqual([
       [2, 'Falta o nome do associado.'],
       [3, 'E-mail "lia" inválido.'],
-      [3, 'Tipo "trator": use carro ou moto.'],
+      [3, 'Tipo "trator": use carro, moto ou caminhão.'],
       [3, expect.stringContaining('Ano "1800"')],
     ]);
   });

@@ -51,7 +51,7 @@ describe('priceParts', () => {
     expect(priceLabel(12000)).toBe('R$ 120');
     expect(priceLabel(3490)).toBe('R$ 34,90');
     expect(checkoutPath()).toBe(CHECKOUT_PATH);
-    expect(checkoutPath({ insanos: true, event: 'encontro-sp' })).toBe(`${CHECKOUT_PATH}?plano=insanos&evento=encontro-sp`);
+    expect(checkoutPath({ event: 'encontro-sp' })).toBe(`${CHECKOUT_PATH}?evento=encontro-sp`);
   });
 });
 
@@ -95,15 +95,16 @@ describe('landing com a contratação pelo site', () => {
   it('os planos mostram o preço do site, sem prazo, e levam à contratação', async () => {
     const host = await render(<PricingSection onOpenModal={() => {}} />);
     const text = host.textContent ?? '';
-    for (const part of ['Contrate pelo site', 'R$ 34,90/mês e R$ 120 no rastreador', 'De R$ 69,90', 'De R$ 39,90', 'De R$ 150',
-      'enquanto a assinatura durar', 'Insanos MC pagam R$ 27,90/mês', 'à vista, ou 10x de R$ 12,00']) {
+    for (const part of ['Contrate pelo site', 'R$ 34,90/mês e R$ 120 no rastreador', 'PREÇO PROMOCIONAL', 'De R$ 69,90', 'De R$ 150',
+      'enquanto a assinatura durar', 'à vista, ou 10x de R$ 12,00']) {
       expect(text).toContain(part);
     }
+    // Um plano só: o do Insanos MC é com a central.
+    expect(text).not.toContain('Insanos');
     // Sem o prazo nem o limite da promoção de pré-lançamento.
     expect(text).not.toContain('12 primeiros meses');
     expect(text).not.toContain('500 primeiros');
     expect(links(host, 'Contratar agora').map((a) => a.getAttribute('href'))).toEqual([CHECKOUT_PATH, CHECKOUT_PATH]);
-    expect(links(host, 'Contratar com o preço do Insanos')[0]?.getAttribute('href')).toBe(checkoutPath({ insanos: true }));
     // O rastreador: quem instala e o comodato.
     expect(text).toContain('Instale com o seu instalador ou com os nossos, por R$ 150.');
     expect(text).toContain('Bloqueio remoto (relé incluso)');
@@ -114,14 +115,39 @@ describe('landing com a contratação pelo site', () => {
   });
 
   it('outros valores na central: a página acompanha, sem nada escrito no código', async () => {
-    offer = offerWith({ planCents: 2990, insanosCents: 2490, equipmentCents: 9900, maxInstallments: 1, loan: null, install: null });
+    offer = offerWith({ planCents: 2990, equipmentCents: 9900, maxInstallments: 1, loan: null, install: null });
     const host = await render(<PricingSection onOpenModal={() => {}} />);
     const text = host.textContent ?? '';
     expect(text).toContain('R$ 29,90/mês e R$ 99 no rastreador. Pague com Pix');
-    expect(text).toContain('Insanos MC pagam R$ 24,90/mês');
     expect(text).toContain('à vista, no Pix');
     expect(text).not.toContain('comodato');
     expect(text).toContain('Instale com o instalador da sua preferência.');
+  });
+
+  it('o plano no preço normal (R$ 69,90 no site): sem "promocional" nem preço riscado', async () => {
+    offer = offerWith({ planCents: 6990 });
+    const text = (await render(<PricingSection onOpenModal={() => {}} />)).textContent ?? '';
+    expect(text).toContain('R$69,90/mês por veículo');
+    expect(text).not.toContain('PREÇO PROMOCIONAL');
+    expect(text).not.toContain('De R$ 69,90');
+  });
+
+  it('pelo link de um afiliado com tabela: a partir da menor, com a moto, o carro e o caminhão', async () => {
+    offer = offerWith({ planByKind: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 } });
+    // O espaço sem quebra (cada tipo inteiro na linha) vira espaço comum para comparar.
+    const plain = (host: HTMLElement) => (host.textContent ?? '').replace(/\u00a0/g, ' ');
+    const pricing = plain(await render(<PricingSection onOpenModal={() => {}} />));
+    for (const part of ['PREÇO DE INDICAÇÃO', 'a partir de', 'R$39,90/mês por veículo', 'Moto R$ 39,90 · Carro R$ 49,90 · Caminhão R$ 59,90',
+      'A partir de R$ 39,90/mês e R$ 120 no rastreador']) {
+      expect(pricing).toContain(part);
+    }
+    const hero = plain(await render(<HeroSection onOpenModal={() => {}} />));
+    expect(hero).toContain('a partir deR$39,90/mês');
+    expect(hero).toContain('Moto R$ 39,90 · Carro R$ 49,90 · Caminhão R$ 59,90 · enquanto a assinatura durar');
+    expect(hero).not.toContain('OFF');
+    const section = plain(await render(<CheckoutSection onOpenModal={() => {}} />));
+    expect(section).toContain('Mensalidade, a partir de');
+    expect(section).toContain('R$ 69,90 R$ 39,90');
   });
 
   it('enquanto a oferta carrega, os preços esperam no lugar deles', async () => {
@@ -172,18 +198,19 @@ describe('landing com a contratação fechada', () => {
 });
 
 describe('os cartões dos planos', () => {
-  it('o equipamento mostra o selo Anatel no lugar de "Desbloqueado"; o Insanos, sem "Parceria oficial"', async () => {
+  it('o equipamento mostra o selo Anatel no lugar de "Desbloqueado"; sem o cartão do Insanos', async () => {
     const text = (await render(<PricingSection onOpenModal={() => {}} />)).textContent ?? '';
     expect(text).toContain('04895-25-16219');
     expect(text).not.toContain('Desbloqueado');
     expect(text).not.toMatch(/parceria oficial/i);
-    expect(text).toContain('MOTOCLUBE INSANOS');
+    expect(text).not.toContain('INSANOS');
   });
 
-  it('os planos usam as imagens novas: o escudo do Insanos e a foto do J16', async () => {
+  it('o equipamento usa a foto do J16 (sem o escudo do Insanos)', async () => {
     const host = await render(<PricingSection onOpenModal={() => {}} />);
     const sources = Array.from(host.querySelectorAll('img')).map((img) => img.getAttribute('src'));
-    expect(sources).toEqual(expect.arrayContaining(['/assets/insanos-escudo.webp', '/assets/rastreador-j16-farbo.webp']));
+    expect(sources).toContain('/assets/rastreador-j16-farbo.webp');
+    expect(sources).not.toContain('/assets/insanos-escudo.webp');
     expect(sources).toContain('/assets/anatel-logo.png');
     expect(sources).not.toContain('/assets/insanos-skull.png');
     expect(sources).not.toContain('/assets/tracker-gt06.png');
@@ -194,7 +221,7 @@ describe('frotas', () => {
   it('no lugar do rastreador, o preço especial para frotas, com o WhatsApp e a mensagem pronta', async () => {
     const host = await render(<PricingSection onOpenModal={() => {}} />);
     const cards = Array.from(host.querySelectorAll('h3[class*="cardTitle"]')).map((h) => h.textContent);
-    // Os três planos lado a lado; o rastreador, largo, embaixo deles.
+    // O plano e as frotas lado a lado; o rastreador, largo, embaixo deles.
     expect(cards).toEqual(['PLANO MENSAL', 'FROTAS', 'EQUIPAMENTO']);
     const text = host.textContent ?? '';
     expect(text).toContain('PARA EMPRESAS');

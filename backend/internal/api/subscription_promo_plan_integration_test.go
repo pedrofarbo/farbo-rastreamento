@@ -7,8 +7,6 @@ import (
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
-	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
-	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
 )
 
 // A central corrige o plano de uma assinatura contratada na promoção: a
@@ -81,52 +79,5 @@ func TestUpdateSubscriptionPromoFollowsPlan(t *testing.T) {
 	// Sem promoção, trocar o plano não cria uma.
 	if s := update(plain.ID.String(), "Especial Insanos MC", 3990); s.PromoPriceCents != nil {
 		t.Errorf("assinatura sem promoção ganhou uma: %d", promo(s))
-	}
-}
-
-// Quem escolheu o preço dos Insanos no pré-cadastro já nasce com o plano
-// deles na conta quando a central o cadastra a partir do pré-cliente (o
-// pedido feito pelo app sai nele); os outros planos ficam no padrão.
-// Precisa de FARBO_TEST_DATABASE_URL.
-func TestCreateCustomerFromInsanosLead(t *testing.T) {
-	env, _ := newLeadsEnv(t)
-	admin := env.login(auth.RoleAdmin + "@leads.test")
-
-	register := func(name, email, plan string) *orders.AccountPlan {
-		t.Helper()
-		env.must("", http.MethodPost, "/api/public/leads", map[string]any{
-			"name": name, "email": email, "phone": "(11) 97777-3333", "city": "Campinas",
-			"plan": plan, "vehicleType": "moto", "vehicleCount": 1, "message": "", "consent": true, "website": "",
-		}, http.StatusCreated)
-		var list []leads.Lead
-		_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/leads?status=NEW", nil, http.StatusOK), &list)
-		var lead *leads.Lead
-		for i := range list {
-			if list[i].Email == email {
-				lead = &list[i]
-			}
-		}
-		if lead == nil {
-			t.Fatalf("pré-cliente %s não apareceu: %+v", email, list)
-		}
-		var customer struct {
-			ID string `json:"id"`
-		}
-		_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/customers", map[string]any{
-			"name": name, "email": email, "phone": lead.Phone, "document": "", "password": userPassword, "leadId": lead.ID,
-		}, http.StatusCreated), &customer)
-		var detail struct {
-			Plan *orders.AccountPlan `json:"plan"`
-		}
-		_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/customers/"+customer.ID, nil, http.StatusOK), &detail)
-		return detail.Plan
-	}
-
-	plan := register("Beto Insanos", "beto@insanos.test", "Preço Especial Insanos MC - R$ 39,90")
-	if plan == nil || plan.PlanName != "Especial Insanos MC" || plan.PriceCents != 3990 || plan.DueDay != 10 {
-		t.Errorf("plano do Insanos = %+v", plan)
-	}
-	if plan := register("Caio Geral", "caio@geral.test", "Plano Mensal - R$ 69,90"); plan != nil {
-		t.Errorf("plano mensal ganhou plano na conta: %+v", plan)
 	}
 }

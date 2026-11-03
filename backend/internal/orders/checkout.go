@@ -3,6 +3,8 @@ package orders
 import (
 	"context"
 
+	"github.com/google/uuid"
+
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 )
@@ -10,8 +12,6 @@ import (
 // CheckoutChoice é o que a pessoa escolhe na contratação rápida pela
 // landing.
 type CheckoutChoice struct {
-	// Insanos: integrante do Insanos MC (autodeclarado), com o plano dele.
-	Insanos bool
 	// EquipmentMode: o rastreador comprado (sale, o padrão) ou em comodato.
 	EquipmentMode string
 	// Installments: o rastreador comprado parcelado sem juros (0 ou 1: à vista).
@@ -20,11 +20,15 @@ type CheckoutChoice struct {
 	// Farbo (no comodato, a instalação já é da Farbo).
 	FarboInstall bool
 	Vehicle      vehicles.Input
+	// Affiliate: o afiliado do link (a mensalidade sai da tabela dele por
+	// tipo de veículo, se ele tiver uma).
+	Affiliate *uuid.UUID
 }
 
 // CheckoutOrder monta o pedido da contratação rápida pela landing (a pessoa
-// física acabou de criar a conta e paga com Pix na hora): o plano do funil —
-// o normal ou o do Insanos MC — no preço dele, sem prazo; o rastreador
+// física acabou de criar a conta e paga com Pix na hora): o plano do funil
+// no preço dele — ou, pelo link de um afiliado com tabela, no preço do tipo do
+// veículo —, sem prazo (o do Insanos MC, só a central define); o rastreador
 // comprado pelo preço do funil (à vista ou parcelado, com a instalação da
 // Farbo se ela quiser) ou em comodato, com as taxas e a garantia de troca.
 func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, error) {
@@ -36,8 +40,14 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 		return Order{}, ValidationError{"a contratação pelo site está fechada agora: deixe o seu contato que a gente fala com você"}
 	}
 	plan := billing.SubscriptionInput{PlanName: s.catalog.PlanName, PriceCents: opts.Checkout.PlanCents, DueDay: s.catalog.DefaultDueDay}
-	if in.Insanos && s.catalog.LaunchPromo.InsanosPlanName != "" {
-		plan.PlanName, plan.PriceCents = s.catalog.LaunchPromo.InsanosPlanName, opts.Checkout.InsanosCents
+	if in.Affiliate != nil {
+		table, err := s.AffiliatePrices(ctx, *in.Affiliate)
+		if err != nil {
+			return Order{}, err
+		}
+		if table != nil {
+			plan.PriceCents = table.For(in.Vehicle.Kind)
+		}
 	}
 	vehicle := in.Vehicle
 	vehicle.DeviceID, vehicle.OwnerID = nil, nil

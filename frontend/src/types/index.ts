@@ -448,7 +448,14 @@ export interface DeviceState {
 }
 
 /** Carro ou moto: o mapa desenha um ou outro. */
-export type VehicleKind = 'CAR' | 'MOTORCYCLE';
+export type VehicleKind = 'CAR' | 'MOTORCYCLE' | 'TRUCK';
+
+/** A mensalidade por tipo de veículo: a tabela do link de um afiliado. */
+export interface KindPrices {
+  motorcycleCents: number;
+  carCents: number;
+  truckCents: number;
+}
 
 export interface Vehicle {
   id: string;
@@ -1695,6 +1702,8 @@ export interface PublicInvoice {
 export interface Catalog {
   planName: string;
   planPriceCents: number;
+  /** A mensalidade por tipo de veículo (a tabela do afiliado que indicou o cliente); sem ela, planPriceCents. */
+  planByKind?: KindPrices | null;
   defaultDueDay: number;
   equipmentName: string;
   equipmentPriceCents: number;
@@ -1730,7 +1739,7 @@ export interface LoanOffer {
   uninstallFeeCents: number;
 }
 
-/** Os preços da contratação pelo site (pessoa física): o plano normal, o do Insanos MC e o rastreador. */
+/** Os preços da contratação pelo site (pessoa física): o plano, o do Insanos MC (dos clientes que a central põe nele) e o rastreador. */
 export interface CheckoutPrices {
   enabled: boolean;
   planCents: number;
@@ -1743,14 +1752,13 @@ export interface CheckoutOffer {
   enabled: boolean;
   planName: string;
   planCents: number;
-  insanosPlanName: string;
-  insanosCents: number;
   equipmentName: string;
   equipmentCents: number;
   /** Os preços normais (do catálogo): riscados ao lado dos do site; os cobrados com a contratação fechada. */
   planRegularCents: number;
-  insanosRegularCents: number;
   equipmentRegularCents: number;
+  /** Pelo link de um afiliado com tabela: a mensalidade por tipo de veículo, no lugar de planCents. */
+  planByKind: KindPrices | null;
   /** Em até quantas vezes sem juros o rastreador comprado pode ser parcelado (1: só à vista). */
   maxInstallments: number;
   dueDay: number;
@@ -1762,7 +1770,6 @@ export interface CheckoutOffer {
 
 /** A contratação pelo site: a escolha, o veículo, quem contrata, o endereço, a entrega e o aceite. */
 export interface CheckoutInput {
-  insanos: boolean;
   equipmentMode: 'sale' | 'loan';
   installments: number;
   farboInstall: boolean;
@@ -2170,7 +2177,7 @@ export interface WhatsAppStatus {
 /** Pré-cliente: NEW ninguém falou ainda; CONTACTED em conversa; CONVERTED virou cliente; DISCARDED não vai fechar. */
 export type LeadStatus = 'NEW' | 'CONTACTED' | 'CONVERTED' | 'DISCARDED';
 
-export type LeadVehicleType = '' | 'moto' | 'carro' | 'frota';
+export type LeadVehicleType = '' | 'moto' | 'carro' | 'caminhao' | 'frota';
 
 /** O que a landing manda no cadastro de interesse. */
 export interface LeadInput {
@@ -2235,8 +2242,6 @@ export interface WaitlistInput {
   event?: string;
   /** A cidade da instalação (a tela do evento pede). */
   city?: string;
-  /** Marcou "Sou integrante do Insanos MC": a conta nasce no plano deles. */
-  insanos?: boolean;
   /** O código do link de indicação do afiliado. */
   ref?: string;
 }
@@ -2703,6 +2708,8 @@ export interface Affiliate {
   commissionCents: number;
   /** Centésimos de ponto percentual (1250 = 12,5%). */
   commissionBps: number;
+  /** A mensalidade de quem ele indica, por tipo de veículo (nula: o preço normal do site). */
+  planPrices: KindPrices | null;
   email: string;
   phone: string;
   pixKey: string;
@@ -2740,6 +2747,8 @@ export interface AffiliateInput {
   commissionCents: number | null;
   /** O percentual (centésimos de ponto), na comissão percentual. */
   commissionBps: number | null;
+  /** A mensalidade pelo link, por tipo de veículo (nula: o preço normal do site). */
+  planPrices: KindPrices | null;
   email: string;
   phone: string;
   pixKey: string;
@@ -2823,6 +2832,8 @@ export interface PartnerReport {
   commissionType: CommissionType;
   commissionCents: number;
   commissionBps: number;
+  /** A mensalidade de quem ele indica, por tipo de veículo (nula: o preço normal do site). */
+  planPrices?: KindPrices | null;
   signups: number;
   customers: number;
   activeCustomers: number;

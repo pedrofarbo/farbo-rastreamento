@@ -15,10 +15,9 @@ import styles from './LeadModal.module.css';
 import { useModalBehavior } from './useModalBehavior';
 
 // Só os nomes: os preços estão nos planos da página (vêm do servidor). O do
-// Insanos MC tem o nome do plano deles, que o cadastro do cliente reconhece.
+// Insanos MC fica de fora: só a central coloca o cliente nele.
 const PLANS = [
   { value: 'Plano Mensal', label: 'Plano Mensal' },
-  { value: 'Preço Especial Insanos MC', label: 'Insanos MC' },
   { value: 'Apenas Equipamento', label: 'Apenas o rastreador' },
 ];
 

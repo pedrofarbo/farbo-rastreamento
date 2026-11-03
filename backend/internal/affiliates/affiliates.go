@@ -19,6 +19,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 )
 
 // MaxCommissionCents: R$ 1.000 por veículo por mês barra um zero a mais.
@@ -54,16 +56,19 @@ type Affiliate struct {
 	ReportToken string `json:"reportToken"`
 	// CommissionType: fixed (CommissionCents por veículo) ou percent
 	// (CommissionBps da mensalidade paga de cada veículo).
-	CommissionType  string     `json:"commissionType"`
-	CommissionCents int        `json:"commissionCents"`
-	CommissionBps   int        `json:"commissionBps"`
-	Email           string     `json:"email"`
-	Phone           string     `json:"phone"`
-	PixKey          string     `json:"pixKey"`
-	Notes           string     `json:"notes"`
-	SupplierID      *uuid.UUID `json:"supplierId"`
-	Active          bool       `json:"active"`
-	CreatedAt       time.Time  `json:"createdAt"`
+	CommissionType  string `json:"commissionType"`
+	CommissionCents int    `json:"commissionCents"`
+	CommissionBps   int    `json:"commissionBps"`
+	// PlanPrices: a mensalidade de quem ele indica, por tipo de veículo (nil:
+	// o preço normal do site).
+	PlanPrices *vehicles.KindPrices `json:"planPrices"`
+	Email      string               `json:"email"`
+	Phone      string               `json:"phone"`
+	PixKey     string               `json:"pixKey"`
+	Notes      string               `json:"notes"`
+	SupplierID *uuid.UUID           `json:"supplierId"`
+	Active     bool                 `json:"active"`
+	CreatedAt  time.Time            `json:"createdAt"`
 
 	// Signups: pessoas que se cadastraram pelo link (lista ou pré-cadastro).
 	Signups int `json:"signups"`
@@ -86,19 +91,20 @@ type Affiliate struct {
 
 // Input é o cadastro de um afiliado. Sem CommissionType, o afiliado novo fica
 // no valor fixo e o que já existe mantém o tipo; sem CommissionCents, vale o
-// padrão.
+// padrão. Sem PlanPrices, quem ele indica paga o preço normal do site.
 type Input struct {
-	Name            string `json:"name"`
-	Handle          string `json:"handle"`
-	Code            string `json:"code"`
-	CommissionType  string `json:"commissionType"`
-	CommissionCents *int   `json:"commissionCents"`
-	CommissionBps   *int   `json:"commissionBps"`
-	Email           string `json:"email"`
-	Phone           string `json:"phone"`
-	PixKey          string `json:"pixKey"`
-	Notes           string `json:"notes"`
-	Active          bool   `json:"active"`
+	Name            string               `json:"name"`
+	Handle          string               `json:"handle"`
+	Code            string               `json:"code"`
+	CommissionType  string               `json:"commissionType"`
+	CommissionCents *int                 `json:"commissionCents"`
+	CommissionBps   *int                 `json:"commissionBps"`
+	PlanPrices      *vehicles.KindPrices `json:"planPrices"`
+	Email           string               `json:"email"`
+	Phone           string               `json:"phone"`
+	PixKey          string               `json:"pixKey"`
+	Notes           string               `json:"notes"`
+	Active          bool                 `json:"active"`
 }
 
 var handlePattern = regexp.MustCompile(`^[A-Za-z0-9._]{1,30}$`)
@@ -133,6 +139,8 @@ func (in Input) Normalize() (Input, error) {
 		return in, invalid("O percentual da comissão vai de 0,01%% a 100%%.")
 	case in.CommissionBps != nil && (*in.CommissionBps < 0 || *in.CommissionBps > MaxCommissionBps):
 		return in, invalid("Percentual da comissão inválido.")
+	case in.PlanPrices != nil && !in.PlanPrices.Valid():
+		return in, invalid("Preencha a mensalidade da moto, do carro e do caminhão.")
 	case in.Email != "":
 		if _, err := mail.ParseAddress(in.Email); err != nil {
 			return in, invalid("E-mail inválido.")

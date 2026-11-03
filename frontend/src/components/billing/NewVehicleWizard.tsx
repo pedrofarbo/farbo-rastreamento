@@ -23,6 +23,7 @@ import { SelectField, TextField } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { EMPTY_VEHICLE, VehicleFields } from '@/components/vehicle/VehicleFields';
+import { kindPrice } from '@/services/kindPrices';
 import { centsToInput, formatDateOnly, formatMoney, parseMoney, todayISO } from '@/services/format';
 import { errorCode } from '@/services/stepUp';
 import type {
@@ -224,7 +225,11 @@ export function NewVehicleWizard({
     },
     onError: (err: Error) => setError(err.message),
   });
-  const c = catalog.data;
+  // O cliente indicado por um afiliado com tabela: a mensalidade é a do tipo
+  // do veículo escolhido.
+  const c = catalog.data?.planByKind
+    ? { ...catalog.data, planPriceCents: kindPrice(catalog.data.planByKind, vehicle.kind) }
+    : catalog.data;
   const address = isAdmin ? (admin?.deliveryAddress ?? null) : (account.data?.deliveryAddress ?? null);
 
   useEffect(() => {

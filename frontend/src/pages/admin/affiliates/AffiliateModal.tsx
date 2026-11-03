@@ -8,7 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { bpsToInput, centsToInput, formatMoney, formatPhoneInput, parseMoney, parsePercentBps } from '@/services/format';
 import { partnerUrl, referralCode, referralUrl } from '@/services/referral';
-import type { Affiliate, AffiliateInput, CommissionType } from '@/types';
+import type { Affiliate, AffiliateInput, CommissionType, KindPrices } from '@/types';
 
 import company from '../company/Company.module.css';
 import styles from './Affiliates.module.css';
@@ -20,6 +20,11 @@ interface Draft {
   commissionType: CommissionType;
   commission: string;
   percent: string;
+  /** A mensalidade pelo link por tipo de veículo (falso: o preço normal do site). */
+  planByKind: boolean;
+  planMotorcycle: string;
+  planCar: string;
+  planTruck: string;
   email: string;
   phone: string;
   pixKey: string;
@@ -35,6 +40,10 @@ function draftOf(a: Affiliate | null, defaultCents: number): Draft {
     commissionType: a?.commissionType ?? 'fixed',
     commission: centsToInput(a?.commissionCents ?? defaultCents),
     percent: a && a.commissionBps > 0 ? bpsToInput(a.commissionBps) : '',
+    planByKind: !!a?.planPrices,
+    planMotorcycle: a?.planPrices ? centsToInput(a.planPrices.motorcycleCents) : '',
+    planCar: a?.planPrices ? centsToInput(a.planPrices.carCents) : '',
+    planTruck: a?.planPrices ? centsToInput(a.planPrices.truckCents) : '',
     email: a?.email ?? '',
     phone: a?.phone ?? '',
     pixKey: a?.pixKey ?? '',
@@ -124,6 +133,15 @@ export function AffiliateModal({
       setError('Percentual inválido: de 0,01 a 100 (por exemplo, 10 ou 12,5).');
       return;
     }
+    let planPrices: KindPrices | null = null;
+    if (draft.planByKind) {
+      const [motorcycleCents, carCents, truckCents] = [draft.planMotorcycle, draft.planCar, draft.planTruck].map(parseMoney);
+      if (!motorcycleCents || !carCents || !truckCents) {
+        setError('Preencha a mensalidade da moto, do carro e do caminhão (por exemplo, 49,90).');
+        return;
+      }
+      planPrices = { motorcycleCents, carCents, truckCents };
+    }
     save.mutate({
       name: draft.name,
       handle: draft.handle,
@@ -131,6 +149,7 @@ export function AffiliateModal({
       commissionType: draft.commissionType,
       commissionCents: cents,
       commissionBps: bps,
+      planPrices,
       email: draft.email,
       phone: draft.phone,
       pixKey: draft.pixKey,
@@ -302,6 +321,36 @@ export function AffiliateModal({
               onChange={(e) => set('commission', e.target.value)}
               hint={affiliate ? 'O valor novo vale para as mensalidades ainda não pagas.' : `Padrão: ${formatMoney(defaultCents)}.`}
             />
+          )}
+          <SelectField
+            label="Mensalidade pelo link"
+            value={draft.planByKind ? 'kind' : 'normal'}
+            onChange={(e) => set('planByKind', e.target.value === 'kind')}
+            hint={
+              affiliate
+                ? 'Vale para os veículos que ainda vão ser pedidos; as assinaturas que já existem ficam no preço delas.'
+                : 'Quem contrata pelo link paga essa mensalidade, também nos próximos veículos (pelo app).'
+            }
+          >
+            <option value="normal">O preço normal do site</option>
+            <option value="kind">Por tipo de veículo</option>
+          </SelectField>
+          {draft.planByKind && (
+            <>
+              <TextField
+                label="Moto (R$/mês)"
+                value={draft.planMotorcycle}
+                inputMode="decimal"
+                onChange={(e) => set('planMotorcycle', e.target.value)}
+              />
+              <TextField label="Carro (R$/mês)" value={draft.planCar} inputMode="decimal" onChange={(e) => set('planCar', e.target.value)} />
+              <TextField
+                label="Caminhão (R$/mês)"
+                value={draft.planTruck}
+                inputMode="decimal"
+                onChange={(e) => set('planTruck', e.target.value)}
+              />
+            </>
           )}
           <TextField label="E-mail" type="email" value={draft.email} maxLength={254} onChange={(e) => set('email', e.target.value)} />
           <TextField

@@ -1,14 +1,14 @@
 /**
- * A conta da contratação pelo site: a mensalidade (o plano normal ou o do
- * Insanos MC; no comodato, mais a garantia de troca do rastreador) e o que se
+ * A conta da contratação pelo site: a mensalidade (o plano; no comodato, mais
+ * a garantia de troca do rastreador) e o que se
  * paga agora com Pix — a 1ª mensalidade (com a 1ª parcela, se o rastreador
  * for parcelado), o rastreador à vista ou a instalação, e o frete.
  */
 import { splitInstallments } from '@/components/billing/installments';
-import type { CheckoutOffer } from '@/types';
+import { kindPrice } from '@/services/kindPrices';
+import type { CheckoutOffer, VehicleKind } from '@/types';
 
 export interface CheckoutChoice {
-  insanos: boolean;
   equipmentMode: 'sale' | 'loan';
   /** O rastreador comprado em quantas vezes (1: à vista). */
   installments: number;
@@ -33,10 +33,11 @@ export interface CheckoutTotals {
   totalNowCents: number;
 }
 
-export function checkoutTotals(offer: CheckoutOffer, choice: CheckoutChoice, freightCents = 0): CheckoutTotals {
+/** Pelo link de um afiliado com tabela, a mensalidade é a do tipo do veículo. */
+export function checkoutTotals(offer: CheckoutOffer, choice: CheckoutChoice, freightCents = 0, kind?: VehicleKind): CheckoutTotals {
   const loan = choice.equipmentMode === 'loan' && offer.loan !== null;
   const guaranteeCents = loan ? (offer.loan?.surchargeCents ?? 0) : 0;
-  const monthlyCents = (choice.insanos ? offer.insanosCents : offer.planCents) + guaranteeCents;
+  const monthlyCents = (offer.planByKind ? kindPrice(offer.planByKind, kind) : offer.planCents) + guaranteeCents;
   const parcels =
     !loan && choice.installments > 1 && choice.installments <= offer.maxInstallments
       ? splitInstallments(offer.equipmentCents, choice.installments)
@@ -71,8 +72,8 @@ export function payDestination(payUrl: string, origin = window.location.origin):
   return url.pathname.startsWith('/pagar/') ? { path: url.pathname + url.search } : { url: url.toString() };
 }
 
-/** O nome do veículo, se a pessoa não deu um: "Fiat Uno" (ou "Meu carro"/"Minha moto"). */
-export function vehicleName(kind: 'CAR' | 'MOTORCYCLE', brand: string, model: string): string {
+/** O nome do veículo, se a pessoa não deu um: "Fiat Uno" (ou "Meu carro"/"Minha moto"/"Meu caminhão"). */
+export function vehicleName(kind: VehicleKind, brand: string, model: string): string {
   const name = [brand.trim(), model.trim()].filter(Boolean).join(' ');
-  return name || (kind === 'MOTORCYCLE' ? 'Minha moto' : 'Meu carro');
+  return name || (kind === 'MOTORCYCLE' ? 'Minha moto' : kind === 'TRUCK' ? 'Meu caminhão' : 'Meu carro');
 }

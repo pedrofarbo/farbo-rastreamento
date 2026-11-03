@@ -50,6 +50,8 @@ const KINDS: Record<string, VehicleKind> = {
   automovel: 'CAR',
   moto: 'MOTORCYCLE',
   motocicleta: 'MOTORCYCLE',
+  caminhao: 'TRUCK',
+  truck: 'TRUCK',
 };
 
 /** O modelo para baixar: só o cabeçalho, com ";" e BOM (o Excel em português abre direto). */
@@ -126,7 +128,7 @@ export function parseAssociateSheet(text: string): ParsedAssociates {
       if (kind) {
         const mapped = KINDS[normalizeHeader(kind)];
         if (mapped) vehicle.kind = mapped;
-        else problem(`Tipo "${kind}": use carro ou moto.`);
+        else problem(`Tipo "${kind}": use carro, moto ou caminhão.`);
       }
       for (const key of ['brand', 'model', 'color'] as const) {
         const value = cell(key);

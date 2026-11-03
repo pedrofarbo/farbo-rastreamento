@@ -12,6 +12,7 @@ export const EMPTY_VEHICLE: VehicleInput = { name: '', kind: 'CAR', plate: '', b
 const KINDS: { id: VehicleKind; label: string }[] = [
   { id: 'CAR', label: '🚗 Carro' },
   { id: 'MOTORCYCLE', label: '🏍️ Moto' },
+  { id: 'TRUCK', label: '🚛 Caminhão' },
 ];
 
 /**

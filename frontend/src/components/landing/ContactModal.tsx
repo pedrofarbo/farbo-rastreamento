@@ -92,7 +92,6 @@ export const ContactModal: React.FC<ContactModalProps> = ({
               >
                 {/* Só os nomes: os preços estão nos planos da página (vêm do servidor). */}
                 <option value="Plano Mensal">Plano Mensal</option>
-                <option value="Preço Especial Insanos MC">Insanos MC</option>
                 <option value="Apenas Equipamento">Apenas o rastreador</option>
               </select>
             </div>

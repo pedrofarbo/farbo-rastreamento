@@ -16,6 +16,7 @@ import { checkoutTotals, payDestination, vehicleName } from '@/services/checkout
 import type { CheckoutChoice } from '@/services/checkout';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { formatMoney, formatPhoneInput, isPhoneComplete } from '@/services/format';
+import { KIND_NAMES, PRICED_KINDS, kindPrice } from '@/services/kindPrices';
 import { currentReferral } from '@/services/referral';
 import { formatTaxId, taxIdDigits, validTaxId } from '@/services/taxid';
 import { useAuth } from '@/stores/AuthContext';
@@ -25,6 +26,13 @@ import pre from './PreLaunch.module.css';
 import styles from './CheckoutPage.module.css';
 
 const STEPS = ['Plano', 'Veículo', 'Seus dados', 'Pagamento'];
+
+/** Os exemplos dos campos de marca e modelo, pelo tipo do veículo. */
+const EXAMPLES: Record<VehicleKind, { brand: string; model: string }> = {
+  MOTORCYCLE: { brand: 'Ex.: Honda', model: 'Ex.: CG 160' },
+  CAR: { brand: 'Ex.: Fiat', model: 'Ex.: Uno' },
+  TRUCK: { brand: 'Ex.: Volvo', model: 'Ex.: FH 540' },
+};
 
 interface Person {
   name: string;
@@ -44,12 +52,13 @@ export function CheckoutPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { user, completeLogin } = useAuth();
-  const { query: offer } = useCheckoutOffer();
   // O evento do QR Code de onde a pessoa veio (o convite do evento manda).
   const event = params.get('evento') ?? '';
+  // Pelo link de um afiliado com tabela, a mensalidade é a do tipo do veículo
+  // (do evento, sem o link guardado no aparelho, como na contratação).
+  const { query: offer } = useCheckoutOffer(event ? '' : currentReferral());
   const [step, setStep] = useState(0);
   const [choice, setChoice] = useState<CheckoutChoice>({
-    insanos: params.get('plano') === 'insanos',
     equipmentMode: 'sale',
     installments: 1,
     farboInstall: false,
@@ -70,7 +79,7 @@ export function CheckoutPage() {
   useEffect(() => {
     document.title = 'Contratar · Farbo Rastreadores';
     trackPageview({ source: 'site', campaign: 'contratar' });
-    track('checkout_open', params.get('plano') ?? '');
+    track('checkout_open', event);
     // Só na abertura da página.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -139,7 +148,8 @@ export function CheckoutPage() {
     );
   }
 
-  const totals = checkoutTotals(o, choice, freightCents);
+  const totals = checkoutTotals(o, choice, freightCents, kind);
+  const table = o.planByKind;
   const loan = choice.equipmentMode === 'loan' && o.loan !== null;
   const cpf = taxIdDigits(person.document);
   const personProblem =
@@ -169,7 +179,6 @@ export function CheckoutPage() {
     const email = person.email.trim();
     try {
       const result = await checkoutApi.place({
-        insanos: choice.insanos,
         equipmentMode: loan ? 'loan' : 'sale',
         installments: loan ? 1 : choice.installments,
         farboInstall: !loan && choice.farboInstall,
@@ -189,7 +198,7 @@ export function CheckoutPage() {
         event: event || undefined,
         website,
       });
-      track('checkout_submit', `${choice.insanos ? 'insanos' : 'normal'}-${loan ? 'comodato' : 'compra'}`);
+      track('checkout_submit', loan ? 'comodato' : 'compra');
       if (result.tokens) {
         try {
           completeLogin(result.tokens, email);
@@ -236,29 +245,28 @@ export function CheckoutPage() {
         {step === 0 && (
           <>
             <fieldset className={styles.options}>
-              <legend className={styles.legend}>O plano</legend>
-              <Option
-                checked={!choice.insanos}
-                onChange={() => setChoice({ ...choice, insanos: false })}
-                name="plan"
-                title={o.planName}
-                price={`${formatMoney(o.planCents)}/mês`}
-              >
-                Rastreamento em tempo real, app, alertas, histórico de rotas e bloqueio pelo celular.
-              </Option>
-              {o.insanosPlanName && (
-                <Option
-                  checked={choice.insanos}
-                  onChange={() => setChoice({ ...choice, insanos: true })}
-                  name="plan"
-                  title="Sou integrante do Insanos MC"
-                  price={`${formatMoney(o.insanosCents)}/mês`}
-                >
-                  O mesmo plano, no preço dos integrantes do motoclube.
+              <legend className={styles.legend}>{table ? 'O plano, pelo tipo do veículo' : 'O plano'}</legend>
+              {table ? (
+                PRICED_KINDS.map((k) => (
+                  <Option
+                    key={k}
+                    checked={kind === k}
+                    onChange={() => setKind(k)}
+                    name="plan"
+                    title={`${o.planName} · ${KIND_NAMES[k]}`}
+                    price={`${formatMoney(kindPrice(table, k))}/mês`}
+                  />
+                ))
+              ) : (
+                <Option checked onChange={() => undefined} name="plan" title={o.planName} price={`${formatMoney(o.planCents)}/mês`}>
+                  Rastreamento em tempo real, app, alertas, histórico de rotas e bloqueio pelo celular.
                 </Option>
               )}
             </fieldset>
-            <p className={styles.note}>O preço da mensalidade vale enquanto a assinatura durar (só o reajuste anual do contrato).</p>
+            <p className={styles.note}>
+              {table && 'Rastreamento em tempo real, app, alertas, histórico de rotas e bloqueio pelo celular. '}O preço da
+              mensalidade vale enquanto a assinatura durar (só o reajuste anual do contrato).
+            </p>
 
             <fieldset className={styles.options}>
               <legend className={styles.legend}>O rastreador</legend>
@@ -343,15 +351,16 @@ export function CheckoutPage() {
           <>
             <fieldset className={styles.options}>
               <legend className={styles.legend}>O veículo</legend>
-              <div className={styles.row}>
-                <Option checked={kind === 'MOTORCYCLE'} onChange={() => setKind('MOTORCYCLE')} name="kind" title="Moto" />
-                <Option checked={kind === 'CAR'} onChange={() => setKind('CAR')} name="kind" title="Carro" />
+              <div className={styles.kinds}>
+                {PRICED_KINDS.map((k) => (
+                  <Option key={k} checked={kind === k} onChange={() => setKind(k)} name="kind" title={KIND_NAMES[k]} />
+                ))}
               </div>
             </fieldset>
             <div className={styles.panel}>
               <div className={styles.row}>
-                <TextField label="Marca" autoCapitalize="words" maxLength={60} placeholder={kind === 'CAR' ? 'Ex.: Fiat' : 'Ex.: Honda'} value={brand} onChange={(e) => setBrand(e.target.value)} />
-                <TextField label="Modelo" autoCapitalize="words" maxLength={60} placeholder={kind === 'CAR' ? 'Ex.: Uno' : 'Ex.: CG 160'} value={model} onChange={(e) => setModel(e.target.value)} />
+                <TextField label="Marca" autoCapitalize="words" maxLength={60} placeholder={EXAMPLES[kind].brand} value={brand} onChange={(e) => setBrand(e.target.value)} />
+                <TextField label="Modelo" autoCapitalize="words" maxLength={60} placeholder={EXAMPLES[kind].model} value={model} onChange={(e) => setModel(e.target.value)} />
               </div>
               <TextField
                 label="Placa"
@@ -457,7 +466,14 @@ export function CheckoutPage() {
               />
             </div>
 
-            <Summary offer={o} choice={choice} totals={totals} vehicle={vehicleName(kind, brand, model)} freightPending={!shippingReady} />
+            <Summary
+              offer={o}
+              choice={choice}
+              totals={totals}
+              vehicle={vehicleName(kind, brand, model)}
+              kind={kind}
+              freightPending={!shippingReady}
+            />
 
             {/* Isca para robôs: fora da tela e fora do Tab. */}
             <div className={styles.honeypot} aria-hidden="true">
@@ -586,16 +602,18 @@ function Summary({
   choice,
   totals,
   vehicle,
+  kind,
   freightPending,
 }: {
   offer: CheckoutOffer;
   choice: CheckoutChoice;
   totals: ReturnType<typeof checkoutTotals>;
   vehicle: string;
+  kind: VehicleKind;
   freightPending: boolean;
 }) {
   const loan = choice.equipmentMode === 'loan' && offer.loan !== null;
-  const plan = choice.insanos ? offer.insanosPlanName : offer.planName;
+  const plan = offer.planByKind ? `${offer.planName} · ${KIND_NAMES[kind]}` : offer.planName;
   const parcels = totals.parcels.length;
   return (
     <div className={styles.summary} aria-label="Resumo do pedido">

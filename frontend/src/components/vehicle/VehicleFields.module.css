@@ -1,7 +1,7 @@
 /* Carro ou moto: dois botões lado a lado (o mapa desenha um ou outro). */
 .kind {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-2);
 }
 

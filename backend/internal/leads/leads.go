@@ -103,7 +103,7 @@ func Normalize(in Input) (Input, error) {
 		return in, ValidationError{"informe o seu WhatsApp com DDD"}
 	}
 	switch in.VehicleType {
-	case "", "moto", "carro", "frota":
+	case "", "moto", "carro", "caminhao", "frota":
 	default:
 		return in, ValidationError{"tipo de veículo inválido"}
 	}
@@ -243,13 +243,6 @@ func (r *Repository) List(ctx context.Context, status string) ([]*Lead, error) {
 
 func (r *Repository) Get(ctx context.Context, id uuid.UUID) (*Lead, error) {
 	return scan(r.db.QueryRow(ctx, selectLead+` WHERE id = $1`, id))
-}
-
-// LatestWithPlan é o pré-cliente mais recente com o e-mail que escolheu um
-// plano (database.ErrNotFound se não há).
-func (r *Repository) LatestWithPlan(ctx context.Context, email string) (*Lead, error) {
-	return scan(r.db.QueryRow(ctx, selectLead+` WHERE lower(email) = lower($1) AND plan <> ''
-		ORDER BY created_at DESC LIMIT 1`, strings.TrimSpace(email)))
 }
 
 // CountNew é o número no menu do painel.

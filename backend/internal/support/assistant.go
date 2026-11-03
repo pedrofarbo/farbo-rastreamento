@@ -40,9 +40,7 @@ type PriceFacts struct {
 	SiteOpen    bool
 	CheckoutURL string
 	Plan        string
-	// Insanos: a mensalidade do plano do Insanos MC (vazio: sem o plano deles).
-	Insanos   string
-	Equipment string
+	Equipment   string
 	// Installments: em até quantas vezes o rastreador comprado sai sem juros.
 	Installments int
 	// FarboInstall: a instalação pelos instaladores da Farbo no rastreador
@@ -280,9 +278,6 @@ func writePrices(b *strings.Builder, p *PriceFacts) {
 		note = "por mês, enquanto a assinatura durar (só o reajuste anual)"
 	}
 	fmt.Fprintf(b, "  - Plano mensal: %s %s.\n", p.Plan, note)
-	if p.Insanos != "" {
-		fmt.Fprintf(b, "  - Integrantes do Insanos MC: %s por mês.\n", p.Insanos)
-	}
 	equipment := "à vista"
 	if p.Installments > 1 {
 		equipment = fmt.Sprintf("à vista ou em até %dx sem juros, somadas às mensalidades", p.Installments)
@@ -433,14 +428,8 @@ func PricesFrom(c config.Catalog, o orders.Options, panelURL string) PriceFacts 
 		SiteOpen: o.Checkout.Enabled, CheckoutURL: strings.TrimRight(panelURL, "/") + "/contratar",
 		Plan: brl(c.PlanPriceCents), Equipment: brl(c.EquipmentPriceCents), Installments: c.EquipmentMaxInstallments,
 	}
-	if c.LaunchPromo.InsanosPlanName != "" && c.LaunchPromo.InsanosPlanCents > 0 {
-		p.Insanos = brl(c.LaunchPromo.InsanosPlanCents)
-	}
 	if o.Checkout.Enabled {
 		p.Plan, p.Equipment = brl(o.Checkout.PlanCents), brl(o.Checkout.EquipmentCents)
-		if c.LaunchPromo.InsanosPlanName != "" {
-			p.Insanos = brl(o.Checkout.InsanosCents)
-		}
 	}
 	if o.Install.Enabled {
 		p.FarboInstall = brl(o.Install.PriceCents)

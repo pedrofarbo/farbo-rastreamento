@@ -28,18 +28,18 @@ import (
 
 // checkoutView é o que o funil oferece.
 type checkoutView struct {
-	Enabled         bool   `json:"enabled"`
-	PlanName        string `json:"planName"`
-	PlanCents       int    `json:"planCents"`
-	InsanosPlanName string `json:"insanosPlanName"`
-	InsanosCents    int    `json:"insanosCents"`
-	EquipmentName   string `json:"equipmentName"`
-	EquipmentCents  int    `json:"equipmentCents"`
+	Enabled        bool   `json:"enabled"`
+	PlanName       string `json:"planName"`
+	PlanCents      int    `json:"planCents"`
+	EquipmentName  string `json:"equipmentName"`
+	EquipmentCents int    `json:"equipmentCents"`
 	// Os preços normais (do catálogo), que as páginas mostram riscados ao
 	// lado dos do site — e cobrados com a contratação pelo site fechada.
 	PlanRegularCents      int `json:"planRegularCents"`
-	InsanosRegularCents   int `json:"insanosRegularCents"`
 	EquipmentRegularCents int `json:"equipmentRegularCents"`
+	// PlanByKind: pelo link de um afiliado com tabela (?ref=), a mensalidade
+	// por tipo de veículo, no lugar de PlanCents (nula: sem tabela).
+	PlanByKind *vehicles.KindPrices `json:"planByKind"`
 	// MaxInstallments: em até quantas vezes sem juros o rastreador comprado
 	// pode ser parcelado (1: só à vista).
 	MaxInstallments int `json:"maxInstallments"`
@@ -62,11 +62,9 @@ func (s *Server) handleCheckoutOffer(w http.ResponseWriter, r *http.Request) {
 	c := s.Orders.Catalog()
 	view := checkoutView{
 		Enabled: opts.Checkout.Enabled, PlanName: c.PlanName, PlanCents: opts.Checkout.PlanCents,
-		InsanosPlanName: c.LaunchPromo.InsanosPlanName, InsanosCents: opts.Checkout.InsanosCents,
 		EquipmentName: c.EquipmentName, EquipmentCents: opts.Checkout.EquipmentCents,
-		PlanRegularCents: c.PlanPriceCents, InsanosRegularCents: c.LaunchPromo.InsanosPlanCents,
-		EquipmentRegularCents: c.EquipmentPriceCents,
-		MaxInstallments:       c.EquipmentMaxInstallments, DueDay: c.DefaultDueDay,
+		PlanRegularCents: c.PlanPriceCents, EquipmentRegularCents: c.EquipmentPriceCents,
+		MaxInstallments: c.EquipmentMaxInstallments, DueDay: c.DefaultDueDay,
 		ShippingEnabled: s.Fulfillment != nil && s.Fulfillment.ShippingEnabled(),
 	}
 	if opts.Loan.Enabled {
@@ -77,6 +75,12 @@ func (s *Server) handleCheckoutOffer(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Contract != nil {
 		view.ContractVersion = s.Contract.Current().Version
+	}
+	if affiliate := s.referralFor(r, r.URL.Query().Get("ref")); affiliate != nil {
+		if view.PlanByKind, err = s.Orders.AffiliatePrices(r.Context(), *affiliate); err != nil {
+			handleStoreError(w, err, "contratação indisponível")
+			return
+		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, view)
@@ -123,6 +127,8 @@ func (s *Server) handleCheckoutShipping(w http.ResponseWriter, r *http.Request) 
 // checkoutRequest é a contratação: a escolha, o veículo, quem contrata, o
 // endereço, a entrega e o aceite do contrato.
 type checkoutRequest struct {
+	// Insanos: o plano do Insanos MC, das telas antigas. Agora só a central
+	// define esse plano (no cliente): marcado, a contratação é recusada.
 	Insanos       bool           `json:"insanos"`
 	EquipmentMode string         `json:"equipmentMode"`
 	Installments  int            `json:"installments"`
@@ -171,6 +177,9 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	document := payments.Digits(req.Document)
 	switch {
+	case req.Insanos:
+		writeError(w, http.StatusBadRequest, "o plano do Insanos MC é feito só pela central: fale com a gente pelo WhatsApp")
+		return
 	case !req.Accept:
 		writeError(w, http.StatusBadRequest, "leia e aceite o contrato para contratar")
 		return
@@ -195,8 +204,8 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	// O pedido e a entrega conferidos antes de criar a conta: um erro aqui
 	// não deixa conta pela metade.
 	order, err := s.Orders.CheckoutOrder(ctx, orders.CheckoutChoice{
-		Insanos: req.Insanos, EquipmentMode: req.EquipmentMode, Installments: req.Installments,
-		FarboInstall: req.FarboInstall, Vehicle: req.Vehicle,
+		EquipmentMode: req.EquipmentMode, Installments: req.Installments, FarboInstall: req.FarboInstall, Vehicle: req.Vehicle,
+		Affiliate: s.referralFor(r, req.Ref),
 	})
 	if err != nil {
 		writeOrderError(w, r, err, "contratação indisponível")
@@ -300,12 +309,12 @@ func (s *Server) checkoutLead(r *http.Request, user *auth.User, address addresse
 	}
 	ctx := r.Context()
 	plan := "Contratação pelo site"
-	if req.Insanos {
-		plan += " · Insanos MC"
-	}
 	vehicleType := "carro"
-	if req.Vehicle.Kind == vehicles.KindMotorcycle {
+	switch strings.ToUpper(req.Vehicle.Kind) {
+	case vehicles.KindMotorcycle:
 		vehicleType = "moto"
+	case vehicles.KindTruck:
+		vehicleType = "caminhao"
 	}
 	message := "Contratou pelo site, com Pix."
 	if event := leads.EventSlug(req.Event); event != "" {

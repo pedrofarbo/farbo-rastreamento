@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 
 import { CHECKOUT_PATH, installmentsOf, priceLabel, priceParts } from '@/config/landing';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
+import { headlineMonthly, kindPricesLabel } from '@/services/kindPrices';
 
 import styles from './HeroSection.module.css';
 
@@ -19,10 +20,13 @@ interface HeroSectionProps {
  */
 export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenModal }) => {
   const { offer, open } = useCheckoutOffer();
-  // Aberta, o preço do site com o normal riscado; fechada, o normal.
-  const monthly = offer && (open ? offer.planCents : offer.planRegularCents);
-  const regular = offer && open && offer.planRegularCents > offer.planCents ? offer.planRegularCents : undefined;
-  const off = regular && monthly !== undefined ? Math.round((1 - monthly / regular) * 100) : 0;
+  // Aberta, o preço do site com o normal riscado (pelo link de um afiliado
+  // com tabela, o "a partir de" dela); fechada, o normal.
+  const headline = offer && headlineMonthly(offer, open);
+  const table = headline?.table ?? null;
+  const monthly = headline?.cents;
+  const regular = offer && open && monthly !== undefined && offer.planRegularCents > monthly ? offer.planRegularCents : undefined;
+  const off = regular && monthly !== undefined && !table ? Math.round((1 - monthly / regular) * 100) : 0;
   const equipment = offer && (open ? offer.equipmentCents : offer.equipmentRegularCents);
   const installments =
     offer && equipment !== undefined && offer.maxInstallments > 1 ? installmentsOf(equipment, offer.maxInstallments) : '';
@@ -55,6 +59,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenModal }) => {
             {off > 0 && <span className={styles.offBadge}>{off}% OFF</span>}
             <div className={styles.priceLine}>
               {regular !== undefined && <s className={styles.priceOld}>De {priceLabel(regular)}</s>}
+              {table && <span className={styles.priceFrom}>a partir de</span>}
               {parts ? (
                 <span className={styles.priceNow}>
                   <span className={styles.priceCurrency}>R$</span>
@@ -70,6 +75,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenModal }) => {
             </div>
             {offer && equipment !== undefined && (
               <p className={styles.priceNote}>
+                {table && `${kindPricesLabel(table, priceLabel)} · `}
                 {open && 'enquanto a assinatura durar · '}rastreador {priceLabel(equipment)}
                 {installments && ` ou ${installments} sem juros`}, com o relé de bloqueio
               </p>

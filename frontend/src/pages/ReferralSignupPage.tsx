@@ -32,5 +32,5 @@ export function ReferralSignupPage() {
     };
   }, [code]);
 
-  return <CheckoutInvite source="indicacao" campaign={code} referral={code} referrer={referrer} highlight="plan" />;
+  return <CheckoutInvite source="indicacao" campaign={code} referral={code} referrer={referrer} />;
 }

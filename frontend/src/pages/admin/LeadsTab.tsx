@@ -33,7 +33,7 @@ export const LEAD_STATUS: Record<LeadStatus, { label: string; tone: BadgeTone }>
   DISCARDED: { label: 'Descartado', tone: 'neutral' },
 };
 
-const VEHICLE_LABELS: Record<string, string> = { moto: 'moto', carro: 'carro', frota: 'frota' };
+const VEHICLE_LABELS: Record<string, string> = { moto: 'moto', carro: 'carro', caminhao: 'caminhão', frota: 'frota' };
 
 /** O plano e os veículos do pré-cadastro; vazio para quem só entrou na lista. */
 export function interest(lead: Pick<Lead, 'plan' | 'vehicleType' | 'vehicleCount'>): string {

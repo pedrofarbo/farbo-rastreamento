@@ -25,12 +25,15 @@ const codePromoUnavailable = "PROMO_UNAVAILABLE"
 
 // catalogView é a tabela de preços em JSON.
 type catalogView struct {
-	PlanName            string `json:"planName"`
-	PlanPriceCents      int    `json:"planPriceCents"`
-	DefaultDueDay       int    `json:"defaultDueDay"`
-	EquipmentName       string `json:"equipmentName"`
-	EquipmentPriceCents int    `json:"equipmentPriceCents"`
-	SetupDueDays        int    `json:"setupDueDays"`
+	PlanName       string `json:"planName"`
+	PlanPriceCents int    `json:"planPriceCents"`
+	// PlanByKind: a mensalidade por tipo de veículo, da tabela do afiliado
+	// que indicou o cliente (nula: PlanPriceCents vale para todos).
+	PlanByKind          *vehicles.KindPrices `json:"planByKind,omitempty"`
+	DefaultDueDay       int                  `json:"defaultDueDay"`
+	EquipmentName       string               `json:"equipmentName"`
+	EquipmentPriceCents int                  `json:"equipmentPriceCents"`
+	SetupDueDays        int                  `json:"setupDueDays"`
 	// EquipmentMaxInstallments: em até quantas vezes sem juros o rastreador
 	// pode ser parcelado (1: só à vista).
 	EquipmentMaxInstallments int `json:"equipmentMaxInstallments"`
@@ -73,9 +76,12 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	view.Install = &opts.Install
 	if customerID, isCustomer := customerOf(r); isCustomer {
 		// Os preços dele: a pessoa física paga no app o mesmo que no site.
-		if plan, equipment, err := s.Orders.CustomerPrices(r.Context(), customerID); err == nil {
+		if plan, equipment, err := s.Orders.CustomerPrices(r.Context(), customerID, vehicles.KindCar); err == nil {
 			view.PlanName, view.PlanPriceCents, view.DefaultDueDay = plan.PlanName, plan.PriceCents, plan.DueDay
 			view.EquipmentPriceCents = equipment
+		}
+		if table, err := s.Orders.CustomerKindPrices(r.Context(), customerID); err == nil {
+			view.PlanByKind = table
 		}
 		if terms, err := s.Orders.CustomerTerms(r.Context(), customerID); err == nil {
 			view.EquipmentMode, view.InstallFeeCents, view.UninstallFeeCents = terms.EquipmentMode, terms.InstallFeeCents, terms.UninstallFeeCents

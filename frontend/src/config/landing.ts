@@ -16,13 +16,9 @@ export const CHECKOUT_PATH = '/contratar';
 /** A seção da landing que chama para a contratação. */
 export const CHECKOUT_ANCHOR = '#contratar';
 
-/** O link do funil, com o plano do Insanos MC já marcado e o evento do QR Code. */
-export function checkoutPath({ insanos = false, event = '' }: { insanos?: boolean; event?: string } = {}): string {
-  const params = new URLSearchParams();
-  if (insanos) params.set('plano', 'insanos');
-  if (event) params.set('evento', event);
-  const query = params.toString();
-  return query ? `${CHECKOUT_PATH}?${query}` : CHECKOUT_PATH;
+/** O link do funil, com o evento do QR Code. */
+export function checkoutPath({ event = '' }: { event?: string } = {}): string {
+  return event ? `${CHECKOUT_PATH}?${new URLSearchParams({ evento: event })}` : CHECKOUT_PATH;
 }
 
 /** "R$ 120" ou "R$ 34,90": o preço como as páginas públicas escrevem. */
@@ -65,17 +61,10 @@ export function eventSlug(name: string): string {
     .replace(/-+$/, '');
 }
 
-/**
- * Para quem é o QR Code do evento: o do Insanos MC destaca o preço deles; o
- * do público geral, o do plano normal (sem falar do Insanos).
- */
-export type EventAudience = 'insanos' | 'geral';
-
-/** O link da tela de cadastro do evento (o que o QR Code abre). O do Insanos
- *  MC é o link sem nada a mais — o dos QR Codes já impressos. */
-export function eventUrl(name: string, audience: EventAudience = 'insanos'): string {
+/** O link da tela de cadastro do evento (o que o QR Code abre). */
+export function eventUrl(name: string): string {
   const slug = eventSlug(name);
-  return `${SITE_URL}/evento${slug ? `/${slug}` : ''}${audience === 'geral' ? '?publico=geral' : ''}`;
+  return `${SITE_URL}/evento${slug ? `/${slug}` : ''}`;
 }
 
 /** Para o preço grande: 2990 → { reais: '29', cents: ',90' }. */

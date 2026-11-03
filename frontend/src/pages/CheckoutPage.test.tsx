@@ -11,6 +11,8 @@ import { offerWith } from '@/test/checkoutOffer';
 import type { CheckoutInput, CheckoutOffer, ShippingQuoteView } from '@/types';
 
 let offer: CheckoutOffer;
+/** O link do afiliado com que cada oferta foi pedida. */
+const offerRefs: (string | undefined)[] = [];
 let placeResult: () => Promise<unknown>;
 const placed: CheckoutInput[] = [];
 const logins: string[] = [];
@@ -21,7 +23,10 @@ const quote: ShippingQuoteView = {
 
 vi.mock('@/api/resources', () => ({
   checkoutApi: {
-    offer: async () => offer,
+    offer: async (ref?: string) => {
+      offerRefs.push(ref);
+      return offer;
+    },
     shipping: async () => quote,
     place: (input: CheckoutInput) => {
       placed.push(input);
@@ -123,19 +128,22 @@ beforeEach(() => {
   });
   placed.length = 0;
   logins.length = 0;
+  offerRefs.length = 0;
 });
 afterEach(() => {
   document.body.innerHTML = '';
 });
 
 describe('a contratação pelo site', () => {
-  it('Insanos em comodato: a garantia na mensalidade, a instalação e o frete no Pix; a conta entra e o Pix abre', async () => {
+  it('comodato: a garantia na mensalidade, a instalação e o frete no Pix; a conta entra e o Pix abre', async () => {
+    // O link antigo do plano do Insanos abre o plano de sempre: só a central põe alguém nele.
     await render('/contratar?plano=insanos');
-    expect(radio('Sou integrante do Insanos MC').checked).toBe(true);
+    expect(text()).not.toContain('Insanos');
+    expect(radio('Plano Mensal').checked).toBe(true);
     await click(radio('Comodato (emprestado)'));
-    // 27,90 + 3,00 de garantia; hoje, a 1ª mensalidade e a instalação (o frete depois).
-    expect(text()).toContain('MensalidadeR$ 30,90/mês');
-    expect(text()).toContain('Hoje, no PixR$ 180,90 + frete');
+    // 34,90 + 3,00 de garantia; hoje, a 1ª mensalidade e a instalação (o frete depois).
+    expect(text()).toContain('MensalidadeR$ 37,90/mês');
+    expect(text()).toContain('Hoje, no PixR$ 187,90 + frete');
     expect(text()).not.toContain('A instalação');
 
     await fillUntilPayment();
@@ -143,15 +151,16 @@ describe('a contratação pelo site', () => {
     expect(text()).toContain('Correios PAC');
     expect(text()).toContain('Instalação pelos instaladores da FarboR$ 150,00');
     expect(text()).toContain('FreteR$ 22,90');
-    expect(text()).toContain('Hoje, no PixR$ 203,80');
+    expect(text()).toContain('Hoje, no PixR$ 210,80');
     expect(text()).toContain('R$ 3,00 dela é a garantia de troca do rastreador');
     expect(text()).toContain('a desinstalação custa R$ 85,00');
-    expect(button('Pagar R$ 203,80 com Pix').disabled).toBe(true); // falta o aceite
+    expect(button('Pagar R$ 210,80 com Pix').disabled).toBe(true); // falta o aceite
     await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
-    await click(button('Pagar R$ 203,80 com Pix'));
+    await click(button('Pagar R$ 210,80 com Pix'));
 
+    expect(placed[0]).not.toHaveProperty('insanos');
     expect(placed[0]).toMatchObject({
-      insanos: true, equipmentMode: 'loan', installments: 1, farboInstall: false,
+      equipmentMode: 'loan', installments: 1, farboInstall: false,
       vehicle: { kind: 'MOTORCYCLE', name: 'Honda CG 160', brand: 'Honda', model: 'CG 160', plate: 'ABC1D23' },
       name: 'Lia Souza', email: 'lia@exemplo.com.br', document: '52998224725', password: 'senha-forte',
       address: expect.objectContaining({ zipCode: '13010000', city: 'Campinas', state: 'SP' }),
@@ -171,7 +180,29 @@ describe('a contratação pelo site', () => {
     expect(text()).toContain('Rastreador, 1ª de 10 parcelas');
     await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
     await click(button('Pagar'));
-    expect(placed[0]).toMatchObject({ insanos: false, equipmentMode: 'sale', installments: 10, farboInstall: true });
+    expect(placed[0]).toMatchObject({ equipmentMode: 'sale', installments: 10, farboInstall: true });
+  });
+
+  it('pelo link de um afiliado com tabela: o tipo do veículo dá a mensalidade', async () => {
+    saveReferral('lia');
+    offer = offerWith({ planByKind: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 } });
+    await render();
+    expect(offerRefs).toContain('lia');
+    expect(text()).toContain('Plano Mensal · MotoR$ 39,90/mês');
+    expect(text()).toContain('Plano Mensal · CarroR$ 49,90/mês');
+    expect(text()).toContain('MensalidadeR$ 39,90/mês');
+    await click(radio('Plano Mensal · Caminhão'));
+    expect(text()).toContain('MensalidadeR$ 59,90/mês');
+    // Na etapa do veículo, o caminhão já vem marcado.
+    await click(button('Continuar'));
+    expect(radio('Caminhão').checked).toBe(true);
+    await click(button('Voltar'));
+    await fillUntilPayment();
+    expect(text()).toContain('1ª mensalidade · Plano Mensal · CaminhãoR$ 59,90');
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar'));
+    expect(placed[0]).toMatchObject({ vehicle: expect.objectContaining({ kind: 'TRUCK' }), ref: 'lia' });
+    localStorage.clear();
   });
 
   it('do QR Code de um evento: vai com o evento e sem o link de indicação guardado no aparelho', async () => {
@@ -182,6 +213,7 @@ describe('a contratação pelo site', () => {
     await click(button('Pagar'));
     expect(placed[0]).toMatchObject({ event: 'encontro-sp' });
     expect(placed[0].ref).toBeUndefined();
+    expect(offerRefs).toEqual(['']);
     localStorage.clear();
   });
 

@@ -82,8 +82,9 @@ export function PartnerFlyerPage() {
   const [file, setFile] = useState<File | null>(null);
   const [notice, setNotice] = useState('');
   const canvas = useRef<HTMLCanvasElement>(null);
-  // Os preços do flyer são os do site (a oferta do servidor).
-  const { offer, query: offerQuery } = useCheckoutOffer();
+  // Os preços do flyer são os do site (a oferta do servidor), pelo link do
+  // afiliado: com a tabela dele por tipo de veículo, se tiver.
+  const { offer, query: offerQuery } = useCheckoutOffer(report?.code ?? '');
 
   useEffect(() => {
     document.title = 'Seu flyer · Farbo Rastreadores';

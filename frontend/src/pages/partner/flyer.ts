@@ -1,4 +1,5 @@
 import { installmentsOf, priceLabel, priceParts } from '@/config/landing';
+import { kindPricesLabel, lowestPrice } from '@/services/kindPrices';
 import type { CheckoutOffer } from '@/types';
 
 /**
@@ -76,15 +77,20 @@ export function flyerOffer(offer: CheckoutOffer): FlyerOffer {
   const installments = (cents: number): Segment[] =>
     offer.maxInstallments > 1 ? [{ text: ` ou ${installmentsOf(cents, offer.maxInstallments)} sem juros no Pix` }] : [];
   if (offer.enabled) {
-    const regular = offer.planRegularCents > offer.planCents;
+    // Pelo link de um afiliado com tabela: a menor mensalidade e as três.
+    const table = offer.planByKind;
+    const monthlyCents = table ? lowestPrice(table) : offer.planCents;
+    const regular = offer.planRegularCents > monthlyCents;
     const equipmentRegular = offer.equipmentRegularCents > offer.equipmentCents;
     return {
-      tag: 'PREÇO PROMOCIONAL',
-      monthlyCents: offer.planCents,
-      note: [
-        { text: `enquanto a assinatura durar${regular ? ' · o normal é ' : ''}` },
-        ...(regular ? [{ text: priceLabel(offer.planRegularCents), strike: true }] : []),
-      ],
+      tag: table ? 'A PARTIR DE' : regular ? 'PREÇO PROMOCIONAL' : 'PLANO MENSAL',
+      monthlyCents,
+      note: table
+        ? [{ text: kindPricesLabel(table, priceLabel) }]
+        : [
+            { text: `enquanto a assinatura durar${regular ? ' · o normal é ' : ''}` },
+            ...(regular ? [{ text: priceLabel(offer.planRegularCents), strike: true }] : []),
+          ],
       equipment: [
         { text: 'Rastreador ' },
         ...(equipmentRegular ? [{ text: priceLabel(offer.equipmentRegularCents), strike: true }] : []),

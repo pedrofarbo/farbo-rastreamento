@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { OFFER } from '@/test/checkoutOffer';
+import { OFFER, offerWith } from '@/test/checkoutOffer';
 import type { CheckoutOffer } from '@/types';
 
 import { checkoutTotals, payDestination, vehicleName } from './checkout';
@@ -9,12 +9,12 @@ const offer: CheckoutOffer = OFFER;
 
 describe('a conta da contratação pelo site', () => {
   it('comprado à vista, por conta própria: a 1ª mensalidade, o rastreador e o frete', () => {
-    const t = checkoutTotals(offer, { insanos: false, equipmentMode: 'sale', installments: 1, farboInstall: false }, 2290);
+    const t = checkoutTotals(offer, { equipmentMode: 'sale', installments: 1, farboInstall: false }, 2290);
     expect(t).toMatchObject({ monthlyCents: 3490, equipmentNowCents: 12000, installNowCents: 0, totalNowCents: 3490 + 12000 + 2290 });
   });
 
   it('comprado em 10x com a instalação da Farbo: a 1ª parcela na 1ª mensalidade', () => {
-    const t = checkoutTotals(offer, { insanos: false, equipmentMode: 'sale', installments: 10, farboInstall: true });
+    const t = checkoutTotals(offer, { equipmentMode: 'sale', installments: 10, farboInstall: true });
     expect(t.parcels).toHaveLength(10);
     expect(t.firstMonthlyCents).toBe(3490 + 1200);
     expect(t.equipmentNowCents).toBe(0);
@@ -22,15 +22,25 @@ describe('a conta da contratação pelo site', () => {
     expect(t.totalNowCents).toBe(3490 + 1200 + 15000);
   });
 
-  it('Insanos em comodato: a mensalidade dele com a garantia de troca e a instalação do comodato', () => {
-    const t = checkoutTotals(offer, { insanos: true, equipmentMode: 'loan', installments: 5, farboInstall: true });
-    expect(t).toMatchObject({ monthlyCents: 2790 + 300, guaranteeCents: 300, parcels: [], equipmentNowCents: 0, installNowCents: 15000 });
-    expect(t.totalNowCents).toBe(3090 + 15000);
+  it('comodato: a mensalidade com a garantia de troca e a instalação do comodato', () => {
+    const t = checkoutTotals(offer, { equipmentMode: 'loan', installments: 5, farboInstall: true });
+    expect(t).toMatchObject({ monthlyCents: 3490 + 300, guaranteeCents: 300, parcels: [], equipmentNowCents: 0, installNowCents: 15000 });
+    expect(t.totalNowCents).toBe(3790 + 15000);
+  });
+
+  it('pelo link de um afiliado com tabela: a mensalidade do tipo do veículo', () => {
+    const table = offerWith({ planByKind: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 } });
+    const sale = { equipmentMode: 'sale', installments: 1, farboInstall: false } as const;
+    expect(checkoutTotals(table, sale, 0, 'MOTORCYCLE').monthlyCents).toBe(3990);
+    expect(checkoutTotals(table, sale, 0, 'CAR').monthlyCents).toBe(4990);
+    expect(checkoutTotals(table, sale, 0, 'TRUCK').monthlyCents).toBe(5990);
+    expect(checkoutTotals(table, { ...sale, equipmentMode: 'loan' }, 0, 'TRUCK').monthlyCents).toBe(5990 + 300);
   });
 
   it('o nome do veículo', () => {
     expect(vehicleName('CAR', ' Fiat ', 'Uno')).toBe('Fiat Uno');
     expect(vehicleName('MOTORCYCLE', '', '')).toBe('Minha moto');
+    expect(vehicleName('TRUCK', '', '')).toBe('Meu caminhão');
   });
 });
 

@@ -85,9 +85,10 @@
   }
 }
 
+/* O plano mensal e o de frotas, lado a lado. */
 .cardsGrid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.75rem;
   align-items: stretch;
 }
@@ -114,16 +115,6 @@
   transform: translateY(-4px);
   border-color: rgba(255, 255, 255, 0.2);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
-}
-
-.featuredCard {
-  border: 2px solid var(--color-neon-green);
-  box-shadow: 0 0 30px rgba(59, 229, 88, 0.25), 0 10px 40px rgba(0, 0, 0, 0.8);
-  background: linear-gradient(180deg, #0f1a11 0%, #0d130e 100%);
-}
-
-.featuredCard:hover {
-  box-shadow: 0 0 45px rgba(59, 229, 88, 0.4), 0 15px 50px rgba(0, 0, 0, 0.9);
 }
 
 .badgeTop {
@@ -155,20 +146,20 @@
   text-transform: uppercase;
 }
 
-.insanosSubtitle {
-  font-size: 0.8125rem;
-  font-weight: 800;
-  letter-spacing: 1.5px;
-  color: #ffffff;
-  margin-top: 0.5rem;
-  margin-bottom: 1rem;
-  text-transform: uppercase;
-}
-
 .deviceSubtitle {
   font-size: 0.9375rem;
   color: #94a3b8;
   margin-bottom: 0.75rem;
+}
+
+/* Pelo link de um afiliado com tabela: a menor mensalidade dela. */
+.priceFrom {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  margin-bottom: 0.35rem;
 }
 
 .priceStrikethrough {
@@ -184,18 +175,12 @@
   font-weight: 600;
 }
 
-.priceMain,
-.priceMainFeatured {
+.priceMain {
   display: flex;
   align-items: flex-start;
   line-height: 1;
   color: #ffffff;
   margin-bottom: 0.25rem;
-}
-
-.priceMainFeatured {
-  color: var(--color-neon-green);
-  text-shadow: 0 0 20px rgba(59, 229, 88, 0.4);
 }
 
 .currency {
@@ -217,14 +202,9 @@
   margin-top: 0.25rem;
 }
 
-.priceSub,
-.priceSubFeatured {
+.priceSub {
   font-size: 0.875rem;
   color: #94a3b8;
-}
-
-.priceSubFeatured {
-  color: var(--color-neon-green);
 }
 
 /* O preço enquanto a oferta carrega do servidor (o lugar dele, sem pular). */
@@ -321,42 +301,6 @@
   background: var(--color-neon-green-hover);
   transform: translateY(-1px);
   box-shadow: 0 0 30px rgba(59, 229, 88, 0.6);
-}
-
-.partnerFooter {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  /* Acima do botão: os botões dos cartões ficam alinhados no pé. */
-  margin: -0.75rem 0 1.5rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.partnerLogo {
-  flex-shrink: 0;
-  width: 56px;
-  height: auto;
-  object-fit: contain;
-  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.5));
-}
-
-.partnerText {
-  display: flex;
-  flex-direction: column;
-  font-size: 0.65rem;
-  line-height: 1.2;
-}
-
-.partnerText strong {
-  color: #ffffff;
-  font-size: 0.75rem;
-  letter-spacing: 1px;
-}
-
-.partnerText span {
-  color: #94a3b8;
-  letter-spacing: 0.5px;
 }
 
 /* --- Frotas: preço sob consulta, pelo WhatsApp --- */
@@ -566,7 +510,7 @@
   }
 }
 
-/* Celular: cards mais compactos e o selo da parceria legível. */
+/* Celular: cards mais compactos. */
 @media (max-width: 600px) {
   .pricingSection {
     padding: 2rem 1rem 2.5rem;
@@ -586,14 +530,6 @@
 
   .fleetPrice {
     font-size: 2.125rem;
-  }
-
-  .partnerText {
-    font-size: 0.75rem;
-  }
-
-  .partnerText strong {
-    font-size: 0.8125rem;
   }
 }
 

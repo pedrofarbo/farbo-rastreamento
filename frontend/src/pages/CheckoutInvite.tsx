@@ -9,6 +9,7 @@ import { checkoutPath, installmentsPhrase, priceLabel, priceParts } from '@/conf
 import { PRIVACY_PATH } from '@/config/legal';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { track, trackPageview } from '@/services/analytics';
+import { headlineMonthly, kindPricesLabel } from '@/services/kindPrices';
 import { formatPhoneInput, isPhoneComplete } from '@/services/format';
 import type { CheckoutOffer, PublicAffiliate } from '@/types';
 
@@ -24,12 +25,8 @@ interface CheckoutInviteProps {
   referral?: string;
   /** Quem indica: o selo "Indicado por @fulano". */
   referrer?: PublicAffiliate | null;
-  /** O preço em destaque: o do Insanos MC (eventos) ou o do plano normal. */
-  highlight: 'insanos' | 'plan';
   /** Depois do contato, o botão para cadastrar a próxima pessoa (o tablet do estande). */
   allowNext?: boolean;
-  /** Com o plano normal em destaque, lembra o preço do Insanos MC (o QR Code do público geral não). */
-  mentionInsanos?: boolean;
 }
 
 /**
@@ -45,15 +42,12 @@ export function CheckoutInvite({
   event = '',
   referral = '',
   referrer,
-  highlight,
   allowNext,
-  mentionInsanos = true,
 }: CheckoutInviteProps) {
-  const { offer, open } = useCheckoutOffer();
-  // O plano do Insanos MC só existe se o servidor tem o plano deles.
-  const hasInsanos = !offer || offer.insanosPlanName !== '';
-  const insanosFirst = highlight === 'insanos' && hasInsanos;
-  const askInsanos = hasInsanos && (insanosFirst || mentionInsanos);
+  // O plano do Insanos MC fica fora: só a central coloca o cliente nele. Pelo
+  // link do afiliado, os preços dele; do evento, sem o link guardado no
+  // aparelho (pode ser o tablet da equipe).
+  const { offer, open } = useCheckoutOffer(source === 'evento' ? '' : referral);
   // A contratação fechada na central: o contato é o caminho.
   const [contact, setContact] = useState(false);
   const [name, setName] = useState('');
@@ -61,8 +55,6 @@ export function CheckoutInvite({
   const [city, setCity] = useState('');
   const [email, setEmail] = useState('');
   const [consent, setConsent] = useState(false);
-  // Integrante do Insanos MC: a conta nasce no plano deles (a central confere).
-  const [insanosMember, setInsanosMember] = useState(false);
   const [website, setWebsite] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -76,7 +68,7 @@ export function CheckoutInvite({
 
   const showForm = contact || !open;
   const ready = name.trim() !== '' && isPhoneComplete(phone) && city.trim() !== '' && email.trim() !== '' && consent;
-  const contractUrl = checkoutPath({ insanos: insanosFirst, event });
+  const contractUrl = checkoutPath({ event });
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -86,7 +78,6 @@ export function CheckoutInvite({
     try {
       await publicApi.joinLaunch({
         name, email, phone, consent, website, event, city, ...(referral ? { ref: referral } : {}),
-        ...(askInsanos && insanosMember ? { insanos: true } : {}),
       });
       track('waitlist_submit', campaign || source);
       setDone({ name: name.trim().split(' ')[0], email: email.trim() });
@@ -110,7 +101,6 @@ export function CheckoutInvite({
     setCity('');
     setEmail('');
     setConsent(false);
-    setInsanosMember(false);
     setDone(null);
     setError('');
     setContact(true);
@@ -176,28 +166,7 @@ export function CheckoutInvite({
               Para moto e carro, com app, alertas e bloqueio pelo celular. Escolha o plano, pague com Pix e receba em
               casa.
             </p>
-            <Highlight offer={offer} open={open} insanos={insanosFirst} />
-            {offer && hasInsanos && (insanosFirst || mentionInsanos) && (
-              <div className={styles.offer}>
-                <p className={styles.offerNote}>
-                  {insanosFirst ? (
-                    <>
-                      Não é do Insanos MC? A mensalidade é{' '}
-                      <span className={styles.nowrap}>{priceLabel(open ? offer.planCents : offer.planRegularCents)}</span>.
-                    </>
-                  ) : (
-                    <>
-                      É do Insanos MC? A sua mensalidade é{' '}
-                      <span className={styles.nowrap}>
-                        {priceLabel(open ? offer.insanosCents : offer.insanosRegularCents)}
-                      </span>
-                      .
-                    </>
-                  )}{' '}
-                  Em quantos veículos quiser.
-                </p>
-              </div>
-            )}
+            <Highlight offer={offer} open={open} />
           </section>
 
           {!showForm && (
@@ -277,15 +246,6 @@ export function CheckoutInvite({
                 </label>
               </div>
 
-              {askInsanos && (
-                <label className={styles.consent}>
-                  <input type="checkbox" checked={insanosMember} onChange={(e) => setInsanosMember(e.target.checked)} />
-                  <span>
-                    <strong>Sou integrante do Insanos MC</strong>
-                  </span>
-                </label>
-              )}
-
               <label className={styles.consent}>
                 <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
                 <span>
@@ -322,18 +282,24 @@ export function CheckoutInvite({
 }
 
 /** O preço em destaque e o rastreador, da oferta do servidor (carregando, o lugar deles). */
-function Highlight({ offer, open, insanos }: { offer: CheckoutOffer | undefined; open: boolean; insanos: boolean }) {
-  const monthly = offer && (insanos ? (open ? offer.insanosCents : offer.insanosRegularCents) : open ? offer.planCents : offer.planRegularCents);
-  const regular = offer && open ? (insanos ? offer.insanosRegularCents : offer.planRegularCents) : undefined;
+function Highlight({ offer, open }: { offer: CheckoutOffer | undefined; open: boolean }) {
+  // Pelo link de um afiliado com tabela: a menor mensalidade e as três.
+  const headline = offer && headlineMonthly(offer, open);
+  const table = headline?.table ?? null;
+  const monthly = headline?.cents;
+  const regular = offer && open ? offer.planRegularCents : undefined;
   const equipment = offer && (open ? offer.equipmentCents : offer.equipmentRegularCents);
   const equipmentRegular = offer && open ? offer.equipmentRegularCents : undefined;
   const installments = offer && equipment !== undefined ? installmentsPhrase(equipment, offer.maxInstallments) : '';
   return (
     <div className={styles.insanos} aria-busy={!offer}>
-      <span className={styles.insanosTag}>{insanos ? 'Preço exclusivo Insanos MC' : open ? 'Preço promocional' : 'Plano mensal'}</span>
+      <span className={styles.insanosTag}>
+        {table ? 'A partir de' : regular !== undefined && monthly !== undefined && regular > monthly ? 'Preço promocional' : 'Plano mensal'}
+      </span>
       <BigPrice cents={monthly} />
       {offer && (
         <>
+          {table && <p className={styles.insanosEquipment}>{kindPricesLabel(table, priceLabel)}</p>}
           <p className={styles.insanosNote}>
             por veículo{open && ', enquanto a assinatura durar'}
             {regular !== undefined && monthly !== undefined && regular > monthly && (

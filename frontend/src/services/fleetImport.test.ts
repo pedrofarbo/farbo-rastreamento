@@ -64,7 +64,7 @@ describe('parseFleetSheet', () => {
   });
 
   it('aponta cada linha com dado errado', () => {
-    const sheet = parseFleetSheet('Nome;Tipo;Ano;IMEI\n;caminhão;1800;abc\nVan;;2020;', fleet);
+    const sheet = parseFleetSheet('Nome;Tipo;Ano;IMEI\n;trator;1800;abc\nVan;;2020;', fleet);
     expect(sheet.problems.map((p) => p.line)).toEqual([2, 2, 2, 2]);
     expect(sheet.problems[0].message).toContain('nome');
     expect(sheet.rows).toHaveLength(2);

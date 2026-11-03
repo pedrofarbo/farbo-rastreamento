@@ -13,6 +13,7 @@ import { TextField } from '@/components/ui/Field';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { centsToInput, formatDateOnly, formatMoney, formatPercentBps, parseMoney } from '@/services/format';
+import { kindPricesLabel } from '@/services/kindPrices';
 import { monthLabel, referralUrl } from '@/services/referral';
 import type { Affiliate, AffiliatePayout } from '@/types';
 import { Pager } from '@/components/ui/Pager';
@@ -169,6 +170,7 @@ export function AffiliatesTab() {
                             Copiar
                           </button>
                         </span>
+                        {a.planPrices && <div className={company.muted}>Mensalidade: {kindPricesLabel(a.planPrices)}</div>}
                       </td>
                       <td data-label="Comissão por veículo/mês" className={company.right}>
                         {a.commissionType === 'percent' ? `${formatPercentBps(a.commissionBps)} da mensalidade` : formatMoney(a.commissionCents)}

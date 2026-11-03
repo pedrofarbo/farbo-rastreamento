@@ -112,6 +112,7 @@ export function OrderOptionsCard() {
             <TextField label="Plano normal (R$/mês)" inputMode="decimal" value={sitePlan} onChange={(e) => setSitePlan(e.target.value)} />
             <TextField
               label="Plano Insanos MC (R$/mês)"
+              hint="Fora do site: só de quem a central põe no plano do Insanos (os pedidos pelo app)."
               inputMode="decimal"
               value={siteInsanos}
               onChange={(e) => setSiteInsanos(e.target.value)}

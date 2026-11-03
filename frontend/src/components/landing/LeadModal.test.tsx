@@ -56,9 +56,15 @@ afterEach(() => {
 
 describe('LeadModal (pré-cadastro)', () => {
   it('só envia com nome, e-mail e o aceite; manda os dados e mostra a confirmação', async () => {
+    // O plano do Insanos MC saiu das opções (só a central põe alguém nele):
+    // o pedido com ele cai no plano mensal.
     const host = render('Preço Especial Insanos MC');
 
-    expect(byId<HTMLSelectElement>(host, 'lead-plan').value).toBe('Preço Especial Insanos MC');
+    expect(byId<HTMLSelectElement>(host, 'lead-plan').value).toBe('Plano Mensal');
+    expect(Array.from(byId<HTMLSelectElement>(host, 'lead-plan').options).map((o) => o.textContent)).toEqual([
+      'Plano Mensal',
+      'Apenas o rastreador',
+    ]);
     // Os planos vão sem preço: os preços estão nos cartões (vêm do servidor).
     expect(host.textContent).not.toMatch(/R\$ ?\d/);
     expect(submitButton(host).disabled).toBe(true);
@@ -84,7 +90,7 @@ describe('LeadModal (pré-cadastro)', () => {
         email: 'ana@exemplo.com.br',
         phone: '(11) 9-8888-7777',
         city: 'Campinas',
-        plan: 'Preço Especial Insanos MC',
+        plan: 'Plano Mensal',
         vehicleType: 'moto',
         vehicleCount: 1,
         consent: true,

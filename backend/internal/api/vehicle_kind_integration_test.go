@@ -15,9 +15,9 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 )
 
-// O tipo do veículo (carro ou moto), que o mapa desenha: carro por padrão,
-// moto quando escolhido, mantido numa edição que não manda o tipo e recusado
-// fora dos dois. Precisa de FARBO_TEST_DATABASE_URL.
+// O tipo do veículo (carro, moto ou caminhão), que o mapa desenha: carro por
+// padrão, o escolhido quando vem, mantido numa edição que não manda o tipo e
+// recusado fora dos três. Precisa de FARBO_TEST_DATABASE_URL.
 func TestVehicleKind(t *testing.T) {
 	env := newCredEnv(t)
 	authSvc := auth.NewService(auth.NewRepository(env.db), config.Auth{BcryptCost: bcrypt.MinCost}, nil,
@@ -27,13 +27,14 @@ func TestVehicleKind(t *testing.T) {
 	}
 	admin := env.login("admin@tipo.test")
 
-	var car, moto vehicles.Vehicle
+	var car, moto, truck vehicles.Vehicle
 	_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/vehicles", map[string]any{"name": "Subaru"}, http.StatusCreated), &car)
 	_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/vehicles", map[string]any{"name": "CG", "kind": "motorcycle"}, http.StatusCreated), &moto)
-	if car.Kind != vehicles.KindCar || moto.Kind != vehicles.KindMotorcycle {
-		t.Fatalf("tipos = %q, %q", car.Kind, moto.Kind)
+	_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/vehicles", map[string]any{"name": "FH 540", "kind": "truck"}, http.StatusCreated), &truck)
+	if car.Kind != vehicles.KindCar || moto.Kind != vehicles.KindMotorcycle || truck.Kind != vehicles.KindTruck {
+		t.Fatalf("tipos = %q, %q, %q", car.Kind, moto.Kind, truck.Kind)
 	}
-	env.must(admin, http.MethodPost, "/api/vehicles", map[string]any{"name": "Caminhão", "kind": "TRUCK"}, http.StatusBadRequest)
+	env.must(admin, http.MethodPost, "/api/vehicles", map[string]any{"name": "Trator", "kind": "TRACTOR"}, http.StatusBadRequest)
 
 	// Editar sem o tipo (tela antiga) não transforma a moto em carro.
 	var edited vehicles.Vehicle

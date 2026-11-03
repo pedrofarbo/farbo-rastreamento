@@ -178,18 +178,22 @@ func TestPricesOfNow(t *testing.T) {
 	a := &Assistant{tz: time.UTC}
 	prices := PricesFrom(catalog, opts, "https://farborastreadores.com.br/")
 	note := a.situation(Situation{Now: time.Now(), Prices: &prices})
-	for _, want := range []string{"Plano mensal: R$ 34,90 por mês, enquanto a assinatura durar", "Insanos MC: R$ 27,90",
+	for _, want := range []string{"Plano mensal: R$ 34,90 por mês, enquanto a assinatura durar",
 		"Rastreador comprado: R$ 120,00, à vista ou em até 10x", "pelos instaladores da Farbo, por R$ 150,00",
 		"mais R$ 3,00 de garantia de troca", "desinstalação de R$ 85,00", "https://farborastreadores.com.br/contratar"} {
 		if !strings.Contains(note, want) {
 			t.Errorf("contexto sem %q:\n%s", want, note)
 		}
 	}
+	// O plano do Insanos MC é só com a central: o atendente não cita o preço.
+	if strings.Contains(note, "Insanos") || strings.Contains(note, "27,90") {
+		t.Errorf("contexto com o preço do Insanos:\n%s", note)
+	}
 	// Com o site fechado: os do catálogo, e quem contrata é a equipe.
 	opts.Checkout.Enabled, opts.Loan.Enabled, opts.Install.Enabled = false, false, false
 	prices = PricesFrom(catalog, opts, "https://farborastreadores.com.br")
 	note = a.situation(Situation{Now: time.Now(), Prices: &prices})
-	for _, want := range []string{"Plano mensal: R$ 69,90 por mês.", "Insanos MC: R$ 39,90", "R$ 150,00", "fala com a equipe"} {
+	for _, want := range []string{"Plano mensal: R$ 69,90 por mês.", "R$ 150,00", "fala com a equipe"} {
 		if !strings.Contains(note, want) {
 			t.Errorf("fechado, contexto sem %q:\n%s", want, note)
 		}

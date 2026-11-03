@@ -12,6 +12,7 @@ import (
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 )
 
 type Service struct {
@@ -100,6 +101,7 @@ func (s *Service) SaveSettings(ctx context.Context, defaultCents int, applyToAll
 const columns = `a.id, a.name, a.handle, a.code, a.report_token, a.commission_type, a.commission_cents,
 	a.commission_bps, a.email, a.phone, a.pix_key,
 	a.notes, a.supplier_id, a.active, a.created_at, a.recipient_status,
+	a.plan_motorcycle_cents, a.plan_car_cents, a.plan_truck_cents,
 	(SELECT count(DISTINCT lower(x.email)) FROM (
 		SELECT email FROM launch_waitlist WHERE affiliate_id = a.id
 		UNION ALL SELECT email FROM leads WHERE affiliate_id = a.id) x),
@@ -119,15 +121,33 @@ const columns = `a.id, a.name, a.handle, a.code, a.report_token, a.commission_ty
 
 func scan(row database.Scanner) (*Affiliate, error) {
 	var a Affiliate
+	var motorcycle, car, truck *int
 	err := row.Scan(&a.ID, &a.Name, &a.Handle, &a.Code, &a.ReportToken, &a.CommissionType, &a.CommissionCents,
 		&a.CommissionBps, &a.Email, &a.Phone,
-		&a.PixKey, &a.Notes, &a.SupplierID, &a.Active, &a.CreatedAt, &a.RecipientStatus,
+		&a.PixKey, &a.Notes, &a.SupplierID, &a.Active, &a.CreatedAt, &a.RecipientStatus, &motorcycle, &car, &truck,
 		&a.Signups, &a.Customers, &a.ActiveCustomers, &a.ActiveVehicles, &a.PendingCents, &a.SplitPaidCents, &a.OpenCents,
 		&a.PaidCents)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
+	a.PlanPrices = planPrices(motorcycle, car, truck)
 	return &a, nil
+}
+
+// planPrices monta a tabela das colunas (todas nulas: sem tabela).
+func planPrices(motorcycle, car, truck *int) *vehicles.KindPrices {
+	if motorcycle == nil || car == nil || truck == nil {
+		return nil
+	}
+	return &vehicles.KindPrices{MotorcycleCents: *motorcycle, CarCents: *car, TruckCents: *truck}
+}
+
+// planColumns são os valores das colunas da tabela (nil: sem tabela).
+func planColumns(p *vehicles.KindPrices) (motorcycle, car, truck *int) {
+	if p == nil {
+		return nil, nil, nil
+	}
+	return &p.MotorcycleCents, &p.CarCents, &p.TruckCents
 }
 
 // List traz os afiliados com os números (acertando as comissões antes).
@@ -188,13 +208,14 @@ func (s *Service) Create(ctx context.Context, in Input) (*Affiliate, error) {
 	if in.CommissionBps != nil {
 		bps = *in.CommissionBps
 	}
+	motorcycle, car, truck := planColumns(in.PlanPrices)
 	var id uuid.UUID
 	err = s.db.QueryRow(ctx, `
 		INSERT INTO affiliates (name, handle, code, report_token, commission_type, commission_cents, commission_bps, email,
-			phone, pix_key, notes, active)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+			phone, pix_key, notes, active, plan_motorcycle_cents, plan_car_cents, plan_truck_cents)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
 		in.Name, in.Handle, in.Code, token, in.CommissionType, *in.CommissionCents, bps, in.Email, in.Phone, in.PixKey,
-		in.Notes, in.Active).Scan(&id)
+		in.Notes, in.Active, motorcycle, car, truck).Scan(&id)
 	if err != nil {
 		return nil, conflictMessage(err)
 	}
@@ -202,7 +223,9 @@ func (s *Service) Create(ctx context.Context, in Input) (*Affiliate, error) {
 }
 
 // Update muda o cadastro. A comissão nova (o valor ou o percentual) vale para
-// as que ainda vão nascer; as geradas ficam com o valor de quando nasceram. A chave Pix nova
+// as que ainda vão nascer; as geradas ficam com o valor de quando nasceram. A
+// tabela da mensalidade nova vale para os veículos que ainda vão ser pedidos
+// (as assinaturas que já existem ficam no preço delas). A chave Pix nova
 // vai também para o fornecedor do afiliado na Empresa, que é para onde o Pix
 // do fechamento sai (o tipo da chave volta a ser detectado).
 func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Affiliate, error) {
@@ -210,6 +233,7 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Affiliat
 	if err != nil {
 		return nil, err
 	}
+	motorcycle, car, truck := planColumns(in.PlanPrices)
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		var oldKey string
 		var supplier *uuid.UUID
@@ -221,10 +245,11 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Affiliat
 			UPDATE affiliates SET name = $2, handle = $3, code = $4, commission_cents = COALESCE($5, commission_cents),
 				email = $6, phone = $7, pix_key = $8, notes = $9, active = $10,
 				commission_type = COALESCE(NULLIF($11, ''), commission_type),
-				commission_bps = COALESCE($12, commission_bps), updated_at = NOW()
+				commission_bps = COALESCE($12, commission_bps),
+				plan_motorcycle_cents = $13, plan_car_cents = $14, plan_truck_cents = $15, updated_at = NOW()
 			WHERE id = $1`,
 			id, in.Name, in.Handle, in.Code, in.CommissionCents, in.Email, in.Phone, in.PixKey, in.Notes, in.Active,
-			in.CommissionType, in.CommissionBps); err != nil {
+			in.CommissionType, in.CommissionBps, motorcycle, car, truck); err != nil {
 			return err
 		}
 		if supplier == nil || oldKey == in.PixKey {
@@ -782,20 +807,23 @@ type ReportMonth struct {
 
 // Report é o que o afiliado vê: os números, sem dado pessoal de ninguém.
 type Report struct {
-	Name            string        `json:"name"`
-	Handle          string        `json:"handle"`
-	Code            string        `json:"code"`
-	Active          bool          `json:"active"`
-	CommissionType  string        `json:"commissionType"`
-	CommissionCents int           `json:"commissionCents"`
-	CommissionBps   int           `json:"commissionBps"`
-	Signups         int           `json:"signups"`
-	Customers       int           `json:"customers"`
-	ActiveCustomers int           `json:"activeCustomers"`
-	ActiveVehicles  int           `json:"activeVehicles"`
-	ToReceiveCents  int64         `json:"toReceiveCents"`
-	PaidCents       int64         `json:"paidCents"`
-	Months          []ReportMonth `json:"months"`
+	Name            string `json:"name"`
+	Handle          string `json:"handle"`
+	Code            string `json:"code"`
+	Active          bool   `json:"active"`
+	CommissionType  string `json:"commissionType"`
+	CommissionCents int    `json:"commissionCents"`
+	CommissionBps   int    `json:"commissionBps"`
+	// PlanPrices: a mensalidade de quem ele indica, por tipo de veículo (nil:
+	// o preço normal do site).
+	PlanPrices      *vehicles.KindPrices `json:"planPrices"`
+	Signups         int                  `json:"signups"`
+	Customers       int                  `json:"customers"`
+	ActiveCustomers int                  `json:"activeCustomers"`
+	ActiveVehicles  int                  `json:"activeVehicles"`
+	ToReceiveCents  int64                `json:"toReceiveCents"`
+	PaidCents       int64                `json:"paidCents"`
+	Months          []ReportMonth        `json:"months"`
 	// Recipient: o cadastro de recebedor do split (Enabled falso: desligado).
 	Recipient *RecipientView `json:"recipient"`
 }
@@ -828,7 +856,7 @@ func (s *Service) Report(ctx context.Context, token string) (*Report, error) {
 	}
 	out := &Report{
 		Name: a.Name, Handle: a.Handle, Code: a.Code, Active: a.Active, CommissionType: a.CommissionType,
-		CommissionCents: a.CommissionCents, CommissionBps: a.CommissionBps,
+		CommissionCents: a.CommissionCents, CommissionBps: a.CommissionBps, PlanPrices: a.PlanPrices,
 		Signups: a.Signups, Customers: a.Customers, ActiveCustomers: a.ActiveCustomers, ActiveVehicles: a.ActiveVehicles,
 		ToReceiveCents: a.PendingCents + a.OpenCents, PaidCents: a.PaidCents + a.SplitPaidCents, Months: []ReportMonth{},
 	}

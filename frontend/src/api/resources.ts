@@ -325,7 +325,7 @@ export const usersApi = {
 
 export interface VehicleInput {
   name: string;
-  /** Carro ou moto; ausente na edição mantém o tipo atual (na criação, carro). */
+  /** Carro, moto ou caminhão; ausente na edição mantém o tipo atual (na criação, carro). */
   kind?: VehicleKind;
   plate?: string;
   brand?: string;
@@ -630,7 +630,9 @@ export const organizationsApi = {
 
 /** A contratação rápida pelo site (sem login): a oferta, o frete até o CEP e o pedido com Pix. */
 export const checkoutApi = {
-  offer: () => request<CheckoutOffer>('/api/public/checkout', { anonymous: true }),
+  /** A oferta; pelo link de um afiliado (ref), com a tabela dele por tipo de veículo. */
+  offer: (ref = '') =>
+    request<CheckoutOffer>(`/api/public/checkout${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`, { anonymous: true }),
   shipping: (address: DeliveryAddress) =>
     request<ShippingQuoteView>('/api/public/checkout/shipping', { method: 'POST', body: address, anonymous: true }),
   place: (input: CheckoutInput) =>

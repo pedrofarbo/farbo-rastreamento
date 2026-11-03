@@ -15,12 +15,13 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
 )
 
-// A contratação rápida pela landing: a oferta com os preços do funil; a
-// pessoa física cria a conta, aceita o contrato e contrata de uma vez,
-// pagando no ato — o rastreador comprado (com a instalação da Farbo, se
-// quiser) ou o comodato com a garantia de troca —; a empresa, o e-mail que já
-// tem conta e o funil fechado são recusados; o próximo veículo parte do
-// plano sem a garantia. Precisa de FARBO_TEST_DATABASE_URL.
+// A contratação rápida pela landing: a oferta com os preços do funil (um
+// plano só: o do Insanos MC é com a central); a pessoa física cria a conta,
+// aceita o contrato e contrata de uma vez, pagando no ato — o rastreador
+// comprado (com a instalação da Farbo, se quiser) ou o comodato com a
+// garantia de troca —; a empresa, o e-mail que já tem conta, o plano do
+// Insanos e o funil fechado são recusados; o próximo veículo parte do plano
+// sem a garantia. Precisa de FARBO_TEST_DATABASE_URL.
 func TestCheckoutFunnel(t *testing.T) {
 	var bs *billing.Service
 	var catalogPrices config.Catalog
@@ -42,14 +43,11 @@ func TestCheckoutFunnel(t *testing.T) {
 	bs.SetClock(func() time.Time { return time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC) })
 
 	var offer struct {
-		Enabled         bool   `json:"enabled"`
-		PlanCents       int    `json:"planCents"`
-		InsanosPlanName string `json:"insanosPlanName"`
-		InsanosCents    int    `json:"insanosCents"`
-		EquipmentCents  int    `json:"equipmentCents"`
+		Enabled        bool `json:"enabled"`
+		PlanCents      int  `json:"planCents"`
+		EquipmentCents int  `json:"equipmentCents"`
 		// Os preços normais, que as páginas mostram riscados.
 		PlanRegularCents      int    `json:"planRegularCents"`
-		InsanosRegularCents   int    `json:"insanosRegularCents"`
 		EquipmentRegularCents int    `json:"equipmentRegularCents"`
 		ContractVersion       string `json:"contractVersion"`
 		Loan                  *struct {
@@ -59,14 +57,18 @@ func TestCheckoutFunnel(t *testing.T) {
 			PriceCents int `json:"priceCents"`
 		} `json:"install"`
 	}
-	_ = json.Unmarshal(env.must("", http.MethodGet, "/api/public/checkout", nil, http.StatusOK), &offer)
-	if !offer.Enabled || offer.PlanCents != 3490 || offer.InsanosCents != 2790 || offer.EquipmentCents != 12000 ||
+	raw := env.must("", http.MethodGet, "/api/public/checkout", nil, http.StatusOK)
+	_ = json.Unmarshal(raw, &offer)
+	if !offer.Enabled || offer.PlanCents != 3490 || offer.EquipmentCents != 12000 ||
 		offer.ContractVersion != contract.Version || offer.Loan == nil || offer.Loan.SurchargeCents != 300 ||
 		offer.Loan.InstallFeeCents != 15000 || offer.Loan.UninstallFeeCents != 8500 || offer.Install == nil ||
-		offer.Install.PriceCents != 15000 || offer.InsanosPlanName != "Especial Insanos MC" ||
-		offer.PlanRegularCents != catalogPrices.PlanPriceCents || offer.PlanRegularCents == 0 || offer.InsanosRegularCents != 3990 ||
+		offer.Install.PriceCents != 15000 || offer.PlanRegularCents != catalogPrices.PlanPriceCents || offer.PlanRegularCents == 0 ||
 		offer.EquipmentRegularCents != catalogPrices.EquipmentPriceCents || offer.EquipmentRegularCents == 0 {
 		t.Fatalf("oferta = %+v (comodato %+v)", offer, offer.Loan)
+	}
+	// O preço do Insanos MC não sai na oferta pública.
+	if strings.Contains(strings.ToLower(string(raw)), "insanos") {
+		t.Errorf("oferta com o Insanos: %s", raw)
 	}
 
 	address := map[string]any{"zipCode": "01305-000", "street": "Rua Augusta", "number": "500", "district": "Consolação",
@@ -130,19 +132,31 @@ func TestCheckoutFunnel(t *testing.T) {
 		t.Fatalf("e-mail repetido = %d %s", status, out)
 	}
 
-	// Insanos MC em comodato: sem o rastreador, a instalação e a mensalidade
-	// do Insanos com a garantia de troca (R$ 27,90 + R$ 3,00).
+	// O plano do Insanos MC (das telas antigas) é só com a central: recusado,
+	// sem criar conta.
+	if status, out := env.do("", http.MethodPost, "/api/public/checkout",
+		body("rui@site.test", "390.533.447-05", map[string]any{"insanos": true})); status != http.StatusBadRequest ||
+		!strings.Contains(string(out), "central") {
+		t.Fatalf("Insanos pelo site = %d %s", status, out)
+	}
+	_ = env.db.QueryRow(ctx, `SELECT count(*) FROM users WHERE email = 'rui@site.test'`).Scan(&users)
+	if users != 0 {
+		t.Fatalf("conta criada no Insanos pelo site = %d", users)
+	}
+
+	// Comodato: sem o rastreador, a instalação e a mensalidade com a garantia
+	// de troca (R$ 34,90 + R$ 3,00).
 	env.must("", http.MethodPost, "/api/public/checkout",
-		body("rui@site.test", "390.533.447-05", map[string]any{"insanos": true, "equipmentMode": "loan", "installments": 3}),
+		body("rui@site.test", "390.533.447-05", map[string]any{"equipmentMode": "loan", "installments": 3}),
 		http.StatusBadRequest)
 	_ = json.Unmarshal(env.must("", http.MethodPost, "/api/public/checkout",
-		body("rui@site.test", "390.533.447-05", map[string]any{"insanos": true, "equipmentMode": "loan", "event": "Encontro Insanos MC"}),
+		body("rui@site.test", "390.533.447-05", map[string]any{"equipmentMode": "loan", "event": "Encontro Insanos MC"}),
 		http.StatusCreated), &r)
 	if r.SetupInvoice != nil || r.InstallInvoice == nil || r.InstallInvoice.AmountCents != 15000 ||
-		r.FirstInvoice == nil || r.FirstInvoice.AmountCents != 2790+300 ||
-		r.Subscription.PlanName != "Especial Insanos MC"+orders.GuaranteeName || r.Subscription.UninstallFeeCents != 8500 ||
+		r.FirstInvoice == nil || r.FirstInvoice.AmountCents != 3490+300 ||
+		r.Subscription.PlanName != "Plano Mensal"+orders.GuaranteeName || r.Subscription.UninstallFeeCents != 8500 ||
 		r.Subscription.EquipmentMode != billing.EquipmentLoan {
-		t.Fatalf("comodato do Insanos = %+v", r)
+		t.Fatalf("comodato = %+v", r)
 	}
 	var guarantee int
 	_ = env.db.QueryRow(ctx, `SELECT guarantee_cents FROM subscriptions WHERE id = $1`, r.Subscription.ID).Scan(&guarantee)
@@ -161,8 +175,20 @@ func TestCheckoutFunnel(t *testing.T) {
 		PlanPriceCents int    `json:"planPriceCents"`
 	}
 	_ = json.Unmarshal(env.must(r.Tokens.AccessToken, http.MethodGet, "/api/catalog", nil, http.StatusOK), &catalog)
-	if catalog.PlanName != "Especial Insanos MC" || catalog.PlanPriceCents != 2790 {
+	if catalog.PlanName != "Plano Mensal" || catalog.PlanPriceCents != 3490 {
 		t.Errorf("plano do próximo veículo = %+v", catalog)
+	}
+	// A central põe o Rui no plano do Insanos: o próximo veículo dele sai no
+	// plano e no preço que ela definiu.
+	var rui struct {
+		ID string `json:"id"`
+	}
+	_ = env.db.QueryRow(ctx, `SELECT id FROM users WHERE email = 'rui@site.test'`).Scan(&rui.ID)
+	env.must(env.login(auth.RoleAdmin+"@leads.test"), http.MethodPut, "/api/customers/"+rui.ID+"/plan",
+		map[string]any{"planName": "Especial Insanos MC", "priceCents": 3990, "dueDay": 10}, http.StatusOK)
+	_ = json.Unmarshal(env.must(r.Tokens.AccessToken, http.MethodGet, "/api/catalog", nil, http.StatusOK), &catalog)
+	if catalog.PlanName != "Especial Insanos MC" || catalog.PlanPriceCents != 3990 {
+		t.Errorf("plano do próximo veículo, no Insanos pela central = %+v", catalog)
 	}
 
 	// No app, a pessoa física paga o mesmo que no site: a central muda o

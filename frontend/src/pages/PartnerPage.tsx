@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ApiError } from '@/api/client';
 import { publicApi } from '@/api/resources';
 import { formatMoney, formatPercentBps } from '@/services/format';
+import { kindPricesLabel } from '@/services/kindPrices';
 import { monthLabel, referralUrl } from '@/services/referral';
 import type { PartnerMonth, PartnerReport } from '@/types';
 
@@ -108,6 +109,11 @@ export function PartnerPage() {
                 </>
               )}
             </p>
+            {report.planPrices && (
+              <p className={base.hint}>
+                Quem contrata pelo seu link paga por mês, por veículo: {kindPricesLabel(report.planPrices, money)}.
+              </p>
+            )}
             {!report.active && (
               <p className={base.error}>Seu link está pausado: cadastros novos não contam. Fale com a Farbo.</p>
             )}

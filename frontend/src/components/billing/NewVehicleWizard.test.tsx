@@ -82,7 +82,7 @@ function type(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-async function openWizard(installments = 1) {
+async function openWizard(installments = 1, kind = '') {
   const host = document.createElement('div');
   document.body.appendChild(host);
   await act(async () =>
@@ -100,6 +100,7 @@ async function openWizard(installments = 1) {
   // 1. Veículo; 2. Rastreador (o endereço salvo); 3. Assinatura, com o frete.
   const name = Array.from(document.querySelectorAll('input')).find((i) => i.closest('div')?.textContent?.includes('Apelido')) as HTMLInputElement;
   await act(async () => type(name, 'Moto do trabalho'));
+  if (kind) await act(async () => button(kind).click());
   await act(async () => button('Continuar').click());
   await flush();
   if (installments > 1) {
@@ -172,6 +173,16 @@ describe('a pessoa física paga no ato', () => {
     await flush();
     expect(done).toHaveLength(1);
     expect(ordered[0]).not.toHaveProperty('equipmentMode');
+  });
+
+  it('cliente indicado por afiliado com tabela: a mensalidade do tipo do veículo', async () => {
+    terms = { payNow: true, chargeDate: '2026-10-23', planByKind: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 } };
+    quote = { enabled: false, zipCode: '', problem: '', arrange: false, quotes: [] };
+    await openWizard(1, '🚛 Caminhão');
+    expect(text()).toContain('1ª mensalidadeR$ 59,90');
+    await act(async () => button('Confirmar pedido').click());
+    await flush();
+    expect(ordered[0]).toMatchObject({ vehicle: expect.objectContaining({ kind: 'TRUCK' }) });
   });
 
   it('o rastreador comprado: instalar por conta própria ou com os instaladores da Farbo (pago no pedido)', async () => {

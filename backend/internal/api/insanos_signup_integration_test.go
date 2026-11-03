@@ -10,59 +10,64 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
 )
 
-// O plano dos Insanos escolhido nas páginas públicas chega à conta: na
-// página de pré-cadastro (QR Code do evento, link de indicação), quem marca
-// "Sou integrante do Insanos MC" vira pré-cliente com o plano deles; a conta
-// criada pela central — a partir do pré-cliente ou não — já nasce no plano,
-// e o carro pedido pelo app sai nele. Quem não marca fica no padrão.
+// O plano dos Insanos é só com a central: o "Sou integrante do Insanos MC"
+// das telas antigas do pré-cadastro e o plano deles escolhido no formulário
+// da landing não chegam à conta — a central cria o cliente (a partir do
+// pré-cliente ou não) e ele nasce sem plano. Quando a central define o plano
+// dos Insanos, o carro pedido pelo app sai nele.
 // Precisa de FARBO_TEST_DATABASE_URL.
-func TestInsanosChoiceBecomesAccountPlan(t *testing.T) {
+func TestInsanosPlanOnlyByCentral(t *testing.T) {
 	env, _ := newLeadsEnv(t)
 	admin := env.login(auth.RoleAdmin + "@leads.test")
 
-	join := func(name, email string, insanos bool) {
-		t.Helper()
-		env.must("", http.MethodPost, "/api/public/launch", map[string]any{
-			"name": name, "email": email, "phone": "(11) 97777-2222", "consent": true, "event": "encontro-insanos",
-			"city": "São Paulo", "insanos": insanos, "website": "",
-		}, http.StatusCreated)
-	}
-	join("Edu Insano", "edu@evento.test", true)
-	join("Gil Geral", "gil@evento.test", false)
+	env.must("", http.MethodPost, "/api/public/launch", map[string]any{
+		"name": "Edu Insano", "email": "edu@evento.test", "phone": "(11) 97777-2222", "consent": true, "event": "encontro-insanos",
+		"city": "São Paulo", "insanos": true, "website": "",
+	}, http.StatusCreated)
+	env.must("", http.MethodPost, "/api/public/leads", map[string]any{
+		"name": "Beto Insanos", "email": "beto@insanos.test", "phone": "(11) 97777-3333", "city": "Campinas",
+		"plan": "Preço Especial Insanos MC - R$ 39,90", "vehicleType": "moto", "vehicleCount": 1, "message": "", "consent": true,
+		"website": "",
+	}, http.StatusCreated)
 
 	var list []leads.Lead
 	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/leads", nil, http.StatusOK), &list)
-	plans := map[string]string{}
+	byEmail := map[string]leads.Lead{}
 	for _, l := range list {
-		plans[l.Email] = l.Plan
+		byEmail[l.Email] = l
 	}
-	if plans["edu@evento.test"] != "Preço Especial Insanos MC - R$ 39,90" || plans["gil@evento.test"] != "" {
-		t.Fatalf("planos dos pré-clientes = %v", plans)
+	if edu, ok := byEmail["edu@evento.test"]; !ok || edu.Plan != "" {
+		t.Fatalf("pré-cliente do evento = %+v", edu)
+	}
+	beto, ok := byEmail["beto@insanos.test"]
+	if !ok {
+		t.Fatalf("pré-cliente da landing não apareceu: %+v", list)
 	}
 
-	// A central cria as contas sem partir do pré-cliente (pelo e-mail).
-	accountPlan := func(name, email string) *orders.AccountPlan {
+	type customer struct {
+		ID   string              `json:"id"`
+		Plan *orders.AccountPlan `json:"plan"`
+	}
+	create := func(body map[string]any) customer {
 		t.Helper()
-		var c struct {
-			ID string `json:"id"`
-		}
-		_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/customers", map[string]any{
-			"name": name, "email": email, "phone": "(11) 97777-2222", "document": "", "password": userPassword,
-		}, http.StatusCreated), &c)
-		var d struct {
-			Plan *orders.AccountPlan `json:"plan"`
-		}
-		_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/customers/"+c.ID, nil, http.StatusOK), &d)
-		return d.Plan
+		body["phone"], body["document"], body["password"] = "(11) 97777-2222", "", userPassword
+		var c customer
+		_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/customers", body, http.StatusCreated), &c)
+		_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/customers/"+c.ID, nil, http.StatusOK), &c)
+		return c
 	}
-	if p := accountPlan("Edu Insano", "edu@evento.test"); p == nil || p.PlanName != "Especial Insanos MC" || p.PriceCents != 3990 {
-		t.Errorf("conta do Edu = %+v", p)
+	edu := create(map[string]any{"name": "Edu Insano", "email": "edu@evento.test"})
+	if edu.Plan != nil {
+		t.Errorf("conta do Edu nasceu com plano: %+v", edu.Plan)
 	}
-	if p := accountPlan("Gil Geral", "gil@evento.test"); p != nil {
-		t.Errorf("conta do Gil (sem marcar) = %+v", p)
+	if c := create(map[string]any{"name": "Beto Insanos", "email": "beto@insanos.test", "leadId": beto.ID}); c.Plan != nil {
+		t.Errorf("conta do Beto nasceu com plano: %+v", c.Plan)
 	}
 
-	// O carro que o Edu pede pelo app sai no plano dos Insanos.
+	// A central põe o Edu no plano dos Insanos: o carro que ele pede pelo
+	// app sai nele.
+	env.must(admin, http.MethodPut, "/api/customers/"+edu.ID+"/plan",
+		map[string]any{"planName": "Especial Insanos MC", "priceCents": 3990, "dueDay": 10}, http.StatusOK)
 	token := env.login("edu@evento.test")
 	env.must(token, http.MethodPut, "/api/me/address", map[string]any{
 		"zipCode": "01305-000", "street": "Rua Augusta", "number": "500", "district": "Consolação", "city": "São Paulo", "state": "SP",

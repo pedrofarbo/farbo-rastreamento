@@ -147,6 +147,8 @@ const KINDS: Record<string, VehicleKind> = {
   automovel: 'CAR',
   moto: 'MOTORCYCLE',
   motocicleta: 'MOTORCYCLE',
+  caminhao: 'TRUCK',
+  truck: 'TRUCK',
   motorcycle: 'MOTORCYCLE',
 };
 
@@ -203,7 +205,7 @@ export function parseFleetSheet(text: string, fleet?: FleetSettings): ParsedShee
     if (kind) {
       const mapped = KINDS[normalizeHeader(kind)];
       if (mapped) vehicle.kind = mapped;
-      else problem(`Tipo "${kind}": use carro ou moto.`);
+      else problem(`Tipo "${kind}": use carro, moto ou caminhão.`);
     }
     for (const key of ['brand', 'model', 'color'] as const) {
       const value = cell(key);

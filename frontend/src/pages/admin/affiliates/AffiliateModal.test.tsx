@@ -68,12 +68,28 @@ describe('o cadastro do afiliado', () => {
     expect(calls[0][1]).toMatchObject({ name: 'Lia Percentual', commissionType: 'percent', commissionBps: 1250, commissionCents: null });
   });
 
+  it('a mensalidade pelo link, por tipo de veículo', async () => {
+    await render();
+    await setValue(control<HTMLInputElement>('Nome'), 'Lia Tabela');
+    await setValue(control<HTMLSelectElement>('Mensalidade pelo link'), 'kind');
+    await setValue(control<HTMLInputElement>('Moto (R$/mês)'), '39,90');
+    await setValue(control<HTMLInputElement>('Carro (R$/mês)'), '49,90');
+    await act(async () => button('Criar afiliado').click());
+    expect(text()).toContain('Preencha a mensalidade da moto, do carro e do caminhão');
+    expect(calls).toHaveLength(0);
+
+    await setValue(control<HTMLInputElement>('Caminhão (R$/mês)'), '59,90');
+    await act(async () => button('Criar afiliado').click());
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0][1]).toMatchObject({ planPrices: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 } });
+  });
+
   it('valor fixo continua como antes', async () => {
     await render();
     await setValue(control<HTMLInputElement>('Nome'), 'João');
     await setValue(control<HTMLInputElement>('Valor por veículo'), '8,00');
     await act(async () => button('Criar afiliado').click());
     await vi.waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0][1]).toMatchObject({ commissionType: 'fixed', commissionCents: 800, commissionBps: null });
+    expect(calls[0][1]).toMatchObject({ commissionType: 'fixed', commissionCents: 800, commissionBps: null, planPrices: null });
   });
 });

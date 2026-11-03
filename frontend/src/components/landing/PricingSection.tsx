@@ -6,13 +6,13 @@ import { WHATSAPP_NUMBER, whatsappUrl } from '@/config/contact';
 import {
   ANATEL_HOMOLOGATION,
   CHECKOUT_PATH,
-  checkoutPath,
   installmentsOf,
   installmentsPhrase,
   priceLabel,
   priceParts,
 } from '@/config/landing';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
+import { headlineMonthly, kindPricesLabel, lowestPrice } from '@/services/kindPrices';
 import type { CheckoutOffer } from '@/types';
 
 import { FleetFeatures } from './FleetFeatures';
@@ -44,10 +44,13 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
   // Os preços vêm da oferta do servidor: com a contratação pelo site aberta,
   // os do site (com os normais riscados); fechada, os normais.
   const { offer, open } = useCheckoutOffer();
-  const plan = offer && (open ? offer.planCents : offer.planRegularCents);
-  const insanos = offer && (open ? offer.insanosCents : offer.insanosRegularCents);
+  // Um plano só (o do Insanos MC é com a central, fora das páginas públicas);
+  // pelo link de um afiliado com tabela, a mensalidade por tipo de veículo.
+  const headline = offer && headlineMonthly(offer, open);
+  const table = headline?.table ?? null;
+  const plan = headline?.cents;
+  const promo = open && !!offer && plan !== undefined && offer.planRegularCents > plan;
   const equipment = offer && (open ? offer.equipmentCents : offer.equipmentRegularCents);
-  const showInsanos = !offer || offer.insanosPlanName !== '';
   return (
     <section className={styles.pricingSection} id="planos">
       <div className={styles.container}>
@@ -60,7 +63,6 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
               <strong>{bannerHeadline(offer)}</strong>
               <span>
                 O preço da mensalidade vale enquanto a assinatura durar
-                {offer && showInsanos && ` · integrantes do Insanos MC pagam ${priceLabel(offer.insanosCents)}/mês`}
                 {offer?.loan && ' · ou o rastreador em comodato, sem comprar'}.
               </span>
             </div>
@@ -73,12 +75,19 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
         <div className={styles.cardsGrid}>
           {/* Card 1: PLANO MENSAL */}
           <div className={`${styles.card} ${open ? styles.launchCard : ''}`}>
-            {open && <div className={styles.badgeTop}>PREÇO PROMOCIONAL</div>}
+            {promo && <div className={styles.badgeTop}>{table ? 'PREÇO DE INDICAÇÃO' : 'PREÇO PROMOCIONAL'}</div>}
             <div className={styles.cardHeader}>
               <h3 className={styles.cardTitle}>PLANO MENSAL</h3>
+              {table && <div className={styles.priceFrom}>a partir de</div>}
               <CardPrice cents={plan} regular={open ? offer?.planRegularCents : undefined} />
               <div className={styles.priceSub}>
                 /mês por veículo
+                {table && (
+                  <>
+                    <br />
+                    {kindPricesLabel(table, priceLabel)}
+                  </>
+                )}
                 {open && (
                   <>
                     <br />
@@ -126,92 +135,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
             )}
           </div>
 
-          {/* Card 2: PREÇO ESPECIAL (MOTOCLUBE INSANOS) */}
-          {showInsanos && (
-          <div className={`${styles.card} ${styles.featuredCard}`}>
-            <div className={styles.badgeTop}>PREÇO ESPECIAL</div>
-
-            <div className={styles.cardHeader}>
-              <div className={styles.insanosSubtitle}>
-                INTEGRANTES DO MOTOCLUBE INSANOS
-              </div>
-              <CardPrice cents={insanos} regular={open ? offer?.insanosRegularCents : undefined} featured />
-              <div className={styles.priceSubFeatured}>
-                /mês por veículo
-                {open && (
-                  <>
-                    <br />
-                    enquanto a assinatura durar
-                  </>
-                )}
-              </div>
-            </div>
-
-            <ul className={styles.checkList}>
-              <li>
-                <span className={styles.checkIcon}>✓</span>
-                Rastreamento em tempo real
-              </li>
-              <li>
-                <span className={styles.checkIcon}>✓</span>
-                App e sistema web inclusos
-              </li>
-              <li>
-                <span className={styles.checkIcon}>✓</span>
-                Chip M2M multi operadora com 20 MB/mês incluso
-              </li>
-              <li>
-                <span className={styles.checkIcon}>✓</span>
-                Histórico de rotas
-              </li>
-              <li>
-                <span className={styles.checkIcon}>✓</span>
-                Alertas e notificações
-              </li>
-              <li>
-                <span className={styles.checkIcon}>✓</span>
-                Suporte especializado
-              </li>
-            </ul>
-
-            <div className={styles.partnerFooter}>
-              <img
-                src="/assets/insanos-escudo.webp"
-                width={56}
-                height={69}
-                loading="lazy"
-                decoding="async"
-                alt="Escudo do Insanos MC Brasil"
-                className={styles.partnerLogo}
-              />
-              <div className={styles.partnerText}>
-                <strong>INSANOS MC</strong>
-                <span>
-                  FARBO RASTREADORES<br />
-                  MOTOCLUBE INSANOS
-                </span>
-              </div>
-            </div>
-
-            {/* A contratação já com o plano do Insanos marcado (quem marca se
-                declara integrante); fechada, o pré-cadastro com o plano deles. */}
-            {open ? (
-              <Link className={styles.neonBtn} to={checkoutPath({ insanos: true })} data-analytics="plano-insanos">
-                Contratar com o preço do Insanos
-              </Link>
-            ) : (
-              <button
-                className={styles.neonBtn}
-                onClick={() => onOpenModal('Preço Especial Insanos MC')}
-                data-analytics="plano-insanos"
-              >
-                Quero meu desconto
-              </button>
-            )}
-          </div>
-          )}
-
-          {/* Card 3: FROTAS. Preço sob consulta: o botão abre o WhatsApp com a
+          {/* Card 2: FROTAS. Preço sob consulta: o botão abre o WhatsApp com a
               mensagem já escrita (e o tamanho da frota, se escolhido). */}
           <div className={`${styles.card} ${styles.fleetCard}`}>
             <div className={`${styles.badgeTop} ${styles.badgeFleet}`}>PARA EMPRESAS</div>
@@ -377,7 +301,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
 };
 
 /** O preço grande do cartão: o normal riscado (se maior) e o valor; carregando, só o lugar dele. */
-function CardPrice({ cents, regular, featured }: { cents?: number; regular?: number; featured?: boolean }) {
+function CardPrice({ cents, regular }: { cents?: number; regular?: number }) {
   if (cents === undefined) {
     return (
       <div className={styles.pricePending} aria-busy="true">
@@ -393,7 +317,7 @@ function CardPrice({ cents, regular, featured }: { cents?: number; regular?: num
           De <span>{priceLabel(regular)}</span>
         </div>
       )}
-      <div className={featured ? styles.priceMainFeatured : styles.priceMain}>
+      <div className={styles.priceMain}>
         <span className={styles.currency}>R$</span>
         <span className={styles.amount}>{parts.reais}</span>
         <span className={styles.cents}>{parts.cents}</span>
@@ -406,7 +330,8 @@ function CardPrice({ cents, regular, featured }: { cents?: number; regular?: num
 export function bannerHeadline(offer: CheckoutOffer | undefined): string {
   if (!offer) return 'Escolha o plano, pague com Pix e receba em casa.';
   const installments = installmentsPhrase(offer.equipmentCents, offer.maxInstallments);
-  return `${priceLabel(offer.planCents)}/mês e ${priceLabel(offer.equipmentCents)} no rastreador${
+  const monthly = offer.planByKind ? `A partir de ${priceLabel(lowestPrice(offer.planByKind))}` : priceLabel(offer.planCents);
+  return `${monthly}/mês e ${priceLabel(offer.equipmentCents)} no rastreador${
     installments ? `, ou ${installments}` : ''
   }. Pague com Pix e receba em casa.`;
 }

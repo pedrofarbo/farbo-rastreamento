@@ -21,19 +21,22 @@ describe('vehicleIcon', () => {
     expect(el.querySelector('.vehicle-body')?.getAttribute('transform')).toBe('rotate(271.5 16 16)');
   });
 
-  it('desenha o carro ou a moto pelo tipo (sem tipo, carro)', () => {
+  it('desenha o carro, a moto ou o caminhão pelo tipo (sem tipo, carro)', () => {
     const kindOf = (kind: unknown) =>
       render(vehicleIcon({ ignition: true, heading: 0, moving: false, selected: false, blocked: false, kind: kind as string }))
         .querySelector('.vehicle-body')
         ?.getAttribute('data-kind');
     expect(kindOf('MOTORCYCLE')).toBe('motorcycle');
+    expect(kindOf('TRUCK')).toBe('truck');
     expect(kindOf('CAR')).toBe('car');
     expect(kindOf(undefined)).toBe('car');
     expect(kindOf('"><script>window.__pwned=1</script>')).toBe('car');
     // A moto tem o capacete do piloto; o carro, os vidros.
     const moto = render(vehicleIcon({ ignition: true, heading: 0, moving: false, selected: false, blocked: false, kind: 'MOTORCYCLE' }));
     const car = render(vehicleIcon({ ignition: true, heading: 0, moving: false, selected: false, blocked: false, kind: 'CAR' }));
+    const truck = render(vehicleIcon({ ignition: true, heading: 0, moving: false, selected: false, blocked: false, kind: 'TRUCK' }));
     expect(moto.querySelector('.vehicle-body')?.innerHTML).not.toBe(car.querySelector('.vehicle-body')?.innerHTML);
+    expect(truck.querySelector('.vehicle-body')?.innerHTML).not.toBe(car.querySelector('.vehicle-body')?.innerHTML);
   });
 
   it('texto com aspas ou marcação no rumo não cria nós nem atributos', () => {

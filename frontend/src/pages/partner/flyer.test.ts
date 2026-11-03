@@ -37,6 +37,13 @@ describe('flyer do afiliado', () => {
     const other = flyerOffer(offerWith({ planCents: 2990, equipmentCents: 15000, maxInstallments: 1 }));
     expect(other.monthlyCents).toBe(2990);
     expect(other.equipment.map((s) => s.text).join('')).toBe('Rastreador R$ 150');
+    // Pelo link de um afiliado com tabela: a partir da menor, com as três.
+    const table = flyerOffer(offerWith({ planByKind: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 } }));
+    expect(table.tag).toBe('A PARTIR DE');
+    expect(table.monthlyCents).toBe(3990);
+    expect(table.note.map((s) => s.text).join('').replace(/\u00a0/g, ' ')).toBe('Moto R$ 39,90 · Carro R$ 49,90 · Caminhão R$ 59,90');
+    // No preço normal (R$ 69,90 no site): sem "promocional".
+    expect(flyerOffer(offerWith({ planCents: 6990 })).tag).toBe('PLANO MENSAL');
     const closed = flyerOffer(offerWith({ enabled: false }));
     expect(closed.monthlyCents).toBe(6990);
     expect(closed.equipment.map((s) => s.text).join('')).toBe('Rastreador R$ 150 ou 10x de R$ 15,00 sem juros no Pix');

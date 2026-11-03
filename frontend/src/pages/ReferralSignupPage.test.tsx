@@ -2,14 +2,16 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { currentReferral } from '@/services/referral';
-import { OFFER, withQuery } from '@/test/checkoutOffer';
+import { OFFER, offerWith, withQuery } from '@/test/checkoutOffer';
 import type { WaitlistInput } from '@/types';
 
 const sent: WaitlistInput[] = [];
 const looked: string[] = [];
+const offerRefs: (string | undefined)[] = [];
+let offer = OFFER;
 vi.mock('@/api/resources', () => ({
   publicApi: {
     joinLaunch: async (input: WaitlistInput) => {
@@ -22,7 +24,12 @@ vi.mock('@/api/resources', () => ({
       return { name: 'João Motoca', handle: 'joao.moto', code };
     },
   },
-  checkoutApi: { offer: async () => OFFER },
+  checkoutApi: {
+    offer: async (ref?: string) => {
+      offerRefs.push(ref);
+      return offer;
+    },
+  },
 }));
 
 import { ReferralSignupPage } from './ReferralSignupPage';
@@ -54,10 +61,14 @@ async function render(path: string) {
   return host;
 }
 
+beforeEach(() => {
+  offer = OFFER;
+});
 afterEach(() => {
   document.body.innerHTML = '';
   sent.length = 0;
   looked.length = 0;
+  offerRefs.length = 0;
   localStorage.clear();
 });
 
@@ -67,22 +78,22 @@ describe('ReferralSignupPage', () => {
     expect(looked).toEqual(['joao-moto']);
     expect(currentReferral()).toBe('joao-moto');
     expect(host.textContent).toContain('Indicado por @joao.moto');
-    // O destaque é o preço do plano no site (não o do Insanos MC), do servidor.
+    // O destaque é o preço do plano no site, do servidor (pedido com o link);
+    // o do Insanos MC é só com a central.
+    expect(offerRefs).toContain('joao-moto');
     expect(host.textContent).toContain('Preço promocional');
     expect(host.textContent).toContain('R$34,90/mês');
     expect(host.textContent).toContain('ou 10x de R$ 12,00 sem juros no Pix, direto na mensalidade');
-    expect(host.textContent).not.toContain('Preço exclusivo Insanos MC');
-    expect(host.textContent).toContain('É do Insanos MC? A sua mensalidade é R$ 27,90.');
+    expect(host.textContent).not.toContain('Insanos');
     // O botão leva à contratação (o link fica guardado no aparelho e vai junto).
     const cta = Array.from(host.querySelectorAll('a')).find((a) => a.textContent === 'Contratar agora');
     expect(cta?.getAttribute('href')).toBe('/contratar');
 
-    // Quem prefere conversar deixa o contato; o link de indicação lembra o
-    // preço do Insanos MC e deixa marcar.
+    // Quem prefere conversar deixa o contato (sem a opção do Insanos MC).
     await act(async () =>
       (Array.from(host.querySelectorAll('button')).find((b) => b.textContent === 'Prefiro que a Farbo fale comigo') as HTMLButtonElement).click(),
     );
-    expect(host.textContent).toContain('Sou integrante do Insanos MC');
+    expect(host.textContent).not.toContain('Sou integrante do Insanos MC');
 
     const inputs = () => Array.from(host.querySelectorAll('input')) as HTMLInputElement[];
     const field = (t: string) => inputs().find((i) => i.type === t && i.name !== 'website') as HTMLInputElement;
@@ -107,6 +118,16 @@ describe('ReferralSignupPage', () => {
     expect(host.textContent).toContain('Pronto, Bia!');
     // Cada um se cadastra no próprio celular: sem "cadastrar outra pessoa".
     expect(host.textContent).not.toContain('Cadastrar outra pessoa');
+  });
+
+  it('afiliado com tabela: a partir da menor mensalidade, com a moto, o carro e o caminhão', async () => {
+    offer = offerWith({ planByKind: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 } });
+    const host = await render('/indicacao/joao-moto');
+    const text = (host.textContent ?? '').replace(/\u00a0/g, ' ');
+    expect(text).toContain('A partir de');
+    expect(text).toContain('R$39,90/mês');
+    expect(text).toContain('Moto R$ 39,90 · Carro R$ 49,90 · Caminhão R$ 59,90');
+    expect(text).toContain('o normal é R$ 69,90');
   });
 
   it('link desconhecido: a mesma tela, sem o selo', async () => {

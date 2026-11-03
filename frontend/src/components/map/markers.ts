@@ -68,7 +68,7 @@ export function safeSpeed(speed: unknown): number | null {
   return typeof speed === 'number' && Number.isFinite(speed) && speed >= 0 && speed <= 400 ? Math.round(speed) : null;
 }
 
-export type VehicleKind = 'CAR' | 'MOTORCYCLE';
+export type VehicleKind = 'CAR' | 'MOTORCYCLE' | 'TRUCK';
 
 /** Rumo em graus, sempre um número de 0 a 360. Qualquer outra coisa (texto,
  * objeto, NaN, fora da faixa) vira 0: a seta aponta para o norte. */
@@ -143,14 +143,9 @@ export function vehicleIcon({
       svgNode('circle', { cx: 16, cy: 16, r: 15, fill: 'none', stroke: color, 'stroke-width': 1.5, opacity: 0.5 }),
     );
   }
-  // O carro ou a moto, de cima, com a frente para o rumo.
-  vehicle.append(
-    svgNode(
-      'g',
-      { class: 'vehicle-body', 'data-kind': kind === 'MOTORCYCLE' ? 'motorcycle' : 'car', transform: `rotate(${rotation} 16 16)` },
-      ...(kind === 'MOTORCYCLE' ? motorcycle(color) : car(color)),
-    ),
-  );
+  // O carro, a moto ou o caminhão, de cima, com a frente para o rumo.
+  const [drawing, body] = kind === 'MOTORCYCLE' ? ['motorcycle', motorcycle(color)] : kind === 'TRUCK' ? ['truck', truck(color)] : ['car', car(color)];
+  vehicle.append(svgNode('g', { class: 'vehicle-body', 'data-kind': drawing, transform: `rotate(${rotation} 16 16)` }, ...body));
 
   // A etiqueta da velocidade, logo abaixo do veículo selecionado andando.
   const speed = live && selected ? safeSpeed(speedKmh) : null;
@@ -219,6 +214,22 @@ function motorcycle(color: string): SVGElement[] {
     svgNode('circle', { cx: 16, cy: 14.6, r: 3.3, fill: OUTLINE, stroke: color, 'stroke-width': 0.9 }),
     svgNode('ellipse', { cx: 15.1, cy: 13.6, rx: 1.1, ry: 0.7, fill: '#ffffff', opacity: 0.55 }),
     svgNode('ellipse', { cx: 16, cy: 6.9, rx: 1.4, ry: 0.7, fill: '#fff6c2' }),
+  ];
+}
+
+/** O caminhão visto de cima, frente para cima: a cabine com o para-brisa, os
+ * retrovisores e os faróis, e o baú comprido atrás, na cor da ignição. */
+function truck(color: string): SVGElement[] {
+  const body = { fill: color, stroke: OUTLINE, 'stroke-width': 1.3, 'stroke-linejoin': 'round' };
+  return [
+    svgNode('ellipse', { cx: 8.5, cy: 6.4, rx: 1.4, ry: 0.9, fill: color, stroke: OUTLINE, 'stroke-width': 0.9 }),
+    svgNode('ellipse', { cx: 23.5, cy: 6.4, rx: 1.4, ry: 0.9, fill: color, stroke: OUTLINE, 'stroke-width': 0.9 }),
+    svgNode('rect', { x: 10, y: 1.8, width: 12, height: 8.6, rx: 2.2, ...body }),
+    svgNode('path', { d: 'M11.6 4.6 C13.6 3.8 18.4 3.8 20.4 4.6 L19.8 7.4 L12.2 7.4 Z', fill: OUTLINE, opacity: 0.8 }),
+    svgNode('rect', { x: 8.6, y: 11.4, width: 14.8, height: 18.8, rx: 1.4, ...body }),
+    svgNode('path', { d: 'M11 15 H21 M11 19.6 H21 M11 24.2 H21', stroke: OUTLINE, 'stroke-width': 0.8, opacity: 0.45 }),
+    svgNode('ellipse', { cx: 12.6, cy: 2.6, rx: 1.3, ry: 0.6, fill: '#fff6c2' }),
+    svgNode('ellipse', { cx: 19.4, cy: 2.6, rx: 1.3, ry: 0.6, fill: '#fff6c2' }),
   ];
 }
 

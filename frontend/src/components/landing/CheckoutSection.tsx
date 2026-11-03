@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 
 import { CHECKOUT_PATH, installmentsPhrase, priceLabel } from '@/config/landing';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
+import { kindPricesLabel, lowestPrice } from '@/services/kindPrices';
 
 import { loanTerms } from './PricingSection';
 import styles from './CheckoutSection.module.css';
@@ -25,6 +26,9 @@ interface CheckoutSectionProps {
  */
 export const CheckoutSection: React.FC<CheckoutSectionProps> = ({ onOpenModal }) => {
   const { offer } = useCheckoutOffer();
+  // Pelo link de um afiliado com tabela: a mensalidade por tipo de veículo.
+  const table = offer?.planByKind ?? null;
+  const monthly = offer && (table ? lowestPrice(table) : offer.planCents);
   const installments = offer ? installmentsPhrase(offer.equipmentCents, offer.maxInstallments) : '';
   return (
     <section className={styles.section} id="contratar" aria-labelledby="contratar-titulo">
@@ -52,23 +56,16 @@ export const CheckoutSection: React.FC<CheckoutSectionProps> = ({ onOpenModal })
                   {installments && <span className={styles.offerInstallments}>ou {installments}</span>}
                 </div>
                 <div className={styles.offerItem}>
-                  <span className={styles.offerLabel}>Mensalidade</span>
+                  <span className={styles.offerLabel}>{table ? 'Mensalidade, a partir de' : 'Mensalidade'}</span>
                   <span>
-                    <Regular cents={offer?.planRegularCents} than={offer?.planCents} />
-                    <strong className={styles.offerPrice}>{offer ? priceLabel(offer.planCents) : 'R$ —'}</strong>
+                    <Regular cents={offer?.planRegularCents} than={monthly} />
+                    <strong className={styles.offerPrice}>{monthly !== undefined ? priceLabel(monthly) : 'R$ —'}</strong>
                   </span>
+                  {table && <span className={styles.offerInstallments}>{kindPricesLabel(table, priceLabel)}</span>}
                 </div>
               </div>
-              {offer && (offer.insanosPlanName || offer.loan) && (
-                <p className={styles.offerNote}>
-                  {offer.insanosPlanName && (
-                    <>
-                      Integrantes do Insanos MC pagam <span className={styles.nowrap}>{priceLabel(offer.insanosCents)}</span>
-                      /mês.{' '}
-                    </>
-                  )}
-                  {offer.loan && <>Prefere não comprar o rastreador? Em comodato: {loanTerms(offer.loan)}.</>}
-                </p>
+              {offer?.loan && (
+                <p className={styles.offerNote}>Prefere não comprar o rastreador? Em comodato: {loanTerms(offer.loan)}.</p>
               )}
             </div>
           </div>

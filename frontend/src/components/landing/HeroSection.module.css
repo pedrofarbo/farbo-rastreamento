@@ -110,6 +110,13 @@
   font-weight: 600;
 }
 
+/* Pelo link de um afiliado com tabela: a menor mensalidade dela. */
+.priceFrom {
+  color: #94a3b8;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
 .priceNow {
   display: flex;
   align-items: flex-start;

@@ -490,7 +490,7 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehic
 		return Order{}, ErrTooManyPending
 	}
 
-	plan, equipment, err := s.CustomerPrices(ctx, customerID)
+	plan, equipment, err := s.CustomerPrices(ctx, customerID, vehicle.Kind)
 	if err != nil {
 		return Order{}, err
 	}
@@ -551,12 +551,14 @@ func (s *Service) WithFarboInstall(ctx context.Context, o *Order) error {
 }
 
 // CustomerPrices são o plano e o rastreador comprado de um novo veículo do
-// cliente. A pessoa física sem plano definido pela central paga no app o
-// mesmo que no site: o plano normal e o do Insanos MC no preço da
+// cliente, do tipo informado. O cliente indicado por um afiliado com a tabela
+// por tipo de veículo paga a mensalidade dela (CustomerKindPrices). A pessoa
+// física sem plano definido pela central paga no app o mesmo que no site: o
+// plano normal (sem a tabela do afiliado) e o do Insanos MC no preço da
 // contratação pelo site, e o rastreador também (com a contratação pelo site
 // fechada, os do catálogo). A empresa, e quem tem plano da central ou um plano
 // próprio na assinatura, segue com o plano dele e o rastreador do catálogo.
-func (s *Service) CustomerPrices(ctx context.Context, customerID uuid.UUID) (billing.SubscriptionInput, int, error) {
+func (s *Service) CustomerPrices(ctx context.Context, customerID uuid.UUID, kind string) (billing.SubscriptionInput, int, error) {
 	plan, err := s.CustomerPlan(ctx, customerID)
 	if err != nil {
 		return plan, 0, err
@@ -565,6 +567,13 @@ func (s *Service) CustomerPrices(ctx context.Context, customerID uuid.UUID) (bil
 	account, err := s.AccountPlan(ctx, customerID)
 	if err != nil || account != nil {
 		return plan, equipment, err
+	}
+	table, err := s.CustomerKindPrices(ctx, customerID)
+	if err != nil {
+		return plan, equipment, err
+	}
+	if table != nil {
+		plan.PriceCents = table.For(kind)
 	}
 	individual, err := s.PaysUpfront(ctx, customerID)
 	if err != nil || !individual {
@@ -578,7 +587,9 @@ func (s *Service) CustomerPrices(ctx context.Context, customerID uuid.UUID) (bil
 	case insanos != "" && strings.EqualFold(plan.PlanName, insanos):
 		plan.PriceCents = opts.Checkout.InsanosCents
 	case plan.PlanName == s.catalog.PlanName:
-		plan.PriceCents = opts.Checkout.PlanCents
+		if table == nil {
+			plan.PriceCents = opts.Checkout.PlanCents
+		}
 	default:
 		// Um plano próprio na assinatura (combinado com a central): fica.
 		return plan, equipment, nil
