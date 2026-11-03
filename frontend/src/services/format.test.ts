@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { bpsToInput, formatPercentBps, formatPhoneInput, formatVoltage, isPhoneComplete, parsePercentBps, vehicleVoltage } from './format';
+import {
+  bpsToInput,
+  formatPercentBps,
+  formatPhoneInput,
+  formatVoltage,
+  isLivePosition,
+  isPhoneComplete,
+  liveSpeed,
+  parsePercentBps,
+  vehicleVoltage,
+} from './format';
 
 describe('formatPhoneInput', () => {
   it('formata enquanto digita', () => {
@@ -67,5 +77,27 @@ describe('o percentual da comissão', () => {
     expect(formatPercentBps(1250)).toBe('12,5%');
     expect(formatPercentBps(1000)).toBe('10%');
     expect(bpsToInput(725)).toBe('7,25');
+  });
+});
+
+describe('a velocidade de agora', () => {
+  const now = Date.parse('2026-11-03T19:31:00Z');
+  const recent = { gpsTimestamp: '2026-11-03T19:25:00Z', speedKmh: 42 };
+  // A da chegada na garagem, há 3 dias: o carro ainda andando a 6 km/h.
+  const old = { gpsTimestamp: '2026-10-31T18:57:32Z', speedKmh: 6 };
+
+  it('a posição dos últimos 10 minutos é a de agora', () => {
+    expect(isLivePosition(recent, now)).toBe(true);
+    expect(isLivePosition(old, now)).toBe(false);
+    expect(isLivePosition(null, now)).toBe(false);
+    expect(isLivePosition({ gpsTimestamp: 'ontem' }, now)).toBe(false);
+  });
+
+  it('numa posição antiga, a velocidade dela não vale: parado com a ignição desligada, desconhecida sem saber', () => {
+    expect(liveSpeed(recent, true, now)).toBe(42);
+    expect(liveSpeed(old, false, now)).toBe(0);
+    expect(liveSpeed(old, true, now)).toBeNull();
+    expect(liveSpeed(old, null, now)).toBeNull();
+    expect(liveSpeed(null, false, now)).toBeNull();
   });
 });

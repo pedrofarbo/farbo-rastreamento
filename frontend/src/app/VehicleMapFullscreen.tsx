@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { TrackerMap } from '@/components/map/TrackerMap';
 import { Address } from '@/components/ui/Address';
 import { Badge } from '@/components/ui/Badge';
-import { formatDeviceStatus, formatDistance, formatRelative, formatSpeed } from '@/services/format';
+import { formatDeviceStatus, formatDistance, formatRelative, formatSpeed, liveSpeed } from '@/services/format';
 import type { Geofence, Position, VehicleView } from '@/types';
 
 import { haptic } from './haptics';
@@ -146,7 +146,7 @@ export function VehicleMapFullscreen({
             ) : position ? (
               <>
                 <span className={styles.stats}>
-                  <span>{formatSpeed(position.speedKmh)}</span>
+                  <span>{formatSpeed(liveSpeed(position, acc))}</span>
                   <span className={acc ? styles.good : undefined}>
                     Ignição {acc === null ? '—' : acc ? 'ligada' : 'desligada'}
                   </span>

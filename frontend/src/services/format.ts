@@ -59,6 +59,34 @@ export function formatSpeed(kmh: number | null | undefined): string {
   return `${kmh.toFixed(0)} km/h`;
 }
 
+/** Até quanto tempo a posição conta como a de agora (a velocidade e o "andando"). */
+export const LIVE_POSITION_MS = 10 * 60_000;
+
+/**
+ * A posição é recente: a velocidade dela é a de agora. Numa antiga, não — na
+ * garagem, sem sinal de GPS, o rastreador continua conectado, e a última
+ * posição com GPS pode ser a da chegada, ainda andando.
+ */
+export function isLivePosition(position: { gpsTimestamp: string } | null | undefined, now = Date.now()): boolean {
+  if (!position) return false;
+  const at = Date.parse(position.gpsTimestamp);
+  return Number.isFinite(at) && now - at <= LIVE_POSITION_MS;
+}
+
+/**
+ * A velocidade de agora: a da posição recente; numa antiga, parado (0) com a
+ * ignição de agora desligada, e desconhecida (null) sem saber.
+ */
+export function liveSpeed(
+  position: { gpsTimestamp: string; speedKmh: number } | null | undefined,
+  ignition: boolean | null | undefined,
+  now = Date.now(),
+): number | null {
+  if (!position) return null;
+  if (isLivePosition(position, now)) return position.speedKmh;
+  return ignition === false ? 0 : null;
+}
+
 export function formatCoordinates(lat: number, lon: number): string {
   return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
 }

@@ -28,6 +28,8 @@ import {
   formatRelative,
   formatSpeed,
   formatVoltage,
+  isLivePosition,
+  liveSpeed,
   waitingForGps,
 } from '@/services/format';
 
@@ -182,7 +184,7 @@ export function VehicleScreen() {
             </div>
             <div className={styles.tile}>
               <span className={styles.tileLabel}>Velocidade</span>
-              <span className={styles.tileValue}>{formatSpeed(position.speedKmh)}</span>
+              <span className={styles.tileValue}>{formatSpeed(liveSpeed(position, acc))}</span>
             </div>
             <div className={styles.tile}>
               <span className={styles.tileLabel}>Motor</span>
@@ -207,6 +209,8 @@ export function VehicleScreen() {
             <div className={styles.tile}>
               <span className={styles.tileLabel}>Atualizado</span>
               <span className={styles.tileValue}>{formatRelative(position.gpsTimestamp)}</span>
+              {/* Conectado, mas sem GPS há tempo (na garagem, por exemplo). */}
+              {!isLivePosition(position) && waitingForGps(state) && <span className={styles.tileHint}>sem sinal de GPS</span>}
             </div>
           </div>
           <div className={styles.row}>

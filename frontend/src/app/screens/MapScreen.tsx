@@ -15,7 +15,7 @@ import { useFleet } from '@/hooks/useFleet';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useAuth } from '@/stores/AuthContext';
 import { NO_GROUP, inGroup, matchesVehicle } from '@/services/vehicleFilters';
-import { formatDeviceStatus, formatRelative, formatSpeed, waitingForGps } from '@/services/format';
+import { formatDeviceStatus, formatRelative, formatSpeed, liveSpeed, waitingForGps } from '@/services/format';
 import type { VehicleView } from '@/types';
 
 import { BottomSheet } from '../BottomSheet';
@@ -184,7 +184,7 @@ export function MapScreen() {
                     <span className={acc ? styles.good : undefined}>
                       Ignição {acc === null ? '—' : acc ? 'ligada' : 'desligada'}
                     </span>
-                    {position && <span>{formatSpeed(position.speedKmh)}</span>}
+                    {position && <span>{formatSpeed(liveSpeed(position, acc))}</span>}
                     <span>
                       {position
                         ? formatRelative(position.gpsTimestamp)

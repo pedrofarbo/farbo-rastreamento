@@ -4,7 +4,16 @@ import type { LatLngExpression, LatLngTuple } from 'leaflet';
 import L from 'leaflet';
 
 import { Address } from '@/components/ui/Address';
-import { formatCoordinates, formatDateTime, formatDistance, formatHeading, formatSpeed } from '@/services/format';
+import {
+  formatCoordinates,
+  formatDateTime,
+  formatDistance,
+  formatHeading,
+  formatRelative,
+  formatSpeed,
+  isLivePosition,
+  liveSpeed,
+} from '@/services/format';
 import type { Geofence, Position, VehicleView } from '@/types';
 
 import { CLUSTER_MAX_ZOOM, FLEET_SIZE, fleetLayout } from './fleet';
@@ -488,12 +497,15 @@ const VehicleMarker = memo(function VehicleMarker({
   onSelect?: (vehicleId: string) => void;
 }) {
   const position = vehicle.lastPosition as Position;
+  // A ignição de agora (o estado) e a velocidade de agora: numa posição
+  // antiga (sem GPS há tempo), a dela não vale — o veículo não aparece andando.
   const ignition = vehicle.state?.acc ?? position.acc ?? null;
   const heading = position.heading;
-  const moving = position.speedKmh >= MOVING_SPEED_KMH;
+  const speed = liveSpeed(position, ignition);
+  const moving = speed !== null && speed >= MOVING_SPEED_KMH;
   const blocked = vehicle.state?.relayOn === true;
   const online = vehicle.device?.status === 'ONLINE';
-  const speedKmh = selected && moving ? position.speedKmh : null;
+  const speedKmh = selected && moving ? speed : null;
   const kind = vehicle.kind;
   const lively = animate || selected || follow;
   const calm = !lively;
@@ -511,7 +523,7 @@ const VehicleMarker = memo(function VehicleMarker({
   return (
     <Marker ref={markerRef} position={initial} icon={icon} eventHandlers={handlers}>
       <Popup>
-        <PositionPopup title={vehicle.name} position={position} />
+        <PositionPopup title={vehicle.name} position={position} ignition={ignition} speedKmh={speed} />
       </Popup>
     </Marker>
   );
@@ -521,20 +533,31 @@ function PositionPopup({
   title,
   position,
   showAddress = true,
+  ignition,
+  speedKmh,
 }: {
   title: string;
   position: Position;
   /** Falso no marcador de reprodução: evita uma consulta de endereço a
    * cada quadro enquanto o histórico é reproduzido/arrastado. */
   showAddress?: boolean;
+  /** No veículo de agora: a ignição do estado e a velocidade de agora (null:
+   * desconhecida); sem eles (a reprodução), os da posição. */
+  ignition?: boolean | null;
+  speedKmh?: number | null;
 }) {
+  const live = speedKmh !== undefined;
+  const acc = ignition !== undefined ? ignition : position.acc;
   return (
     <div className={styles.popup}>
       <span className={styles.popupTitle}>{title}</span>
       {position.relayOn && <span className={styles.popupBlocked}>🔒 Motor bloqueado</span>}
+      {live && !isLivePosition(position) && (
+        <span className={styles.popupNote}>Última posição com GPS, {formatRelative(position.gpsTimestamp)}</span>
+      )}
       <div className={styles.popupRow}>
         <span>Velocidade</span>
-        <span className={styles.popupValue}>{formatSpeed(position.speedKmh)}</span>
+        <span className={styles.popupValue}>{formatSpeed(live ? speedKmh : position.speedKmh)}</span>
       </div>
       <div className={styles.popupRow}>
         <span>Direção</span>
@@ -542,9 +565,7 @@ function PositionPopup({
       </div>
       <div className={styles.popupRow}>
         <span>Ignição</span>
-        <span className={styles.popupValue}>
-          {position.acc === null ? '—' : position.acc ? 'ligada' : 'desligada'}
-        </span>
+        <span className={styles.popupValue}>{acc === null ? '—' : acc ? 'ligada' : 'desligada'}</span>
       </div>
       <div className={styles.popupRow}>
         <span>Local</span>

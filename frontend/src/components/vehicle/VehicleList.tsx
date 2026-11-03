@@ -5,7 +5,14 @@ import { Link } from 'react-router-dom';
 
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/stores/AuthContext';
-import { formatDeviceStatus, formatRelative, formatSpeed, formatVoltage, vehicleVoltage } from '@/services/format';
+import {
+  formatDeviceStatus,
+  formatRelative,
+  formatSpeed,
+  formatVoltage,
+  liveSpeed,
+  vehicleVoltage,
+} from '@/services/format';
 import { matchesVehicle, searchPlaceholder, sortVehicles } from '@/services/vehicleFilters';
 import type { DeviceStatus, VehicleView } from '@/types';
 
@@ -110,6 +117,8 @@ const VehicleRow = memo(function VehicleRow({
   onSelect: (vehicleId: string) => void;
 }) {
   const position = vehicle.lastPosition;
+  // A velocidade de agora: numa posição antiga (sem GPS há tempo), a dela não vale.
+  const speed = liveSpeed(position, vehicle.state?.acc ?? position?.acc);
   const status = vehicle.device?.status;
   const blocked = vehicle.state?.relayOn === true;
   const voltage = vehicleVoltage(vehicle);
@@ -134,7 +143,7 @@ const VehicleRow = memo(function VehicleRow({
 
       <div className={styles.metrics}>
         <span className={`${styles.metric} ${styles.speed}`}>
-          {position ? formatSpeed(position.speedKmh) : '— km/h'}
+          {speed === null ? '— km/h' : formatSpeed(speed)}
         </span>
         <span className={styles.metric}>
           {vehicle.state?.acc === null || vehicle.state?.acc === undefined

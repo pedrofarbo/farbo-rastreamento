@@ -7,7 +7,7 @@ import { Address } from '@/components/ui/Address';
 import { Badge } from '@/components/ui/Badge';
 import type { BadgeTone } from '@/components/ui/Badge';
 import { VehicleSwitcher } from '@/components/vehicle/VehicleSwitcher';
-import { formatDeviceStatus, formatRelative, formatSpeed, waitingForGps } from '@/services/format';
+import { formatDeviceStatus, formatRelative, formatSpeed, liveSpeed, waitingForGps } from '@/services/format';
 import type { Geofence, VehicleView } from '@/types';
 
 import { TrackerMap } from './TrackerMap';
@@ -210,7 +210,7 @@ export function FleetMapFullscreen({
               {position ? (
                 <>
                   <span className={styles.stats}>
-                    <span>{formatSpeed(position.speedKmh)}</span>
+                    <span>{formatSpeed(liveSpeed(position, acc))}</span>
                     <span className={acc ? styles.good : undefined}>
                       Ignição {acc === null ? '—' : acc ? 'ligada' : 'desligada'}
                     </span>

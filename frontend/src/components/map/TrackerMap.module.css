@@ -265,6 +265,12 @@
   color: var(--danger);
 }
 
+/* A posição antiga (sem GPS há tempo): a velocidade dela não é a de agora. */
+.popupNote {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
 /* O veículo em movimento: as ondas saem do marcador e passam da borda do
    ícone (por isso o SVG mostra o que transborda). Quem pede menos movimento
    no sistema vê o marcador parado. */

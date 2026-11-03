@@ -4,7 +4,14 @@ import { MapContainer, Marker, useMap } from 'react-leaflet';
 import { ApiError } from '@/api/client';
 import { vehicleIcon } from '@/components/map/markers';
 import { OsmTiles } from '@/components/map/OsmTiles';
-import { formatCoordinates, formatDateTime, formatRelative, formatSpeed } from '@/services/format';
+import {
+  formatCoordinates,
+  formatDateTime,
+  formatRelative,
+  formatSpeed,
+  isLivePosition,
+  liveSpeed,
+} from '@/services/format';
 import type { PublicTheftView } from '@/types';
 
 import styles from './PublicTheft.module.css';
@@ -110,7 +117,7 @@ export function LocationCards({ view, error, mapClass }: { view: Location; error
             icon={vehicleIcon({
               ignition: view.ignition,
               heading: p.heading,
-              moving: p.speedKmh > 3,
+              moving: isLivePosition(p) && p.speedKmh > 3,
               selected: true,
               blocked: false,
               online: view.online,
@@ -129,7 +136,7 @@ export function LocationCards({ view, error, mapClass }: { view: Location; error
           </div>
           <div>
             <dt>Velocidade</dt>
-            <dd>{formatSpeed(p.speedKmh)}</dd>
+            <dd>{formatSpeed(liveSpeed(p, view.ignition))}</dd>
           </div>
           <div>
             <dt>Rastreador</dt>

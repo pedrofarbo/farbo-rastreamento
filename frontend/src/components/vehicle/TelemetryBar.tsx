@@ -1,4 +1,4 @@
-import { formatRelative, formatSpeed, formatVoltage } from '@/services/format';
+import { formatRelative, formatSpeed, formatVoltage, liveSpeed } from '@/services/format';
 import type { DeviceState, Position } from '@/types';
 
 import styles from './TelemetryBar.module.css';
@@ -28,7 +28,8 @@ export function TelemetryBar({ position, state, lastSeenAt }: TelemetryBarProps)
 
   return (
     <div className={styles.bar}>
-      <Cell label="Velocidade" value={position ? formatSpeed(position.speedKmh) : '—'} />
+      {/* A velocidade de agora: numa posição antiga (sem GPS há tempo), a dela não vale. */}
+      <Cell label="Velocidade" value={formatSpeed(liveSpeed(position, acc))} />
 
       <Cell
         label="GPS"
