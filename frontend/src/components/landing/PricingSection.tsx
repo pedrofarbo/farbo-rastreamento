@@ -241,12 +241,14 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
               <>
                 <p className={styles.equipmentNote}>
                   {offer.install
-                    ? `Instale com o seu instalador ou com os nossos, por ${priceLabel(offer.install.priceCents)}.`
+                    ? offer.installDirect
+                      ? `Instale com o seu instalador ou com o representante, por ${priceLabel(offer.install.priceCents)}, pago direto a ele.`
+                      : `Instale com o seu instalador ou com os nossos, por ${priceLabel(offer.install.priceCents)}.`
                     : 'Instale com o instalador da sua preferência.'}
                 </p>
                 {offer.loan && (
                   <p className={styles.equipmentNote}>
-                    <strong>Ou em comodato</strong>, sem comprar: {loanTerms(offer.loan)}.
+                    <strong>Ou em comodato</strong>, sem comprar: {loanTerms(offer.loan, offer.installDirect)}.
                   </p>
                 )}
               </>
@@ -336,11 +338,16 @@ export function bannerHeadline(offer: CheckoutOffer | undefined): string {
   }. Pague com Pix e receba em casa.`;
 }
 
-/** "instalação R$ 150 pelos nossos instaladores e + R$ 3/mês de garantia de troca do rastreador (desinstalação R$ 85 ao encerrar)". */
-export function loanTerms(loan: NonNullable<CheckoutOffer['loan']>): string {
+/**
+ * "instalação R$ 150 pelos nossos instaladores e + R$ 3/mês de garantia de
+ * troca do rastreador (desinstalação R$ 85 ao encerrar)". Pelo link de um
+ * representante (direct), a instalação e a desinstalação são dele, pagas
+ * direto a ele.
+ */
+export function loanTerms(loan: NonNullable<CheckoutOffer['loan']>, direct = false): string {
   const install = loan.installFeeCents > 0 ? `instalação ${priceLabel(loan.installFeeCents)}` : 'instalação sem custo';
   const guarantee =
     loan.surchargeCents > 0 ? ` e + ${priceLabel(loan.surchargeCents)}/mês de garantia de troca do rastreador` : '';
   const uninstall = loan.uninstallFeeCents > 0 ? ` (desinstalação ${priceLabel(loan.uninstallFeeCents)} ao encerrar)` : '';
-  return `${install} pelos nossos instaladores${guarantee}${uninstall}`;
+  return `${install} ${direct ? 'pelo representante, paga direto a ele,' : 'pelos nossos instaladores'}${guarantee}${uninstall}`;
 }

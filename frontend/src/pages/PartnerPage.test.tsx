@@ -87,11 +87,14 @@ describe('PartnerPage', () => {
       name: 'Lia Percentual', handle: '', code: 'lia', active: true, commissionType: 'percent', commissionCents: 0,
       commissionBps: 1250, signups: 0, customers: 0, activeCustomers: 0, activeVehicles: 0, toReceiveCents: 0, paidCents: 0,
       months: [], planPrices: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 },
+      installPrices: { mode: 'direct', installCents: 12000, uninstallCents: 8000 },
     });
     const host = await render();
     expect(text(host)).toContain('Você ganha 12,5% da mensalidade de cada veículo ativo dos clientes que você indicou');
     // A tabela dele: o que paga quem contrata pelo link.
     expect(text(host)).toContain('Quem contrata pelo seu link paga por mês, por veículo: Moto R$ 39,90 · Carro R$ 49,90 · Caminhão R$ 59,90.');
+    // O representante: instala, desinstala e recebe direto.
+    expect(text(host)).toContain('R$ 120,00 a instalação e R$ 80,00 a desinstalação do comodato. Esses valores não passam pela Farbo.');
   });
 
   it('afiliado pausado: sem QR Code', async () => {

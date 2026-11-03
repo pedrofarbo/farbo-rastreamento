@@ -84,12 +84,30 @@ describe('o cadastro do afiliado', () => {
     expect(calls[0][1]).toMatchObject({ planPrices: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 } });
   });
 
+  it('a instalação e a desinstalação pelo representante, que recebe direto', async () => {
+    await render();
+    await setValue(control<HTMLInputElement>('Nome'), 'Rui Representante');
+    await setValue(control<HTMLSelectElement>('Instalação e desinstalação pelo link'), 'direct');
+    expect(text()).toContain('não entram no Pix nem nas faturas');
+    await setValue(control<HTMLInputElement>('Instalação (R$)'), '120,00');
+    await act(async () => button('Criar afiliado').click());
+    expect(text()).toContain('Preencha o preço da instalação e o da desinstalação');
+    expect(calls).toHaveLength(0);
+
+    await setValue(control<HTMLInputElement>('Desinstalação do comodato (R$)'), '0');
+    await act(async () => button('Criar afiliado').click());
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0][1]).toMatchObject({ installPrices: { mode: 'direct', installCents: 12000, uninstallCents: 0 } });
+  });
+
   it('valor fixo continua como antes', async () => {
     await render();
     await setValue(control<HTMLInputElement>('Nome'), 'João');
     await setValue(control<HTMLInputElement>('Valor por veículo'), '8,00');
     await act(async () => button('Criar afiliado').click());
     await vi.waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0][1]).toMatchObject({ commissionType: 'fixed', commissionCents: 800, commissionBps: null, planPrices: null });
+    expect(calls[0][1]).toMatchObject({
+      commissionType: 'fixed', commissionCents: 800, commissionBps: null, planPrices: null, installPrices: null,
+    });
   });
 });

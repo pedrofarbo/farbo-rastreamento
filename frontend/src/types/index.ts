@@ -450,6 +450,17 @@ export interface DeviceState {
 /** Carro ou moto: o mapa desenha um ou outro. */
 export type VehicleKind = 'CAR' | 'MOTORCYCLE' | 'TRUCK';
 
+/**
+ * A instalação e a desinstalação pelo link de um afiliado: custom, preços
+ * próprios cobrados pela Farbo; direct, o representante instala, desinstala e
+ * recebe direto do cliente (fora da plataforma).
+ */
+export interface InstallPrices {
+  mode: 'custom' | 'direct';
+  installCents: number;
+  uninstallCents: number;
+}
+
 /** A mensalidade por tipo de veículo: a tabela do link de um afiliado. */
 export interface KindPrices {
   motorcycleCents: number;
@@ -1704,6 +1715,8 @@ export interface Catalog {
   planPriceCents: number;
   /** A mensalidade por tipo de veículo (a tabela do afiliado que indicou o cliente); sem ela, planPriceCents. */
   planByKind?: KindPrices | null;
+  /** O cliente veio pelo link de um representante: ele instala, desinstala e recebe direto (fora das faturas). */
+  installDirect?: boolean;
   defaultDueDay: number;
   equipmentName: string;
   equipmentPriceCents: number;
@@ -1759,6 +1772,8 @@ export interface CheckoutOffer {
   equipmentRegularCents: number;
   /** Pelo link de um afiliado com tabela: a mensalidade por tipo de veículo, no lugar de planCents. */
   planByKind: KindPrices | null;
+  /** Pelo link de um representante: ele instala, desinstala e recebe direto (install e as taxas do loan fora do Pix). */
+  installDirect?: boolean;
   /** Em até quantas vezes sem juros o rastreador comprado pode ser parcelado (1: só à vista). */
   maxInstallments: number;
   dueDay: number;
@@ -2710,6 +2725,8 @@ export interface Affiliate {
   commissionBps: number;
   /** A mensalidade de quem ele indica, por tipo de veículo (nula: o preço normal do site). */
   planPrices: KindPrices | null;
+  /** A instalação e a desinstalação de quem ele indica (nula: as da Farbo). */
+  installPrices: InstallPrices | null;
   email: string;
   phone: string;
   pixKey: string;
@@ -2749,6 +2766,8 @@ export interface AffiliateInput {
   commissionBps: number | null;
   /** A mensalidade pelo link, por tipo de veículo (nula: o preço normal do site). */
   planPrices: KindPrices | null;
+  /** A instalação e a desinstalação pelo link (nula: as da Farbo). */
+  installPrices: InstallPrices | null;
   email: string;
   phone: string;
   pixKey: string;
@@ -2834,6 +2853,8 @@ export interface PartnerReport {
   commissionBps: number;
   /** A mensalidade de quem ele indica, por tipo de veículo (nula: o preço normal do site). */
   planPrices?: KindPrices | null;
+  /** A instalação e a desinstalação de quem ele indica (nula: as da Farbo). */
+  installPrices?: InstallPrices | null;
   signups: number;
   customers: number;
   activeCustomers: number;

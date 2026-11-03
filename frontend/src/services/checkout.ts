@@ -44,11 +44,14 @@ export function checkoutTotals(offer: CheckoutOffer, choice: CheckoutChoice, fre
       : [];
   const firstMonthlyCents = monthlyCents + (parcels[0] ?? 0);
   const equipmentNowCents = loan || parcels.length > 0 ? 0 : offer.equipmentCents;
-  const installNowCents = loan
-    ? (offer.loan?.installFeeCents ?? 0)
-    : choice.farboInstall && offer.install
-      ? offer.install.priceCents
-      : 0;
+  // Pelo link de um representante, a instalação é paga direto a ele: fora do Pix.
+  const installNowCents = offer.installDirect
+    ? 0
+    : loan
+      ? (offer.loan?.installFeeCents ?? 0)
+      : choice.farboInstall && offer.install
+        ? offer.install.priceCents
+        : 0;
   return {
     monthlyCents,
     guaranteeCents,

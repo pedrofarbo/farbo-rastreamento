@@ -114,6 +114,13 @@ export function PartnerPage() {
                 Quem contrata pelo seu link paga por mês, por veículo: {kindPricesLabel(report.planPrices, money)}.
               </p>
             )}
+            {report.installPrices?.mode === 'direct' && (
+              <p className={base.hint}>
+                Você instala e desinstala os rastreadores dos seus clientes e recebe direto deles:{' '}
+                {money(report.installPrices.installCents)} a instalação e {money(report.installPrices.uninstallCents)} a
+                desinstalação do comodato. Esses valores não passam pela Farbo.
+              </p>
+            )}
             {!report.active && (
               <p className={base.error}>Seu link está pausado: cadastros novos não contam. Fale com a Farbo.</p>
             )}

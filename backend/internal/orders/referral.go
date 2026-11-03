@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 )
@@ -45,6 +46,100 @@ func (s *Service) kindPrices(ctx context.Context, query string, id uuid.UUID) (*
 		return nil, nil
 	}
 	return &vehicles.KindPrices{MotorcycleCents: *motorcycle, CarCents: *car, TruckCents: *truck}, nil
+}
+
+// Os modos da instalação pelo link do afiliado (sem modo: as da Farbo).
+const (
+	// InstallCustom: preços próprios, cobrados pela Farbo.
+	InstallCustom = "custom"
+	// InstallDirect: o representante instala, desinstala e recebe direto do
+	// cliente; a Farbo não cobra nada disso.
+	InstallDirect = "direct"
+)
+
+// InstallPrices é a instalação (a do rastreador comprado e a do comodato) e
+// a desinstalação do comodato pelo link de um afiliado.
+type InstallPrices struct {
+	Mode           string `json:"mode"`
+	InstallCents   int    `json:"installCents"`
+	UninstallCents int    `json:"uninstallCents"`
+}
+
+// Valid: um dos modos, com os dois valores na faixa.
+func (p InstallPrices) Valid() bool {
+	return (p.Mode == InstallCustom || p.Mode == InstallDirect) &&
+		p.InstallCents >= 0 && p.InstallCents <= vehicles.MaxPlanCents && p.UninstallCents >= 0 && p.UninstallCents <= vehicles.MaxPlanCents
+}
+
+// Charged é o que a Farbo cobra da instalação e da desinstalação (no modo
+// direto, nada: o representante recebe do cliente).
+func (p InstallPrices) Charged() (install, uninstall int) {
+	if p.Mode == InstallDirect {
+		return 0, 0
+	}
+	return p.InstallCents, p.UninstallCents
+}
+
+// AffiliateInstall é a instalação do link do afiliado ativo (nil: a da Farbo).
+func (s *Service) AffiliateInstall(ctx context.Context, affiliateID uuid.UUID) (*InstallPrices, error) {
+	return s.installPrices(ctx, `SELECT install_mode, install_cents, uninstall_cents FROM affiliates WHERE id = $1 AND active`,
+		affiliateID)
+}
+
+// CustomerInstall é a instalação do afiliado que indicou o cliente, quando a
+// central não definiu um plano para ele (nil: a da Farbo).
+func (s *Service) CustomerInstall(ctx context.Context, customerID uuid.UUID) (*InstallPrices, error) {
+	account, err := s.AccountPlan(ctx, customerID)
+	if err != nil || account != nil {
+		return nil, err
+	}
+	return s.installPrices(ctx, `SELECT a.install_mode, a.install_cents, a.uninstall_cents
+		FROM affiliate_referrals r JOIN affiliates a ON a.id = r.affiliate_id WHERE r.customer_id = $1`, customerID)
+}
+
+func (s *Service) installPrices(ctx context.Context, query string, id uuid.UUID) (*InstallPrices, error) {
+	var p InstallPrices
+	var install, uninstall *int
+	err := s.db.QueryRow(ctx, query, id).Scan(&p.Mode, &install, &uninstall)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	if p.Mode == "" || install == nil || uninstall == nil {
+		return nil, nil
+	}
+	p.InstallCents, p.UninstallCents = *install, *uninstall
+	return &p, nil
+}
+
+// WithInstall aplica a instalação do afiliado às opções do pedido mostradas
+// (a do rastreador comprado e as taxas do comodato): o preço dele, também com
+// a instalação da Farbo desligada.
+func (p *InstallPrices) WithInstall(install *InstallService, loan *LoanOffer) {
+	if p == nil {
+		return
+	}
+	install.Enabled, install.PriceCents = true, p.InstallCents
+	loan.InstallFeeCents, loan.UninstallFeeCents = p.InstallCents, p.UninstallCents
+}
+
+// applyInstall põe no pedido o que a Farbo cobra da instalação do afiliado:
+// a do rastreador comprado (com a instalação contratada) e as taxas do
+// comodato.
+func (p *InstallPrices) applyInstall(o *Order) {
+	if p == nil {
+		return
+	}
+	install, uninstall := p.Charged()
+	if o.Terms.EquipmentMode == billing.EquipmentLoan {
+		o.Terms.InstallFeeCents, o.Terms.UninstallFeeCents = install, uninstall
+		return
+	}
+	if o.FarboInstall {
+		o.InstallCents = install
+	}
 }
 
 // CustomerKindPrices é a tabela que vale para os veículos novos do cliente:

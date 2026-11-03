@@ -48,6 +48,10 @@ type checkoutView struct {
 	// instaladores da Farbo no rastreador comprado (nula: só por conta própria).
 	Loan    *orders.LoanOffer      `json:"loan"`
 	Install *orders.InstallService `json:"install"`
+	// InstallDirect: pelo link de um representante, ele instala, desinstala e
+	// recebe direto do cliente — os preços de Install e Loan (as taxas) ficam
+	// fora do Pix.
+	InstallDirect bool `json:"installDirect"`
 	// ContractVersion: a versão que o aceite confirma.
 	ContractVersion string `json:"contractVersion"`
 	ShippingEnabled bool   `json:"shippingEnabled"`
@@ -80,6 +84,16 @@ func (s *Server) handleCheckoutOffer(w http.ResponseWriter, r *http.Request) {
 		if view.PlanByKind, err = s.Orders.AffiliatePrices(r.Context(), *affiliate); err != nil {
 			handleStoreError(w, err, "contratação indisponível")
 			return
+		}
+		install, err := s.Orders.AffiliateInstall(r.Context(), *affiliate)
+		if err != nil {
+			handleStoreError(w, err, "contratação indisponível")
+			return
+		}
+		if install != nil {
+			// O comodato (já em view.Loan, se ligado) e a instalação, no preço dele.
+			install.WithInstall(&opts.Install, &opts.Loan)
+			view.Install, view.InstallDirect = &opts.Install, install.Mode == orders.InstallDirect
 		}
 	}
 	w.Header().Set("Cache-Control", "no-store")

@@ -516,13 +516,20 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehic
 		Vehicle: vehicle, EquipmentCents: equipment, Terms: terms, RequireAddress: true, Plan: plan,
 		LaunchPromo: launchPromo,
 	}
+	// A instalação do afiliado que indicou o cliente (sem plano da central):
+	// o preço dele, ou fora da plataforma quando o representante recebe.
+	install, err := s.CustomerInstall(ctx, customerID)
+	if err != nil {
+		return Order{}, err
+	}
 	// O rastreador comprado: instalar por conta própria ou com os
 	// instaladores da Farbo (pelo preço das opções do pedido).
 	if farboInstall && terms.EquipmentMode == billing.EquipmentSale {
-		if err := s.withFarboInstall(ctx, &order, true); err != nil {
+		if err := s.withFarboInstall(ctx, &order, install == nil); err != nil {
 			return Order{}, err
 		}
 	}
+	install.applyInstall(&order)
 	return order, nil
 }
 

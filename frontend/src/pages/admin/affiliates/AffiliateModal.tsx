@@ -8,7 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { bpsToInput, centsToInput, formatMoney, formatPhoneInput, parseMoney, parsePercentBps } from '@/services/format';
 import { partnerUrl, referralCode, referralUrl } from '@/services/referral';
-import type { Affiliate, AffiliateInput, CommissionType, KindPrices } from '@/types';
+import type { Affiliate, AffiliateInput, CommissionType, InstallPrices, KindPrices } from '@/types';
 
 import company from '../company/Company.module.css';
 import styles from './Affiliates.module.css';
@@ -25,6 +25,10 @@ interface Draft {
   planMotorcycle: string;
   planCar: string;
   planTruck: string;
+  /** A instalação e a desinstalação pelo link ('': as da Farbo). */
+  installMode: '' | InstallPrices['mode'];
+  installPrice: string;
+  uninstallPrice: string;
   email: string;
   phone: string;
   pixKey: string;
@@ -44,6 +48,9 @@ function draftOf(a: Affiliate | null, defaultCents: number): Draft {
     planMotorcycle: a?.planPrices ? centsToInput(a.planPrices.motorcycleCents) : '',
     planCar: a?.planPrices ? centsToInput(a.planPrices.carCents) : '',
     planTruck: a?.planPrices ? centsToInput(a.planPrices.truckCents) : '',
+    installMode: a?.installPrices?.mode ?? '',
+    installPrice: a?.installPrices ? centsToInput(a.installPrices.installCents) : '',
+    uninstallPrice: a?.installPrices ? centsToInput(a.installPrices.uninstallCents) : '',
     email: a?.email ?? '',
     phone: a?.phone ?? '',
     pixKey: a?.pixKey ?? '',
@@ -142,6 +149,15 @@ export function AffiliateModal({
       }
       planPrices = { motorcycleCents, carCents, truckCents };
     }
+    let installPrices: InstallPrices | null = null;
+    if (draft.installMode) {
+      const [installCents, uninstallCents] = [draft.installPrice, draft.uninstallPrice].map(parseMoney);
+      if (installCents === null || uninstallCents === null) {
+        setError('Preencha o preço da instalação e o da desinstalação (0 para sem custo).');
+        return;
+      }
+      installPrices = { mode: draft.installMode, installCents, uninstallCents };
+    }
     save.mutate({
       name: draft.name,
       handle: draft.handle,
@@ -150,6 +166,7 @@ export function AffiliateModal({
       commissionCents: cents,
       commissionBps: bps,
       planPrices,
+      installPrices,
       email: draft.email,
       phone: draft.phone,
       pixKey: draft.pixKey,
@@ -349,6 +366,38 @@ export function AffiliateModal({
                 value={draft.planTruck}
                 inputMode="decimal"
                 onChange={(e) => set('planTruck', e.target.value)}
+              />
+            </>
+          )}
+          <SelectField
+            label="Instalação e desinstalação pelo link"
+            value={draft.installMode}
+            onChange={(e) => set('installMode', e.target.value as Draft['installMode'])}
+            hint={
+              draft.installMode === 'direct'
+                ? 'Ele instala, desinstala e recebe direto do cliente: os valores aparecem para o cliente, mas não entram no Pix nem nas faturas.'
+                : draft.installMode === 'custom'
+                  ? 'A Farbo cobra estes valores no lugar dos dela (a instalação no pedido, a desinstalação ao encerrar o comodato).'
+                  : 'Quem contrata pelo link paga a instalação e a desinstalação da Farbo.'
+            }
+          >
+            <option value="">As da Farbo</option>
+            <option value="custom">Preços próprios (a Farbo cobra)</option>
+            <option value="direct">Pelo representante (ele recebe direto)</option>
+          </SelectField>
+          {draft.installMode && (
+            <>
+              <TextField
+                label="Instalação (R$)"
+                value={draft.installPrice}
+                inputMode="decimal"
+                onChange={(e) => set('installPrice', e.target.value)}
+              />
+              <TextField
+                label="Desinstalação do comodato (R$)"
+                value={draft.uninstallPrice}
+                inputMode="decimal"
+                onChange={(e) => set('uninstallPrice', e.target.value)}
               />
             </>
           )}

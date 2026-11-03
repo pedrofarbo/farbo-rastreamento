@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 )
 
@@ -62,13 +63,16 @@ type Affiliate struct {
 	// PlanPrices: a mensalidade de quem ele indica, por tipo de veículo (nil:
 	// o preço normal do site).
 	PlanPrices *vehicles.KindPrices `json:"planPrices"`
-	Email      string               `json:"email"`
-	Phone      string               `json:"phone"`
-	PixKey     string               `json:"pixKey"`
-	Notes      string               `json:"notes"`
-	SupplierID *uuid.UUID           `json:"supplierId"`
-	Active     bool                 `json:"active"`
-	CreatedAt  time.Time            `json:"createdAt"`
+	// InstallPrices: a instalação e a desinstalação de quem ele indica (nil:
+	// as da Farbo); no modo direto, o representante recebe do cliente.
+	InstallPrices *orders.InstallPrices `json:"installPrices"`
+	Email         string                `json:"email"`
+	Phone         string                `json:"phone"`
+	PixKey        string                `json:"pixKey"`
+	Notes         string                `json:"notes"`
+	SupplierID    *uuid.UUID            `json:"supplierId"`
+	Active        bool                  `json:"active"`
+	CreatedAt     time.Time             `json:"createdAt"`
 
 	// Signups: pessoas que se cadastraram pelo link (lista ou pré-cadastro).
 	Signups int `json:"signups"`
@@ -91,20 +95,22 @@ type Affiliate struct {
 
 // Input é o cadastro de um afiliado. Sem CommissionType, o afiliado novo fica
 // no valor fixo e o que já existe mantém o tipo; sem CommissionCents, vale o
-// padrão. Sem PlanPrices, quem ele indica paga o preço normal do site.
+// padrão. Sem PlanPrices, quem ele indica paga o preço normal do site; sem
+// InstallPrices, a instalação e a desinstalação da Farbo.
 type Input struct {
-	Name            string               `json:"name"`
-	Handle          string               `json:"handle"`
-	Code            string               `json:"code"`
-	CommissionType  string               `json:"commissionType"`
-	CommissionCents *int                 `json:"commissionCents"`
-	CommissionBps   *int                 `json:"commissionBps"`
-	PlanPrices      *vehicles.KindPrices `json:"planPrices"`
-	Email           string               `json:"email"`
-	Phone           string               `json:"phone"`
-	PixKey          string               `json:"pixKey"`
-	Notes           string               `json:"notes"`
-	Active          bool                 `json:"active"`
+	Name            string                `json:"name"`
+	Handle          string                `json:"handle"`
+	Code            string                `json:"code"`
+	CommissionType  string                `json:"commissionType"`
+	CommissionCents *int                  `json:"commissionCents"`
+	CommissionBps   *int                  `json:"commissionBps"`
+	PlanPrices      *vehicles.KindPrices  `json:"planPrices"`
+	InstallPrices   *orders.InstallPrices `json:"installPrices"`
+	Email           string                `json:"email"`
+	Phone           string                `json:"phone"`
+	PixKey          string                `json:"pixKey"`
+	Notes           string                `json:"notes"`
+	Active          bool                  `json:"active"`
 }
 
 var handlePattern = regexp.MustCompile(`^[A-Za-z0-9._]{1,30}$`)
@@ -141,6 +147,8 @@ func (in Input) Normalize() (Input, error) {
 		return in, invalid("Percentual da comissão inválido.")
 	case in.PlanPrices != nil && !in.PlanPrices.Valid():
 		return in, invalid("Preencha a mensalidade da moto, do carro e do caminhão.")
+	case in.InstallPrices != nil && !in.InstallPrices.Valid():
+		return in, invalid("Preencha o preço da instalação e o da desinstalação.")
 	case in.Email != "":
 		if _, err := mail.ParseAddress(in.Email); err != nil {
 			return in, invalid("E-mail inválido.")

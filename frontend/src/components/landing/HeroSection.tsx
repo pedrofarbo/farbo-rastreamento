@@ -83,8 +83,10 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenModal }) => {
             {/* O comodato: sem comprar o rastreador, instalado pelos técnicos da Farbo. */}
             {open && offer?.loan && (
               <p className={styles.loanNote}>
-                <strong>Ou em comodato:</strong> sem comprar o rastreador, instalado pelos nossos técnicos
+                <strong>Ou em comodato:</strong> sem comprar o rastreador, instalado{' '}
+                {offer.installDirect ? 'pelo representante' : 'pelos nossos técnicos'}
                 {offer.loan.installFeeCents > 0 && ` por ${priceLabel(offer.loan.installFeeCents)}`}
+                {offer.installDirect && ', pago direto a ele'}
                 {offer.loan.surchargeCents > 0 && ` (+ ${priceLabel(offer.loan.surchargeCents)}/mês)`}.
               </p>
             )}

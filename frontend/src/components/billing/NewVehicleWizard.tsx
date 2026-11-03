@@ -351,12 +351,15 @@ export function NewVehicleWizard({
         : { equipmentMode: c.equipmentMode ?? 'sale', installFeeCents: c.installFeeCents ?? 0, uninstallFeeCents: c.uninstallFeeCents ?? 0 }
       : null;
   const loan = terms?.equipmentMode === 'loan';
-  const installFee = loan ? (terms?.installFeeCents ?? 0) : 0;
+  // O cliente veio pelo link de um representante: ele instala, desinstala e
+  // recebe direto (os preços aparecem, mas não entram na cobrança).
+  const direct = !isAdmin && Boolean(c?.installDirect);
+  const installFee = loan && !direct ? (terms?.installFeeCents ?? 0) : 0;
   // A instalação pelos instaladores da Farbo no rastreador comprado (no
   // comodato, ela já é da Farbo, com a taxa dele).
   const installService = c?.install ?? null;
   const farbo = !loan && farboInstall && installService !== null;
-  const farboCents = farbo ? installService.priceCents : 0;
+  const farboCents = farbo && !direct ? installService.priceCents : 0;
   // A promoção do cliente vem do catálogo (só com o rastreador comprado); a
   // da central, da opção marcada.
   const customerPromo = !isAdmin && !loan ? (c?.launchPromo ?? null) : null;
@@ -588,7 +591,7 @@ export function NewVehicleWizard({
                   )
                 )}
                 {loan ? (
-                  <LoanNote terms={terms!} payNow={payNow} />
+                  <LoanNote terms={terms!} payNow={payNow} direct={direct} />
                 ) : (
                   <>
                     <TextField
@@ -662,6 +665,7 @@ export function NewVehicleWizard({
                     }}
                     offer={loanOffer}
                     catalog={c}
+                    direct={direct}
                   />
                 )}
                 {customerPromo && (
@@ -672,7 +676,7 @@ export function NewVehicleWizard({
                   </div>
                 )}
                 {loan ? (
-                  <LoanNote terms={terms!} payNow={payNow} />
+                  <LoanNote terms={terms!} payNow={payNow} direct={direct} />
                 ) : (
                   <>
                     <div className={styles.orderSummary}>
@@ -695,6 +699,7 @@ export function NewVehicleWizard({
                         onChange={setFarboInstall}
                         priceCents={installService.priceCents}
                         when={when}
+                        direct={direct}
                         onInstallers={() => setShowInstallers(true)}
                       />
                     ) : (
@@ -771,7 +776,7 @@ export function NewVehicleWizard({
                       <span>{formatMoney(firstMonthly)}</span>
                     </div>
                   )}
-                  {farbo && (
+                  {farbo && !direct && (
                     <div className={styles.orderLine}>
                       <span>Instalação (instaladores Farbo)</span>
                       <span>{formatMoney(farboCents)}</span>
@@ -979,15 +984,17 @@ function Commitment({
  * mensalidade (no pedido, para a pessoa física; na fatura, para a empresa) e
  * a desinstalação no encerramento.
  */
-function LoanNote({ terms, payNow }: { terms: EquipmentTerms; payNow: boolean }) {
+function LoanNote({ terms, payNow, direct = false }: { terms: EquipmentTerms; payNow: boolean; direct?: boolean }) {
+  // Pelo representante: a instalação e a desinstalação são pagas direto a ele.
+  const install = direct ? 'é paga direto ao representante, no dia' : payNow ? 'é paga no pedido' : 'entra na fatura';
   return (
     <div className={styles.installNote}>
       <span>
         <strong>Rastreador em comodato:</strong> emprestado, volta na desinstalação — não há equipamento a pagar.
-        {terms.installFeeCents > 0
-          ? ` A instalação (${formatMoney(terms.installFeeCents)}) ${payNow ? 'é paga no pedido' : 'entra na fatura'}.`
-          : ' Instalação sem custo.'}
-        {terms.uninstallFeeCents > 0 ? ` Ao encerrar, a desinstalação: ${formatMoney(terms.uninstallFeeCents)}.` : ''}
+        {terms.installFeeCents > 0 ? ` A instalação (${formatMoney(terms.installFeeCents)}) ${install}.` : ' Instalação sem custo.'}
+        {terms.uninstallFeeCents > 0
+          ? ` Ao encerrar, a desinstalação: ${formatMoney(terms.uninstallFeeCents)}${direct ? ', também direto a ele' : ''}.`
+          : ''}
       </span>
     </div>
   );
@@ -1002,11 +1009,14 @@ function EquipmentChoice({
   onChange,
   offer,
   catalog,
+  direct = false,
 }: {
   mode: 'sale' | 'loan';
   onChange: (mode: 'sale' | 'loan') => void;
   offer: LoanOffer;
   catalog: Catalog;
+  /** Pelo representante: a instalação e a desinstalação pagas direto a ele. */
+  direct?: boolean;
 }) {
   // A garantia de troca do rastreador: só a pessoa física (que paga no ato).
   const guarantee = catalog.payNow ? offer.surchargeCents : 0;
@@ -1014,6 +1024,7 @@ function EquipmentChoice({
   const fees = [
     offer.installFeeCents > 0 ? `instalação ${formatMoney(offer.installFeeCents)}` : 'instalação sem custo',
     offer.uninstallFeeCents > 0 ? `desinstalação ${formatMoney(offer.uninstallFeeCents)} ao encerrar` : '',
+    direct ? 'pagas direto ao representante' : '',
   ].filter(Boolean);
   return (
     <fieldset className={styles.paymentChoice}>
@@ -1055,6 +1066,7 @@ function InstallChoice({
   onChange,
   priceCents,
   when,
+  direct = false,
   onInstallers,
 }: {
   farbo: boolean;
@@ -1062,6 +1074,8 @@ function InstallChoice({
   priceCents: number;
   /** "pago no pedido" ou "na fatura de 10/11". */
   when: string;
+  /** Pelo representante: ele instala e recebe direto (fora da cobrança). */
+  direct?: boolean;
   onInstallers: () => void;
 }) {
   return (
@@ -1083,10 +1097,14 @@ function InstallChoice({
       <label className={farbo ? styles.paymentOn : undefined}>
         <input type="radio" name="install-choice" checked={farbo} onChange={() => onChange(true)} />
         <span>
-          <strong>Com os instaladores da Farbo</strong>
+          <strong>{direct ? 'Com o representante' : 'Com os instaladores da Farbo'}</strong>
           <span className={styles.muted}>
             {' '}
-            · {formatMoney(priceCents)}, {when}; agendamos o dia com você.
+            ·{' '}
+            {direct
+              ? `${formatMoney(priceCents)}, pago direto a ele no dia (não entra na cobrança)`
+              : `${formatMoney(priceCents)}, ${when}`}
+            ; agendamos o dia com você.
           </span>
         </span>
       </label>

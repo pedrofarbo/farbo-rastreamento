@@ -65,7 +65,7 @@ export const CheckoutSection: React.FC<CheckoutSectionProps> = ({ onOpenModal })
                 </div>
               </div>
               {offer?.loan && (
-                <p className={styles.offerNote}>Prefere não comprar o rastreador? Em comodato: {loanTerms(offer.loan)}.</p>
+                <p className={styles.offerNote}>Prefere não comprar o rastreador? Em comodato: {loanTerms(offer.loan, offer.installDirect)}.</p>
               )}
             </div>
           </div>

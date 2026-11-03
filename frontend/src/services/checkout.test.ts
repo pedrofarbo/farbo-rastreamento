@@ -37,6 +37,14 @@ describe('a conta da contratação pelo site', () => {
     expect(checkoutTotals(table, { ...sale, equipmentMode: 'loan' }, 0, 'TRUCK').monthlyCents).toBe(5990 + 300);
   });
 
+  it('pelo link de um representante: a instalação é paga direto a ele, fora do Pix', () => {
+    const rep = offerWith({ installDirect: true, install: { enabled: true, priceCents: 12000 } });
+    const sale = checkoutTotals(rep, { equipmentMode: 'sale', installments: 1, farboInstall: true });
+    expect(sale).toMatchObject({ installNowCents: 0, totalNowCents: 3490 + 12000 });
+    const loan = checkoutTotals(rep, { equipmentMode: 'loan', installments: 1, farboInstall: false });
+    expect(loan).toMatchObject({ installNowCents: 0, totalNowCents: 3490 + 300 });
+  });
+
   it('o nome do veículo', () => {
     expect(vehicleName('CAR', ' Fiat ', 'Uno')).toBe('Fiat Uno');
     expect(vehicleName('MOTORCYCLE', '', '')).toBe('Minha moto');

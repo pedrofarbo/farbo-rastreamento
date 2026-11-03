@@ -54,6 +54,10 @@ type catalogView struct {
 	// Install: a instalação pelos instaladores da Farbo no rastreador
 	// comprado (o preço; desligada, o cliente instala por conta própria).
 	Install *orders.InstallService `json:"install,omitempty"`
+	// InstallDirect: o cliente veio pelo link de um representante, que
+	// instala, desinstala e recebe direto dele (os preços ficam fora das
+	// faturas).
+	InstallDirect bool `json:"installDirect,omitempty"`
 	// PayNow: a pessoa física paga no ato (a 1ª mensalidade, o frete e o
 	// rastreador ou a instalação); a empresa, na próxima fatura do mês.
 	PayNow bool `json:"payNow,omitempty"`
@@ -93,6 +97,12 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 		if !opts.Install.Enabled {
 			view.Install = nil
+		}
+		// A instalação do afiliado que o indicou: o preço dele (ou fora das
+		// faturas, quando o representante recebe).
+		if install, err := s.Orders.CustomerInstall(r.Context(), customerID); err == nil && install != nil {
+			install.WithInstall(&opts.Install, &opts.Loan)
+			view.Install, view.InstallDirect = &opts.Install, install.Mode == orders.InstallDirect
 		}
 		if upfront, err := s.Orders.PaysUpfront(r.Context(), customerID); err == nil && upfront {
 			view.PayNow = true

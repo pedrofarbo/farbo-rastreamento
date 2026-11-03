@@ -30,7 +30,9 @@ type CheckoutChoice struct {
 // no preço dele — ou, pelo link de um afiliado com tabela, no preço do tipo do
 // veículo —, sem prazo (o do Insanos MC, só a central define); o rastreador
 // comprado pelo preço do funil (à vista ou parcelado, com a instalação da
-// Farbo se ela quiser) ou em comodato, com as taxas e a garantia de troca.
+// Farbo se ela quiser) ou em comodato, com as taxas e a garantia de troca. Pelo
+// link de um afiliado com a instalação dele, a instalação e a desinstalação
+// saem no preço dele (ou fora da plataforma, quando o representante recebe).
 func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, error) {
 	opts, err := s.Options(ctx)
 	if err != nil {
@@ -40,6 +42,7 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 		return Order{}, ValidationError{"a contratação pelo site está fechada agora: deixe o seu contato que a gente fala com você"}
 	}
 	plan := billing.SubscriptionInput{PlanName: s.catalog.PlanName, PriceCents: opts.Checkout.PlanCents, DueDay: s.catalog.DefaultDueDay}
+	var install *InstallPrices
 	if in.Affiliate != nil {
 		table, err := s.AffiliatePrices(ctx, *in.Affiliate)
 		if err != nil {
@@ -47,6 +50,9 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 		}
 		if table != nil {
 			plan.PriceCents = table.For(in.Vehicle.Kind)
+		}
+		if install, err = s.AffiliateInstall(ctx, *in.Affiliate); err != nil {
+			return Order{}, err
 		}
 	}
 	vehicle := in.Vehicle
@@ -57,7 +63,7 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 		order.Terms = Terms{EquipmentMode: billing.EquipmentSale}
 		order.EquipmentCents = opts.Checkout.EquipmentCents
 		if in.FarboInstall {
-			if !opts.Install.Enabled {
+			if !opts.Install.Enabled && install == nil {
 				return Order{}, ValidationError{"a instalação pelos instaladores da Farbo não está disponível agora: instale por conta própria"}
 			}
 			order.FarboInstall, order.InstallCents = true, opts.Install.PriceCents
@@ -78,5 +84,6 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 	default:
 		return Order{}, ValidationError{"escolha o rastreador: comprado ou em comodato"}
 	}
+	install.applyInstall(&order)
 	return order, nil
 }

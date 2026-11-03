@@ -150,6 +150,21 @@ describe('landing com a contratação pelo site', () => {
     expect(section).toContain('R$ 69,90 R$ 39,90');
   });
 
+  it('pelo link de um representante: a instalação e o comodato com ele, pagos direto', async () => {
+    offer = offerWith({
+      installDirect: true,
+      install: { enabled: true, priceCents: 12000 },
+      loan: { enabled: true, surchargeCents: 300, installFeeCents: 12000, uninstallFeeCents: 8000 },
+    });
+    const pricing = (await render(<PricingSection onOpenModal={() => {}} />)).textContent ?? '';
+    expect(pricing).toContain('Instale com o seu instalador ou com o representante, por R$ 120, pago direto a ele.');
+    expect(pricing).toContain(
+      'Ou em comodato, sem comprar: instalação R$ 120 pelo representante, paga direto a ele, e + R$ 3/mês de garantia de troca do rastreador (desinstalação R$ 80 ao encerrar).',
+    );
+    const hero = (await render(<HeroSection onOpenModal={() => {}} />)).textContent ?? '';
+    expect(hero).toContain('Ou em comodato: sem comprar o rastreador, instalado pelo representante por R$ 120, pago direto a ele (+ R$ 3/mês).');
+  });
+
   it('enquanto a oferta carrega, os preços esperam no lugar deles', async () => {
     offer = new Promise(() => undefined) as unknown as typeof OFFER;
     const host = await render(<PricingSection onOpenModal={() => {}} />);

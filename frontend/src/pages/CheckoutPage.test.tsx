@@ -205,6 +205,27 @@ describe('a contratação pelo site', () => {
     localStorage.clear();
   });
 
+  it('pelo link de um representante: a instalação e a desinstalação com ele, pagas direto, fora do Pix', async () => {
+    offer = offerWith({
+      installDirect: true,
+      install: { enabled: true, priceCents: 12000 },
+      loan: { enabled: true, surchargeCents: 300, installFeeCents: 12000, uninstallFeeCents: 8000 },
+    });
+    await render();
+    expect(text()).toContain('Instalação pelo representante por R$ 120,00, paga direto a ele');
+    expect(text()).toContain('desinstalação de R$ 80,00 ao encerrar, também direto a ele');
+    await click(radio('Com o representante'));
+    expect(text()).toContain('Pago direto a ele na instalação, fora do Pix.');
+    // Hoje, só a 1ª mensalidade e o rastreador.
+    expect(text()).toContain('Hoje, no PixR$ 154,90 + frete');
+    await fillUntilPayment();
+    expect(text()).not.toContain('Instalação pelos instaladores da Farbo');
+    expect(text()).toContain('A instalação (R$ 120,00) é paga direto ao representante, no dia, fora do Pix.');
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar'));
+    expect(placed[0]).toMatchObject({ equipmentMode: 'sale', farboInstall: true });
+  });
+
   it('do QR Code de um evento: vai com o evento e sem o link de indicação guardado no aparelho', async () => {
     saveReferral('equipe-farbo');
     await render('/contratar?evento=encontro-sp');

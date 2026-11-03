@@ -185,6 +185,24 @@ describe('a pessoa física paga no ato', () => {
     expect(ordered[0]).toMatchObject({ vehicle: expect.objectContaining({ kind: 'TRUCK' }) });
   });
 
+  it('cliente de um representante: a instalação com ele, paga direto, fora da cobrança', async () => {
+    terms = { payNow: true, chargeDate: '2026-10-23', install: { enabled: true, priceCents: 12000 }, installDirect: true };
+    quote = { enabled: false, zipCode: '', problem: '', arrange: false, quotes: [] };
+    await openWizard();
+    await act(async () => button('Voltar').click());
+    await flush();
+    expect(text()).toContain('Com o representante · R$ 120,00, pago direto a ele no dia (não entra na cobrança); agendamos o dia com você.');
+    const rep = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="install-choice"]'))[1];
+    await act(async () => rep.click());
+    await act(async () => button('Continuar').click());
+    await flush();
+    expect(text()).not.toContain('Instalação (instaladores Farbo)');
+    expect(text()).toContain('R$ 219,90');
+    await act(async () => button('Confirmar pedido').click());
+    await flush();
+    expect(ordered[0]).toMatchObject({ farboInstall: true });
+  });
+
   it('o rastreador comprado: instalar por conta própria ou com os instaladores da Farbo (pago no pedido)', async () => {
     terms = { payNow: true, chargeDate: '2026-10-23', install: { enabled: true, priceCents: 15000 } };
     quote = { enabled: false, zipCode: '', problem: '', arrange: false, quotes: [] };

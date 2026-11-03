@@ -290,10 +290,14 @@ export function CheckoutPage() {
                   title="Comodato (emprestado)"
                   price={`+${formatMoney(o.loan.surchargeCents)}/mês`}
                 >
-                  Sem pagar o rastreador: ele volta quando você encerrar. Instalação pelos nossos instaladores por{' '}
-                  {formatMoney(o.loan.installFeeCents)}
+                  Sem pagar o rastreador: ele volta quando você encerrar.{' '}
+                  {o.installDirect
+                    ? `Instalação pelo representante por ${formatMoney(o.loan.installFeeCents)}, paga direto a ele`
+                    : `Instalação pelos nossos instaladores por ${formatMoney(o.loan.installFeeCents)}`}
                   {o.loan.surchargeCents > 0 && ', com a garantia de troca do rastreador na mensalidade'}
-                  {o.loan.uninstallFeeCents > 0 && `; desinstalação de ${formatMoney(o.loan.uninstallFeeCents)} ao encerrar`}.
+                  {o.loan.uninstallFeeCents > 0 &&
+                    `; desinstalação de ${formatMoney(o.loan.uninstallFeeCents)} ao encerrar${o.installDirect ? ', também direto a ele' : ''}`}
+                  .
                 </Option>
               )}
             </fieldset>
@@ -331,10 +335,12 @@ export function CheckoutPage() {
                     checked={choice.farboInstall}
                     onChange={() => setChoice({ ...choice, farboInstall: true })}
                     name="install"
-                    title="Com os instaladores da Farbo"
+                    title={o.installDirect ? 'Com o representante' : 'Com os instaladores da Farbo'}
                     price={formatMoney(o.install.priceCents)}
                   >
-                    A gente agenda o dia com você.
+                    {o.installDirect
+                      ? 'Pago direto a ele na instalação, fora do Pix. A gente agenda o dia com você.'
+                      : 'A gente agenda o dia com você.'}
                   </Option>
                 )}
               </fieldset>
@@ -614,6 +620,14 @@ function Summary({
 }) {
   const loan = choice.equipmentMode === 'loan' && offer.loan !== null;
   const plan = offer.planByKind ? `${offer.planName} · ${KIND_NAMES[kind]}` : offer.planName;
+  // Pelo link de um representante: a instalação e a desinstalação são pagas direto a ele.
+  const directInstall = offer.installDirect
+    ? loan
+      ? (offer.loan?.installFeeCents ?? 0)
+      : choice.farboInstall
+        ? (offer.install?.priceCents ?? 0)
+        : 0
+    : 0;
   const parcels = totals.parcels.length;
   return (
     <div className={styles.summary} aria-label="Resumo do pedido">
@@ -654,9 +668,17 @@ function Summary({
         Depois, <span className={styles.monthly}>{formatMoney(totals.monthlyCents)}/mês</span> no dia {offer.dueDay}
         {parcels > 1 && `, com as outras ${parcels - 1} parcelas do rastreador somadas às próximas mensalidades`}
         {loan && totals.guaranteeCents > 0 && `; ${formatMoney(totals.guaranteeCents)} dela é a garantia de troca do rastreador`}
-        {loan && offer.loan && offer.loan.uninstallFeeCents > 0 && `. Ao encerrar, a desinstalação custa ${formatMoney(offer.loan.uninstallFeeCents)}`}
+        {loan &&
+          offer.loan &&
+          offer.loan.uninstallFeeCents > 0 &&
+          `. Ao encerrar, a desinstalação custa ${formatMoney(offer.loan.uninstallFeeCents)}${offer.installDirect ? ', paga direto ao representante' : ''}`}
         .
       </p>
+      {directInstall > 0 && (
+        <p className={styles.note}>
+          A instalação ({formatMoney(directInstall)}) é paga direto ao representante, no dia, fora do Pix.
+        </p>
+      )}
     </div>
   );
 }

@@ -171,6 +171,13 @@ export function AffiliatesTab() {
                           </button>
                         </span>
                         {a.planPrices && <div className={company.muted}>Mensalidade: {kindPricesLabel(a.planPrices)}</div>}
+                        {a.installPrices && (
+                          <div className={company.muted}>
+                            Instalação {formatMoney(a.installPrices.installCents)} · desinstalação{' '}
+                            {formatMoney(a.installPrices.uninstallCents)}
+                            {a.installPrices.mode === 'direct' ? ' (direto a ele)' : ''}
+                          </div>
+                        )}
                       </td>
                       <td data-label="Comissão por veículo/mês" className={company.right}>
                         {a.commissionType === 'percent' ? `${formatPercentBps(a.commissionBps)} da mensalidade` : formatMoney(a.commissionCents)}
