@@ -58,17 +58,31 @@ const (
 )
 
 // InstallPrices é a instalação (a do rastreador comprado e a do comodato) e
-// a desinstalação do comodato pelo link de um afiliado.
+// a desinstalação do comodato pelo link de um afiliado, com a garantia de
+// troca do comodato dele (nil: a da Farbo).
 type InstallPrices struct {
 	Mode           string `json:"mode"`
 	InstallCents   int    `json:"installCents"`
 	UninstallCents int    `json:"uninstallCents"`
+	// GuaranteeCents: a garantia de troca do rastreador no comodato, por mês
+	// (a Farbo cobra na mensalidade, também no modo direto); nil, a da Farbo.
+	GuaranteeCents *int `json:"guaranteeCents"`
 }
 
-// Valid: um dos modos, com os dois valores na faixa.
+// Valid: um dos modos, com os valores na faixa.
 func (p InstallPrices) Valid() bool {
-	return (p.Mode == InstallCustom || p.Mode == InstallDirect) &&
-		p.InstallCents >= 0 && p.InstallCents <= vehicles.MaxPlanCents && p.UninstallCents >= 0 && p.UninstallCents <= vehicles.MaxPlanCents
+	in := func(cents int) bool { return cents >= 0 && cents <= vehicles.MaxPlanCents }
+	return (p.Mode == InstallCustom || p.Mode == InstallDirect) && in(p.InstallCents) && in(p.UninstallCents) &&
+		(p.GuaranteeCents == nil || in(*p.GuaranteeCents))
+}
+
+// Guarantee é a garantia de troca do comodato: a do afiliado ou, sem ela, a
+// da Farbo (farbo).
+func (p *InstallPrices) Guarantee(farbo int) int {
+	if p == nil || p.GuaranteeCents == nil {
+		return farbo
+	}
+	return *p.GuaranteeCents
 }
 
 // Charged é o que a Farbo cobra da instalação e da desinstalação (no modo
@@ -82,8 +96,8 @@ func (p InstallPrices) Charged() (install, uninstall int) {
 
 // AffiliateInstall é a instalação do link do afiliado ativo (nil: a da Farbo).
 func (s *Service) AffiliateInstall(ctx context.Context, affiliateID uuid.UUID) (*InstallPrices, error) {
-	return s.installPrices(ctx, `SELECT install_mode, install_cents, uninstall_cents FROM affiliates WHERE id = $1 AND active`,
-		affiliateID)
+	return s.installPrices(ctx, `SELECT install_mode, install_cents, uninstall_cents, loan_surcharge_cents
+		FROM affiliates WHERE id = $1 AND active`, affiliateID)
 }
 
 // CustomerInstall é a instalação do afiliado que indicou o cliente, quando a
@@ -93,14 +107,14 @@ func (s *Service) CustomerInstall(ctx context.Context, customerID uuid.UUID) (*I
 	if err != nil || account != nil {
 		return nil, err
 	}
-	return s.installPrices(ctx, `SELECT a.install_mode, a.install_cents, a.uninstall_cents
+	return s.installPrices(ctx, `SELECT a.install_mode, a.install_cents, a.uninstall_cents, a.loan_surcharge_cents
 		FROM affiliate_referrals r JOIN affiliates a ON a.id = r.affiliate_id WHERE r.customer_id = $1`, customerID)
 }
 
 func (s *Service) installPrices(ctx context.Context, query string, id uuid.UUID) (*InstallPrices, error) {
 	var p InstallPrices
 	var install, uninstall *int
-	err := s.db.QueryRow(ctx, query, id).Scan(&p.Mode, &install, &uninstall)
+	err := s.db.QueryRow(ctx, query, id).Scan(&p.Mode, &install, &uninstall, &p.GuaranteeCents)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -115,14 +129,15 @@ func (s *Service) installPrices(ctx context.Context, query string, id uuid.UUID)
 }
 
 // WithInstall aplica a instalação do afiliado às opções do pedido mostradas
-// (a do rastreador comprado e as taxas do comodato): o preço dele, também com
-// a instalação da Farbo desligada.
+// (a do rastreador comprado, as taxas e a garantia de troca do comodato): o
+// preço dele, também com a instalação da Farbo desligada.
 func (p *InstallPrices) WithInstall(install *InstallService, loan *LoanOffer) {
 	if p == nil {
 		return
 	}
 	install.Enabled, install.PriceCents = true, p.InstallCents
 	loan.InstallFeeCents, loan.UninstallFeeCents = p.InstallCents, p.UninstallCents
+	loan.SurchargeCents = p.Guarantee(loan.SurchargeCents)
 }
 
 // applyInstall põe no pedido o que a Farbo cobra da instalação do afiliado:

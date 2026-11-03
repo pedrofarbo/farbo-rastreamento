@@ -453,8 +453,14 @@ func (s *Service) OrderTerms(ctx context.Context, customerID uuid.UUID, equipmen
 		}
 		terms := Terms{EquipmentMode: billing.EquipmentLoan, InstallFeeCents: offer.InstallFeeCents,
 			UninstallFeeCents: offer.UninstallFeeCents}
-		if individual && offer.SurchargeCents > 0 && plan != nil {
-			withGuarantee(plan, &terms, offer.SurchargeCents)
+		// A garantia de troca: a do afiliado que indicou o cliente, se ele
+		// tiver uma (as taxas dele vêm depois, no pedido).
+		install, err := s.CustomerInstall(ctx, customerID)
+		if err != nil {
+			return Terms{}, err
+		}
+		if guarantee := install.Guarantee(offer.SurchargeCents); individual && guarantee > 0 && plan != nil {
+			withGuarantee(plan, &terms, guarantee)
 		}
 		return terms, nil
 	}

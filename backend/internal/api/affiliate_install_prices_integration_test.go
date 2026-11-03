@@ -18,7 +18,9 @@ import (
 // a Farbo cobra os dele; com o representante, a oferta mostra os preços dele
 // e nada disso entra nas faturas (ele recebe direto do cliente), nem no
 // comodato, nem na instalação do rastreador comprado, nem no pedido que o
-// cliente faz depois pelo app. Precisa de FARBO_TEST_DATABASE_URL.
+// cliente faz depois pelo app. A garantia de troca do comodato é a do
+// afiliado, se ele tiver uma (a Farbo cobra na mensalidade).
+// Precisa de FARBO_TEST_DATABASE_URL.
 func TestAffiliateInstallPrices(t *testing.T) {
 	env, _ := newLeadsEnv(t, func(d *Deps) {
 		d.Config.Catalog.SetupDueDays = 0
@@ -43,12 +45,15 @@ func TestAffiliateInstallPrices(t *testing.T) {
 		_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/affiliates", map[string]any{
 			"name": name, "code": code, "active": true, "installPrices": install,
 		}, http.StatusCreated), &a)
-		if a.InstallPrices == nil || *a.InstallPrices != install {
+		if a.InstallPrices == nil || a.InstallPrices.Mode != install.Mode || a.InstallPrices.InstallCents != install.InstallCents ||
+			a.InstallPrices.UninstallCents != install.UninstallCents || a.InstallPrices.Guarantee(-1) != install.Guarantee(-1) {
 			t.Fatalf("afiliado %s = %+v", code, a)
 		}
 		return a
 	}
-	create("Rui Representante", "rui-rep", orders.InstallPrices{Mode: orders.InstallDirect, InstallCents: 12000, UninstallCents: 8000})
+	guarantee := 500
+	create("Rui Representante", "rui-rep", orders.InstallPrices{Mode: orders.InstallDirect, InstallCents: 12000, UninstallCents: 8000,
+		GuaranteeCents: &guarantee})
 	create("Loja Parceira", "loja", orders.InstallPrices{Mode: orders.InstallCustom, InstallCents: 9000, UninstallCents: 5000})
 
 	type offerView struct {
@@ -57,6 +62,7 @@ func TestAffiliateInstallPrices(t *testing.T) {
 			PriceCents int  `json:"priceCents"`
 		} `json:"install"`
 		Loan *struct {
+			SurchargeCents    int `json:"surchargeCents"`
 			InstallFeeCents   int `json:"installFeeCents"`
 			UninstallFeeCents int `json:"uninstallFeeCents"`
 		} `json:"loan"`
@@ -74,7 +80,7 @@ func TestAffiliateInstallPrices(t *testing.T) {
 	}
 	o := offer("?ref=rui-rep")
 	if !o.InstallDirect || o.Install == nil || o.Install.PriceCents != 12000 || o.Loan == nil || o.Loan.InstallFeeCents != 12000 ||
-		o.Loan.UninstallFeeCents != 8000 {
+		o.Loan.UninstallFeeCents != 8000 || o.Loan.SurchargeCents != 500 {
 		t.Fatalf("oferta do representante = %+v / %+v / %+v", o, o.Install, o.Loan)
 	}
 
@@ -114,6 +120,10 @@ func TestAffiliateInstallPrices(t *testing.T) {
 	if loan.InstallInvoice != nil || loan.Subscription.UninstallFeeCents != 0 || !farboInstall(loan.Subscription.ID.String()) {
 		t.Errorf("comodato pelo representante = %+v (instalação %+v)", loan.Subscription, loan.InstallInvoice)
 	}
+	// A garantia de troca dele na mensalidade: R$ 34,90 + R$ 5,00.
+	if loan.Subscription.PriceCents != 3490+500 || loan.Subscription.PlanName != "Plano Mensal"+orders.GuaranteeName {
+		t.Errorf("mensalidade do comodato pelo representante = %+v", loan.Subscription)
+	}
 	// O rastreador comprado com a instalação dele: sem a fatura da instalação.
 	sale := contractWith("rui-rep", "ana@rep.test", "390.533.447-05", map[string]any{"farboInstall": true})
 	if sale.InstallInvoice != nil || !farboInstall(sale.Subscription.ID.String()) {
@@ -123,6 +133,10 @@ func TestAffiliateInstallPrices(t *testing.T) {
 	custom := contractWith("loja", "bia@loja.test", "111.444.777-35", map[string]any{"equipmentMode": "loan"})
 	if custom.InstallInvoice == nil || custom.InstallInvoice.AmountCents != 9000 || custom.Subscription.UninstallFeeCents != 5000 {
 		t.Errorf("comodato pela loja = %+v (instalação %+v)", custom.Subscription, custom.InstallInvoice)
+	}
+	// Sem garantia própria, a da Farbo.
+	if custom.Subscription.PriceCents != 3490+300 {
+		t.Errorf("mensalidade do comodato pela loja = %d", custom.Subscription.PriceCents)
 	}
 
 	// No app, a cliente do representante segue com ele: o catálogo mostra
@@ -147,5 +161,12 @@ func TestAffiliateInstallPrices(t *testing.T) {
 	}, http.StatusCreated), &placed)
 	if placed.InstallInvoice != nil || !farboInstall(placed.Subscription.ID.String()) {
 		t.Errorf("pedido pelo app = %+v (instalação %+v)", placed.Subscription, placed.InstallInvoice)
+	}
+	// O comodato pelo app: a garantia dele, sem as taxas na plataforma.
+	_ = json.Unmarshal(env.must(token, http.MethodPost, "/api/me/trackers", map[string]any{
+		"vehicle": map[string]any{"name": "Moto da Ana", "plate": "ANA2B22"}, "equipmentMode": "loan",
+	}, http.StatusCreated), &placed)
+	if placed.InstallInvoice != nil || placed.Subscription.UninstallFeeCents != 0 || placed.Subscription.PriceCents != 3490+500 {
+		t.Errorf("comodato pelo app = %+v (instalação %+v)", placed.Subscription, placed.InstallInvoice)
 	}
 }

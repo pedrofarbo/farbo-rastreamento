@@ -212,6 +212,7 @@ describe('a contratação pelo site', () => {
       loan: { enabled: true, surchargeCents: 300, installFeeCents: 12000, uninstallFeeCents: 8000 },
     });
     await render();
+    expect(text()).toContain('Comodato (emprestado)+R$ 3,00/mês');
     expect(text()).toContain('Instalação pelo representante por R$ 120,00, paga direto a ele');
     expect(text()).toContain('desinstalação de R$ 80,00 ao encerrar, também direto a ele');
     await click(radio('Com o representante'));
@@ -224,6 +225,15 @@ describe('a contratação pelo site', () => {
     await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
     await click(button('Pagar'));
     expect(placed[0]).toMatchObject({ equipmentMode: 'sale', farboInstall: true });
+  });
+
+  it('comodato sem garantia de troca (a do afiliado em zero): sem taxa mensal', async () => {
+    offer = offerWith({ loan: { enabled: true, surchargeCents: 0, installFeeCents: 15000, uninstallFeeCents: 8500 } });
+    await render();
+    expect(text()).toContain('Comodato (emprestado)sem taxa mensal');
+    expect(text()).not.toContain('garantia de troca do rastreador na mensalidade');
+    await click(radio('Comodato (emprestado)'));
+    expect(text()).toContain('MensalidadeR$ 34,90/mês');
   });
 
   it('do QR Code de um evento: vai com o evento e sem o link de indicação guardado no aparelho', async () => {

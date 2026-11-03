@@ -176,6 +176,8 @@ export function AffiliatesTab() {
                             Instalação {formatMoney(a.installPrices.installCents)} · desinstalação{' '}
                             {formatMoney(a.installPrices.uninstallCents)}
                             {a.installPrices.mode === 'direct' ? ' (direto a ele)' : ''}
+                            {a.installPrices.guaranteeCents != null &&
+                              ` · garantia ${formatMoney(a.installPrices.guaranteeCents)}/mês`}
                           </div>
                         )}
                       </td>

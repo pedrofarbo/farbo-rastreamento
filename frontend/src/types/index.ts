@@ -459,6 +459,8 @@ export interface InstallPrices {
   mode: 'custom' | 'direct';
   installCents: number;
   uninstallCents: number;
+  /** A garantia de troca do rastreador no comodato, por mês (nula: a da Farbo); a Farbo cobra na mensalidade. */
+  guaranteeCents?: number | null;
 }
 
 /** A mensalidade por tipo de veículo: a tabela do link de um afiliado. */

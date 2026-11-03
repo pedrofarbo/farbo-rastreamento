@@ -95,9 +95,17 @@ describe('o cadastro do afiliado', () => {
     expect(calls).toHaveLength(0);
 
     await setValue(control<HTMLInputElement>('Desinstalação do comodato (R$)'), '0');
+    await setValue(control<HTMLInputElement>('Garantia de troca no comodato'), 'cinco');
+    await act(async () => button('Criar afiliado').click());
+    expect(text()).toContain('Garantia de troca inválida');
+    expect(calls).toHaveLength(0);
+
+    await setValue(control<HTMLInputElement>('Garantia de troca no comodato'), '5,00');
     await act(async () => button('Criar afiliado').click());
     await vi.waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0][1]).toMatchObject({ installPrices: { mode: 'direct', installCents: 12000, uninstallCents: 0 } });
+    expect(calls[0][1]).toMatchObject({
+      installPrices: { mode: 'direct', installCents: 12000, uninstallCents: 0, guaranteeCents: 500 },
+    });
   });
 
   it('valor fixo continua como antes', async () => {

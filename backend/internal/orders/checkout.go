@@ -77,8 +77,9 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 		}
 		terms := Terms{EquipmentMode: billing.EquipmentLoan, InstallFeeCents: opts.Loan.InstallFeeCents,
 			UninstallFeeCents: opts.Loan.UninstallFeeCents}
-		if opts.Loan.SurchargeCents > 0 {
-			withGuarantee(&order.Plan, &terms, opts.Loan.SurchargeCents)
+		// A garantia de troca: a do afiliado do link, se ele tiver uma.
+		if guarantee := install.Guarantee(opts.Loan.SurchargeCents); guarantee > 0 {
+			withGuarantee(&order.Plan, &terms, guarantee)
 		}
 		order.Terms = terms
 	default:

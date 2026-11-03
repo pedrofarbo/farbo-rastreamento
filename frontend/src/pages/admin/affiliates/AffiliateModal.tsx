@@ -29,6 +29,8 @@ interface Draft {
   installMode: '' | InstallPrices['mode'];
   installPrice: string;
   uninstallPrice: string;
+  /** A garantia de troca do comodato (vazio: a da Farbo). */
+  guarantee: string;
   email: string;
   phone: string;
   pixKey: string;
@@ -51,6 +53,7 @@ function draftOf(a: Affiliate | null, defaultCents: number): Draft {
     installMode: a?.installPrices?.mode ?? '',
     installPrice: a?.installPrices ? centsToInput(a.installPrices.installCents) : '',
     uninstallPrice: a?.installPrices ? centsToInput(a.installPrices.uninstallCents) : '',
+    guarantee: a?.installPrices?.guaranteeCents != null ? centsToInput(a.installPrices.guaranteeCents) : '',
     email: a?.email ?? '',
     phone: a?.phone ?? '',
     pixKey: a?.pixKey ?? '',
@@ -156,7 +159,12 @@ export function AffiliateModal({
         setError('Preencha o preço da instalação e o da desinstalação (0 para sem custo).');
         return;
       }
-      installPrices = { mode: draft.installMode, installCents, uninstallCents };
+      const guaranteeCents = draft.guarantee.trim() === '' ? null : parseMoney(draft.guarantee);
+      if (draft.guarantee.trim() !== '' && guaranteeCents === null) {
+        setError('Garantia de troca inválida: deixe em branco para a da Farbo (ou 0 para sem garantia).');
+        return;
+      }
+      installPrices = { mode: draft.installMode, installCents, uninstallCents, guaranteeCents };
     }
     save.mutate({
       name: draft.name,
@@ -398,6 +406,14 @@ export function AffiliateModal({
                 value={draft.uninstallPrice}
                 inputMode="decimal"
                 onChange={(e) => set('uninstallPrice', e.target.value)}
+              />
+              <TextField
+                label="Garantia de troca no comodato (R$/mês)"
+                value={draft.guarantee}
+                inputMode="decimal"
+                placeholder="a da Farbo"
+                onChange={(e) => set('guarantee', e.target.value)}
+                hint="Somada à mensalidade do comodato e cobrada pela Farbo. Em branco, a da Farbo; 0, sem garantia."
               />
             </>
           )}

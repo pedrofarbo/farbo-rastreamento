@@ -288,7 +288,7 @@ export function CheckoutPage() {
                   onChange={() => setChoice({ ...choice, equipmentMode: 'loan', installments: 1, farboInstall: false })}
                   name="equipment"
                   title="Comodato (emprestado)"
-                  price={`+${formatMoney(o.loan.surchargeCents)}/mês`}
+                  price={o.loan.surchargeCents > 0 ? `+${formatMoney(o.loan.surchargeCents)}/mês` : 'sem taxa mensal'}
                 >
                   Sem pagar o rastreador: ele volta quando você encerrar.{' '}
                   {o.installDirect
