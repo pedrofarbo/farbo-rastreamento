@@ -110,11 +110,11 @@ const columns = `a.id, a.name, a.handle, a.code, a.report_token, a.commission_ty
 	(SELECT count(DISTINCT lower(x.email)) FROM (
 		SELECT email FROM launch_waitlist WHERE affiliate_id = a.id
 		UNION ALL SELECT email FROM leads WHERE affiliate_id = a.id) x),
-	(SELECT count(*) FROM affiliate_referrals r WHERE r.affiliate_id = a.id),
-	(SELECT count(*) FROM affiliate_referrals r WHERE r.affiliate_id = a.id AND EXISTS (
+	(SELECT count(*) FROM affiliate_referrals r WHERE r.affiliate_id = a.id AND NOT checkout_pending(r.customer_id)),
+	(SELECT count(*) FROM affiliate_referrals r WHERE r.affiliate_id = a.id AND NOT checkout_pending(r.customer_id) AND EXISTS (
 		SELECT 1 FROM subscriptions sb WHERE sb.customer_id = r.customer_id AND sb.status = 'ACTIVE')),
 	(SELECT count(*) FROM affiliate_referrals r JOIN subscriptions sb ON sb.customer_id = r.customer_id
-		WHERE r.affiliate_id = a.id AND sb.status = 'ACTIVE'),
+		WHERE r.affiliate_id = a.id AND sb.status = 'ACTIVE' AND NOT checkout_pending(r.customer_id)),
 	COALESCE((SELECT sum(c.amount_cents) FROM affiliate_commissions c
 		WHERE c.affiliate_id = a.id AND c.payout_id IS NULL AND NOT ` + splitPaid + `), 0)::bigint,
 	COALESCE((SELECT sum(c.amount_cents) FROM affiliate_commissions c

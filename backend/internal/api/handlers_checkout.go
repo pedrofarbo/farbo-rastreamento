@@ -317,6 +317,14 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 			s.Log.Error("contratação pelo site falhou e a conta não foi desfeita", "user", user.ID, "cause", cause, "err", err)
 		}
 	}
+	// A conta só vira cliente quando a contratação for paga: até lá, não
+	// aparece como cliente (checkout_pending) e, vencido o pagamento sem
+	// pagar, sai (orders.PurgeUnpaidCheckouts).
+	if _, err := s.DB.Exec(ctx, `UPDATE users SET checkout_at = NOW() WHERE id = $1`, user.ID); err != nil {
+		discard(err)
+		handleStoreError(w, err, "")
+		return
+	}
 	if _, err := s.Addresses.Save(ctx, user.ID, address); err != nil {
 		discard(err)
 		handleStoreError(w, err, "")

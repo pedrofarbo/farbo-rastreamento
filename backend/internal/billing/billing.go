@@ -718,7 +718,9 @@ func scanSummary(row database.Scanner) (*CustomerSummary, error) {
 }
 
 func (r *Repository) ListCustomers(ctx context.Context, today, cutoff Date, suspension bool) ([]*CustomerSummary, error) {
-	rows, err := r.db.Query(ctx, summaryQuery+` ORDER BY lower(u.name), u.email`,
+	// A contratação pelo site sem pagamento ainda não é cliente: fora da
+	// lista (a ficha dela abre, e o app também, para ela pagar).
+	rows, err := r.db.Query(ctx, summaryQuery+` AND NOT checkout_pending(u.id) ORDER BY lower(u.name), u.email`,
 		today.Time, cutoff.Time, suspension)
 	if err != nil {
 		return nil, database.MapError(err)

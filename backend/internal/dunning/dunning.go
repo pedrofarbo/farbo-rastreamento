@@ -194,6 +194,8 @@ func (s *Service) Work(ctx context.Context) int {
 	rows, err := s.db.Query(ctx, `
 		SELECT i.id FROM invoices i JOIN users u ON u.id = i.customer_id
 		WHERE i.status = 'OPEN' AND i.amount_cents > 0 AND u.active AND i.due_date >= $1
+			-- A contratação pelo site sem pagamento não entra na régua (vence e sai).
+			AND NOT checkout_pending(u.id)
 		ORDER BY i.due_date`, oldest.Time)
 	if err != nil {
 		s.log.Error("falha ao listar as faturas da régua", "err", err)

@@ -629,7 +629,7 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, theftSvc, dunningSvc, adjustmentSvc, contractSvc, pushSvc, orgSvc, log)
+		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, theftSvc, dunningSvc, adjustmentSvc, contractSvc, pushSvc, orgSvc, ordersSvc, log)
 	}()
 
 	log.Info("plataforma no ar",
@@ -672,6 +672,7 @@ func runWorkers(
 	contractSvc *contract.Service,
 	pushSvc *push.Service,
 	orgSvc *organizations.Service,
+	ordersSvc *orders.Service,
 	log *slog.Logger,
 ) {
 	statusTicker := time.NewTicker(cfg.Tracking.StatusSweepInterval)
@@ -760,6 +761,12 @@ func runWorkers(
 			financeSvc.GenerateRecurring(ctx)
 			financeSvc.SendReminders(ctx)
 			affiliatesSvc.Work(ctx)
+			// A contratação pelo site que venceu sem pagar: o cadastro sai.
+			if purged, err := ordersSvc.PurgeUnpaidCheckouts(ctx, time.Now()); err != nil {
+				log.Error("falha ao procurar as contratações pelo site sem pagamento", "err", err)
+			} else if purged > 0 {
+				log.Info("contratações pelo site sem pagamento apagadas", "count", purged)
+			}
 
 		case <-paymentsTicker.C:
 			paymentsSvc.SyncPending(ctx)

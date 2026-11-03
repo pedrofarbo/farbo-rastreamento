@@ -91,6 +91,11 @@ func TestPartnerManagesInstalls(t *testing.T) {
 		return id
 	}
 	anaCar, biaCar := vehicleOf(ana), vehicleOf(other)
+	// Pagas: quem contrata pelo site só vira cliente (e entra na fila) quando paga.
+	if _, err := env.db.Exec(ctx, `UPDATE invoices SET status = 'PAID', paid_at = NOW() WHERE customer_id IN
+		(SELECT customer_id FROM subscriptions WHERE id = ANY($1))`, []uuid.UUID{ana.ID, other.ID}); err != nil {
+		t.Fatal(err)
+	}
 
 	page := "/api/public/partner/" + rui.ReportToken
 	if status, _ := env.do("", http.MethodGet, page+"/installations", nil); status != http.StatusUnauthorized {

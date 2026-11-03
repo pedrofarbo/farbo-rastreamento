@@ -184,6 +184,17 @@
   color: var(--color-neon-green);
 }
 
+/* "Mudar o plano": um link no meio do texto, que volta à etapa do plano. */
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-neon-green);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .panel {
   /* Os campos e as opções de frete do painel, no fundo da página. */
   display: flex;

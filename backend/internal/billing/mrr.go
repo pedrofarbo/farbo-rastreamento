@@ -202,7 +202,8 @@ func (r *Repository) mrrBilled(ctx context.Context, from, to Date) (map[string]m
 					SELECT 1 FROM invoices p WHERE p.subscription_id = i.subscription_id AND p.status <> 'CANCELED'
 						AND p.due_date < i.due_date) AS first
 			FROM invoices i JOIN users u ON u.id = i.customer_id
-			WHERE i.status <> 'CANCELED' AND u.role = 'customer' AND i.due_date >= $1::date AND i.due_date < $2::date)
+			WHERE i.status <> 'CANCELED' AND u.role = 'customer' AND NOT checkout_pending(u.id)
+				AND i.due_date >= $1::date AND i.due_date < $2::date)
 		SELECT to_char(due_date, 'YYYY-MM'),
 			COALESCE(sum(amount - parcel) FILTER (WHERE subscription_id IS NOT NULL AND amount > parcel), 0)::bigint,
 			count(*) FILTER (WHERE subscription_id IS NOT NULL AND amount > parcel),
@@ -462,7 +463,8 @@ func (r *Repository) forecastData(ctx context.Context, start, end Date) ([]forec
 			COALESCE((SELECT array_agg(e.amount_cents::bigint ORDER BY e.number) FROM equipment_installments e
 				WHERE e.subscription_id = s.id AND e.invoice_id IS NULL AND e.waived_at IS NULL), '{}')
 		FROM subscriptions s JOIN users u ON u.id = s.customer_id
-		WHERE s.status = 'ACTIVE' AND u.role = 'customer' AND s.next_due_date < $1::date`, end.String())
+		WHERE s.status = 'ACTIVE' AND u.role = 'customer' AND NOT checkout_pending(u.id) AND s.next_due_date < $1::date`,
+		end.String())
 	if err != nil {
 		return nil, nil, database.MapError(err)
 	}
@@ -494,7 +496,7 @@ func (r *Repository) forecastData(ctx context.Context, start, end Date) ([]forec
 		FROM invoices i
 		JOIN users u ON u.id = i.customer_id
 		CROSS JOIN LATERAL (SELECT COALESCE(sum(e.amount_cents), 0)::bigint AS cents FROM equipment_installments e WHERE e.invoice_id = i.id) p
-		WHERE i.subscription_id IS NOT NULL AND i.status <> 'CANCELED' AND u.role = 'customer'
+		WHERE i.subscription_id IS NOT NULL AND i.status <> 'CANCELED' AND u.role = 'customer' AND NOT checkout_pending(u.id)
 			AND i.due_date >= $1::date AND i.due_date < $2::date`, start.String(), end.String())
 	if err != nil {
 		return nil, nil, database.MapError(err)

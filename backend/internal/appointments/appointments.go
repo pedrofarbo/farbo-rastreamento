@@ -286,7 +286,7 @@ func (s *Service) AwaitingInstall(ctx context.Context) ([]Awaiting, error) {
 			COALESCE((SELECT af.name FROM affiliate_referrals r JOIN affiliates af ON af.id = r.affiliate_id
 				WHERE r.customer_id = u.id AND af.manage_installs), '')
 		FROM vehicles v JOIN users u ON u.id = v.owner_id LEFT JOIN users o ON o.id = u.organization_id
-		WHERE v.device_id IS NULL AND u.active AND u.role = 'customer'
+		WHERE v.device_id IS NULL AND u.active AND u.role = 'customer' AND NOT checkout_pending(u.id)
 			-- O rastreador retirado na desinstalação não volta para a fila.
 			AND COALESCE((SELECT x.kind FROM installation_appointments x WHERE x.vehicle_id = v.id AND x.status = 'done'
 				ORDER BY x.completed_at DESC LIMIT 1), 'install') <> 'uninstall'

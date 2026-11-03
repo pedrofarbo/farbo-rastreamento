@@ -201,10 +201,13 @@ describe('a contratação pelo site', () => {
     expect(text()).toContain('MensalidadeR$ 39,90/mês');
     await click(radio('Plano Mensal · Caminhão'));
     expect(text()).toContain('MensalidadeR$ 59,90/mês');
-    // Na etapa do veículo, o caminhão já vem marcado.
+    // Na etapa do veículo, o tipo é o do plano: sem trocar por moto ou carro ali.
     await click(button('Continuar'));
-    expect(radio('Caminhão').checked).toBe(true);
-    await click(button('Voltar'));
+    expect(text()).toContain('Caminhão, o tipo do plano escolhido.');
+    expect(Array.from(document.querySelectorAll('input[name="kind"]'))).toHaveLength(0);
+    // "Mudar o plano" volta à etapa do plano.
+    await click(button('Mudar o plano'));
+    expect(radio('Plano Mensal · Caminhão').checked).toBe(true);
     await fillUntilPayment();
     expect(text()).toContain('1ª mensalidade · Plano Mensal · CaminhãoR$ 59,90');
     await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);

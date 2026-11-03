@@ -65,7 +65,7 @@ func (s *Service) PartnerQueue(ctx context.Context, affiliateID uuid.UUID) (*Par
 	// A instalação que é da Farbo (agora dele): o comodato e a contratada no
 	// pedido. Quem instala por conta própria fica fora.
 	if out.AwaitingInstall, err = s.partnerVehicles(ctx, `v.created_at`, `
-		AND v.device_id IS NULL AND u.active AND u.role = 'customer'
+		AND v.device_id IS NULL AND u.active AND u.role = 'customer' AND NOT checkout_pending(u.id)
 		AND EXISTS (SELECT 1 FROM subscriptions sb WHERE sb.vehicle_id = v.id AND sb.status = 'ACTIVE' AND sb.farbo_install)
 		AND COALESCE((SELECT x.kind FROM installation_appointments x WHERE x.vehicle_id = v.id AND x.status = 'done'
 			ORDER BY x.completed_at DESC LIMIT 1), 'install') <> 'uninstall'`, affiliateID); err != nil {

@@ -369,11 +369,22 @@ export function CheckoutPage() {
           <>
             <fieldset className={styles.options}>
               <legend className={styles.legend}>O veículo</legend>
-              <div className={styles.kinds}>
-                {PRICED_KINDS.map((k) => (
-                  <Option key={k} checked={kind === k} onChange={() => setKind(k)} name="kind" title={KIND_NAMES[k]} />
-                ))}
-              </div>
+              {table ? (
+                // Pelo link com a tabela por tipo, o tipo é o do plano escolhido:
+                // trocar aqui mudaria a mensalidade sem voltar ao plano.
+                <p className={styles.note}>
+                  {KIND_NAMES[kind]}, o tipo do plano escolhido.{' '}
+                  <button type="button" className={styles.linkButton} onClick={() => goTo(0)}>
+                    Mudar o plano
+                  </button>
+                </p>
+              ) : (
+                <div className={styles.kinds}>
+                  {PRICED_KINDS.map((k) => (
+                    <Option key={k} checked={kind === k} onChange={() => setKind(k)} name="kind" title={KIND_NAMES[k]} />
+                  ))}
+                </div>
+              )}
             </fieldset>
             <div className={styles.panel}>
               <div className={styles.row}>
@@ -527,7 +538,8 @@ export function CheckoutPage() {
               </button>
             </div>
             <p className={pre.small}>
-              A sua conta no app é criada agora; o Pix abre em seguida e vale para todo o pedido.
+              O Pix abre em seguida e vale para todo o pedido. A contratação só fica valendo com o pagamento: se o Pix
+              vencer sem ser pago, o cadastro é cancelado (e dá para contratar de novo).
             </p>
           </>
         )}

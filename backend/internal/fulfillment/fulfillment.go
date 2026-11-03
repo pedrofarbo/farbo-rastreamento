@@ -285,7 +285,7 @@ func (r *Repository) ListByCustomer(ctx context.Context, customerID uuid.UUID) (
 // List é a fila da central: em andamento (nada entregue ainda) ou todos.
 func (r *Repository) List(ctx context.Context, onlyOpen bool) ([]*Fulfillment, error) {
 	if onlyOpen {
-		return r.list(ctx, "WHERE f.tracker_status <> 'DELIVERED'")
+		return r.list(ctx, "WHERE f.tracker_status <> 'DELIVERED' AND NOT checkout_pending(f.customer_id)")
 	}
 	return r.list(ctx, "")
 }
