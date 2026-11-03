@@ -874,6 +874,7 @@ func (s *Server) routes() chi.Router {
 						})
 						r.Get("/pix", s.handleFinancePixInfo)
 						r.Get("/balance", s.handleGatewayBalance)
+						r.Get("/balance/pagarme", s.handlePagarmeBalance)
 						r.Post("/pix/{id}/resolve", s.handleResolvePix)
 						r.Get("/attachments/{id}", s.handleGetAttachment)
 						r.Delete("/attachments/{id}", s.handleDeleteAttachment)

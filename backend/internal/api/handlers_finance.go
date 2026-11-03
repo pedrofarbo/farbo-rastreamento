@@ -542,6 +542,12 @@ func (s *Server) handleGatewayBalance(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.Finance.GatewayBalance(r.Context()))
 }
 
+// handlePagarmeBalance: o saldo na Pagar.me agora, ao lado do da AbacatePay.
+func (s *Server) handlePagarmeBalance(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, s.Finance.PagarmeBalance(r.Context()))
+}
+
 func (s *Server) handleFinancePixInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.Finance.PixInfo(r.Context()))
 }

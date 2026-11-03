@@ -12,6 +12,7 @@ import (
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments/abacatepay"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments/pagarme"
 )
 
 // Pagar fornecedores por Pix pela AbacatePay. O Pix sai do saldo da conta
@@ -341,6 +342,10 @@ func providerMessage(err error) string {
 	var apiErr *abacatepay.APIError
 	if errors.As(err, &apiErr) {
 		return apiErr.Message
+	}
+	var pagarmeErr *pagarme.APIError
+	if errors.As(err, &pagarmeErr) {
+		return pagarmeErr.Message
 	}
 	return err.Error()
 }

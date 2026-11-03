@@ -17,6 +17,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/finance"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments/abacatepay"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments/pagarme"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/telemetry"
 )
 
@@ -151,6 +152,18 @@ type fakeBalance struct {
 
 func (f *fakeBalance) Balance(context.Context) (*abacatepay.Balance, error) { return f.balance, f.err }
 
+// fakePagarmeBalance é o saldo do recebedor na Pagar.me de mentira.
+type fakePagarmeBalance struct {
+	recipient string
+	balance   *pagarme.RecipientBalance
+	err       error
+}
+
+func (f *fakePagarmeBalance) Balance(_ context.Context, recipientID string) (*pagarme.RecipientBalance, error) {
+	f.recipient = recipientID
+	return f.balance, f.err
+}
+
 // O saldo na AbacatePay no topo da tela da empresa: o disponível, o a liberar
 // e o bloqueado, consultados na hora; a falha vira um aviso; sem a chave,
 // desligado. Só o admin. Precisa de FARBO_TEST_DATABASE_URL.
@@ -186,6 +199,38 @@ func TestGatewayBalance(t *testing.T) {
 
 	fake.err = &abacatepay.APIError{HTTPStatus: http.StatusUnauthorized, Message: "chave sem permissão"}
 	if b := balance(); !b.Enabled || b.AvailableCents != nil || b.Error != "chave sem permissão" {
+		t.Errorf("com falha = %+v", b)
+	}
+}
+
+// O saldo na Pagar.me ao lado do da AbacatePay: o do recebedor da Farbo, o
+// disponível e o a liberar, na hora; a falha vira um aviso; sem a chave e o
+// recebedor, desligado. Só o admin. Precisa de FARBO_TEST_DATABASE_URL.
+func TestPagarmeBalance(t *testing.T) {
+	env, fs, _ := newCompanyEnv(t)
+	env.must(env.login(auth.RoleOperator+"@receitas.test"), http.MethodGet, "/api/finance/balance/pagarme", nil, http.StatusForbidden)
+	admin := env.login(auth.RoleAdmin + "@receitas.test")
+	balance := func() finance.GatewayBalance {
+		t.Helper()
+		var out finance.GatewayBalance
+		if err := json.Unmarshal(env.must(admin, http.MethodGet, "/api/finance/balance/pagarme", nil, http.StatusOK), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	if b := balance(); b.Enabled || b.AvailableCents != nil {
+		t.Errorf("sem a Pagar.me = %+v", b)
+	}
+
+	fake := &fakePagarmeBalance{balance: &pagarme.RecipientBalance{AvailableAmount: 98765, WaitingFundsAmount: 4321}}
+	fs.SetPagarmeBalance(fake, "rp_farbo", true)
+	b := balance()
+	if !b.Enabled || !b.DevMode || fake.recipient != "rp_farbo" || b.AvailableCents == nil || *b.AvailableCents != 98765 ||
+		*b.PendingCents != 4321 || b.BlockedCents != nil || b.Error != "" {
+		t.Errorf("saldo = %+v", b)
+	}
+	fake.err = &pagarme.APIError{HTTPStatus: http.StatusNotFound, Message: "Recipient not found"}
+	if b := balance(); !b.Enabled || b.AvailableCents != nil || b.Error != "Recipient not found" {
 		t.Errorf("com falha = %+v", b)
 	}
 }

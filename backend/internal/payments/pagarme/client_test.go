@@ -193,3 +193,15 @@ func TestWebhookEvent(t *testing.T) {
 		t.Fatal("segredo do webhook")
 	}
 }
+
+func TestRecipientBalance(t *testing.T) {
+	f := &fake{reply: `{"currency":"BRL","available_amount":123456,"waiting_funds_amount":15990,"transferred_amount":50000}`}
+	c := NewClient(f.server(t).URL, "sk_test_abc")
+	b, err := c.Balance(context.Background(), "rp_farbo")
+	if err != nil || f.method != http.MethodGet || f.path != "/recipients/rp_farbo/balance" {
+		t.Fatalf("consulta: %s %s %v", f.method, f.path, err)
+	}
+	if b.AvailableAmount != 123456 || b.WaitingFundsAmount != 15990 || b.TransferredAmount != 50000 {
+		t.Errorf("saldo = %+v", b)
+	}
+}

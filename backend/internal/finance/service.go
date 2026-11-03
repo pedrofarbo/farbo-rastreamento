@@ -35,6 +35,11 @@ type Service struct {
 	// balance lê o saldo da AbacatePay (nil: sem a chave); balanceDev: de testes.
 	balance    BalanceReader
 	balanceDev bool
+	// pagarme lê o saldo do recebedor da Farbo na Pagar.me (nil: sem a chave
+	// ou o recebedor); pagarmeDev: de testes.
+	pagarme          PagarmeBalanceReader
+	pagarmeRecipient string
+	pagarmeDev       bool
 }
 
 func NewService(db *database.DB, mailer Mailer, log *slog.Logger) *Service {

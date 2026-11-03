@@ -1710,6 +1710,8 @@ export const financeApi = {
   pixInfo: () => api.get<PixInfo>('/api/finance/pix'),
   /** O saldo na AbacatePay agora (disponível, a liberar e bloqueado). */
   balance: () => api.get<GatewayBalance>('/api/finance/balance'),
+  /** O saldo do recebedor da Farbo na Pagar.me, ao lado do da AbacatePay. */
+  pagarmeBalance: () => api.get<GatewayBalance>('/api/finance/balance/pagarme'),
   /** Para onde e quanto vai sair (ou o problema), e os envios anteriores. */
   entryPix: (id: string) =>
     api.get<{ plan: PixPlan | null; problem: string; transfers: PixTransfer[] }>(`/api/finance/entries/${id}/pix`),

@@ -11,6 +11,7 @@ const BALANCE: GatewayBalance = {
   checkedAt: '2026-10-13T17:20:00Z', error: '',
 };
 let answer: GatewayBalance = BALANCE;
+let pagarme: GatewayBalance = { ...BALANCE, enabled: false, availableCents: null, pendingCents: null, blockedCents: null };
 let asked = 0;
 vi.mock('@/api/resources', () => ({
   financeApi: {
@@ -18,6 +19,7 @@ vi.mock('@/api/resources', () => ({
       asked++;
       return answer;
     },
+    pagarmeBalance: async () => pagarme,
   },
 }));
 
@@ -32,16 +34,17 @@ const button = (label: string) =>
 afterEach(() => {
   document.body.innerHTML = '';
   answer = BALANCE;
+  pagarme = { ...BALANCE, enabled: false, availableCents: null, pendingCents: null, blockedCents: null };
   asked = 0;
 });
 
-async function render() {
+async function render(gateway: 'abacatepay' | 'pagarme' = 'abacatepay') {
   const host = document.createElement('div');
   document.body.appendChild(host);
   await act(async () =>
     createRoot(host).render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <GatewayBalanceCard />
+        <GatewayBalanceCard gateway={gateway} />
       </QueryClientProvider>,
     ),
   );
@@ -81,5 +84,17 @@ describe('o saldo na AbacatePay no topo da empresa', () => {
     answer = { ...BALANCE, enabled: false, availableCents: null, pendingCents: null, blockedCents: null };
     await render();
     expect(document.body.textContent).toBe('');
+  });
+
+  it('a Pagar.me ao lado: o disponível e o a liberar; sem a Pagar.me configurada, não aparece', async () => {
+    await render('pagarme');
+    expect(document.body.textContent).toBe('');
+    document.body.innerHTML = '';
+    pagarme = { ...BALANCE, availableCents: 98765, pendingCents: 4321, blockedCents: null };
+    await render('pagarme');
+    expect(text()).toContain('Saldo na Pagar.me');
+    expect(text()).toContain('R$ 987,65');
+    expect(text()).toContain('disponível · R$ 43,21 a liberar');
+    expect(text()).not.toContain('AbacatePay');
   });
 });

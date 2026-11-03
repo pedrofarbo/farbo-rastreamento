@@ -129,3 +129,22 @@ func (c *Client) CreateKYCLink(ctx context.Context, id string) (*KYCLink, error)
 	}
 	return &out, nil
 }
+
+// RecipientBalance é o saldo do recebedor, em centavos: Available é o que já
+// pode ser transferido; WaitingFunds, o que ainda vai ser liberado (os
+// recebíveis a vencer); Transferred, o que já saiu.
+type RecipientBalance struct {
+	AvailableAmount    int64 `json:"available_amount"`
+	WaitingFundsAmount int64 `json:"waiting_funds_amount"`
+	TransferredAmount  int64 `json:"transferred_amount"`
+}
+
+// Balance consulta o saldo do recebedor (o da conta da Farbo: o saldo da
+// conta na Pagar.me).
+func (c *Client) Balance(ctx context.Context, recipientID string) (*RecipientBalance, error) {
+	var out RecipientBalance
+	if err := c.do(ctx, http.MethodGet, "/recipients/"+url.PathEscape(recipientID)+"/balance", nil, "", nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}

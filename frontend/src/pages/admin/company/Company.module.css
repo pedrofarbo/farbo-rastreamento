@@ -541,6 +541,16 @@ table td.right {
 }
 
 /* O saldo na AbacatePay, no topo da tela da empresa. */
+.balances {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.balances:empty {
+  display: none;
+}
+
 .balance {
   display: flex;
   flex-direction: column;
@@ -579,6 +589,7 @@ table td.right {
 }
 
 @media (max-width: 640px) {
+  .balances,
   .balance {
     width: 100%;
   }

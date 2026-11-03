@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments/abacatepay"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments/pagarme"
 )
 
 // BalanceReader lê o saldo da conta na AbacatePay.
@@ -50,5 +51,36 @@ func (s *Service) GatewayBalance(ctx context.Context) *GatewayBalance {
 	}
 	available, pending, blocked := int64(b.Available), int64(b.Pending), int64(b.Blocked)
 	out.AvailableCents, out.PendingCents, out.BlockedCents = &available, &pending, &blocked
+	return out
+}
+
+// PagarmeBalanceReader lê o saldo do recebedor na Pagar.me.
+type PagarmeBalanceReader interface {
+	Balance(ctx context.Context, recipientID string) (*pagarme.RecipientBalance, error)
+}
+
+// SetPagarmeBalance liga o saldo da Pagar.me na tela da empresa: o do
+// recebedor da conta da Farbo (testMode: a chave é de testes).
+func (s *Service) SetPagarmeBalance(r PagarmeBalanceReader, recipientID string, testMode bool) {
+	s.pagarme, s.pagarmeRecipient, s.pagarmeDev = r, recipientID, testMode
+}
+
+// PagarmeBalance é o saldo na Pagar.me agora, no mesmo formato do da
+// AbacatePay: o disponível e o que ainda vai ser liberado (os recebíveis a
+// vencer). Sem a Pagar.me configurada (a chave e o recebedor), desligado.
+func (s *Service) PagarmeBalance(ctx context.Context) *GatewayBalance {
+	out := &GatewayBalance{Enabled: s.pagarme != nil, DevMode: s.pagarmeDev, CheckedAt: s.now()}
+	if s.pagarme == nil {
+		return out
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	b, err := s.pagarme.Balance(ctx, s.pagarmeRecipient)
+	if err != nil {
+		s.log.Warn("falha ao consultar o saldo na Pagar.me", "err", providerMessage(err))
+		out.Error = providerMessage(err)
+		return out
+	}
+	out.AvailableCents, out.PendingCents = &b.AvailableAmount, &b.WaitingFundsAmount
 	return out
 }

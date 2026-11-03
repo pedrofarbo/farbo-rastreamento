@@ -461,7 +461,8 @@ type Payments struct {
 	// PagarmeSplit liga o split dos afiliados: a parte deles sai no
 	// pagamento do cliente, direto para o recebedor de cada um. Precisa da
 	// conta PSP (marketplace) na Pagar.me e do recebedor da Farbo (rp_...),
-	// que fica com o resto.
+	// que fica com o resto. O recebedor da Farbo dá também o saldo da
+	// Pagar.me na tela da empresa (mesmo sem o split).
 	PagarmeSplit       bool
 	PagarmeRecipientID string
 }

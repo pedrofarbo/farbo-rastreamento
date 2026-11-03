@@ -381,6 +381,11 @@ func run() error {
 	if key := cmp.Or(cfg.Payments.TransferKey(), cfg.Payments.AbacatePayAPIKey); key != "" {
 		financeSvc.SetBalanceReader(abacatepay.NewClient(cfg.Payments.AbacatePayBaseURL, key), abacatepay.IsDevKey(key))
 	}
+	// E o da Pagar.me, ao lado: o do recebedor da conta da Farbo.
+	if p := cfg.Payments; p.PagarmeSecretKey != "" && p.PagarmeRecipientID != "" {
+		financeSvc.SetPagarmeBalance(pagarme.NewClient(p.PagarmeBaseURL, p.PagarmeSecretKey), p.PagarmeRecipientID,
+			pagarme.IsTestKey(p.PagarmeSecretKey))
+	}
 	affiliatesSvc := affiliates.NewService(db, log)
 	// As sessões da página do afiliado com senha (sobrevivem ao reinício).
 	affiliatesSvc.SetSessionKey([]byte(cfg.Auth.JWTSecret))

@@ -43,7 +43,11 @@ export function CompanyPage() {
               e o estoque. As faturas dos clientes entram sozinhas quando são pagas.
             </p>
           </div>
-          <GatewayBalanceCard />
+          {/* O saldo de verdade nos gateways: a AbacatePay e a Pagar.me, lado a lado. */}
+          <div className={styles.balances}>
+            <GatewayBalanceCard gateway="abacatepay" />
+            <GatewayBalanceCard gateway="pagarme" />
+          </div>
         </header>
 
         <div className={`${pageStyles.tabs} ${styles.tabs}`} role="tablist">

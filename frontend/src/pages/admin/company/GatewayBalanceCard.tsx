@@ -13,16 +13,24 @@ const REFRESH_MS = 60_000;
 
 const timeFormatter = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
+/** Os gateways com saldo no topo da tela da empresa. */
+const GATEWAYS = {
+  abacatepay: { label: 'Saldo na AbacatePay', key: 'balance', fetch: financeApi.balance },
+  pagarme: { label: 'Saldo na Pagar.me', key: 'balance-pagarme', fetch: financeApi.pagarmeBalance },
+} as const;
+
 /**
- * O saldo na AbacatePay agora, no topo da tela da empresa: o que já pode sair
- * e, se houver, o que ainda vai ser liberado e o bloqueado. Atualiza sozinho
- * a cada minuto, ao voltar para a tela e no botão. É o dinheiro de verdade, não
- * o saldo do caixa (o que a central lança). Some sem a AbacatePay configurada.
+ * O saldo no gateway agora (a AbacatePay ou a Pagar.me), no topo da tela da
+ * empresa: o que já pode sair e, se houver, o que ainda vai ser liberado e o
+ * bloqueado. Atualiza sozinho a cada minuto, ao voltar para a tela e no botão.
+ * É o dinheiro de verdade, não o saldo do caixa (o que a central lança). Some
+ * sem o gateway configurado.
  */
-export function GatewayBalanceCard() {
+export function GatewayBalanceCard({ gateway = 'abacatepay' }: { gateway?: keyof typeof GATEWAYS }) {
+  const { label, key, fetch } = GATEWAYS[gateway];
   const balance = useQuery({
-    queryKey: [...financeKey, 'balance'],
-    queryFn: financeApi.balance,
+    queryKey: [...financeKey, key],
+    queryFn: fetch,
     refetchInterval: REFRESH_MS,
     refetchOnWindowFocus: true,
     staleTime: 0,
@@ -37,9 +45,9 @@ export function GatewayBalanceCard() {
   ].filter(Boolean);
 
   return (
-    <section className={styles.balance} aria-label="Saldo na AbacatePay" aria-live="polite">
+    <section className={styles.balance} aria-label={label} aria-live="polite">
       <div className={styles.balanceHead}>
-        <span className={styles.balanceLabel}>Saldo na AbacatePay</span>
+        <span className={styles.balanceLabel}>{label}</span>
         {b.devMode && <Badge tone="warning">testes</Badge>}
       </div>
       {failed ? (
