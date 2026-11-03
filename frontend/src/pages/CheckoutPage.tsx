@@ -56,7 +56,8 @@ export function CheckoutPage() {
   const event = params.get('evento') ?? '';
   // Pelo link de um afiliado com tabela, a mensalidade é a do tipo do veículo
   // (do evento, sem o link guardado no aparelho, como na contratação).
-  const { query: offer } = useCheckoutOffer(event ? '' : currentReferral());
+  const ref = event ? '' : currentReferral();
+  const { query: offer } = useCheckoutOffer(ref);
   const [step, setStep] = useState(0);
   const [choice, setChoice] = useState<CheckoutChoice>({
     equipmentMode: 'sale',
@@ -88,7 +89,8 @@ export function CheckoutPage() {
   const addressReady = isAddressComplete(address);
   const quote = useQuery({
     queryKey: ['checkout-shipping', address.zipCode, address.city, address.state],
-    queryFn: () => checkoutApi.shipping(address),
+    // Pelo link do representante que entrega em mãos, só a entrega dele.
+    queryFn: () => checkoutApi.shipping(address, ref),
     enabled: step === 3 && addressReady && !!o,
     staleTime: 10 * 60_000,
   });
@@ -356,7 +358,7 @@ export function CheckoutPage() {
               </fieldset>
             )}
 
-            <Total totals={totals} shippingPending={o.shippingEnabled} />
+            <Total totals={totals} shippingPending={o.shippingEnabled && !o.handDelivery} />
             <button type="button" className={pre.submit} onClick={() => goTo(1)}>
               Continuar
             </button>

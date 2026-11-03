@@ -143,7 +143,17 @@ describe('o cadastro do afiliado', () => {
     await setValue(control<HTMLInputElement>('Senha da página'), 'senha-do-rui-1');
     await act(async () => button('Criar afiliado').click());
     await vi.waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0][1]).toMatchObject({ equipmentModes: 'loan', manageInstalls: true, reportPassword: 'senha-do-rui-1' });
+    expect(calls[0][1]).toMatchObject({ equipmentModes: 'loan', manageInstalls: true, reportPassword: 'senha-do-rui-1', handDelivery: false });
+  });
+
+  it('a entrega em mãos pelo representante', async () => {
+    await render();
+    await setValue(control<HTMLInputElement>('Nome'), 'Rui Representante');
+    const hand = Array.from(document.querySelectorAll('label')).find((l) => l.textContent?.startsWith('Entrega em mãos'))!;
+    await act(async () => (hand.querySelector('input') as HTMLInputElement).click());
+    await act(async () => button('Criar afiliado').click());
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0][1]).toMatchObject({ handDelivery: true });
   });
 
   it('valor fixo continua como antes', async () => {

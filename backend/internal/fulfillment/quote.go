@@ -94,10 +94,19 @@ type Choice struct {
 	DeliveryDays int    `json:"deliveryDays"`
 	// Arranged: o cliente combina a entrega com a central (sem frete).
 	Arranged bool `json:"arranged"`
+	// HandBy: o representante que entrega em mãos (com os kits dele), sem
+	// frete; vazio, a central.
+	HandBy string `json:"handBy,omitempty"`
 }
 
 // ArrangedService é o nome da entrega combinada com a central.
 const ArrangedService = "Entrega combinada"
+
+// HandDelivery é a entrega em mãos pelo representante (ele tem os kits):
+// sem frete nem etiqueta.
+func HandDelivery(representative string) *Choice {
+	return &Choice{Name: "Em mãos com o representante " + representative, Arranged: true, HandBy: representative}
+}
 
 // CanArrange diz se o endereço fica numa das cidades onde o cliente pode
 // combinar a entrega com a central ("São Paulo/SP"; sem a UF, vale a cidade
@@ -168,7 +177,7 @@ func RecordChoice(ctx context.Context, q database.Querier, id uuid.UUID, c Choic
 	}
 	_, err := q.Exec(ctx, `
 		UPDATE fulfillments SET quoted_service_id = $2, quoted_service = $3, quoted_price_cents = $4, quoted_days = $5,
-			delivery_arranged = $6
-		WHERE id = $1`, id, serviceID, strings.TrimSpace(c.Name), c.PriceCents, days, c.Arranged)
+			delivery_arranged = $6, delivery_hand_by = $7
+		WHERE id = $1`, id, serviceID, strings.TrimSpace(c.Name), c.PriceCents, days, c.Arranged, strings.TrimSpace(c.HandBy))
 	return database.MapError(err)
 }

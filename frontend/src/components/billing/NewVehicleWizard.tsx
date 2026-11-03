@@ -404,10 +404,13 @@ export function NewVehicleWizard({
     staleTime: 5 * 60_000,
   });
   const quotes = shippingQuote.data?.enabled ? shippingQuote.data.quotes : [];
-  // O mais barato vem marcado.
+  // O mais barato vem marcado (com o representante que entrega em mãos, a
+  // entrega em mãos, a única).
+  const handBy = shippingQuote.data?.handBy ?? '';
   useEffect(() => {
-    if (shippingId === null && quotes.length > 0) setShippingId(quotes[0].serviceId);
-  }, [shippingId, quotes]);
+    if (handBy && shippingId !== ARRANGE_DELIVERY) setShippingId(ARRANGE_DELIVERY);
+    else if (!handBy && shippingId === null && quotes.length > 0) setShippingId(quotes[0].serviceId);
+  }, [shippingId, quotes, handBy]);
   const chosen = ships ? quotes.find((q) => q.serviceId === shippingId) : undefined;
   const freight = chosen ? { serviceId: chosen.serviceId, name: quoteName(chosen), cents: chosen.priceCents, days: chosen.deliveryDays } : null;
   // Perto da base, o cliente pode combinar a entrega com a central (sem frete).

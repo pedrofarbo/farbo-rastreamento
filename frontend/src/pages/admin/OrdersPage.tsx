@@ -266,7 +266,7 @@ function OrderRow({ f, onOpen, onCancel }: { f: Fulfillment; onOpen: () => void;
             <LabelActions fulfillment={f} compact />
           </>
         ) : f.deliveryArranged ? (
-          <span>Entrega combinada</span>
+          <span>{f.deliveryHandBy ? `Em mãos com o representante ${f.deliveryHandBy}` : 'Entrega combinada'}</span>
         ) : (
           <span className={billing.muted}>—</span>
         )}

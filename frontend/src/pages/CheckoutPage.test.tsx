@@ -13,6 +13,9 @@ import type { CheckoutInput, CheckoutOffer, ShippingQuoteView } from '@/types';
 let offer: CheckoutOffer;
 /** O link do afiliado com que cada oferta foi pedida. */
 const offerRefs: (string | undefined)[] = [];
+/** O link com que cada cotação do frete foi pedida, e a cotação devolvida. */
+const shippingRefs: (string | undefined)[] = [];
+let shippingView: ShippingQuoteView | null = null;
 let placeResult: () => Promise<unknown>;
 const placed: CheckoutInput[] = [];
 const logins: string[] = [];
@@ -27,7 +30,10 @@ vi.mock('@/api/resources', () => ({
       offerRefs.push(ref);
       return offer;
     },
-    shipping: async () => quote,
+    shipping: async (_: unknown, ref?: string) => {
+      shippingRefs.push(ref);
+      return shippingView ?? quote;
+    },
     place: (input: CheckoutInput) => {
       placed.push(input);
       return placeResult();
@@ -129,6 +135,8 @@ beforeEach(() => {
   placed.length = 0;
   logins.length = 0;
   offerRefs.length = 0;
+  shippingRefs.length = 0;
+  shippingView = null;
 });
 afterEach(() => {
   document.body.innerHTML = '';
@@ -225,6 +233,24 @@ describe('a contratação pelo site', () => {
     await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
     await click(button('Pagar'));
     expect(placed[0]).toMatchObject({ equipmentMode: 'sale', farboInstall: true });
+  });
+
+  it('pelo link do representante que entrega em mãos: sem frete', async () => {
+    saveReferral('rui');
+    offer = offerWith({ handDelivery: 'Rui Representante' });
+    shippingView = { enabled: true, zipCode: '13010000', problem: '', arrange: true, quotes: [], handBy: 'Rui Representante' };
+    await render();
+    expect(text()).toContain('Hoje, no PixR$ 154,90');
+    expect(text()).not.toContain('+ frete');
+    await fillUntilPayment();
+    expect(shippingRefs).toContain('rui');
+    expect(text()).toContain('Em mãos com o representante Rui Representante');
+    expect(text()).toContain('sem frete');
+    expect(text()).not.toContain('Frete');
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar R$ 154,90 com Pix'));
+    expect(placed[0]).toMatchObject({ arrangeDelivery: true, ref: 'rui' });
+    localStorage.clear();
   });
 
   it('pelo link só de comodato: sem a compra, o comodato já marcado', async () => {

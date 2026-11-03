@@ -185,6 +185,17 @@ describe('a pessoa física paga no ato', () => {
     expect(ordered[0]).toMatchObject({ vehicle: expect.objectContaining({ kind: 'TRUCK' }) });
   });
 
+  it('cliente do representante que entrega em mãos: a entrega dele, sem frete', async () => {
+    terms = { payNow: true, chargeDate: '2026-10-23' };
+    quote = { enabled: true, zipCode: '20040020', problem: '', arrange: true, quotes: [], handBy: 'Rui Representante' };
+    await openWizard();
+    expect(text()).toContain('Em mãos com o representante Rui Representante');
+    expect(text()).toContain('sem frete');
+    await act(async () => button('Confirmar pedido').click());
+    await flush();
+    expect(ordered[0]).toMatchObject({ arrangeDelivery: true });
+  });
+
   it('cliente de um link só de comodato: o comodato, sem a escolha', async () => {
     terms = {
       payNow: true,

@@ -101,6 +101,12 @@ export function PartnerPage() {
                 Quem contrata pelo seu link paga por mês, por veículo: {kindPricesLabel(report.planPrices, money)}.
               </p>
             )}
+            {report.handDelivery && (
+              <p className={base.hint}>
+                Você entrega o rastreador em mãos, com os kits que estão com você: quem contrata pelo seu link não paga
+                frete.
+              </p>
+            )}
             {!report.active && (
               <p className={base.error}>Seu link está pausado: cadastros novos não contam. Fale com a Farbo.</p>
             )}

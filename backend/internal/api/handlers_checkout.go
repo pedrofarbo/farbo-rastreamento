@@ -13,6 +13,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/contract"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/melhorenvio"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
@@ -55,6 +56,9 @@ type checkoutView struct {
 	// EquipmentModes: o rastreador que o link oferece — vazio, comprado e
 	// comodato; sale, só comprado (Loan nulo); loan, só comodato.
 	EquipmentModes string `json:"equipmentModes"`
+	// HandDelivery: o representante do link entrega em mãos, com os kits
+	// dele, sem frete (vazio: a entrega de sempre).
+	HandDelivery string `json:"handDelivery"`
 	// ContractVersion: a versão que o aceite confirma.
 	ContractVersion string `json:"contractVersion"`
 	ShippingEnabled bool   `json:"shippingEnabled"`
@@ -103,13 +107,21 @@ func (s *Server) handleCheckoutOffer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		view.Loan = orders.WithEquipment(view.EquipmentModes, &opts.Loan)
+		if view.HandDelivery, err = s.Orders.AffiliateHandDelivery(r.Context(), *affiliate); err != nil {
+			handleStoreError(w, err, "contratação indisponível")
+			return
+		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, view)
 }
 
-// checkoutShipping é a cotação do frete até o endereço informado.
-func (s *Server) checkoutShipping(ctx context.Context, address addresses.Address) shippingQuoteView {
+// checkoutShipping é a cotação do frete até o endereço informado (pelo link
+// do representante que entrega em mãos, handBy: sem frete).
+func (s *Server) checkoutShipping(ctx context.Context, address addresses.Address, handBy string) shippingQuoteView {
+	if handBy != "" {
+		return handQuote(address.ZipCode, handBy)
+	}
 	out := shippingQuoteView{Quotes: []melhorenvio.Quote{}, ZipCode: address.ZipCode}
 	if s.Fulfillment == nil {
 		return out
@@ -143,7 +155,22 @@ func (s *Server) handleCheckoutShipping(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, s.checkoutShipping(r.Context(), address))
+	handBy, err := s.linkHandDelivery(r, r.URL.Query().Get("ref"))
+	if err != nil {
+		handleStoreError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusOK, s.checkoutShipping(r.Context(), address, handBy))
+}
+
+// linkHandDelivery é o representante do link que entrega em mãos (vazio: o
+// link não é de um, ou não há link).
+func (s *Server) linkHandDelivery(r *http.Request, code string) (string, error) {
+	affiliate := s.referralFor(r, code)
+	if affiliate == nil {
+		return "", nil
+	}
+	return s.Orders.AffiliateHandDelivery(r.Context(), *affiliate)
 }
 
 // checkoutRequest é a contratação: a escolha, o veículo, quem contrata, o
@@ -240,7 +267,15 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "informe o veículo")
 		return
 	}
-	if s.Fulfillment != nil {
+	// Pelo link do representante que entrega em mãos: sem frete.
+	handBy, err := s.linkHandDelivery(r, req.Ref)
+	if err != nil {
+		handleStoreError(w, err, "contratação indisponível")
+		return
+	}
+	if handBy != "" {
+		order.Shipping = fulfillment.HandDelivery(handBy)
+	} else if s.Fulfillment != nil {
 		switch {
 		case req.ArrangeDelivery && req.ShippingServiceID > 0:
 			writeError(w, http.StatusBadRequest, "escolha só uma forma de entrega")

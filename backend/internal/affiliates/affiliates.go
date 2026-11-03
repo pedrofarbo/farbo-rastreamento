@@ -99,6 +99,9 @@ type Affiliate struct {
 	// ManageInstalls: ele cuida da instalação e da desinstalação dos clientes
 	// que indicou, pela página dele (que então pede senha).
 	ManageInstalls bool `json:"manageInstalls"`
+	// HandDelivery: ele entrega o rastreador em mãos (com os kits dele) a
+	// quem contrata pelo link, sem frete.
+	HandDelivery bool `json:"handDelivery"`
 }
 
 // Input é o cadastro de um afiliado. Sem CommissionType, o afiliado novo fica
@@ -125,6 +128,7 @@ type Input struct {
 	EquipmentModes string  `json:"equipmentModes"`
 	// ManageInstalls pede a senha da página (ela mostra os dados dos clientes).
 	ManageInstalls bool `json:"manageInstalls"`
+	HandDelivery   bool `json:"handDelivery"`
 }
 
 var handlePattern = regexp.MustCompile(`^[A-Za-z0-9._]{1,30}$`)

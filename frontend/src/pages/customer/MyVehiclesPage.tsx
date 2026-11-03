@@ -601,7 +601,9 @@ function VehicleCard({
               {order.trackingCode
                 ? `Código de rastreio ${order.trackingCode}`
                 : `Chip M2M: ${stepOf('CHIP', order.chipStatus)?.label.replace(/^Chip /, '').toLowerCase()}`}
-              {order.deliveryArranged
+              {order.deliveryHandBy
+                ? ` · em mãos com o representante ${order.deliveryHandBy}: ele combina com você o dia`
+                : order.deliveryArranged
                 ? ' · entrega combinada: a gente fala com você para marcar o dia e o local'
                 : order.deliveryService &&
                   ` · entrega ${order.deliveryService}${order.deliveryDays ? ` (até ${order.deliveryDays} dias úteis após o envio)` : ''}`}

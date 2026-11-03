@@ -193,8 +193,17 @@ func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request)
 	}
 
 	var shipping *fulfillment.Choice
-	if req.ShippingServiceID > 0 && req.Vehicle.DeviceID == nil {
-		var err error
+	handBy, err := s.Orders.CustomerHandDelivery(r.Context(), customerID)
+	if err != nil {
+		handleStoreError(w, err, "cliente não encontrado")
+		return
+	}
+	switch {
+	case req.Vehicle.DeviceID != nil:
+	case handBy != "":
+		// O representante do cliente entrega em mãos, com os kits dele.
+		shipping = fulfillment.HandDelivery(handBy)
+	case req.ShippingServiceID > 0:
 		if shipping, err = s.chooseShipping(r.Context(), customerID, req.ShippingServiceID); err != nil {
 			writeShippingError(w, err)
 			return
@@ -352,8 +361,16 @@ func (s *Server) handleMyOrderTracker(w http.ResponseWriter, r *http.Request) {
 	order.Installments = req.Installments
 	// O frete: com o Melhor Envios ligado e o endereço salvo, o cliente
 	// escolhe a entrega e paga junto com o equipamento — ou, perto da base,
-	// combina a entrega com a central, sem frete.
-	if s.Fulfillment != nil && s.Fulfillment.ShippingEnabled() {
+	// combina a entrega com a central, sem frete. O cliente do representante
+	// que entrega em mãos não paga frete.
+	handBy, err := s.Orders.CustomerHandDelivery(r.Context(), customerID)
+	if err != nil {
+		handleStoreError(w, err, "")
+		return
+	}
+	if handBy != "" {
+		order.Shipping = fulfillment.HandDelivery(handBy)
+	} else if s.Fulfillment != nil && s.Fulfillment.ShippingEnabled() {
 		address, err := s.Addresses.Get(r.Context(), customerID)
 		if err != nil {
 			handleStoreError(w, err, "")
@@ -399,11 +416,27 @@ type shippingQuoteView struct {
 	// Arrange: o endereço fica onde dá para combinar a entrega com a
 	// central (vale mesmo com o Melhor Envios fora).
 	Arrange bool `json:"arrange"`
+	// HandBy: o representante que entrega em mãos, com os kits dele, sem
+	// frete — a única entrega (a "combinar", que vai como arrangeDelivery).
+	HandBy string `json:"handBy,omitempty"`
+}
+
+// handQuote é a entrega em mãos pelo representante: sem cotar o frete.
+func handQuote(zip, representative string) shippingQuoteView {
+	return shippingQuoteView{Enabled: true, ZipCode: zip, Quotes: []melhorenvio.Quote{}, Arrange: true, HandBy: representative}
 }
 
 // shippingQuote cota o frete até o endereço de entrega do cliente.
 func (s *Server) shippingQuote(r *http.Request, customerID uuid.UUID) shippingQuoteView {
 	out := shippingQuoteView{Quotes: []melhorenvio.Quote{}}
+	// O cliente do representante que entrega em mãos: sem frete.
+	if handBy, err := s.Orders.CustomerHandDelivery(r.Context(), customerID); err == nil && handBy != "" {
+		zip := ""
+		if address, err := s.Addresses.Get(r.Context(), customerID); err == nil && address != nil {
+			zip = address.ZipCode
+		}
+		return handQuote(zip, handBy)
+	}
 	if s.Fulfillment == nil || !s.Fulfillment.ShippingEnabled() {
 		return out
 	}

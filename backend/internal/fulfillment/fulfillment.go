@@ -116,6 +116,9 @@ type Fulfillment struct {
 	// DeliveryArranged: o cliente combina a entrega com a central (sem frete
 	// nem etiqueta); o rastreador é entregue em mãos.
 	DeliveryArranged bool `json:"deliveryArranged"`
+	// DeliveryHandBy: o representante que entrega em mãos, com os kits dele
+	// (vazio: a central).
+	DeliveryHandBy string `json:"deliveryHandBy"`
 
 	Events    []Event   `json:"events"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -139,9 +142,11 @@ type CustomerView struct {
 	DeliveryService string `json:"deliveryService"`
 	DeliveryDays    *int   `json:"deliveryDays"`
 	// DeliveryArranged: a entrega é combinada com a central.
-	DeliveryArranged bool      `json:"deliveryArranged"`
-	Events           []Event   `json:"events"`
-	CreatedAt        time.Time `json:"createdAt"`
+	DeliveryArranged bool `json:"deliveryArranged"`
+	// DeliveryHandBy: o representante que entrega em mãos.
+	DeliveryHandBy string    `json:"deliveryHandBy"`
+	Events         []Event   `json:"events"`
+	CreatedAt      time.Time `json:"createdAt"`
 }
 
 func (f *Fulfillment) CustomerView() CustomerView {
@@ -150,6 +155,7 @@ func (f *Fulfillment) CustomerView() CustomerView {
 		ChipStatus: f.ChipStatus, TrackerStatus: f.TrackerStatus,
 		Carrier: f.ShippingService, TrackingCode: f.TrackingCode, Events: f.Events, CreatedAt: f.CreatedAt,
 		DeliveryService: f.QuotedService, DeliveryDays: f.QuotedDays, DeliveryArranged: f.DeliveryArranged,
+		DeliveryHandBy: f.DeliveryHandBy,
 	}
 }
 
@@ -181,7 +187,7 @@ const selectFulfillment = `
 		f.chip_status, f.tracker_status, f.shipping_order_id, f.shipping_protocol, f.shipping_service,
 		f.shipping_price_cents, f.shipping_status, f.tracking_code, f.label_url, f.created_at, f.updated_at,
 		f.quoted_service_id, f.quoted_service, f.quoted_price_cents, f.quoted_days,
-		f.delivery_arranged
+		f.delivery_arranged, f.delivery_hand_by
 	FROM fulfillments f
 	JOIN users u ON u.id = f.customer_id
 	JOIN vehicles v ON v.id = f.vehicle_id`
@@ -192,7 +198,7 @@ func scan(row database.Scanner) (*Fulfillment, error) {
 		&f.VehiclePlate, &f.SubscriptionID, &f.ChipStatus, &f.TrackerStatus, &f.ShippingOrderID,
 		&f.ShippingProtocol, &f.ShippingService, &f.ShippingPriceCents, &f.ShippingStatus, &f.TrackingCode,
 		&f.LabelURL, &f.CreatedAt, &f.UpdatedAt, &f.QuotedServiceID, &f.QuotedService, &f.QuotedPriceCents,
-		&f.QuotedDays, &f.DeliveryArranged); err != nil {
+		&f.QuotedDays, &f.DeliveryArranged, &f.DeliveryHandBy); err != nil {
 		return nil, database.MapError(err)
 	}
 	f.Events = []Event{}

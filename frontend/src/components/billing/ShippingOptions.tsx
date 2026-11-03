@@ -49,6 +49,22 @@ export function ShippingOptions({
     );
   }
   if (!view?.enabled) return null;
+  // O representante entrega em mãos, com os kits dele: a única entrega, sem frete.
+  if (view.handBy) {
+    return (
+      <fieldset className={styles.shipping}>
+        <legend className={styles.deliveryLabel}>Entrega</legend>
+        <label className={`${styles.shippingOption} ${styles.shippingActive}`}>
+          <input type="radio" name="shipping" checked={value === ARRANGE_DELIVERY} onChange={() => onChange(ARRANGE_DELIVERY)} />
+          <span className={styles.shippingName}>
+            <strong>Em mãos com o representante {view.handBy}</strong>
+            <span className={styles.muted}>ele entrega o rastreador e combina com você o dia</span>
+          </span>
+          <strong className={styles.shippingPrice}>sem frete</strong>
+        </label>
+      </fieldset>
+    );
+  }
   return (
     <fieldset className={styles.shipping}>
       <legend className={styles.deliveryLabel}>Entrega{view.zipCode ? ` para o CEP ${view.zipCode.replace(/^(\d{5})(\d{3})$/, '$1-$2')}` : ''}</legend>

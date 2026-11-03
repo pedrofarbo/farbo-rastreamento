@@ -225,6 +225,28 @@ func WithEquipment(modes string, loan *LoanOffer) *LoanOffer {
 	return loan
 }
 
+// AffiliateHandDelivery é o representante do link (ativo) que entrega o
+// rastreador em mãos, com os kits dele, sem frete (vazio: a entrega de sempre).
+func (s *Service) AffiliateHandDelivery(ctx context.Context, affiliateID uuid.UUID) (string, error) {
+	return s.handDelivery(ctx, `SELECT name FROM affiliates WHERE id = $1 AND active AND hand_delivery`, affiliateID)
+}
+
+// CustomerHandDelivery é o representante (ativo) que indicou o cliente e
+// entrega em mãos os rastreadores dele, também os pedidos pelo app.
+func (s *Service) CustomerHandDelivery(ctx context.Context, customerID uuid.UUID) (string, error) {
+	return s.handDelivery(ctx, `SELECT a.name FROM affiliate_referrals r JOIN affiliates a ON a.id = r.affiliate_id
+		WHERE r.customer_id = $1 AND a.active AND a.hand_delivery`, customerID)
+}
+
+func (s *Service) handDelivery(ctx context.Context, query string, id uuid.UUID) (string, error) {
+	var name string
+	err := s.db.QueryRow(ctx, query, id).Scan(&name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return name, database.MapError(err)
+}
+
 // CustomerKindPrices é a tabela que vale para os veículos novos do cliente:
 // a do afiliado que o indicou, quando a central não definiu um plano para ele
 // e ele está no plano padrão (nil: o preço de sempre).

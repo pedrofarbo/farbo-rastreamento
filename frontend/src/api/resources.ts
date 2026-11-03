@@ -637,8 +637,13 @@ export const checkoutApi = {
   /** A oferta; pelo link de um afiliado (ref), com a tabela dele por tipo de veículo. */
   offer: (ref = '') =>
     request<CheckoutOffer>(`/api/public/checkout${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`, { anonymous: true }),
-  shipping: (address: DeliveryAddress) =>
-    request<ShippingQuoteView>('/api/public/checkout/shipping', { method: 'POST', body: address, anonymous: true }),
+  /** As formas de entrega; pelo link do representante que entrega em mãos (ref), só ela, sem frete. */
+  shipping: (address: DeliveryAddress, ref = '') =>
+    request<ShippingQuoteView>(`/api/public/checkout/shipping${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`, {
+      method: 'POST',
+      body: address,
+      anonymous: true,
+    }),
   place: (input: CheckoutInput) =>
     request<CheckoutResult>('/api/public/checkout', { method: 'POST', body: input, anonymous: true }),
 };

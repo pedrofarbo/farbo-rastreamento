@@ -164,7 +164,9 @@ export function FulfillmentAdminModal({
         <>
           <p className={styles.hint}>
             Cliente: <Link to={`/clientes/${f.customerId}`}>{f.customerName}</Link>
-            {f.deliveryArranged && ' · Entrega combinada: fale com o cliente para marcar o dia e o local (sem frete).'}
+            {f.deliveryHandBy
+              ? ` · Em mãos com o representante ${f.deliveryHandBy} (sem frete): ele entrega um dos kits que estão com ele.`
+              : f.deliveryArranged && ' · Entrega combinada: fale com o cliente para marcar o dia e o local (sem frete).'}
           </p>
           <FulfillmentTimeline
             chipStatus={f.chipStatus}
@@ -309,7 +311,9 @@ export function FulfillmentAdminModal({
                     </Button>
                     <span className={styles.hint}>
                       Para o endereço de entrega do pedido.
-                      {f.deliveryArranged
+                      {f.deliveryHandBy
+                        ? ` O representante ${f.deliveryHandBy} entrega em mãos (sem frete).`
+                        : f.deliveryArranged
                         ? ' O cliente escolheu combinar a entrega e não pagou frete.'
                         : f.quotedService &&
                           ` O cliente escolheu ${f.quotedService}${f.quotedPriceCents !== null ? ` e pagou ${formatMoney(f.quotedPriceCents)}` : ''}.`}
@@ -398,7 +402,9 @@ export function FulfillmentAdminModal({
                       Marcar como entregue em mãos
                     </Button>
                     <span className={styles.hint}>
-                      {f.deliveryArranged
+                      {f.deliveryHandBy
+                        ? `O representante ${f.deliveryHandBy} entrega em mãos: marque aqui quando ele entregar.`
+                        : f.deliveryArranged
                         ? 'O cliente escolheu combinar a entrega: entregue e marque aqui.'
                         : 'Sem etiqueta: retirada na base ou entrega própria.'}
                     </span>

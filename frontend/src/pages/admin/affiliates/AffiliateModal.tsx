@@ -37,6 +37,8 @@ interface Draft {
   equipmentModes: EquipmentModes;
   /** O representante cuida das instalações dos clientes dele (pede a senha da página). */
   manageInstalls: boolean;
+  /** Ele entrega o rastreador em mãos (com os kits dele), sem frete. */
+  handDelivery: boolean;
   email: string;
   phone: string;
   pixKey: string;
@@ -64,6 +66,7 @@ function draftOf(a: Affiliate | null, defaultCents: number): Draft {
     password: '',
     equipmentModes: a?.equipmentModes ?? '',
     manageInstalls: a?.manageInstalls ?? false,
+    handDelivery: a?.handDelivery ?? false,
     email: a?.email ?? '',
     phone: a?.phone ?? '',
     pixKey: a?.pixKey ?? '',
@@ -207,6 +210,7 @@ export function AffiliateModal({
       ...(reportPassword !== undefined ? { reportPassword } : {}),
       equipmentModes: draft.equipmentModes,
       manageInstalls: draft.manageInstalls,
+      handDelivery: draft.handDelivery,
       email: draft.email,
       phone: draft.phone,
       pixKey: draft.pixKey,
@@ -488,6 +492,11 @@ export function AffiliateModal({
           />
           O representante cuida da instalação e da desinstalação dos clientes dele: agenda, remarca e conclui pela página
           dele (que então mostra os dados desses clientes e pede senha). A central continua vendo tudo na Agenda.
+        </label>
+        <label className={company.check}>
+          <input type="checkbox" checked={draft.handDelivery} onChange={(e) => set('handDelivery', e.target.checked)} />
+          Entrega em mãos pelo representante (ele recebe kits de instalação da Farbo): quem contrata pelo link dele, e os
+          próximos pedidos pelo app, não paga frete.
         </label>
         {draft.passwordOn && (
           <div className={company.grid}>

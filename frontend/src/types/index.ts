@@ -1461,6 +1461,8 @@ export interface Fulfillment {
   quotedDays: number | null;
   /** O cliente combina a entrega com a central (sem frete nem etiqueta). */
   deliveryArranged: boolean;
+  /** O representante que entrega em mãos, com os kits dele (vazio: a central). */
+  deliveryHandBy?: string;
   events: FulfillmentEvent[];
   createdAt: string;
   updatedAt: string;
@@ -1490,6 +1492,8 @@ export interface CustomerFulfillment {
   deliveryDays: number | null;
   /** A entrega é combinada com a central. */
   deliveryArranged: boolean;
+  /** O representante que entrega em mãos. */
+  deliveryHandBy?: string;
   events: FulfillmentEvent[];
   createdAt: string;
 }
@@ -1515,6 +1519,8 @@ export interface ShippingQuoteView {
   problem: string;
   /** O endereço fica onde dá para combinar a entrega com a central (sem frete). */
   arrange: boolean;
+  /** O representante que entrega em mãos, com os kits dele, sem frete: a única entrega (vai como arrangeDelivery). */
+  handBy?: string;
 }
 
 /** O frete cobrado no pedido. */
@@ -1783,6 +1789,8 @@ export interface CheckoutOffer {
   installDirect?: boolean;
   /** O rastreador pelo link do afiliado (sale: sem o comodato; loan: só o comodato). */
   equipmentModes?: EquipmentModes;
+  /** O representante do link entrega em mãos, com os kits dele, sem frete (vazio: a entrega de sempre). */
+  handDelivery?: string;
   /** Em até quantas vezes sem juros o rastreador comprado pode ser parcelado (1: só à vista). */
   maxInstallments: number;
   dueDay: number;
@@ -2765,6 +2773,8 @@ export interface Affiliate {
   equipmentModes?: EquipmentModes;
   /** Ele cuida da instalação e da desinstalação dos clientes que indicou (pela página dele, com senha). */
   manageInstalls?: boolean;
+  /** Ele entrega o rastreador em mãos (com os kits dele) a quem contrata pelo link, sem frete. */
+  handDelivery?: boolean;
 }
 
 /** A comissão do afiliado: um valor fixo por veículo ou um percentual da mensalidade. */
@@ -2793,6 +2803,7 @@ export interface AffiliateInput {
   equipmentModes: EquipmentModes;
   /** Pede a senha da página (ela mostra os dados dos clientes). */
   manageInstalls: boolean;
+  handDelivery: boolean;
 }
 
 export interface AffiliateSettings {
@@ -2878,6 +2889,8 @@ export interface PartnerReport {
   equipmentModes?: EquipmentModes;
   /** Ele cuida das instalações dos clientes que indicou (a seção das instalações). */
   manageInstalls?: boolean;
+  /** Ele entrega os rastreadores em mãos, com os kits dele. */
+  handDelivery?: boolean;
   signups: number;
   customers: number;
   activeCustomers: number;
