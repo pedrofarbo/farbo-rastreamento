@@ -440,12 +440,48 @@ type Payments struct {
 	// monta o formulário do cartão (abacatepay.js). A de testes só vale com a
 	// chave de API de testes, e a de produção com a de produção.
 	PublicKey string
+
+	// A Pagar.me: a chave secreta (sk_test_... no ambiente de testes) liga o
+	// Pix, o boleto e o cartão por ela; a pública (pk_...) vai ao navegador,
+	// que gera o token do cartão. O segredo vai no endereço do webhook
+	// cadastrado lá (?secret=); vazio recusa todos.
+	PagarmeSecretKey     string
+	PagarmePublicKey     string
+	PagarmeBaseURL       string
+	PagarmeWebhookSecret string
+	// PagarmeStatementDescriptor é o nome na fatura do cartão (até 13 letras).
+	PagarmeStatementDescriptor string
+
+	// As taxas do Pix que escolhem o gateway mais barato para cada valor: a
+	// AbacatePay cobra um valor fixo por Pix, a Pagar.me um percentual
+	// (centésimos de ponto: 99 = 0,99%).
+	AbacatePayPixFeeCents int
+	PagarmePixFeeBps      int
+
+	// PagarmeSplit liga o split dos afiliados: a parte deles sai no
+	// pagamento do cliente, direto para o recebedor de cada um. Precisa da
+	// conta PSP (marketplace) na Pagar.me e do recebedor da Farbo (rp_...),
+	// que fica com o resto.
+	PagarmeSplit       bool
+	PagarmeRecipientID string
 }
 
-func (p Payments) Enabled() bool { return p.AbacatePayAPIKey != "" }
+// SplitEnabled diz se o split dos afiliados está ligado.
+func (p Payments) SplitEnabled() bool {
+	return p.PagarmeEnabled() && p.PagarmeSplit && p.PagarmeRecipientID != ""
+}
 
-// CardEnabled diz se o cartão de crédito está ligado.
-func (p Payments) CardEnabled() bool { return p.Enabled() && p.PublicKey != "" }
+// Enabled diz se algum gateway está ligado.
+func (p Payments) Enabled() bool { return p.AbacatePayEnabled() || p.PagarmeEnabled() }
+
+// AbacatePayEnabled e PagarmeEnabled dizem se cada gateway está ligado.
+func (p Payments) AbacatePayEnabled() bool { return p.AbacatePayAPIKey != "" }
+func (p Payments) PagarmeEnabled() bool    { return p.PagarmeSecretKey != "" }
+
+// CardEnabled diz se o cartão de crédito está ligado (por algum gateway).
+func (p Payments) CardEnabled() bool {
+	return (p.PagarmeEnabled() && p.PagarmePublicKey != "") || (p.AbacatePayEnabled() && p.PublicKey != "")
+}
 
 // TransferKey é a chave dos envios a fornecedores ("" se desligado).
 func (p Payments) TransferKey() string {
@@ -786,6 +822,16 @@ func Load() (*Config, error) {
 			SupplierPix:       bl("ABACATEPAY_SUPPLIER_PIX", true),
 			TransferAPIKey:    str("ABACATEPAY_TRANSFER_API_KEY", ""),
 			PublicKey:         str("ABACATEPAY_PUBLIC_KEY", ""),
+
+			PagarmeSecretKey:           str("PAGARME_SECRET_KEY", ""),
+			PagarmePublicKey:           str("PAGARME_PUBLIC_KEY", ""),
+			PagarmeBaseURL:             str("PAGARME_BASE_URL", ""),
+			PagarmeWebhookSecret:       str("PAGARME_WEBHOOK_SECRET", ""),
+			PagarmeStatementDescriptor: str("PAGARME_STATEMENT_DESCRIPTOR", "FARBO"),
+			AbacatePayPixFeeCents:      num("ABACATEPAY_PIX_FEE_CENTS", 80),
+			PagarmePixFeeBps:           num("PAGARME_PIX_FEE_BPS", 99),
+			PagarmeSplit:               bl("PAGARME_SPLIT", false),
+			PagarmeRecipientID:         str("PAGARME_RECIPIENT_ID", ""),
 		},
 		Shipping: Shipping{
 			Sandbox:      bl("MELHORENVIO_SANDBOX", true),

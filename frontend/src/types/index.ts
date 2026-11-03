@@ -2697,8 +2697,12 @@ export interface Affiliate {
   code: string;
   /** O segredo da página do afiliado (/parceiro/<token>). */
   reportToken: string;
+  /** fixed: commissionCents por veículo; percent: commissionBps da mensalidade paga de cada veículo. */
+  commissionType: CommissionType;
   /** Por veículo ativo de cliente indicado, por mês pago. */
   commissionCents: number;
+  /** Centésimos de ponto percentual (1250 = 12,5%). */
+  commissionBps: number;
   email: string;
   phone: string;
   pixKey: string;
@@ -2718,14 +2722,24 @@ export interface Affiliate {
   /** Fechado, a pagar na Empresa. */
   openCents: number;
   paidCents: number;
+  /** Pago pelo split, no pagamento do cliente. */
+  splitPaidCents: number;
+  /** A situação do recebedor na Pagar.me ("" sem cadastro). */
+  recipientStatus: string;
 }
+
+/** A comissão do afiliado: um valor fixo por veículo ou um percentual da mensalidade. */
+export type CommissionType = 'fixed' | 'percent';
 
 export interface AffiliateInput {
   name: string;
   handle: string;
   code: string;
+  commissionType: CommissionType;
   /** Nulo: o valor padrão. */
   commissionCents: number | null;
+  /** O percentual (centésimos de ponto), na comissão percentual. */
+  commissionBps: number | null;
   email: string;
   phone: string;
   pixKey: string;
@@ -2738,6 +2752,8 @@ export interface AffiliateSettings {
   categoryId: string | null;
   /** O crédito do indique e ganhe dos clientes (zero desliga). */
   customerRewardCents: number;
+  /** As comissões saem no pagamento do cliente, pelo split da Pagar.me (sem fechamento). */
+  splitEnabled?: boolean;
 }
 
 /** O afiliado como a tela de cadastro mostra ("Indicado por @fulano"). */
@@ -2804,7 +2820,9 @@ export interface PartnerReport {
   handle: string;
   code: string;
   active: boolean;
+  commissionType: CommissionType;
   commissionCents: number;
+  commissionBps: number;
   signups: number;
   customers: number;
   activeCustomers: number;
@@ -2812,6 +2830,55 @@ export interface PartnerReport {
   toReceiveCents: number;
   paidCents: number;
   months: PartnerMonth[];
+  /** O recebedor do split (enabled falso: o split está desligado). */
+  recipient?: PartnerRecipient | null;
+}
+
+/**
+ * A situação do afiliado como recebedor do split na Pagar.me: "" sem
+ * cadastro; registration, falta a prova de vida; affiliation, em análise;
+ * active, recebe no pagamento do cliente; refused, recusado.
+ */
+export interface PartnerRecipient {
+  enabled: boolean;
+  status: '' | 'registration' | 'affiliation' | 'active' | 'refused' | string;
+}
+
+/** O cadastro do recebedor (pessoa física ou jurídica) e a conta do repasse. */
+export interface RecipientInput {
+  kind: 'individual' | 'company';
+  document: string;
+  name: string;
+  email: string;
+  phone: string;
+  birthdate: string;
+  monthlyIncomeCents: number;
+  occupation: string;
+  companyName: string;
+  tradingName: string;
+  annualRevenueCents: number;
+  zipCode: string;
+  street: string;
+  number: string;
+  complement: string;
+  district: string;
+  city: string;
+  state: string;
+  referencePoint: string;
+  bank: string;
+  branch: string;
+  branchDigit: string;
+  account: string;
+  accountDigit: string;
+  accountType: 'checking' | 'savings';
+  accountHolderName: string;
+}
+
+/** O link da prova de vida da Pagar.me (o QR em base64), que vence em 20 minutos. */
+export interface KycLink {
+  url: string;
+  base64: string;
+  expirationDate: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -3056,6 +3123,10 @@ export interface CardPayer {
 /** O cartão da conta: se está ligado, a chave pública do formulário, o cartão salvo e o pagador. */
 export interface CardView {
   enabled: boolean;
+  /** O gateway do cartão: pagarme (campos aqui, token na API dela) ou abacatepay (o iframe dela). */
+  provider: 'pagarme' | 'abacatepay' | '';
+  /** Na Pagar.me, falta o endereço no cadastro (ela pede o de cobrança). */
+  addressMissing?: boolean;
   publicKey: string;
   saved: SavedCard | null;
   /** Nulo: falta CPF/CNPJ, e-mail ou celular no cadastro. */

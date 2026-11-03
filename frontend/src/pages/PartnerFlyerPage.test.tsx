@@ -22,7 +22,7 @@ import { PartnerFlyerPage } from './PartnerFlyerPage';
 const flush = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 const text = (host: HTMLElement) => (host.textContent ?? '').replace(/ /g, ' ');
 const report = (over: Partial<PartnerReport> = {}): PartnerReport => ({
-  name: 'João Motoca', handle: 'joao.moto', code: 'joao-moto', active: true, commissionCents: 600, signups: 0, customers: 0,
+  name: 'João Motoca', handle: 'joao.moto', code: 'joao-moto', active: true, commissionType: 'fixed', commissionCents: 600, commissionBps: 0, signups: 0, customers: 0,
   activeCustomers: 0, activeVehicles: 0, toReceiveCents: 0, paidCents: 0, months: [], ...over,
 });
 

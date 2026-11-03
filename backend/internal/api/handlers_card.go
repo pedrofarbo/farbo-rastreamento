@@ -21,16 +21,24 @@ import (
 // cartão salvo (nulo: nenhum) e os dados do pagador que o formulário pede —
 // os do titular, os mesmos da cobrança (nulo: falta algum no cadastro).
 type cardView struct {
-	Enabled   bool                 `json:"enabled"`
-	PublicKey string               `json:"publicKey"`
-	Saved     *payments.SavedCard  `json:"saved"`
-	Payer     *abacatepay.Customer `json:"payer"`
+	Enabled bool `json:"enabled"`
+	// Provider: pagarme (o navegador gera o token na API dela) ou abacatepay
+	// (o formulário dela, num iframe).
+	Provider string `json:"provider"`
+	// AddressMissing: na Pagar.me, o cadastro não tem o endereço (ela pede o
+	// de cobrança no cartão novo).
+	AddressMissing bool                 `json:"addressMissing"`
+	PublicKey      string               `json:"publicKey"`
+	Saved          *payments.SavedCard  `json:"saved"`
+	Payer          *abacatepay.Customer `json:"payer"`
 }
 
 func (s *Server) cardView(r *http.Request, customerID uuid.UUID) (*cardView, error) {
 	view := &cardView{Enabled: s.Payments.CardEnabled(), PublicKey: s.Payments.CardPublicKey()}
 	if view.Enabled {
-		view.Payer = payments.CardPayer(s.payerFor(r, customerID))
+		payer := s.payerFor(r, customerID)
+		view.Provider, view.Payer = s.Payments.CardProvider(), payments.CardPayer(payer)
+		view.AddressMissing = view.Provider == "pagarme" && (payer == nil || payer.Address == nil)
 	}
 	if !s.Payments.Enabled() {
 		return view, nil
@@ -98,17 +106,17 @@ func (s *Server) payCard(w http.ResponseWriter, r *http.Request, ids []uuid.UUID
 	if charge != nil {
 		meta["chargeId"], meta["amountCents"], meta["status"] = charge.ID, charge.AmountCents, charge.Status
 	}
-	var apiErr *abacatepay.APIError
+	_, declinedMsg, declined := payments.ProviderError(err)
 	switch {
 	case errors.Is(err, payments.ErrCardUnknown):
 		// Sem resposta do banco: a tela acompanha a cobrança até a conferência.
 		s.recordBillingAudit(r, audit.ActionPaymentCardCharged, meta)
 		writeJSON(w, http.StatusAccepted, charge)
 		return
-	case errors.As(err, &apiErr):
-		meta["error"] = apiErr.Message
+	case declined:
+		meta["error"] = declinedMsg
 		s.recordBillingAudit(r, audit.ActionPaymentCardDeclined, meta)
-		writeError(w, http.StatusPaymentRequired, "o cartão foi recusado: "+providerMessage(apiErr.Message))
+		writeError(w, http.StatusPaymentRequired, "o cartão foi recusado: "+providerMessage(declinedMsg))
 		return
 	case errors.Is(err, database.ErrNotFound):
 		writeError(w, http.StatusNotFound, "fatura não encontrada")

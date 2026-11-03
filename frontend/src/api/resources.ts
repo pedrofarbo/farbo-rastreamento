@@ -24,6 +24,9 @@ import type {
   InstallerLink,
   InstallerLinkInput,
   PublicInstallerLinkView,
+  PartnerRecipient,
+  RecipientInput,
+  KycLink,
   PublicRouteView,
   RouteDay,
   FleetImportResult,
@@ -1289,6 +1292,16 @@ export const publicApi = {
   partner: (token: string) =>
     request<PartnerReport>(`/api/public/partner/${encodeURIComponent(token)}`, { anonymous: true }),
   /** O QR Code do link de indicação do afiliado (para o flyer): o endereço da imagem ou do arquivo. */
+  /** O cadastro do afiliado como recebedor do split (os dados vão para a Pagar.me). */
+  partnerRecipient: (token: string, input: RecipientInput) =>
+    request<PartnerRecipient>(`/api/public/partner/${encodeURIComponent(token)}/recipient`, {
+      method: 'POST',
+      body: input,
+      anonymous: true,
+    }),
+  /** O link (e o QR) da prova de vida do recebedor: vale 20 minutos. */
+  partnerKycLink: (token: string) =>
+    request<KycLink>(`/api/public/partner/${encodeURIComponent(token)}/recipient/kyc-link`, { method: 'POST', anonymous: true }),
   partnerQrUrl: (token: string, format: 'png' | 'svg', download = false) =>
     apiUrl(`/api/public/partner/${encodeURIComponent(token)}/qr?format=${format}${download ? '&download=1' : ''}`),
 };

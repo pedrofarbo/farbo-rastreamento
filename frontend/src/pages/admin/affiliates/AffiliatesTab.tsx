@@ -12,7 +12,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { TextField } from '@/components/ui/Field';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { centsToInput, formatDateOnly, formatMoney, parseMoney } from '@/services/format';
+import { centsToInput, formatDateOnly, formatMoney, formatPercentBps, parseMoney } from '@/services/format';
 import { monthLabel, referralUrl } from '@/services/referral';
 import type { Affiliate, AffiliatePayout } from '@/types';
 import { Pager } from '@/components/ui/Pager';
@@ -58,6 +58,7 @@ export function AffiliatesTab() {
   const list = affiliates.data ?? [];
   const paged = usePagedList(list, 'affiliates');
   const defaultCents = settings.data?.defaultCommissionCents ?? 600;
+  const split = settings.data?.splitEnabled === true;
   const sum = (pick: (a: Affiliate) => number) => list.reduce((total, a) => total + pick(a), 0);
 
   const copy = async (text: string) => {
@@ -93,9 +94,11 @@ export function AffiliatesTab() {
           </span>
         </div>
         <div className={billing.tile}>
-          <span className={billing.tileLabel}>A fechar</span>
+          <span className={billing.tileLabel}>{split ? 'A receber no split' : 'A fechar'}</span>
           <span className={billing.tileValue}>{formatMoney(sum((a) => a.pendingCents))}</span>
-          <span className={billing.tileHint}>comissões do mês ainda abertas</span>
+          <span className={billing.tileHint}>
+            {split ? 'acumuladas: saem nos próximos pagamentos' : 'comissões do mês ainda abertas'}
+          </span>
         </div>
         <div className={billing.tile}>
           <span className={billing.tileLabel}>A pagar</span>
@@ -104,7 +107,8 @@ export function AffiliatesTab() {
         </div>
         <div className={billing.tile}>
           <span className={billing.tileLabel}>Pago</span>
-          <span className={billing.tileValue}>{formatMoney(sum((a) => a.paidCents))}</span>
+          <span className={billing.tileValue}>{formatMoney(sum((a) => a.paidCents + a.splitPaidCents))}</span>
+          {split && <span className={billing.tileHint}>{formatMoney(sum((a) => a.splitPaidCents))} pelo split</span>}
         </div>
       </div>
 
@@ -134,7 +138,7 @@ export function AffiliatesTab() {
                   <tr>
                     <th>Afiliado</th>
                     <th>Link</th>
-                    <th className={company.right}>Por veículo/mês</th>
+                    <th className={company.right}>Comissão por veículo/mês</th>
                     <th className={company.right}>Cadastros</th>
                     <th className={company.right}>Clientes</th>
                     <th className={company.right}>Veículos</th>
@@ -153,6 +157,8 @@ export function AffiliatesTab() {
                             {a.handle ? `@${a.handle}` : 'sem Instagram'}
                             {!a.active && ' · '}
                             {!a.active && <Badge tone="neutral">Inativo</Badge>}
+                            {split && ' · '}
+                            {split && <RecipientBadge status={a.recipientStatus} />}
                           </span>
                         </span>
                       </td>
@@ -164,8 +170,8 @@ export function AffiliatesTab() {
                           </button>
                         </span>
                       </td>
-                      <td data-label="Por veículo/mês" className={company.right}>
-                        {formatMoney(a.commissionCents)}
+                      <td data-label="Comissão por veículo/mês" className={company.right}>
+                        {a.commissionType === 'percent' ? `${formatPercentBps(a.commissionBps)} da mensalidade` : formatMoney(a.commissionCents)}
                       </td>
                       <td data-label="Cadastros" className={company.right}>
                         {a.signups}
@@ -181,7 +187,7 @@ export function AffiliatesTab() {
                         {formatMoney(a.pendingCents + a.openCents)}
                       </td>
                       <td data-label="Pago" className={company.right}>
-                        {formatMoney(a.paidCents)}
+                        {formatMoney(a.paidCents + a.splitPaidCents)}
                       </td>
                       <td className={company.right}>
                         <Button size="small" variant="secondary" onClick={() => setEditing(a)}>
@@ -198,7 +204,7 @@ export function AffiliatesTab() {
         )}
       </Card>
 
-      <ClosingCard />
+      {split ? <SplitCard /> : <ClosingCard />}
       <SettingsCard defaultCents={defaultCents} loaded={settings.isSuccess} />
       <CustomerRewardCard
         defaultCents={defaultCents}
@@ -312,6 +318,36 @@ function CustomerRewardCard({ defaultCents, rewardCents, loaded }: { defaultCent
 }
 
 /** O fechamento do mês: a prévia, o botão e o que já foi fechado. */
+/** A situação do afiliado como recebedor do split na Pagar.me. */
+const RECIPIENT: Record<string, { label: string; tone: BadgeTone }> = {
+  '': { label: 'Sem cadastro de recebedor', tone: 'neutral' },
+  registration: { label: 'Falta a prova de vida', tone: 'warning' },
+  affiliation: { label: 'Recebedor em análise', tone: 'accent' },
+  active: { label: 'Recebe pelo split', tone: 'success' },
+  refused: { label: 'Recebedor recusado', tone: 'danger' },
+};
+
+function RecipientBadge({ status }: { status: string }) {
+  const s = RECIPIENT[status] ?? { label: status, tone: 'neutral' as BadgeTone };
+  return <Badge tone={s.tone}>{s.label}</Badge>;
+}
+
+/** Com o split ligado, não há fechamento: a comissão sai no pagamento do cliente. */
+function SplitCard() {
+  return (
+    <Card
+      title="Comissões pelo split"
+      subtitle="A comissão sai no pagamento de cada cliente indicado, pela Pagar.me, direto para a conta do afiliado — não passa pela conta da Farbo."
+    >
+      <p className={company.muted}>
+        O afiliado se cadastra como recebedor (e faz a prova de vida) pela página dele. Enquanto não estiver ativo, ou
+        quando o pagamento não pode ir pela Pagar.me (o cadastro do cliente sem o que ela pede), a comissão acumula e vai
+        junto nos próximos pagamentos com split. Não há fechamento do mês.
+      </p>
+    </Card>
+  );
+}
+
 function ClosingCard() {
   const { notify } = useToast();
   const queryClient = useQueryClient();

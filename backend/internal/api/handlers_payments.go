@@ -14,11 +14,12 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments/abacatepay"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments/pagarme"
 )
 
 // writePaymentError traduz os erros de pagamento em respostas HTTP.
 func (s *Server) writePaymentError(w http.ResponseWriter, err error) {
-	var apiErr *abacatepay.APIError
+	providerStatus, providerMsg, fromProvider := payments.ProviderError(err)
 	switch {
 	case errors.Is(err, payments.ErrDisabled):
 		writeError(w, http.StatusServiceUnavailable, "o pagamento online não está disponível no momento")
@@ -28,7 +29,8 @@ func (s *Server) writePaymentError(w http.ResponseWriter, err error) {
 		errors.Is(err, payments.ErrCardTokenMissing):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, payments.ErrCardDisabled), errors.Is(err, payments.ErrCardPayerIncomplete),
-		errors.Is(err, payments.ErrNoSavedCard):
+		errors.Is(err, payments.ErrNoSavedCard), errors.Is(err, payments.ErrCardAddressMissing),
+		errors.Is(err, payments.ErrPixPayerIncomplete), errors.Is(err, payments.ErrBoletoAddressMissing):
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, payments.ErrNotDevMode),
 		errors.Is(err, payments.ErrNotRefundable),
@@ -39,15 +41,15 @@ func (s *Server) writePaymentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, database.ErrNotFound):
 		writeError(w, http.StatusNotFound, "cobrança não encontrada")
-	case errors.As(err, &apiErr):
-		s.Log.Warn("AbacatePay recusou a operação", "status", apiErr.HTTPStatus, "err", apiErr.Message)
+	case fromProvider:
+		s.Log.Warn("o gateway de pagamento recusou a operação", "status", providerStatus, "err", providerMsg)
 		// Recusa de regra de negócio (4xx, menos credencial) é conflito que a
 		// pessoa entende; o resto é falha do provedor.
 		status := http.StatusBadGateway
-		if apiErr.HTTPStatus >= 400 && apiErr.HTTPStatus < 500 && apiErr.HTTPStatus != http.StatusUnauthorized {
+		if providerStatus >= 400 && providerStatus < 500 && providerStatus != http.StatusUnauthorized {
 			status = http.StatusConflict
 		}
-		writeError(w, status, "o provedor de pagamento recusou a operação: "+providerMessage(apiErr.Message))
+		writeError(w, status, "o provedor de pagamento recusou a operação: "+providerMessage(providerMsg))
 	default:
 		s.Log.Error("falha no pagamento online", "err", err)
 		writeError(w, http.StatusBadGateway, "não foi possível falar com o provedor de pagamento agora; tente de novo em instantes")
@@ -72,7 +74,14 @@ func (s *Server) payerFor(r *http.Request, customerID uuid.UUID) *payments.Payer
 	if err != nil {
 		return nil
 	}
-	return &payments.Payer{Name: user.Name, Email: user.Email, Document: user.Document, Phone: user.Phone}
+	payer := &payments.Payer{Name: user.Name, Email: user.Email, Document: user.Document, Phone: user.Phone}
+	// O endereço de entrega: a Pagar.me pede no boleto e no cartão.
+	if s.Addresses != nil {
+		if address, err := s.Addresses.Get(r.Context(), customerID); err == nil {
+			payer.Address = address
+		}
+	}
+	return payer
 }
 
 // ---------------------------------------------------------------------------
@@ -392,5 +401,57 @@ func (s *Server) handleAbacatePayWebhook(w http.ResponseWriter, r *http.Request)
 		s.Log.Warn("webhook processado, mas não registrado", "id", event.ID, "err", err)
 	}
 	s.Log.Info("webhook da AbacatePay processado", "event", event.Event, "id", event.ID, "dev_mode", event.DevMode)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handlePagarmeWebhook recebe as notificações da Pagar.me. O segredo vai no
+// endereço cadastrado no painel dela (?secret=...); o corpo só diz quais
+// cobranças reconsultar com a chave secreta — nada é aplicado pelo que ele diz.
+func (s *Server) handlePagarmeWebhook(w http.ResponseWriter, r *http.Request) {
+	cfg := s.Config.Payments
+	if !cfg.PagarmeEnabled() || !s.Payments.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "pagamento online não configurado")
+		return
+	}
+	if !pagarme.VerifySecret(r.URL.Query().Get("secret"), cfg.PagarmeWebhookSecret) {
+		s.Log.Warn("webhook da Pagar.me com segredo inválido ou ausente", "ip", clientIP(r))
+		writeError(w, http.StatusUnauthorized, "webhook não autorizado")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	event, err := pagarme.ParseEvent(body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "evento inválido")
+		return
+	}
+	if seen, err := s.Payments.WebhookSeen(r.Context(), event.ID); err == nil && seen {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "duplicado"})
+		return
+	}
+	handle := s.Payments.HandlePagarmeWebhook
+	if recipient := event.RecipientID(); recipient != "" {
+		// O recebedor do split (o afiliado) mudou de situação.
+		handle = func(ctx context.Context, _ *pagarme.Event) error {
+			if s.Affiliates == nil {
+				return nil
+			}
+			_, err := s.Affiliates.RefreshRecipient(ctx, recipient)
+			return err
+		}
+	}
+	if err := handle(r.Context(), event); err != nil {
+		// 500 faz a Pagar.me tentar de novo mais tarde.
+		s.Log.Error("falha ao processar webhook da Pagar.me", "event", event.Type, "id", event.ID, "err", err)
+		writeError(w, http.StatusInternalServerError, "falha ao processar o evento")
+		return
+	}
+	if err := s.Payments.RecordPagarmeWebhook(r.Context(), event); err != nil {
+		s.Log.Warn("webhook processado, mas não registrado", "id", event.ID, "err", err)
+	}
+	s.Log.Info("webhook da Pagar.me processado", "event", event.Type, "id", event.ID)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

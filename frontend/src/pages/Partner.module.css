@@ -350,3 +350,57 @@
   line-height: 1.5;
   color: #e2e8f0;
 }
+
+/* O cadastro de recebedor do split (Pagar.me). */
+.recipientForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.row2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  /* Rótulo que quebra em duas linhas não desalinha os campos lado a lado. */
+  align-items: end;
+}
+
+.subheading {
+  margin: 0.5rem 0 0;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.kindToggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.kind,
+.kindActive {
+  min-height: 48px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: #141c15;
+  color: #cbd5e1;
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.kindActive {
+  border-color: var(--color-neon-green);
+  background: rgba(59, 229, 88, 0.12);
+  color: #ffffff;
+}
+
+@media (max-width: 380px) {
+  .row2 {
+    grid-template-columns: 1fr;
+  }
+}

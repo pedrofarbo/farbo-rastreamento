@@ -52,6 +52,9 @@ type Charge struct {
 	// InvoiceIDs: as faturas que o Pix paga de uma vez (a do mês de uma
 	// frota); vazio no Pix de uma fatura só (InvoiceID).
 	InvoiceIDs []uuid.UUID `json:"invoiceIds,omitempty"`
+
+	// split: a parte do afiliado da cobrança recém-gerada, a gravar com ela.
+	split *SplitPlan
 }
 
 // ChargeInvoice é uma das faturas de um Pix de várias, com o valor dela na

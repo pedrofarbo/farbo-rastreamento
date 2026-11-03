@@ -289,3 +289,31 @@ func (s *Server) handleSetCustomerAffiliate(w http.ResponseWriter, r *http.Reque
 	s.auditAffiliate(r, "customer", map[string]any{"customerId": id, "affiliateId": req.AffiliateID})
 	writeJSON(w, http.StatusOK, map[string]any{"affiliate": referral})
 }
+
+// handlePartnerRecipient: o afiliado se cadastra como recebedor do split,
+// pela página dele (link secreto). Os dados vão direto para a Pagar.me.
+func (s *Server) handlePartnerRecipient(w http.ResponseWriter, r *http.Request) {
+	var in affiliates.RecipientInput
+	if err := decodeJSON(w, r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	view, err := s.Affiliates.RegisterRecipient(r.Context(), chi.URLParam(r, "token"), in)
+	if err != nil {
+		affiliateError(w, err, "link inválido: peça o novo à Farbo")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusCreated, view)
+}
+
+// handlePartnerKYCLink: o link da prova de vida (vale 20 minutos).
+func (s *Server) handlePartnerKYCLink(w http.ResponseWriter, r *http.Request) {
+	link, err := s.Affiliates.RecipientKYCLink(r.Context(), chi.URLParam(r, "token"))
+	if err != nil {
+		affiliateError(w, err, "link inválido: peça o novo à Farbo")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"url": link.URL, "base64": link.Base64, "expirationDate": link.ExpirationDate})
+}

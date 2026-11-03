@@ -44,7 +44,7 @@ describe('PartnerPage', () => {
     respond = async (token) => {
       expect(token).toBe('segredo-do-joao-0123456789');
       return {
-        name: 'João Motoca', handle: 'joao.moto', code: 'joao-moto', active: true, commissionCents: 600,
+        name: 'João Motoca', handle: 'joao.moto', code: 'joao-moto', active: true, commissionType: 'fixed', commissionCents: 600, commissionBps: 0,
         signups: 12, customers: 4, activeCustomers: 3, activeVehicles: 5, toReceiveCents: 1400, paidCents: 600,
         months: [
           { month: '2026-11', vehicles: 1, amountCents: 800, status: 'pending' },
@@ -82,9 +82,19 @@ describe('PartnerPage', () => {
     expect(document.head.querySelector('meta[name=robots]')?.getAttribute('content')).toBe('noindex, nofollow');
   });
 
+  it('comissão em percentual: mostra o percentual da mensalidade', async () => {
+    respond = async () => ({
+      name: 'Lia Percentual', handle: '', code: 'lia', active: true, commissionType: 'percent', commissionCents: 0,
+      commissionBps: 1250, signups: 0, customers: 0, activeCustomers: 0, activeVehicles: 0, toReceiveCents: 0, paidCents: 0,
+      months: [],
+    });
+    const host = await render();
+    expect(text(host)).toContain('Você ganha 12,5% da mensalidade de cada veículo ativo dos clientes que você indicou');
+  });
+
   it('afiliado pausado: sem QR Code', async () => {
     respond = async () => ({
-      name: 'João Motoca', handle: 'joao.moto', code: 'joao-moto', active: false, commissionCents: 600,
+      name: 'João Motoca', handle: 'joao.moto', code: 'joao-moto', active: false, commissionType: 'fixed', commissionCents: 600, commissionBps: 0,
       signups: 0, customers: 0, activeCustomers: 0, activeVehicles: 0, toReceiveCents: 0, paidCents: 0, months: [],
     });
     const host = await render();

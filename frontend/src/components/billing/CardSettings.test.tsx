@@ -55,7 +55,7 @@ afterEach(() => {
 
 describe('o cartão da conta, em Faturas', () => {
   it('liga o débito só com a autorização, desliga e apaga', async () => {
-    view = { enabled: true, publicKey: 'pk', payer: null, saved: saved() };
+    view = { enabled: true, provider: 'abacatepay', publicKey: 'pk', payer: null, saved: saved() };
     await render();
     expect(text()).toContain('VISA final 4242');
     await act(async () => button('Ligar o débito automático').click());
@@ -74,11 +74,11 @@ describe('o cartão da conta, em Faturas', () => {
   });
 
   it('avisa a recusa; sem o cartão ligado, some', async () => {
-    view = { enabled: true, publicKey: 'pk', payer: null, saved: saved({ autoDebit: true, failedAt: '2026-10-13T10:00:00Z' }) };
+    view = { enabled: true, provider: 'abacatepay', publicKey: 'pk', payer: null, saved: saved({ autoDebit: true, failedAt: '2026-10-13T10:00:00Z' }) };
     await render();
     expect(text()).toContain('O banco recusou a cobrança de 13/10/2026');
     document.body.innerHTML = '';
-    view = { enabled: false, publicKey: '', payer: null, saved: null };
+    view = { enabled: false, provider: '', publicKey: '', payer: null, saved: null };
     await render();
     expect(text()).toBe('');
   });

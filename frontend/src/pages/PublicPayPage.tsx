@@ -210,7 +210,8 @@ export function PublicPayPage() {
           )}
 
           <p className={styles.muted}>
-            Pagamento por Pix ou boleto processado pela AbacatePay. A baixa é automática: não precisa mandar comprovante.
+            Pagamento por Pix ou boleto processado pela AbacatePay ou pela Pagar.me. A baixa é automática: não precisa mandar
+            comprovante.
           </p>
         </>
       )}

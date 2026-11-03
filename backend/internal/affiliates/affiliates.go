@@ -1,6 +1,7 @@
 // Package affiliates é o programa de afiliados (influenciadores). O admin
-// cria cada afiliado com o link de cadastro (/indicacao/<code>) e o valor por
-// veículo ativo; quem se cadastra pelo link fica com o afiliado e, ao virar
+// cria cada afiliado com o link de cadastro (/indicacao/<code>) e a comissão
+// por veículo ativo (um valor fixo ou um percentual da mensalidade); quem se
+// cadastra pelo link fica com o afiliado e, ao virar
 // cliente, rende a comissão por veículo, em cada mês em que a mensalidade
 // dele foi paga (dois veículos, duas comissões). No
 // fechamento do mês, as comissões de cada afiliado viram uma conta a pagar na
@@ -23,6 +24,17 @@ import (
 // MaxCommissionCents: R$ 1.000 por veículo por mês barra um zero a mais.
 const MaxCommissionCents = 100_000
 
+// Os tipos de comissão: um valor fixo por veículo ou um percentual da
+// mensalidade paga do veículo (sem a parcela do rastreador).
+const (
+	CommissionFixed   = "fixed"
+	CommissionPercent = "percent"
+)
+
+// MaxCommissionBps: o percentual vai em centésimos de ponto (1000 = 10%), até
+// a mensalidade inteira.
+const MaxCommissionBps = 10_000
+
 // ValidationError é um dado recusado; a mensagem vai para a tela.
 type ValidationError struct{ Message string }
 
@@ -39,8 +51,12 @@ type Affiliate struct {
 	Handle string    `json:"handle"`
 	Code   string    `json:"code"`
 	// ReportToken abre a página do afiliado (/parceiro/<token>).
-	ReportToken     string     `json:"reportToken"`
+	ReportToken string `json:"reportToken"`
+	// CommissionType: fixed (CommissionCents por veículo) ou percent
+	// (CommissionBps da mensalidade paga de cada veículo).
+	CommissionType  string     `json:"commissionType"`
 	CommissionCents int        `json:"commissionCents"`
+	CommissionBps   int        `json:"commissionBps"`
 	Email           string     `json:"email"`
 	Phone           string     `json:"phone"`
 	PixKey          string     `json:"pixKey"`
@@ -57,18 +73,27 @@ type Affiliate struct {
 	// ActiveVehicles: as assinaturas ativas (veículos) dos clientes
 	// indicados — cada uma rende a comissão no mês em que é paga.
 	ActiveVehicles int `json:"activeVehicles"`
-	// PendingCents: ainda não fechado; OpenCents: fechado, a pagar; PaidCents: pago.
-	PendingCents int64 `json:"pendingCents"`
-	OpenCents    int64 `json:"openCents"`
-	PaidCents    int64 `json:"paidCents"`
+	// PendingCents: ainda não fechado (ou, com o split, ainda não pago);
+	// OpenCents: fechado, a pagar; PaidCents: pago no fechamento;
+	// SplitPaidCents: pago pelo split, no pagamento do cliente.
+	PendingCents   int64 `json:"pendingCents"`
+	OpenCents      int64 `json:"openCents"`
+	PaidCents      int64 `json:"paidCents"`
+	SplitPaidCents int64 `json:"splitPaidCents"`
+	// RecipientStatus: a situação do recebedor na Pagar.me ("" sem cadastro).
+	RecipientStatus string `json:"recipientStatus"`
 }
 
-// Input é o cadastro de um afiliado. Sem CommissionCents, vale o padrão.
+// Input é o cadastro de um afiliado. Sem CommissionType, o afiliado novo fica
+// no valor fixo e o que já existe mantém o tipo; sem CommissionCents, vale o
+// padrão.
 type Input struct {
 	Name            string `json:"name"`
 	Handle          string `json:"handle"`
 	Code            string `json:"code"`
+	CommissionType  string `json:"commissionType"`
 	CommissionCents *int   `json:"commissionCents"`
+	CommissionBps   *int   `json:"commissionBps"`
 	Email           string `json:"email"`
 	Phone           string `json:"phone"`
 	PixKey          string `json:"pixKey"`
@@ -100,8 +125,14 @@ func (in Input) Normalize() (Input, error) {
 		return in, invalid("O @ do Instagram tem só letras, números, ponto e sublinhado (até 30).")
 	case len(in.Code) < 2:
 		return in, invalid("O código do link precisa de pelo menos 2 letras ou números.")
+	case in.CommissionType != "" && in.CommissionType != CommissionFixed && in.CommissionType != CommissionPercent:
+		return in, invalid("Escolha a comissão: valor fixo ou percentual.")
 	case in.CommissionCents != nil && (*in.CommissionCents < 0 || *in.CommissionCents > MaxCommissionCents):
 		return in, invalid("Valor da comissão inválido.")
+	case in.CommissionType == CommissionPercent && (in.CommissionBps == nil || *in.CommissionBps <= 0 || *in.CommissionBps > MaxCommissionBps):
+		return in, invalid("O percentual da comissão vai de 0,01%% a 100%%.")
+	case in.CommissionBps != nil && (*in.CommissionBps < 0 || *in.CommissionBps > MaxCommissionBps):
+		return in, invalid("Percentual da comissão inválido.")
 	case in.Email != "":
 		if _, err := mail.ParseAddress(in.Email); err != nil {
 			return in, invalid("E-mail inválido.")

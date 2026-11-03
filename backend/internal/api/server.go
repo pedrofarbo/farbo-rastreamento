@@ -290,6 +290,7 @@ func (s *Server) routes() chi.Router {
 		// Notificações de pagamento da AbacatePay: sem login, autenticadas
 		// pelo segredo e pela assinatura (ver o handler).
 		r.Post("/payments/abacatepay/webhook", s.handleAbacatePayWebhook)
+		r.Post("/payments/pagarme/webhook", s.handlePagarmeWebhook)
 
 		// Prestadores recomendados para a landing page (público).
 		r.Get("/public/installers", s.handlePublicInstallers)
@@ -309,6 +310,9 @@ func (s *Server) routes() chi.Router {
 			r.With(affiliateLimiter.middleware).Get("/public/affiliates/{code}", s.handlePublicAffiliate)
 			r.With(affiliateLimiter.middleware).Get("/public/partner/{token}", s.handlePartnerReport)
 			r.With(affiliateLimiter.middleware).Get("/public/partner/{token}/qr", s.handlePartnerQR)
+			// O cadastro do afiliado como recebedor do split (Pagar.me).
+			r.With(affiliateLimiter.middleware).Post("/public/partner/{token}/recipient", s.handlePartnerRecipient)
+			r.With(affiliateLimiter.middleware).Post("/public/partner/{token}/recipient/kyc-link", s.handlePartnerKYCLink)
 		}
 		// O contrato em vigor, para ler antes de contratar.
 		if s.Contract != nil {

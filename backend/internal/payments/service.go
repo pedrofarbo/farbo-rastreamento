@@ -1,6 +1,6 @@
-// Package payments cobra as faturas por Pix ou boleto (que traz um Pix junto)
-// e dá baixa sozinho quando o pagamento é confirmado pelo provedor (hoje, a
-// AbacatePay).
+// Package payments cobra as faturas por Pix, boleto ou cartão e dá baixa
+// sozinho quando o pagamento é confirmado pelo gateway: a AbacatePay ou a
+// Pagar.me, escolhida em cada cobrança (ver pagarme.go).
 package payments
 
 import (
@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/addresses"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
@@ -53,10 +54,10 @@ var (
 	ErrNoInvoices = errors.New("escolha as faturas para pagar")
 	// ErrPayerIncomplete: o boleto exige o nome e o CPF/CNPJ do pagador.
 	ErrPayerIncomplete = errors.New("para gerar o boleto, o cadastro precisa do nome e de um CPF ou CNPJ válido")
-	// ErrBoletoNoRefund: a AbacatePay não estorna boleto pela API.
-	ErrBoletoNoRefund = errors.New("a AbacatePay não estorna boleto: devolva o valor ao cliente por fora (por exemplo, por Pix)")
-	// ErrBoletoNoSimulation: o sandbox da AbacatePay só simula o pagamento de Pix.
-	ErrBoletoNoSimulation = errors.New("o ambiente de testes da AbacatePay não simula o pagamento de boleto")
+	// ErrBoletoNoRefund: os gateways não estornam boleto pela API.
+	ErrBoletoNoRefund = errors.New("o sistema não estorna boleto: devolva o valor ao cliente por fora (por exemplo, por Pix)")
+	// ErrBoletoNoSimulation: os ambientes de testes só simulam o pagamento de Pix.
+	ErrBoletoNoSimulation = errors.New("o ambiente de testes não simula o pagamento de boleto")
 	// ErrUnknownMethod: só Pix ou boleto.
 	ErrUnknownMethod = errors.New("forma de pagamento desconhecida")
 )
@@ -115,22 +116,29 @@ type Auditor interface {
 }
 
 // Payer são os dados do pagador. No Pix, só vão para o provedor se o CPF/CNPJ
-// for válido e houver celular (a AbacatePay exige todos os campos juntos); o
-// boleto exige o nome e o CPF/CNPJ.
+// for válido e houver celular (a AbacatePay exige todos os campos juntos; a
+// Pagar.me, também); o boleto exige o nome e o CPF/CNPJ. O endereço vai para
+// a Pagar.me (o boleto e o cartão dela pedem).
 type Payer struct {
 	Name     string
 	Email    string
 	Document string
 	Phone    string
+	Address  *addresses.Address
 }
 
 type Service struct {
 	repo     *Repository
 	invoices Invoices
-	gateway  Gateway
-	audit    Auditor
-	cfg      config.Payments
-	log      *slog.Logger
+	// gateway é a AbacatePay (nil: desligada); pagarme, a Pagar.me.
+	gateway Gateway
+	pagarme PagarmeGateway
+	// O split dos afiliados na Pagar.me (ver split.go).
+	splitter       Splitter
+	farboRecipient string
+	audit          Auditor
+	cfg            config.Payments
+	log            *slog.Logger
 	// O cartão salvo (cifrado) e o débito automático (ver card.go).
 	cardKey cipher.AEAD
 	debit   DebitConfig
@@ -143,8 +151,8 @@ func NewService(repo *Repository, invoices Invoices, gateway Gateway, auditor Au
 	}
 }
 
-// Enabled diz se há provedor configurado.
-func (s *Service) Enabled() bool { return s != nil && s.gateway != nil && s.cfg.Enabled() }
+// Enabled diz se há gateway configurado.
+func (s *Service) Enabled() bool { return s != nil && (s.abacateReady() || s.pagarme != nil) }
 
 // PixForInvoice devolve um Pix para pagar a fatura (ChargeForInvoice).
 func (s *Service) PixForInvoice(ctx context.Context, invoiceID uuid.UUID, payer *Payer) (*Charge, error) {
@@ -183,6 +191,8 @@ func (s *Service) ChargeForInvoice(ctx context.Context, invoiceID uuid.UUID, met
 		Description: "Farbo Rastreadores — " + inv.Description,
 		DueDate:     inv.DueDate,
 		Payer:       payer,
+		CustomerID:  inv.CustomerID,
+		Invoices:    []*billing.Invoice{inv},
 		Metadata: map[string]string{
 			"invoiceId":  inv.ID.String(),
 			"customerId": inv.CustomerID.String(),
@@ -193,8 +203,10 @@ func (s *Service) ChargeForInvoice(ctx context.Context, invoiceID uuid.UUID, met
 	}
 	charge.InvoiceID, charge.InvoiceStatus = inv.ID, inv.Status
 	if err := s.repo.Insert(ctx, charge); err != nil {
+		s.releaseSplit(ctx, charge.ID, charge.split)
 		return nil, err
 	}
+	s.commitSplit(ctx, charge)
 	s.log.Info("cobrança gerada", "method", method, "invoice", inv.ID, "charge", charge.ID,
 		"provider_charge", charge.ProviderChargeID, "amount_cents", charge.AmountCents, "dev_mode", charge.DevMode)
 	return charge, nil
@@ -240,6 +252,8 @@ func (s *Service) ChargeForInvoices(ctx context.Context, customerID uuid.UUID, i
 		Description: description,
 		DueDate:     invoices[0].DueDate,
 		Payer:       payer,
+		CustomerID:  customerID,
+		Invoices:    invoices,
 		Metadata: map[string]string{
 			"invoiceId":  ids[0].String(),
 			"invoices":   fmt.Sprint(len(ids)),
@@ -251,8 +265,10 @@ func (s *Service) ChargeForInvoices(ctx context.Context, customerID uuid.UUID, i
 	}
 	charge.InvoiceID, charge.InvoiceStatus, charge.InvoiceIDs = ids[0], billing.InvoiceOpen, ids
 	if err := s.repo.InsertGroup(ctx, charge, items); err != nil {
+		s.releaseSplit(ctx, charge.ID, charge.split)
 		return nil, err
 	}
+	s.commitSplit(ctx, charge)
 	s.log.Info("cobrança de várias faturas gerada", "method", method, "customer", customerID, "invoices", len(ids),
 		"charge", charge.ID, "provider_charge", charge.ProviderChargeID, "amount_cents", charge.AmountCents,
 		"dev_mode", charge.DevMode)
@@ -266,13 +282,38 @@ type chargeRequest struct {
 	Description string
 	DueDate     billing.Date
 	Payer       *Payer
-	Metadata    map[string]string
+	// CustomerID e Invoices: de quem e o que a cobrança paga (o split do
+	// afiliado sai delas).
+	CustomerID uuid.UUID
+	Invoices   []*billing.Invoice
+	Metadata   map[string]string
 }
 
-// create gera o Pix ou o boleto no provedor. O id da cobrança vai como
-// externalId.
+// create gera o Pix ou o boleto no gateway escolhido para o valor. O id da
+// cobrança vai como externalId (o código do pedido, na Pagar.me).
 func (s *Service) create(ctx context.Context, method string, req chargeRequest) (*Charge, error) {
 	id := uuid.New()
+	plan := s.planSplit(ctx, id, req.CustomerID, req.Invoices, req.AmountCents)
+	provider, err := s.route(method, req.AmountCents, req.Payer, plan != nil)
+	if err != nil {
+		s.releaseSplit(ctx, id, plan)
+		return nil, err
+	}
+	if provider != providerPagarme && plan != nil {
+		// Sem como ir pela Pagar.me (o cadastro sem o que ela pede): sem
+		// split; a comissão acumula para o próximo.
+		s.releaseSplit(ctx, id, plan)
+		plan = nil
+	}
+	if provider == providerPagarme {
+		charge, err := s.createPagarme(ctx, method, id, req, plan)
+		if err != nil {
+			s.releaseSplit(ctx, id, plan)
+			return nil, err
+		}
+		charge.split = plan
+		return charge, nil
+	}
 	if method == MethodBoleto {
 		customer, ok := boletoCustomerFor(req.Payer)
 		if !ok {
@@ -362,6 +403,18 @@ func (s *Service) Refresh(ctx context.Context, id uuid.UUID, force bool) (*Charg
 		}
 	}
 
+	if charge.Provider == providerPagarme {
+		if s.pagarme == nil {
+			return nil, ErrDisabled
+		}
+		if err := s.refreshPagarme(ctx, charge); err != nil {
+			return nil, err
+		}
+		return s.Charge(ctx, id)
+	}
+	if s.gateway == nil {
+		return nil, ErrDisabled
+	}
 	// O /transparents/check é só para Pix; o boleto e o cartão se consultam
 	// pelo get.
 	var status *abacatepay.PixStatus
@@ -391,6 +444,14 @@ func (s *Service) Simulate(ctx context.Context, id uuid.UUID) (*Charge, error) {
 	}
 	if charge.Method == MethodBoleto {
 		return nil, ErrBoletoNoSimulation
+	}
+	if charge.Provider == providerPagarme {
+		// No ambiente de testes da Pagar.me, o Pix até R$ 500 se paga sozinho
+		// segundos depois de criado: basta esperar.
+		return s.awaitChange(ctx, id, abacatepay.StatusPending)
+	}
+	if s.gateway == nil {
+		return nil, ErrDisabled
 	}
 	if _, err := s.gateway.SimulatePayment(ctx, charge.ProviderChargeID); err != nil {
 		return nil, fmt.Errorf("simulando pagamento: %w", err)
@@ -424,16 +485,27 @@ func (s *Service) RefundCharge(ctx context.Context, id uuid.UUID, reason string)
 	}
 
 	reason = strings.TrimSpace(reason)
-	refund, err := s.gateway.RefundPix(ctx, charge.ProviderChargeID, reason)
-	if err != nil {
-		return nil, fmt.Errorf("pedindo estorno: %w", err)
+	var refundID, refundStatus string
+	switch {
+	case charge.Provider == providerPagarme && s.pagarme != nil:
+		if refundID, err = s.refundPagarme(ctx, charge); err != nil {
+			return nil, err
+		}
+	case charge.Provider == providerPagarme || s.gateway == nil:
+		return nil, ErrDisabled
+	default:
+		refund, err := s.gateway.RefundPix(ctx, charge.ProviderChargeID, reason)
+		if err != nil {
+			return nil, fmt.Errorf("pedindo estorno: %w", err)
+		}
+		refundID, refundStatus = refund.RefundID(), refund.Status
 	}
-	if err := s.repo.MarkRefundRequested(ctx, charge.ID, refund.RefundID(), reason); err != nil {
+	if err := s.repo.MarkRefundRequested(ctx, charge.ID, refundID, reason); err != nil {
 		// O estorno já foi aceito lá; só o registro falhou. A consulta
 		// periódica ainda vai ver o REFUNDED e aplicar.
-		s.log.Error("estorno aceito, mas não registrado", "charge", charge.ID, "refund", refund.RefundID(), "err", err)
+		s.log.Error("estorno aceito, mas não registrado", "charge", charge.ID, "refund", refundID, "err", err)
 	}
-	s.log.Info("estorno pedido", "charge", charge.ID, "refund", refund.RefundID(), "status", refund.Status)
+	s.log.Info("estorno pedido", "charge", charge.ID, "provider", charge.Provider, "refund", refundID, "status", refundStatus)
 
 	// Em testes o estorno conclui na hora (a consulta pode levar um instante
 	// para refletir); em produção é assíncrono e isto ainda deve voltar pago,
@@ -549,6 +621,9 @@ func (s *Service) apply(ctx context.Context, charge *Charge, status string) erro
 		return err
 	}
 	s.log.Info("status da cobrança mudou", "method", charge.Method, "charge", charge.ID, "from", charge.Status, "to", status)
+	if nowPaid && !wasPaid {
+		s.splitPaid(ctx, charge)
+	}
 	if wasPaid && nowPaid {
 		// O cartão aprovado que a adquirente repassou: a fatura já quitou.
 		return nil

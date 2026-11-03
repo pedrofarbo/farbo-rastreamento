@@ -9,6 +9,13 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { cardErrorMessage, loadAbacatePay, type AbacateCheckout } from '@/services/abacatepayCard';
 import { formatDateOnly, formatDateTime, formatMoney } from '@/services/format';
+import {
+  cardProblem,
+  formatCardNumber,
+  formatExpiry,
+  tokenizePagarmeCard,
+  type PagarmeCardInput,
+} from '@/services/pagarmeCard';
 import type { CardPayInput, ChargeMethod, PixCharge } from '@/types';
 
 import styles from './Billing.module.css';
@@ -272,8 +279,8 @@ function PixView({ state, charge, description }: { state: PixCheckoutState; char
       {charge.devMode && (
         <div className={styles.pixSandbox}>
           <span>
-            <strong>Ambiente de testes.</strong> Este Pix é do sandbox da AbacatePay: nenhum dinheiro de verdade é
-            movimentado.
+            <strong>Ambiente de testes.</strong> Este Pix é do sandbox da {gatewayName(charge)}: nenhum dinheiro de
+            verdade é movimentado.
           </span>
           <Button size="small" variant="secondary" loading={simulate.isPending} onClick={() => simulate.mutate()}>
             Simular pagamento
@@ -338,8 +345,8 @@ function BoletoView({ state, charge, description }: { state: PixCheckoutState; c
       {charge.devMode && (
         <div className={styles.pixSandbox}>
           <span>
-            <strong>Ambiente de testes.</strong> Este boleto é do sandbox da AbacatePay: nenhum dinheiro de verdade é
-            movimentado, e o sandbox não simula o pagamento de boleto.
+            <strong>Ambiente de testes.</strong> Este boleto é do sandbox da {gatewayName(charge)}: nenhum dinheiro de
+            verdade é movimentado, e o sandbox não simula o pagamento de boleto.
           </span>
         </div>
       )}
@@ -347,10 +354,18 @@ function BoletoView({ state, charge, description }: { state: PixCheckoutState; c
   );
 }
 
+/** O gateway da cobrança, como aparece na tela. */
+function gatewayName(charge: PixCharge): string {
+  return charge.provider === 'pagarme' ? 'Pagar.me' : 'AbacatePay';
+}
+
+const EMPTY_CARD: PagarmeCardInput = { number: '', holderName: '', expiry: '', cvv: '' };
+
 /**
- * O cartão: o salvo da conta ou o formulário da AbacatePay (o iframe dela,
- * montado aqui), e a autorização do débito automático. Sem resposta do banco
- * ainda, espera a confirmação, que aparece sozinha.
+ * O cartão: o salvo da conta ou o formulário do gateway — na Pagar.me, os
+ * campos aqui (o navegador gera o token direto na API dela); na AbacatePay, o
+ * iframe dela, montado aqui — e a autorização do débito automático. Sem
+ * resposta do banco ainda, espera a confirmação, que aparece sozinha.
  */
 function CardPay({ state, description }: { state: PixCheckoutState; description?: string }) {
   const { card, charge, error, payCard, amountCents, autoDebitDefault, start } = state;
@@ -360,10 +375,13 @@ function CardPay({ state, description }: { state: PixCheckoutState; description?
   const [formError, setFormError] = useState('');
   const [ready, setReady] = useState(false);
   const [tokenizing, setTokenizing] = useState(false);
+  const [fields, setFields] = useState<PagarmeCardInput>(EMPTY_CARD);
   const host = useRef<HTMLDivElement>(null);
   const checkout = useRef<AbacateCheckout | null>(null);
+  const pagarme = card?.provider === 'pagarme';
   const waiting = Boolean(charge && (charge.status === 'CREATING' || charge.status === 'PENDING'));
-  const showForm = Boolean(card?.payer) && !useSaved && !waiting;
+  const showForm = Boolean(card?.payer) && !card?.addressMissing && !useSaved && !waiting;
+  const filled = Boolean(fields.number && fields.holderName && fields.expiry && fields.cvv);
 
   useEffect(() => {
     setUseSaved(Boolean(saved));
@@ -371,7 +389,7 @@ function CardPay({ state, description }: { state: PixCheckoutState; description?
 
   // Monta o formulário (o iframe da AbacatePay) quando ele aparece.
   useEffect(() => {
-    if (!showForm || !card || !host.current) return;
+    if (!showForm || !card || pagarme || !host.current) return;
     let alive = true;
     const target = host.current;
     setReady(false);
@@ -393,7 +411,7 @@ function CardPay({ state, description }: { state: PixCheckoutState; description?
       checkout.current?.destroy();
       checkout.current = null;
     };
-  }, [showForm, card?.publicKey, amountCents]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [showForm, pagarme, card?.publicKey, amountCents]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!card) return <Spinner label="Carregando o cartão…" />;
   if (!card.payer) {
@@ -402,6 +420,16 @@ function CardPay({ state, description }: { state: PixCheckoutState; description?
         <p>
           Para pagar com cartão, o cadastro da conta precisa do CPF ou CNPJ, do e-mail e do celular. Complete em Conta,
           nos seus dados, ou pague com Pix ou boleto.
+        </p>
+      </div>
+    );
+  }
+  if (card.addressMissing && !saved) {
+    return (
+      <div className={styles.pix}>
+        <p>
+          Para pagar com cartão, o cadastro da conta precisa do endereço (CEP, rua, número, bairro e cidade). Complete em
+          Conta, nos seus dados, ou pague com Pix ou boleto.
         </p>
       </div>
     );
@@ -421,6 +449,25 @@ function CardPay({ state, description }: { state: PixCheckoutState; description?
     start('CARD');
     if (useSaved) {
       payCard.mutate({ useSaved: true });
+      return;
+    }
+    if (pagarme) {
+      const problem = cardProblem(fields);
+      if (problem) {
+        setFormError(problem);
+        return;
+      }
+      setTokenizing(true);
+      try {
+        const { token } = await tokenizePagarmeCard(card.publicKey, fields);
+        // O número e o CVV saem da tela assim que viram token.
+        setFields(EMPTY_CARD);
+        payCard.mutate({ token, save: autoDebit, autoDebit });
+      } catch (err) {
+        setFormError(err instanceof Error ? err.message : 'Não deu para validar o cartão.');
+      } finally {
+        setTokenizing(false);
+      }
       return;
     }
     if (!checkout.current || !card.payer) return;
@@ -464,8 +511,53 @@ function CardPay({ state, description }: { state: PixCheckoutState; description?
 
       {showForm && (
         <>
-          <div ref={host} className={styles.cardForm} />
-          {!ready && !formError && <Spinner label="Abrindo o formulário do cartão…" />}
+          {pagarme ? (
+            <div className={styles.cardFields}>
+              <input
+                className={fieldStyles.input}
+                aria-label="Número do cartão"
+                placeholder="Número do cartão"
+                inputMode="numeric"
+                autoComplete="cc-number"
+                value={fields.number}
+                onChange={(e) => setFields((f) => ({ ...f, number: formatCardNumber(e.target.value) }))}
+              />
+              <input
+                className={fieldStyles.input}
+                aria-label="Nome impresso no cartão"
+                placeholder="Nome impresso no cartão"
+                autoComplete="cc-name"
+                value={fields.holderName}
+                onChange={(e) => setFields((f) => ({ ...f, holderName: e.target.value }))}
+              />
+              <div className={styles.cardFieldsRow}>
+                <input
+                  className={fieldStyles.input}
+                  aria-label="Validade (MM/AA)"
+                  placeholder="Validade (MM/AA)"
+                  inputMode="numeric"
+                  autoComplete="cc-exp"
+                  value={fields.expiry}
+                  onChange={(e) => setFields((f) => ({ ...f, expiry: formatExpiry(e.target.value) }))}
+                />
+                <input
+                  className={fieldStyles.input}
+                  aria-label="CVV"
+                  placeholder="CVV"
+                  inputMode="numeric"
+                  autoComplete="cc-csc"
+                  maxLength={4}
+                  value={fields.cvv}
+                  onChange={(e) => setFields((f) => ({ ...f, cvv: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
+                />
+              </div>
+            </div>
+          ) : (
+            <>
+              <div ref={host} className={styles.cardForm} />
+              {!ready && !formError && <Spinner label="Abrindo o formulário do cartão…" />}
+            </>
+          )}
           <label className={styles.cardConsent}>
             <input type="checkbox" checked={autoDebit} onChange={(e) => setAutoDebit(e.target.checked)} />
             <span>
@@ -486,14 +578,15 @@ function CardPay({ state, description }: { state: PixCheckoutState; description?
         variant="primary"
         block
         loading={payCard.isPending || tokenizing}
-        disabled={!useSaved && !ready}
+        disabled={!useSaved && (pagarme ? !filled : !ready)}
         onClick={() => void pay()}
       >
         Pagar {formatMoney(amountCents)}
       </Button>
       <p className={styles.muted}>
-        Os dados do cartão vão direto para a AbacatePay, num formulário seguro: não passam pela Farbo. Se o banco pedir
-        confirmação, ela abre numa janela dele.
+        {pagarme
+          ? 'Os dados do cartão vão direto para a Pagar.me, que devolve um código de uso único: o número e o CVV não passam pela Farbo.'
+          : 'Os dados do cartão vão direto para a AbacatePay, num formulário seguro: não passam pela Farbo. Se o banco pedir confirmação, ela abre numa janela dele.'}
       </p>
     </div>
   );

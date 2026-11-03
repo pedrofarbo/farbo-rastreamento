@@ -242,6 +242,23 @@ export function centsToInput(cents: number): string {
   return (cents / 100).toFixed(2).replace('.', ',');
 }
 
+/** Centésimos de ponto percentual → "12,5%" (1250). */
+export function formatPercentBps(bps: number): string {
+  return `${(bps / 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+}
+
+/** "12,5" ou "12,5%" → 1250 (centésimos de ponto); null se não é número. */
+export function parsePercentBps(text: string): number | null {
+  const clean = text.replace(/[%\s]/g, '').replace(',', '.');
+  if (!/^\d+(\.\d{1,2})?$/.test(clean)) return null;
+  return Math.round(Number(clean) * 100);
+}
+
+/** Centésimos de ponto → "12,5" para o campo. */
+export function bpsToInput(bps: number): string {
+  return (bps / 100).toLocaleString('pt-BR', { maximumFractionDigits: 2, useGrouping: false });
+}
+
 /**
  * Data de calendário "2026-10-05" → "05/10/2026". Não passa por Date: meia
  * noite UTC viraria o dia anterior no horário de Brasília.

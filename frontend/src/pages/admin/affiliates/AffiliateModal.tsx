@@ -3,12 +3,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { affiliatesApi, leadsApi } from '@/api/resources';
 import { Button } from '@/components/ui/Button';
-import { TextField } from '@/components/ui/Field';
+import { SelectField, TextField } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
-import { centsToInput, formatMoney, formatPhoneInput, parseMoney } from '@/services/format';
+import { bpsToInput, centsToInput, formatMoney, formatPhoneInput, parseMoney, parsePercentBps } from '@/services/format';
 import { partnerUrl, referralCode, referralUrl } from '@/services/referral';
-import type { Affiliate, AffiliateInput } from '@/types';
+import type { Affiliate, AffiliateInput, CommissionType } from '@/types';
 
 import company from '../company/Company.module.css';
 import styles from './Affiliates.module.css';
@@ -17,7 +17,9 @@ interface Draft {
   name: string;
   handle: string;
   code: string;
+  commissionType: CommissionType;
   commission: string;
+  percent: string;
   email: string;
   phone: string;
   pixKey: string;
@@ -30,7 +32,9 @@ function draftOf(a: Affiliate | null, defaultCents: number): Draft {
     name: a?.name ?? '',
     handle: a?.handle ?? '',
     code: a?.code ?? '',
+    commissionType: a?.commissionType ?? 'fixed',
     commission: centsToInput(a?.commissionCents ?? defaultCents),
+    percent: a && a.commissionBps > 0 ? bpsToInput(a.commissionBps) : '',
     email: a?.email ?? '',
     phone: a?.phone ?? '',
     pixKey: a?.pixKey ?? '',
@@ -109,16 +113,24 @@ export function AffiliateModal({
 
   const submit = () => {
     setError('');
-    const cents = draft.commission.trim() === '' ? null : parseMoney(draft.commission);
-    if (draft.commission.trim() !== '' && cents === null) {
+    const percent = draft.commissionType === 'percent';
+    const cents = percent || draft.commission.trim() === '' ? null : parseMoney(draft.commission);
+    if (!percent && draft.commission.trim() !== '' && cents === null) {
       setError('Valor por veículo inválido.');
+      return;
+    }
+    const bps = percent ? parsePercentBps(draft.percent) : null;
+    if (percent && (bps === null || bps <= 0 || bps > 10_000)) {
+      setError('Percentual inválido: de 0,01 a 100 (por exemplo, 10 ou 12,5).');
       return;
     }
     save.mutate({
       name: draft.name,
       handle: draft.handle,
       code: draft.code,
+      commissionType: draft.commissionType,
       commissionCents: cents,
+      commissionBps: bps,
       email: draft.email,
       phone: draft.phone,
       pixKey: draft.pixKey,
@@ -260,17 +272,37 @@ export function AffiliateModal({
               )
             }
           />
-          <TextField
-            label="Valor por veículo ativo, por mês (R$)"
-            value={draft.commission}
-            inputMode="decimal"
-            onChange={(e) => set('commission', e.target.value)}
-            hint={
-              affiliate
-                ? 'O valor novo vale para as mensalidades ainda não pagas.'
-                : `Padrão: ${formatMoney(defaultCents)}. Conta por veículo do cliente indicado, em cada mês em que a mensalidade dele é paga.`
-            }
-          />
+          <SelectField
+            label="Comissão"
+            value={draft.commissionType}
+            onChange={(e) => set('commissionType', e.target.value as CommissionType)}
+            hint="Por veículo do cliente indicado, em cada mês em que a mensalidade dele é paga."
+          >
+            <option value="fixed">Valor fixo por veículo</option>
+            <option value="percent">Percentual da mensalidade</option>
+          </SelectField>
+          {draft.commissionType === 'percent' ? (
+            <TextField
+              label="Percentual da mensalidade (%)"
+              value={draft.percent}
+              inputMode="decimal"
+              placeholder="10"
+              onChange={(e) => set('percent', e.target.value)}
+              hint={
+                affiliate
+                  ? 'O percentual novo vale para as mensalidades ainda não pagas. A parcela do rastreador fica fora.'
+                  : 'Sobre a mensalidade paga de cada veículo; a parcela do rastreador fica fora.'
+              }
+            />
+          ) : (
+            <TextField
+              label="Valor por veículo ativo, por mês (R$)"
+              value={draft.commission}
+              inputMode="decimal"
+              onChange={(e) => set('commission', e.target.value)}
+              hint={affiliate ? 'O valor novo vale para as mensalidades ainda não pagas.' : `Padrão: ${formatMoney(defaultCents)}.`}
+            />
+          )}
           <TextField label="E-mail" type="email" value={draft.email} maxLength={254} onChange={(e) => set('email', e.target.value)} />
           <TextField
             label="WhatsApp"

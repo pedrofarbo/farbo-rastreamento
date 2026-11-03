@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatPhoneInput, formatVoltage, isPhoneComplete, vehicleVoltage } from './format';
+import { bpsToInput, formatPercentBps, formatPhoneInput, formatVoltage, isPhoneComplete, parsePercentBps, vehicleVoltage } from './format';
 
 describe('formatPhoneInput', () => {
   it('formata enquanto digita', () => {
@@ -54,5 +54,18 @@ describe('a voltagem do rastreador', () => {
     expect(vehicleVoltage({ state: { batteryVoltage: 12.6 }, lastPosition: { batteryVoltage: 11.9 } })).toBe(12.6);
     expect(vehicleVoltage({ state: { batteryVoltage: null }, lastPosition: { batteryVoltage: 11.9 } })).toBe(11.9);
     expect(vehicleVoltage({ state: null, lastPosition: null })).toBeNull();
+  });
+});
+
+describe('o percentual da comissão', () => {
+  it('lê o que se digita em centésimos de ponto e mostra de volta', () => {
+    expect(parsePercentBps('10')).toBe(1000);
+    expect(parsePercentBps('12,5')).toBe(1250);
+    expect(parsePercentBps(' 7,25 % ')).toBe(725);
+    expect(parsePercentBps('0,01')).toBe(1);
+    for (const bad of ['', 'dez', '1,234', '-5', '10,5,1']) expect(parsePercentBps(bad)).toBeNull();
+    expect(formatPercentBps(1250)).toBe('12,5%');
+    expect(formatPercentBps(1000)).toBe('10%');
+    expect(bpsToInput(725)).toBe('7,25');
   });
 });

@@ -95,14 +95,30 @@ func (s *Service) SetCardSecret(secret string) error {
 	return nil
 }
 
-// CardEnabled diz se o cartão de crédito está ligado (a chave pública
-// configurada e a cifra do cartão salvo pronta).
-func (s *Service) CardEnabled() bool { return s.Enabled() && s.cfg.CardEnabled() && s.cardKey != nil }
+// CardEnabled diz se o cartão de crédito está ligado (a chave pública do
+// gateway configurada e a cifra do cartão salvo pronta).
+func (s *Service) CardEnabled() bool {
+	return s.Enabled() && s.CardProvider() != "" && s.cardKey != nil
+}
 
-// CardPublicKey é a chave que o navegador usa para montar o formulário.
+// CardProvider é o gateway do cartão: pagarme (o token sai da API dela, no
+// navegador) ou abacatepay (o formulário dela, num iframe); "" desligado.
+func (s *Service) CardProvider() string {
+	provider, err := s.route(MethodCard, 0, nil, false)
+	if err != nil {
+		return ""
+	}
+	return provider
+}
+
+// CardPublicKey é a chave que o navegador usa para montar o formulário (ou
+// gerar o token, na Pagar.me).
 func (s *Service) CardPublicKey() string {
 	if !s.CardEnabled() {
 		return ""
+	}
+	if s.CardProvider() == providerPagarme {
+		return s.cfg.PagarmePublicKey
 	}
 	return s.cfg.PublicKey
 }
@@ -118,6 +134,9 @@ func (s *Service) CardForInvoices(ctx context.Context, customerID uuid.UUID, inv
 	invoices, total, err := s.openInvoices(ctx, customerID, invoiceIDs)
 	if err != nil {
 		return nil, err
+	}
+	if s.CardProvider() == providerPagarme {
+		return s.cardPagarme(ctx, customerID, invoices, total, in, payer)
 	}
 	customer, ok := cardCustomerFor(payer)
 	if !ok {
@@ -222,6 +241,15 @@ func (s *Service) ReconcileCards(ctx context.Context) {
 		return
 	}
 	for _, charge := range list {
+		if charge.Provider == providerPagarme {
+			if s.pagarme != nil {
+				s.reconcilePagarmeCard(ctx, charge)
+			}
+			continue
+		}
+		if s.gateway == nil {
+			continue
+		}
 		card, err := s.gateway.FindCard(ctx, charge.CreatedAt.Add(-time.Hour), "chargeId", charge.ID.String())
 		switch {
 		case err != nil:
@@ -334,7 +362,13 @@ func (s *Service) RemoveCard(ctx context.Context, customerID uuid.UUID) error {
 
 // saveCard guarda (ou troca) o cartão da conta, cifrado.
 func (s *Service) saveCard(ctx context.Context, customerID uuid.UUID, card *abacatepay.Card, autoDebit bool, by *uuid.UUID) error {
-	sealed, err := s.sealCard(card.CardToken)
+	return s.storeCard(ctx, customerID, card.CardToken, card.Brand, card.LastFour, autoDebit, by)
+}
+
+// storeCard guarda o token do cartão (o da AbacatePay, ou o cliente e o
+// cartão da carteira da Pagar.me) cifrado, com a bandeira e o final.
+func (s *Service) storeCard(ctx context.Context, customerID uuid.UUID, token, brand, last4 string, autoDebit bool, by *uuid.UUID) error {
+	sealed, err := s.sealCard(token)
 	if err != nil {
 		return err
 	}
@@ -344,7 +378,7 @@ func (s *Service) saveCard(ctx context.Context, customerID uuid.UUID, card *abac
 		ON CONFLICT (customer_id) DO UPDATE SET card_token = EXCLUDED.card_token, brand = EXCLUDED.brand,
 			last4 = EXCLUDED.last4, auto_debit = EXCLUDED.auto_debit, consent_at = EXCLUDED.consent_at,
 			consent_by = EXCLUDED.consent_by, failed_at = NULL, last_error = '', updated_at = NOW()`,
-		customerID, sealed, card.Brand, card.LastFour, autoDebit, by)
+		customerID, sealed, brand, last4, autoDebit, by)
 	return database.MapError(err)
 }
 

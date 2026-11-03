@@ -21,12 +21,13 @@ import (
 // que ainda não tem a sua: pago (o cartão, já aprovado), estornado ou em
 // disputa (a tarifa foi cobrada). Uma vez por cobrança; a de testes não tem
 // tarifa. A do cartão só entra quando a AbacatePay a informa (ela não publica
-// a tabela do cartão).
+// a tabela do cartão). Na Pagar.me, só a do Pix (o percentual, calculado ao
+// gerar): a do boleto e a do cartão dela não vêm na cobrança.
 func (s *Service) RecordReceivedFees(ctx context.Context) {
 	rows, err := s.db.Query(ctx, `
 		SELECT id FROM payment_charges
 		WHERE status IN ('PAID', 'APPROVED', 'REFUNDED', 'UNDER_DISPUTE') AND NOT dev_mode AND paid_at IS NOT NULL
-			AND fee_entry_id IS NULL AND NOT (method = 'CARD' AND platform_fee_cents = 0)
+			AND fee_entry_id IS NULL AND NOT ((method = 'CARD' OR provider = 'pagarme') AND platform_fee_cents = 0)
 		ORDER BY paid_at LIMIT 100`)
 	if err != nil {
 		s.log.Error("falha ao listar as tarifas do Pix recebido", "err", err)
@@ -51,12 +52,12 @@ func (s *Service) recordReceivedFee(ctx context.Context, chargeID uuid.UUID) err
 	return pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		var fee int64
 		var paidAt time.Time
-		var method, provider, invoice, customer string
+		var method, gateway, provider, invoice, customer string
 		err := tx.QueryRow(ctx, `
-			SELECT c.method, c.platform_fee_cents, c.paid_at, c.provider_charge_id, i.description, COALESCE(u.name, '')
+			SELECT c.method, c.provider, c.platform_fee_cents, c.paid_at, c.provider_charge_id, i.description, COALESCE(u.name, '')
 			FROM payment_charges c JOIN invoices i ON i.id = c.invoice_id LEFT JOIN users u ON u.id = i.customer_id
 			WHERE c.id = $1 AND c.fee_entry_id IS NULL FOR UPDATE OF c`, chargeID).
-			Scan(&method, &fee, &paidAt, &provider, &invoice, &customer)
+			Scan(&method, &gateway, &fee, &paidAt, &provider, &invoice, &customer)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil // outra instância lançou
 		}
@@ -82,7 +83,11 @@ func (s *Service) recordReceivedFee(ctx context.Context, chargeID uuid.UUID) err
 			return nil
 		}
 		day := paidAt.In(s.loc)
-		description := "Tarifa do " + what + " recebido (AbacatePay): " + invoice
+		name := "AbacatePay"
+		if gateway == "pagarme" {
+			name = "Pagar.me"
+		}
+		description := "Tarifa do " + what + " recebido (" + name + "): " + invoice
 		if customer != "" {
 			description += " · " + customer
 		}

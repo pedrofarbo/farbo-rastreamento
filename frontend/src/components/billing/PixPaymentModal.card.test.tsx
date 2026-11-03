@@ -95,7 +95,7 @@ afterEach(() => {
 
 describe('pagar no cartão', () => {
   it('cartão novo: o formulário da AbacatePay, o token e a autorização do débito automático', async () => {
-    cardView = { enabled: true, publicKey: 'pk_teste', saved: null, payer };
+    cardView = { enabled: true, provider: 'abacatepay', publicKey: 'pk_teste', saved: null, payer };
     cardResult = async () => charge({ id: 'k1', method: 'CARD', status: 'APPROVED', invoiceStatus: 'PAID', cardBrand: 'VISA', cardLast4: '4242' });
     await render();
     await act(async () => radio('Cartão').click());
@@ -114,7 +114,7 @@ describe('pagar no cartão', () => {
 
   it('cartão salvo: paga com ele, sem formulário', async () => {
     cardView = {
-      enabled: true, publicKey: 'pk_teste', payer,
+      enabled: true, provider: 'abacatepay', publicKey: 'pk_teste', payer,
       saved: { brand: 'VISA', last4: '4242', autoDebit: true, consentAt: null, failedAt: null, lastError: '', createdAt: '' },
     };
     cardResult = async () => charge({ id: 'k2', method: 'CARD', status: 'APPROVED', invoiceStatus: 'PAID' });
@@ -129,7 +129,7 @@ describe('pagar no cartão', () => {
   });
 
   it('recusado: a mensagem; sem resposta do banco: espera a confirmação', async () => {
-    cardView = { enabled: true, publicKey: 'pk_teste', saved: null, payer };
+    cardView = { enabled: true, provider: 'abacatepay', publicKey: 'pk_teste', saved: null, payer };
     cardResult = async () => {
       throw new Error('o cartão foi recusado: Não foi possível processar o pagamento com este cartão');
     };
@@ -161,14 +161,14 @@ describe('pagar no cartão', () => {
   }, 10_000);
 
   it('vindo da contratação no cartão: abre no cartão, com a autorização marcada', async () => {
-    cardView = { enabled: true, publicKey: 'pk_teste', saved: null, payer };
+    cardView = { enabled: true, provider: 'abacatepay', publicKey: 'pk_teste', saved: null, payer };
     await render({ initialMethod: 'CARD', autoDebit: true });
     expect(radio('Cartão').getAttribute('aria-checked')).toBe('true');
     expect(document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(true);
   });
 
   it('sem os dados do pagador, explica; com o cartão desligado, nem aparece', async () => {
-    cardView = { enabled: true, publicKey: 'pk_teste', saved: null, payer: null };
+    cardView = { enabled: true, provider: 'abacatepay', publicKey: 'pk_teste', saved: null, payer: null };
     await render();
     await act(async () => radio('Cartão').click());
     await flush();
@@ -176,7 +176,7 @@ describe('pagar no cartão', () => {
     expect(form.created).toHaveLength(0);
 
     document.body.innerHTML = '';
-    cardView = { enabled: false, publicKey: '', saved: null, payer: null };
+    cardView = { enabled: false, provider: '', publicKey: '', saved: null, payer: null };
     await render({ initialMethod: 'CARD' });
     expect(radio('Cartão')).toBeUndefined();
     // Pediu cartão desligado: volta ao Pix.

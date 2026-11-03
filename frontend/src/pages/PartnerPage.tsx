@@ -3,10 +3,11 @@ import { Link, useParams } from 'react-router-dom';
 
 import { ApiError } from '@/api/client';
 import { publicApi } from '@/api/resources';
-import { formatMoney } from '@/services/format';
+import { formatMoney, formatPercentBps } from '@/services/format';
 import { monthLabel, referralUrl } from '@/services/referral';
 import type { PartnerMonth, PartnerReport } from '@/types';
 
+import { RecipientSection } from './partner/RecipientSection';
 import styles from './Partner.module.css';
 import base from './PreLaunch.module.css';
 
@@ -95,8 +96,17 @@ export function PartnerPage() {
           <section className={base.intro}>
             <h1 className={base.title}>Olá, {report.name.split(' ')[0]}!</h1>
             <p className={base.lead}>
-              Você ganha <strong className={styles.white}>{money(report.commissionCents)}</strong> por mês por veículo
-              ativo dos clientes que você indicou, em cada mês em que a mensalidade dele é paga.
+              {report.commissionType === 'percent' ? (
+                <>
+                  Você ganha <strong className={styles.white}>{formatPercentBps(report.commissionBps)}</strong> da mensalidade
+                  de cada veículo ativo dos clientes que você indicou, em cada mês em que ela é paga.
+                </>
+              ) : (
+                <>
+                  Você ganha <strong className={styles.white}>{money(report.commissionCents)}</strong> por mês por veículo
+                  ativo dos clientes que você indicou, em cada mês em que a mensalidade dele é paga.
+                </>
+              )}
             </p>
             {!report.active && (
               <p className={base.error}>Seu link está pausado: cadastros novos não contam. Fale com a Farbo.</p>
@@ -175,6 +185,14 @@ export function PartnerPage() {
             </div>
           </section>
 
+          {report.recipient?.enabled && (
+            <RecipientSection
+              token={token}
+              recipient={report.recipient}
+              onChange={(recipient) => setReport((r) => (r ? { ...r, recipient } : r))}
+            />
+          )}
+
           <section className={styles.stats} aria-label="Indicações">
             <Stat value={report.signups} label="Cadastros pelo link" />
             <Stat value={report.customers} label="Viraram clientes" />
@@ -199,7 +217,9 @@ export function PartnerPage() {
                     </div>
                     <div className={styles.monthRight}>
                       <strong>{money(m.amountCents)}</strong>
-                      <span className={`${styles.status} ${STATUS[m.status].className}`}>{STATUS[m.status].label}</span>
+                      <span className={`${styles.status} ${STATUS[m.status].className}`}>
+                        {m.status === 'pending' && report.recipient?.enabled ? 'A receber' : STATUS[m.status].label}
+                      </span>
                     </div>
                   </li>
                 ))}
@@ -208,8 +228,10 @@ export function PartnerPage() {
           </section>
 
           <p className={base.hint}>
-            No começo de cada mês, fechamos o mês anterior e pagamos por Pix. Os números atualizam a cada hora.
-            Por privacidade, aqui não aparecem os nomes de quem se cadastrou.
+            {report.recipient?.enabled
+              ? 'A comissão sai no pagamento de cada cliente, pela Pagar.me, direto para a sua conta.'
+              : 'No começo de cada mês, fechamos o mês anterior e pagamos por Pix.'}{' '}
+            Os números atualizam a cada hora. Por privacidade, aqui não aparecem os nomes de quem se cadastrou.
           </p>
         </>
       )}

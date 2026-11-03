@@ -169,11 +169,11 @@ func (s *Service) runDebit(ctx context.Context, id uuid.UUID, g debitGroup, atte
 	if charge != nil {
 		chargeID = &charge.ID
 	}
-	var apiErr *abacatepay.APIError
+	_, declinedMsg, declined := ProviderError(err)
 	switch {
-	case errors.As(err, &apiErr):
-		s.finishDebit(ctx, id, debitDeclined, chargeID, apiErr.Message)
-		s.declined(ctx, g.customerID, g.due, int(g.cents), attempt, apiErr.Message)
+	case declined:
+		s.finishDebit(ctx, id, debitDeclined, chargeID, declinedMsg)
+		s.declined(ctx, g.customerID, g.due, int(g.cents), attempt, declinedMsg)
 		return false
 	case errors.Is(err, ErrCardUnknown):
 		s.finishDebit(ctx, id, debitUnknown, chargeID, "")

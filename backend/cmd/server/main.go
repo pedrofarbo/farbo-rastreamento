@@ -58,6 +58,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/organizations"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments/abacatepay"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments/pagarme"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols/gt06"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/protocols/h02"
@@ -239,6 +240,21 @@ func run() error {
 	auditSvc := audit.NewService(auditRepo, log)
 	paymentsSvc := payments.NewService(payments.NewRepository(db), billingSvc,
 		newPaymentGateway(cfg, log), auditSvc, cfg.Payments, log)
+	// A Pagar.me: o Pix vai pelo gateway mais barato para o valor; o boleto e
+	// o cartão, por ela.
+	if p := cfg.Payments; p.PagarmeEnabled() {
+		mode := "produção"
+		if pagarme.IsTestKey(p.PagarmeSecretKey) {
+			mode = "testes"
+		}
+		if p.PagarmeWebhookSecret == "" {
+			log.Warn("PAGARME_WEBHOOK_SECRET vazio: webhooks da Pagar.me recusados; a baixa vem só da consulta periódica")
+		}
+		log.Info("pagamento pela Pagar.me", "modo", mode, "cartao", p.PagarmePublicKey != "",
+			"taxa_pix_abacatepay_centavos", p.AbacatePayPixFeeCents, "taxa_pix_pagarme_bps", p.PagarmePixFeeBps)
+		paymentsSvc.SetPagarme(pagarme.NewClient(p.PagarmeBaseURL, p.PagarmeSecretKey))
+	}
+	addressRepo := addresses.NewRepository(db)
 	// O cartão salvo fica cifrado com a chave derivada do segredo do servidor;
 	// o débito automático cobra com os dados do titular e avisa a recusa.
 	if err := paymentsSvc.SetCardSecret(string(cfg.Auth.JWTSecret)); err != nil {
@@ -254,7 +270,11 @@ func run() error {
 			if err != nil {
 				return nil, err
 			}
-			return &payments.Payer{Name: u.Name, Email: u.Email, Document: u.Document, Phone: u.Phone}, nil
+			payer := &payments.Payer{Name: u.Name, Email: u.Email, Document: u.Document, Phone: u.Phone}
+			if address, err := addressRepo.Get(ctx, id); err == nil {
+				payer.Address = address
+			}
+			return payer, nil
 		},
 		Notifier: mail.NewCardMailer(mailer, cfg.Mail.AppURL),
 		Location: debitLoc,
@@ -362,6 +382,17 @@ func run() error {
 		financeSvc.SetBalanceReader(abacatepay.NewClient(cfg.Payments.AbacatePayBaseURL, key), abacatepay.IsDevKey(key))
 	}
 	affiliatesSvc := affiliates.NewService(db, log)
+	// O split dos afiliados na Pagar.me (a conta lá precisa ser PSP, de
+	// marketplace): a comissão sai no pagamento do cliente, e o afiliado se
+	// cadastra como recebedor pela página dele.
+	if p := cfg.Payments; p.SplitEnabled() {
+		paymentsSvc.SetSplit(affiliatesSvc, p.PagarmeRecipientID)
+		affiliatesSvc.SetSplit(true)
+		affiliatesSvc.SetRecipients(pagarme.NewClient(p.PagarmeBaseURL, p.PagarmeSecretKey))
+		log.Info("split dos afiliados pela Pagar.me ligado", "recebedor_farbo", p.PagarmeRecipientID)
+	} else if p.PagarmeSplit {
+		log.Warn("PAGARME_SPLIT ligado sem PAGARME_SECRET_KEY ou PAGARME_RECIPIENT_ID: split desligado")
+	}
 	// As recargas da carteira do Melhor Envios (pagas também pela AbacatePay).
 	var topUpSvc *topups.Service
 	if carrier != nil {
@@ -490,7 +521,7 @@ func run() error {
 		Audit: auditSvc, ReportMail: reportMailSvc, Maintenance: maintenanceSvc, Billing: billingSvc, Payments: paymentsSvc, Owners: ownerIndex,
 		Orders:      ordersSvc,
 		Installers:  installerRepo,
-		Addresses:   addresses.NewRepository(db),
+		Addresses:   addressRepo,
 		Fulfillment: fulfillmentSvc, Carrier: carrier, CarrierStore: carrierStore, TopUps: topUpSvc,
 		Retention: retentionSvc,
 		Support:   supportSvc,
@@ -797,7 +828,7 @@ func newSMSSetup(cfg *config.Config, db *database.DB, devs *devices.Service, act
 func newPaymentGateway(cfg *config.Config, log *slog.Logger) payments.Gateway {
 	p := cfg.Payments
 	if !p.Enabled() {
-		log.Warn("ABACATEPAY_API_KEY não definida: pagamento das faturas por Pix desligado")
+		log.Warn("ABACATEPAY_API_KEY não definida: AbacatePay desligada")
 		return nil
 	}
 	mode := "produção"

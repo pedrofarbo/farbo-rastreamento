@@ -19,6 +19,10 @@ type Service struct {
 	loc *time.Location
 	now func() time.Time
 	log *slog.Logger
+	// split: as comissões saem no pagamento do cliente (split.go); recipients,
+	// o cadastro do afiliado como recebedor na Pagar.me (recipients.go).
+	split      bool
+	recipients RecipientGateway
 }
 
 func NewService(db *database.DB, log *slog.Logger) *Service {
@@ -50,12 +54,15 @@ type Settings struct {
 	CategoryID             *uuid.UUID `json:"categoryId"`
 	// CustomerRewardCents: o crédito do indique e ganhe (zero desliga).
 	CustomerRewardCents int `json:"customerRewardCents"`
+	// SplitEnabled: as comissões saem no pagamento do cliente (sem fechamento).
+	SplitEnabled bool `json:"splitEnabled"`
 }
 
 func (s *Service) Settings(ctx context.Context) (*Settings, error) {
 	var out Settings
 	err := s.db.QueryRow(ctx, `SELECT default_commission_cents, category_id, customer_reward_cents FROM affiliate_settings`).
 		Scan(&out.DefaultCommissionCents, &out.CategoryID, &out.CustomerRewardCents)
+	out.SplitEnabled = s.split
 	return &out, database.MapError(err)
 }
 
@@ -70,8 +77,12 @@ func (s *Service) SaveSettings(ctx context.Context, defaultCents int, applyToAll
 			return err
 		}
 		if applyToAll {
-			// O link de indicação dos clientes não tem comissão (é o indique e ganhe).
-			_, err := tx.Exec(ctx, `UPDATE affiliates SET commission_cents = $1, updated_at = NOW() WHERE customer_id IS NULL`, defaultCents)
+			// O link de indicação dos clientes não tem comissão (é o indique e
+			// ganhe). O padrão é um valor fixo: quem estava no percentual passa
+			// para ele.
+			_, err := tx.Exec(ctx, `
+				UPDATE affiliates SET commission_type = 'fixed', commission_cents = $1, updated_at = NOW()
+				WHERE customer_id IS NULL`, defaultCents)
 			return err
 		}
 		return nil
@@ -86,8 +97,9 @@ func (s *Service) SaveSettings(ctx context.Context, defaultCents int, applyToAll
 // Afiliados
 // ---------------------------------------------------------------------------
 
-const columns = `a.id, a.name, a.handle, a.code, a.report_token, a.commission_cents, a.email, a.phone, a.pix_key,
-	a.notes, a.supplier_id, a.active, a.created_at,
+const columns = `a.id, a.name, a.handle, a.code, a.report_token, a.commission_type, a.commission_cents,
+	a.commission_bps, a.email, a.phone, a.pix_key,
+	a.notes, a.supplier_id, a.active, a.created_at, a.recipient_status,
 	(SELECT count(DISTINCT lower(x.email)) FROM (
 		SELECT email FROM launch_waitlist WHERE affiliate_id = a.id
 		UNION ALL SELECT email FROM leads WHERE affiliate_id = a.id) x),
@@ -97,7 +109,9 @@ const columns = `a.id, a.name, a.handle, a.code, a.report_token, a.commission_ce
 	(SELECT count(*) FROM affiliate_referrals r JOIN subscriptions sb ON sb.customer_id = r.customer_id
 		WHERE r.affiliate_id = a.id AND sb.status = 'ACTIVE'),
 	COALESCE((SELECT sum(c.amount_cents) FROM affiliate_commissions c
-		WHERE c.affiliate_id = a.id AND c.payout_id IS NULL), 0)::bigint,
+		WHERE c.affiliate_id = a.id AND c.payout_id IS NULL AND NOT ` + splitPaid + `), 0)::bigint,
+	COALESCE((SELECT sum(c.amount_cents) FROM affiliate_commissions c
+		WHERE c.affiliate_id = a.id AND c.payout_id IS NULL AND ` + splitPaid + `), 0)::bigint,
 	COALESCE((SELECT sum(p.amount_cents) FROM affiliate_payouts p LEFT JOIN finance_entries e ON e.id = p.finance_entry_id
 		WHERE p.affiliate_id = a.id AND e.status IS DISTINCT FROM 'PAID'), 0)::bigint,
 	COALESCE((SELECT sum(p.amount_cents) FROM affiliate_payouts p JOIN finance_entries e ON e.id = p.finance_entry_id
@@ -105,9 +119,11 @@ const columns = `a.id, a.name, a.handle, a.code, a.report_token, a.commission_ce
 
 func scan(row database.Scanner) (*Affiliate, error) {
 	var a Affiliate
-	err := row.Scan(&a.ID, &a.Name, &a.Handle, &a.Code, &a.ReportToken, &a.CommissionCents, &a.Email, &a.Phone,
-		&a.PixKey, &a.Notes, &a.SupplierID, &a.Active, &a.CreatedAt,
-		&a.Signups, &a.Customers, &a.ActiveCustomers, &a.ActiveVehicles, &a.PendingCents, &a.OpenCents, &a.PaidCents)
+	err := row.Scan(&a.ID, &a.Name, &a.Handle, &a.Code, &a.ReportToken, &a.CommissionType, &a.CommissionCents,
+		&a.CommissionBps, &a.Email, &a.Phone,
+		&a.PixKey, &a.Notes, &a.SupplierID, &a.Active, &a.CreatedAt, &a.RecipientStatus,
+		&a.Signups, &a.Customers, &a.ActiveCustomers, &a.ActiveVehicles, &a.PendingCents, &a.SplitPaidCents, &a.OpenCents,
+		&a.PaidCents)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -165,19 +181,28 @@ func (s *Service) Create(ctx context.Context, in Input) (*Affiliate, error) {
 	if err != nil {
 		return nil, err
 	}
+	if in.CommissionType == "" {
+		in.CommissionType = CommissionFixed
+	}
+	bps := 0
+	if in.CommissionBps != nil {
+		bps = *in.CommissionBps
+	}
 	var id uuid.UUID
 	err = s.db.QueryRow(ctx, `
-		INSERT INTO affiliates (name, handle, code, report_token, commission_cents, email, phone, pix_key, notes, active)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-		in.Name, in.Handle, in.Code, token, *in.CommissionCents, in.Email, in.Phone, in.PixKey, in.Notes, in.Active).Scan(&id)
+		INSERT INTO affiliates (name, handle, code, report_token, commission_type, commission_cents, commission_bps, email,
+			phone, pix_key, notes, active)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+		in.Name, in.Handle, in.Code, token, in.CommissionType, *in.CommissionCents, bps, in.Email, in.Phone, in.PixKey,
+		in.Notes, in.Active).Scan(&id)
 	if err != nil {
 		return nil, conflictMessage(err)
 	}
 	return s.Get(ctx, id)
 }
 
-// Update muda o cadastro. O valor novo vale para as comissões que ainda vão
-// nascer; as geradas ficam com o valor de quando nasceram. A chave Pix nova
+// Update muda o cadastro. A comissão nova (o valor ou o percentual) vale para
+// as que ainda vão nascer; as geradas ficam com o valor de quando nasceram. A chave Pix nova
 // vai também para o fornecedor do afiliado na Empresa, que é para onde o Pix
 // do fechamento sai (o tipo da chave volta a ser detectado).
 func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Affiliate, error) {
@@ -194,9 +219,12 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Affiliat
 		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE affiliates SET name = $2, handle = $3, code = $4, commission_cents = COALESCE($5, commission_cents),
-				email = $6, phone = $7, pix_key = $8, notes = $9, active = $10, updated_at = NOW()
+				email = $6, phone = $7, pix_key = $8, notes = $9, active = $10,
+				commission_type = COALESCE(NULLIF($11, ''), commission_type),
+				commission_bps = COALESCE($12, commission_bps), updated_at = NOW()
 			WHERE id = $1`,
-			id, in.Name, in.Handle, in.Code, in.CommissionCents, in.Email, in.Phone, in.PixKey, in.Notes, in.Active); err != nil {
+			id, in.Name, in.Handle, in.Code, in.CommissionCents, in.Email, in.Phone, in.PixKey, in.Notes, in.Active,
+			in.CommissionType, in.CommissionBps); err != nil {
 			return err
 		}
 		if supplier == nil || oldKey == in.PixKey {
@@ -360,22 +388,37 @@ func (s *Service) SetCustomer(ctx context.Context, customerID uuid.UUID, affilia
 
 // Reconcile acerta as comissões com as mensalidades: cada mês pago de cada
 // veículo (assinatura) de um cliente indicado, a partir do mês da indicação,
-// rende uma comissão ao afiliado ativo, pelo valor dele — o cliente com dois
-// veículos rende duas. A de uma mensalidade estornada — ou de um cliente que
+// rende uma comissão ao afiliado ativo — o valor fixo dele ou o percentual
+// da mensalidade paga (sem a parcela do rastreador, que vem na mesma
+// fatura). O cliente com dois veículos rende duas. A de uma mensalidade estornada — ou de um cliente que
 // mudou de afiliado — sai, se ainda não foi fechada. Idempotente: roda de
 // hora em hora e antes dos relatórios.
 func (s *Service) Reconcile(ctx context.Context) (created, removed int64, err error) {
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		// As das cobranças com split pagas nascem pagas pelo split, com o
+		// valor que foi para o afiliado (refaz o que SplitPaid não gravou).
+		if _, err := tx.Exec(ctx, insertSplitCommissions+`
+			JOIN payment_charges pc ON pc.id = sp.charge_id WHERE pc.status IN `+splitPaidStatuses+onSplitConflict); err != nil {
+			return err
+		}
 		tag, err := tx.Exec(ctx, `
 			INSERT INTO affiliate_commissions (affiliate_id, customer_id, subscription_id, month, amount_cents)
-			SELECT r.affiliate_id, i.customer_id, i.subscription_id, date_trunc('month', i.due_date)::date, a.commission_cents
-			FROM invoices i
-			JOIN affiliate_referrals r ON r.customer_id = i.customer_id
-			JOIN affiliates a ON a.id = r.affiliate_id
-			WHERE i.status = 'PAID' AND i.subscription_id IS NOT NULL AND i.amount_cents > 0
-				AND a.active AND a.commission_cents > 0
-				AND i.due_date >= date_trunc('month', r.created_at AT TIME ZONE $1)::date
-			GROUP BY 1, 2, 3, 4, 5
+			SELECT affiliate_id, customer_id, subscription_id, month, amount FROM (
+				SELECT r.affiliate_id, i.customer_id, i.subscription_id, date_trunc('month', i.due_date)::date AS month,
+					CASE WHEN a.commission_type = 'percent'
+						THEN round(sum(greatest(i.amount_cents - inst.cents, 0)) * a.commission_bps / 10000.0)::int
+						ELSE a.commission_cents END AS amount
+				FROM invoices i
+				JOIN affiliate_referrals r ON r.customer_id = i.customer_id
+				JOIN affiliates a ON a.id = r.affiliate_id
+				-- A parcela do rastreador vem na fatura do veículo: fica fora do percentual.
+				CROSS JOIN LATERAL (SELECT COALESCE(sum(ei.amount_cents), 0) AS cents
+					FROM equipment_installments ei WHERE ei.invoice_id = i.id) inst
+				WHERE i.status = 'PAID' AND i.subscription_id IS NOT NULL AND i.amount_cents > 0 AND a.active
+					AND i.due_date >= date_trunc('month', r.created_at AT TIME ZONE $1)::date
+				GROUP BY r.affiliate_id, i.customer_id, i.subscription_id, month, a.commission_type, a.commission_cents,
+					a.commission_bps) c
+			WHERE amount > 0
 			ON CONFLICT (affiliate_id, subscription_id, month) DO NOTHING`, s.loc.String())
 		if err != nil {
 			return err
@@ -393,10 +436,24 @@ func (s *Service) Reconcile(ctx context.Context) (created, removed int64, err er
 			return err
 		}
 		removed = tag.RowsAffected()
-		return nil
+		// A reserva do split da cobrança que não foi paga (venceu, falhou ou
+		// foi estornada — a Pagar.me desfaz a parte do afiliado) volta a
+		// acumular; a sem cobrança (não nasceu) vence em 30 minutos.
+		_, err = tx.Exec(ctx, `
+			UPDATE affiliate_commissions c SET split_charge_id = NULL, split_reserved_at = NULL
+			WHERE c.payout_id IS NULL AND c.split_charge_id IS NOT NULL AND (
+				EXISTS (SELECT 1 FROM payment_charges pc WHERE pc.id = c.split_charge_id
+					AND pc.status IN ('EXPIRED', 'CANCELLED', 'FAILED', 'REFUNDED'))
+				OR (NOT EXISTS (SELECT 1 FROM payment_charges pc WHERE pc.id = c.split_charge_id)
+					AND c.split_reserved_at < NOW() - INTERVAL '30 minutes'))`)
+		return err
 	})
 	return created, removed, database.MapError(err)
 }
+
+// splitPaid diz se a comissão c saiu num split (a cobrança dela foi paga).
+const splitPaid = `EXISTS (SELECT 1 FROM payment_charges pc WHERE pc.id = c.split_charge_id AND pc.status IN ` +
+	splitPaidStatuses + `)`
 
 // Work é o que o worker chama de hora em hora.
 func (s *Service) Work(ctx context.Context) {
@@ -457,10 +514,14 @@ func (s *Service) ClosingPreview(ctx context.Context, month string) ([]ClosingLi
 	if _, _, err := s.Reconcile(ctx); err != nil {
 		return nil, err
 	}
+	if s.split {
+		// Com o split, as comissões saem no pagamento do cliente.
+		return []ClosingLine{}, nil
+	}
 	rows, err := s.db.Query(ctx, `
 		SELECT a.id, a.name, a.handle, a.pix_key, count(*), sum(c.amount_cents)::bigint
 		FROM affiliate_commissions c JOIN affiliates a ON a.id = c.affiliate_id
-		WHERE c.payout_id IS NULL AND c.month <= $1
+		WHERE c.payout_id IS NULL AND c.split_charge_id IS NULL AND c.month <= $1
 		GROUP BY a.id ORDER BY 6 DESC, a.name`, m)
 	if err != nil {
 		return nil, database.MapError(err)
@@ -488,6 +549,9 @@ func (s *Service) Close(ctx context.Context, month string, due billing.Date, by 
 	if due.IsZero() {
 		return nil, invalid("Informe o vencimento das contas.")
 	}
+	if s.split {
+		return nil, invalid("Com o split ligado, as comissões são pagas no pagamento do cliente: não há fechamento.")
+	}
 	if _, _, err := s.Reconcile(ctx); err != nil {
 		return nil, err
 	}
@@ -512,7 +576,7 @@ func (s *Service) Close(ctx context.Context, month string, due billing.Date, by 
 		rows, err := tx.Query(ctx, `
 			SELECT c.id, c.amount_cents, a.id, a.supplier_id, a.name, a.email, a.phone, a.pix_key
 			FROM affiliate_commissions c JOIN affiliates a ON a.id = c.affiliate_id
-			WHERE c.payout_id IS NULL AND c.month <= $1
+			WHERE c.payout_id IS NULL AND c.split_charge_id IS NULL AND c.month <= $1
 			ORDER BY a.name, a.id
 			FOR UPDATE OF c`, m)
 		if err != nil {
@@ -722,7 +786,9 @@ type Report struct {
 	Handle          string        `json:"handle"`
 	Code            string        `json:"code"`
 	Active          bool          `json:"active"`
+	CommissionType  string        `json:"commissionType"`
 	CommissionCents int           `json:"commissionCents"`
+	CommissionBps   int           `json:"commissionBps"`
 	Signups         int           `json:"signups"`
 	Customers       int           `json:"customers"`
 	ActiveCustomers int           `json:"activeCustomers"`
@@ -730,6 +796,8 @@ type Report struct {
 	ToReceiveCents  int64         `json:"toReceiveCents"`
 	PaidCents       int64         `json:"paidCents"`
 	Months          []ReportMonth `json:"months"`
+	// Recipient: o cadastro de recebedor do split (Enabled falso: desligado).
+	Recipient *RecipientView `json:"recipient"`
 }
 
 // ReferralCode é o código do link de indicação do afiliado ativo, pelo link
@@ -759,14 +827,19 @@ func (s *Service) Report(ctx context.Context, token string) (*Report, error) {
 		return nil, err
 	}
 	out := &Report{
-		Name: a.Name, Handle: a.Handle, Code: a.Code, Active: a.Active, CommissionCents: a.CommissionCents,
+		Name: a.Name, Handle: a.Handle, Code: a.Code, Active: a.Active, CommissionType: a.CommissionType,
+		CommissionCents: a.CommissionCents, CommissionBps: a.CommissionBps,
 		Signups: a.Signups, Customers: a.Customers, ActiveCustomers: a.ActiveCustomers, ActiveVehicles: a.ActiveVehicles,
-		ToReceiveCents: a.PendingCents + a.OpenCents, PaidCents: a.PaidCents, Months: []ReportMonth{},
+		ToReceiveCents: a.PendingCents + a.OpenCents, PaidCents: a.PaidCents + a.SplitPaidCents, Months: []ReportMonth{},
+	}
+	if view, err := s.Recipient(ctx, token); err == nil {
+		out.Recipient = view
 	}
 	from := time.Date(s.now().In(s.loc).Year(), s.now().In(s.loc).Month()-11, 1, 0, 0, 0, 0, time.UTC)
 	rows, err := s.db.Query(ctx, `
 		SELECT to_char(c.month, 'YYYY-MM'), count(*), sum(c.amount_cents)::bigint,
-			count(*) FILTER (WHERE c.payout_id IS NULL), count(*) FILTER (WHERE e.status = 'PAID')
+			count(*) FILTER (WHERE c.payout_id IS NULL AND NOT `+splitPaid+`),
+			count(*) FILTER (WHERE e.status = 'PAID' OR `+splitPaid+`)
 		FROM affiliate_commissions c
 		LEFT JOIN affiliate_payouts p ON p.id = c.payout_id
 		LEFT JOIN finance_entries e ON e.id = p.finance_entry_id

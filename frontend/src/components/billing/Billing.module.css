@@ -404,6 +404,20 @@
   cursor: pointer;
 }
 
+/* Os campos do cartão da Pagar.me (o token sai do navegador direto para ela). */
+.cardFields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.cardFieldsRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
 /* O formulário da AbacatePay (um iframe dela): fundo claro, como ela desenha. */
 .cardForm {
   width: 100%;
