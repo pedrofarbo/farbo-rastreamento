@@ -131,7 +131,9 @@ export function InstallationsAgendaPage() {
                           <strong>{w.vehicleName}</strong>
                           {w.plate && <span className={styles.plate}>{w.plate}</span>}
                           <div>
-                            {w.farboInstall ? (
+                            {w.representative ? (
+                              <Badge tone="neutral">Com o representante {w.representative}</Badge>
+                            ) : w.farboInstall ? (
                               <Badge tone="accent">Instalação Farbo</Badge>
                             ) : (
                               <span className={styles.muted}>cliente instala por conta própria</span>

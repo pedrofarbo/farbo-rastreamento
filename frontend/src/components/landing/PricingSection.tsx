@@ -7,6 +7,7 @@ import {
   ANATEL_HOMOLOGATION,
   CHECKOUT_PATH,
   installmentsOf,
+  loanOnly,
   installmentsPhrase,
   priceLabel,
   priceParts,
@@ -51,6 +52,8 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
   const plan = headline?.cents;
   const promo = open && !!offer && plan !== undefined && offer.planRegularCents > plan;
   const equipment = offer && (open ? offer.equipmentCents : offer.equipmentRegularCents);
+  // Pelo link de um afiliado só de comodato: o comodato no lugar do preço do rastreador.
+  const onlyLoan = loanOnly(offer, open);
   return (
     <section className={styles.pricingSection} id="planos">
       <div className={styles.container}>
@@ -222,8 +225,15 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
           <div className={styles.cardHeader}>
             <h3 className={styles.cardTitle}>EQUIPAMENTO</h3>
             <div className={styles.deviceSubtitle}>Rastreador J16 GT06</div>
-            <CardPrice cents={equipment} regular={open ? offer?.equipmentRegularCents : undefined} />
-            {offer && equipment !== undefined && (
+            {onlyLoan ? (
+              <>
+                <div className={styles.fleetPrice}>Em comodato</div>
+                <div className={styles.priceSub}>sem comprar o rastreador: ele volta quando você encerrar</div>
+              </>
+            ) : (
+              <CardPrice cents={equipment} regular={open ? offer?.equipmentRegularCents : undefined} />
+            )}
+            {!onlyLoan && offer && equipment !== undefined && (
               <div className={styles.priceSub}>
                 {offer.maxInstallments > 1 ? (
                   <>
@@ -237,12 +247,18 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
               </div>
             )}
             {/* Quem instala, e o comodato para quem não quer comprar. */}
-            {open && offer && (
+            {onlyLoan ? (
+              <p className={styles.equipmentNote}>
+                <strong>Comodato</strong>: {loanTerms(offer.loan, offer.installDirect)}.
+              </p>
+            ) : open && offer && (
               <>
                 <p className={styles.equipmentNote}>
                   {offer.install
                     ? offer.installDirect
-                      ? `Instale com o seu instalador ou com o representante, por ${priceLabel(offer.install.priceCents)}, pago direto a ele.`
+                      ? offer.install.priceCents > 0
+                        ? `Instale com o seu instalador ou com o representante, por ${priceLabel(offer.install.priceCents)}, pago direto a ele.`
+                        : 'Instale com o seu instalador ou com o representante, sem custo.'
                       : `Instale com o seu instalador ou com os nossos, por ${priceLabel(offer.install.priceCents)}.`
                     : 'Instale com o instalador da sua preferência.'}
                 </p>
@@ -333,6 +349,7 @@ export function bannerHeadline(offer: CheckoutOffer | undefined): string {
   if (!offer) return 'Escolha o plano, pague com Pix e receba em casa.';
   const installments = installmentsPhrase(offer.equipmentCents, offer.maxInstallments);
   const monthly = offer.planByKind ? `A partir de ${priceLabel(lowestPrice(offer.planByKind))}` : priceLabel(offer.planCents);
+  if (loanOnly(offer)) return `${monthly}/mês, com o rastreador em comodato: sem comprar. Pague com Pix.`;
   return `${monthly}/mês e ${priceLabel(offer.equipmentCents)} no rastreador${
     installments ? `, ou ${installments}` : ''
   }. Pague com Pix e receba em casa.`;

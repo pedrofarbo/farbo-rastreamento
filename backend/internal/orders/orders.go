@@ -440,15 +440,24 @@ func (s *Service) OrderTerms(ctx context.Context, customerID uuid.UUID, equipmen
 		}
 		return account.Terms, nil
 	}
+	// O rastreador que o afiliado que indicou o cliente oferece: comprado,
+	// comodato ou os dois.
+	modes, err := s.CustomerEquipment(ctx, customerID)
+	if err != nil {
+		return Terms{}, err
+	}
+	if equipmentMode, err = linkEquipment(modes, equipmentMode); err != nil {
+		return Terms{}, err
+	}
 	switch equipmentMode {
-	case "", billing.EquipmentSale:
+	case billing.EquipmentSale:
 		return Terms{EquipmentMode: billing.EquipmentSale}, nil
 	case billing.EquipmentLoan:
 		offer, err := s.Loan(ctx)
 		if err != nil {
 			return Terms{}, err
 		}
-		if !offer.Enabled {
+		if !offer.Enabled && modes != EquipmentLoanOnly {
 			return Terms{}, ValidationError{"o comodato não está disponível agora: escolha comprar o rastreador"}
 		}
 		terms := Terms{EquipmentMode: billing.EquipmentLoan, InstallFeeCents: offer.InstallFeeCents,

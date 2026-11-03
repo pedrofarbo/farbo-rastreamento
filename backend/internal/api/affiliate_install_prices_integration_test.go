@@ -54,7 +54,7 @@ func TestAffiliateInstallPrices(t *testing.T) {
 	guarantee := 500
 	create("Rui Representante", "rui-rep", orders.InstallPrices{Mode: orders.InstallDirect, InstallCents: 12000, UninstallCents: 8000,
 		GuaranteeCents: &guarantee})
-	create("Loja Parceira", "loja", orders.InstallPrices{Mode: orders.InstallCustom, InstallCents: 9000, UninstallCents: 5000})
+	lojaAff := create("Loja Parceira", "loja", orders.InstallPrices{Mode: orders.InstallCustom, InstallCents: 9000, UninstallCents: 5000})
 
 	type offerView struct {
 		Install *struct {
@@ -169,4 +169,30 @@ func TestAffiliateInstallPrices(t *testing.T) {
 	if placed.InstallInvoice != nil || placed.Subscription.UninstallFeeCents != 0 || placed.Subscription.PriceCents != 3490+500 {
 		t.Errorf("comodato pelo app = %+v (instalação %+v)", placed.Subscription, placed.InstallInvoice)
 	}
+
+	// O representante que recebe direto define os valores dele pela página
+	// (eles só aparecem para o cliente); com os preços da Farbo, não.
+	var ruiAff affiliates.Affiliate
+	for _, a := range func() []affiliates.Affiliate {
+		var list []affiliates.Affiliate
+		_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/affiliates", nil, http.StatusOK), &list)
+		return list
+	}() {
+		if a.Code == "rui-rep" {
+			ruiAff = a
+		}
+	}
+	var mine orders.InstallPrices
+	_ = json.Unmarshal(env.must("", http.MethodPut, "/api/public/partner/"+ruiAff.ReportToken+"/install-prices",
+		map[string]any{"installCents": 18000, "uninstallCents": 6000}, http.StatusOK), &mine)
+	if mine.InstallCents != 18000 || mine.UninstallCents != 6000 || mine.Guarantee(-1) != 500 {
+		t.Errorf("valores do representante = %+v", mine)
+	}
+	if o := offer("?ref=rui-rep"); o.Install == nil || o.Install.PriceCents != 18000 || o.Loan == nil || o.Loan.UninstallFeeCents != 6000 {
+		t.Errorf("oferta com os valores dele = %+v / %+v", o.Install, o.Loan)
+	}
+	env.must("", http.MethodPut, "/api/public/partner/"+lojaAff.ReportToken+"/install-prices",
+		map[string]any{"installCents": 1, "uninstallCents": 1}, http.StatusBadRequest)
+	env.must("", http.MethodPut, "/api/public/partner/"+ruiAff.ReportToken+"/install-prices",
+		map[string]any{"installCents": -1, "uninstallCents": 0}, http.StatusBadRequest)
 }

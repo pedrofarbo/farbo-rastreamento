@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { ApiError } from '@/api/client';
 import { publicApi } from '@/api/resources';
 import { formatMoney, formatPercentBps } from '@/services/format';
 import { kindPricesLabel } from '@/services/kindPrices';
 import { monthLabel, referralUrl } from '@/services/referral';
-import type { PartnerMonth, PartnerReport } from '@/types';
+import type { PartnerMonth } from '@/types';
 
+import { InstallationsSection } from './partner/InstallationsSection';
+import { InstallPricesSection } from './partner/InstallPricesSection';
+import { PasswordGate } from './partner/PasswordGate';
 import { RecipientSection } from './partner/RecipientSection';
+import { usePartnerReport } from './partner/usePartnerReport';
 import styles from './Partner.module.css';
 import base from './PreLaunch.module.css';
 
@@ -29,8 +32,8 @@ const money = (cents: number) => formatMoney(cents).replace(/ /g, ' ');
  */
 export function PartnerPage() {
   const { token = '' } = useParams();
-  const [report, setReport] = useState<PartnerReport | null>(null);
-  const [error, setError] = useState('');
+  // Com a senha que a central pôs, a página pede a senha antes dos números.
+  const { report, setReport, error, locked, unlock } = usePartnerReport(token);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -42,24 +45,6 @@ export function PartnerPage() {
     metas.forEach((m) => document.head.appendChild(m));
     return () => metas.forEach((m) => m.remove());
   }, []);
-
-  useEffect(() => {
-    let alive = true;
-    publicApi
-      .partner(token)
-      .then((r) => alive && setReport(r))
-      .catch((err) => {
-        if (!alive) return;
-        setError(
-          err instanceof ApiError && err.status === 404
-            ? 'Este link não vale mais. Peça o link novo à Farbo.'
-            : 'Não deu para carregar agora. Tente de novo em instantes.',
-        );
-      });
-    return () => {
-      alive = false;
-    };
-  }, [token]);
 
   const link = report ? referralUrl(report.code) : '';
   const copy = async () => {
@@ -88,6 +73,8 @@ export function PartnerPage() {
         <p className={base.error} role="alert">
           {error}
         </p>
+      ) : locked ? (
+        <PasswordGate token={token} onUnlocked={unlock} />
       ) : !report ? (
         <p className={base.hint} role="status">
           Carregando…
@@ -112,13 +99,6 @@ export function PartnerPage() {
             {report.planPrices && (
               <p className={base.hint}>
                 Quem contrata pelo seu link paga por mês, por veículo: {kindPricesLabel(report.planPrices, money)}.
-              </p>
-            )}
-            {report.installPrices?.mode === 'direct' && (
-              <p className={base.hint}>
-                Você instala e desinstala os rastreadores dos seus clientes e recebe direto deles:{' '}
-                {money(report.installPrices.installCents)} a instalação e {money(report.installPrices.uninstallCents)} a
-                desinstalação do comodato. Esses valores não passam pela Farbo.
               </p>
             )}
             {!report.active && (
@@ -197,6 +177,16 @@ export function PartnerPage() {
               <strong>{money(report.paidCents)}</strong>
             </div>
           </section>
+
+          {report.installPrices?.mode === 'direct' && (
+            <InstallPricesSection
+              token={token}
+              prices={report.installPrices}
+              onChange={(installPrices) => setReport((r) => (r ? { ...r, installPrices } : r))}
+            />
+          )}
+
+          {report.manageInstalls && <InstallationsSection token={token} />}
 
           {report.recipient?.enabled && (
             <RecipientSection

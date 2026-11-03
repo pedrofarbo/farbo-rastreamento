@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 
-import { CHECKOUT_PATH, installmentsPhrase, priceLabel } from '@/config/landing';
+import { CHECKOUT_PATH, installmentsPhrase, loanOnly, priceLabel } from '@/config/landing';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { kindPricesLabel, lowestPrice } from '@/services/kindPrices';
 
@@ -49,11 +49,17 @@ export const CheckoutSection: React.FC<CheckoutSectionProps> = ({ onOpenModal })
               <div className={styles.offerPrices}>
                 <div className={styles.offerItem}>
                   <span className={styles.offerLabel}>Rastreador</span>
-                  <span>
-                    <Regular cents={offer?.equipmentRegularCents} than={offer?.equipmentCents} />
-                    <strong className={styles.offerPrice}>{offer ? priceLabel(offer.equipmentCents) : 'R$ —'}</strong>
-                  </span>
-                  {installments && <span className={styles.offerInstallments}>ou {installments}</span>}
+                  {loanOnly(offer) ? (
+                    <strong className={styles.offerPrice}>em comodato</strong>
+                  ) : (
+                    <>
+                      <span>
+                        <Regular cents={offer?.equipmentRegularCents} than={offer?.equipmentCents} />
+                        <strong className={styles.offerPrice}>{offer ? priceLabel(offer.equipmentCents) : 'R$ —'}</strong>
+                      </span>
+                      {installments && <span className={styles.offerInstallments}>ou {installments}</span>}
+                    </>
+                  )}
                 </div>
                 <div className={styles.offerItem}>
                   <span className={styles.offerLabel}>{table ? 'Mensalidade, a partir de' : 'Mensalidade'}</span>
@@ -65,7 +71,10 @@ export const CheckoutSection: React.FC<CheckoutSectionProps> = ({ onOpenModal })
                 </div>
               </div>
               {offer?.loan && (
-                <p className={styles.offerNote}>Prefere não comprar o rastreador? Em comodato: {loanTerms(offer.loan, offer.installDirect)}.</p>
+                <p className={styles.offerNote}>
+                  {loanOnly(offer) ? 'Sem comprar o rastreador' : 'Prefere não comprar o rastreador? Em comodato'}:{' '}
+                  {loanTerms(offer.loan, offer.installDirect)}.
+                </p>
               )}
             </div>
           </div>

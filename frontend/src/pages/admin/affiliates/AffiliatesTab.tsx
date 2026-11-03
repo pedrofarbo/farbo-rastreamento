@@ -158,6 +158,14 @@ export function AffiliatesTab() {
                             {a.handle ? `@${a.handle}` : 'sem Instagram'}
                             {!a.active && ' · '}
                             {!a.active && <Badge tone="neutral">Inativo</Badge>}
+                            {a.reportPassword && ' · '}
+                            {a.reportPassword && <Badge tone="neutral">Página com senha</Badge>}
+                            {a.manageInstalls && ' · '}
+                            {a.manageInstalls && <Badge tone="accent">Cuida das instalações</Badge>}
+                            {a.equipmentModes && ' · '}
+                            {a.equipmentModes && (
+                              <Badge tone="neutral">{a.equipmentModes === 'loan' ? 'Só comodato' : 'Só comprado'}</Badge>
+                            )}
                             {split && ' · '}
                             {split && <RecipientBadge status={a.recipientStatus} />}
                           </span>

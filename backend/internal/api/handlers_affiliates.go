@@ -59,9 +59,81 @@ func (s *Server) handlePublicAffiliate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
+// partnerSessionHeader leva a sessão da página do afiliado com senha.
+const partnerSessionHeader = "X-Partner-Session"
+
+// partnerAllowed confere a senha da página do afiliado: sem senha, o link
+// basta; com senha, a sessão da entrada (sem ela, 401 com PARTNER_PASSWORD,
+// e a página pede a senha). O QR Code fica fora: ele só mostra o link de
+// indicação, que é público.
+func (s *Server) partnerAllowed(w http.ResponseWriter, r *http.Request) bool {
+	err := s.Affiliates.CheckPartner(r.Context(), chi.URLParam(r, "token"), r.Header.Get(partnerSessionHeader))
+	if errors.Is(err, affiliates.ErrPartnerPassword) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error(), "code": "PARTNER_PASSWORD"})
+		return false
+	}
+	if err != nil {
+		affiliateError(w, err, "")
+		return false
+	}
+	return true
+}
+
+// handlePartnerSession: a entrada na página do afiliado com a senha; devolve
+// a sessão (30 dias), que a página manda em X-Partner-Session.
+func (s *Server) handlePartnerSession(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	session, expires, err := s.Affiliates.PartnerLogin(r.Context(), chi.URLParam(r, "token"), req.Password)
+	if errors.Is(err, affiliates.ErrWrongPartnerPassword) {
+		s.Log.Info("senha errada na página do afiliado", "ip", clientIP(r))
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error(), "code": "WRONG_PASSWORD"})
+		return
+	}
+	if err != nil {
+		affiliateError(w, err, "link inválido: peça o novo à Farbo")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"session": session, "expiresAt": expires})
+}
+
+// handlePartnerInstallPrices: o representante que recebe direto define os
+// valores da instalação e da desinstalação, pela página dele (com a senha,
+// se a página pede). Os valores só aparecem para o cliente.
+func (s *Server) handlePartnerInstallPrices(w http.ResponseWriter, r *http.Request) {
+	if !s.partnerAllowed(w, r) {
+		return
+	}
+	var req struct {
+		InstallCents   int `json:"installCents"`
+		UninstallCents int `json:"uninstallCents"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+	prices, err := s.Affiliates.SetPartnerInstall(r.Context(), chi.URLParam(r, "token"), req.InstallCents, req.UninstallCents)
+	if err != nil {
+		affiliateError(w, err, "link inválido: peça o novo à Farbo")
+		return
+	}
+	s.Log.Info("representante mudou os valores da instalação", "install", prices.InstallCents, "uninstall", prices.UninstallCents)
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, prices)
+}
+
 // handlePartnerReport: a página do afiliado, pelo link secreto. Sem dado
 // pessoal de ninguém: só os números.
 func (s *Server) handlePartnerReport(w http.ResponseWriter, r *http.Request) {
+	if !s.partnerAllowed(w, r) {
+		return
+	}
 	report, err := s.Affiliates.Report(r.Context(), chi.URLParam(r, "token"))
 	if err != nil {
 		affiliateError(w, err, "")
@@ -121,7 +193,8 @@ func (s *Server) handleCreateAffiliate(w http.ResponseWriter, r *http.Request) {
 		affiliateError(w, err, "")
 		return
 	}
-	s.auditAffiliate(r, "create", map[string]any{"affiliateId": a.ID, "code": a.Code, "commissionCents": a.CommissionCents})
+	s.auditAffiliate(r, "create", map[string]any{"affiliateId": a.ID, "code": a.Code, "commissionCents": a.CommissionCents,
+		"reportPassword": a.ReportPassword})
 	writeJSON(w, http.StatusCreated, a)
 }
 
@@ -139,8 +212,10 @@ func (s *Server) handleUpdateAffiliate(w http.ResponseWriter, r *http.Request) {
 		affiliateError(w, err, "afiliado não encontrado")
 		return
 	}
+	// A senha nunca vai para a auditoria: só se a página pede senha e se ela mudou.
 	s.auditAffiliate(r, "update", map[string]any{
 		"affiliateId": a.ID, "code": a.Code, "commissionCents": a.CommissionCents, "active": a.Active,
+		"reportPassword": a.ReportPassword, "reportPasswordChanged": in.ReportPassword != nil,
 	})
 	writeJSON(w, http.StatusOK, a)
 }
@@ -293,6 +368,9 @@ func (s *Server) handleSetCustomerAffiliate(w http.ResponseWriter, r *http.Reque
 // handlePartnerRecipient: o afiliado se cadastra como recebedor do split,
 // pela página dele (link secreto). Os dados vão direto para a Pagar.me.
 func (s *Server) handlePartnerRecipient(w http.ResponseWriter, r *http.Request) {
+	if !s.partnerAllowed(w, r) {
+		return
+	}
 	var in affiliates.RecipientInput
 	if err := decodeJSON(w, r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, "corpo inválido")
@@ -309,6 +387,9 @@ func (s *Server) handlePartnerRecipient(w http.ResponseWriter, r *http.Request) 
 
 // handlePartnerKYCLink: o link da prova de vida (vale 20 minutos).
 func (s *Server) handlePartnerKYCLink(w http.ResponseWriter, r *http.Request) {
+	if !s.partnerAllowed(w, r) {
+		return
+	}
 	link, err := s.Affiliates.RecipientKYCLink(r.Context(), chi.URLParam(r, "token"))
 	if err != nil {
 		affiliateError(w, err, "link inválido: peça o novo à Farbo")

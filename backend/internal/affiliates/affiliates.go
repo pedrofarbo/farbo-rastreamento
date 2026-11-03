@@ -91,6 +91,14 @@ type Affiliate struct {
 	SplitPaidCents int64 `json:"splitPaidCents"`
 	// RecipientStatus: a situação do recebedor na Pagar.me ("" sem cadastro).
 	RecipientStatus string `json:"recipientStatus"`
+	// ReportPassword: a página dele pede senha (a senha não sai daqui).
+	ReportPassword bool `json:"reportPassword"`
+	// EquipmentModes: o rastreador pelo link dele — vazio, comprado e
+	// comodato; sale, só comprado; loan, só comodato.
+	EquipmentModes string `json:"equipmentModes"`
+	// ManageInstalls: ele cuida da instalação e da desinstalação dos clientes
+	// que indicou, pela página dele (que então pede senha).
+	ManageInstalls bool `json:"manageInstalls"`
 }
 
 // Input é o cadastro de um afiliado. Sem CommissionType, o afiliado novo fica
@@ -111,6 +119,12 @@ type Input struct {
 	PixKey          string                `json:"pixKey"`
 	Notes           string                `json:"notes"`
 	Active          bool                  `json:"active"`
+	// ReportPassword: a senha da página do afiliado — nil não muda, vazia
+	// tira a senha, preenchida define (ou troca).
+	ReportPassword *string `json:"reportPassword"`
+	EquipmentModes string  `json:"equipmentModes"`
+	// ManageInstalls pede a senha da página (ela mostra os dados dos clientes).
+	ManageInstalls bool `json:"manageInstalls"`
 }
 
 var handlePattern = regexp.MustCompile(`^[A-Za-z0-9._]{1,30}$`)
@@ -149,6 +163,8 @@ func (in Input) Normalize() (Input, error) {
 		return in, invalid("Preencha a mensalidade da moto, do carro e do caminhão.")
 	case in.InstallPrices != nil && !in.InstallPrices.Valid():
 		return in, invalid("Preencha o preço da instalação e o da desinstalação.")
+	case in.EquipmentModes != "" && in.EquipmentModes != orders.EquipmentSaleOnly && in.EquipmentModes != orders.EquipmentLoanOnly:
+		return in, invalid("Escolha o rastreador pelo link: comprado, comodato ou os dois.")
 	case in.Email != "":
 		if _, err := mail.ParseAddress(in.Email); err != nil {
 			return in, invalid("E-mail inválido.")
@@ -156,6 +172,11 @@ func (in Input) Normalize() (Input, error) {
 	}
 	if utf8.RuneCountInString(in.Phone) > 40 || utf8.RuneCountInString(in.PixKey) > 140 || utf8.RuneCountInString(in.Notes) > 2000 {
 		return in, invalid("Telefone, chave Pix ou observações longos demais.")
+	}
+	if in.ReportPassword != nil && *in.ReportPassword != "" {
+		if err := validReportPassword(*in.ReportPassword); err != nil {
+			return in, err
+		}
 	}
 	return in, nil
 }

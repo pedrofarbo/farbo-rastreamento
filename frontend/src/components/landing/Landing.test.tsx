@@ -165,6 +165,19 @@ describe('landing com a contratação pelo site', () => {
     expect(hero).toContain('Ou em comodato: sem comprar o rastreador, instalado pelo representante por R$ 120, pago direto a ele (+ R$ 3/mês).');
   });
 
+  it('pelo link só de comodato: o comodato no lugar do preço do rastreador', async () => {
+    offer = offerWith({ equipmentModes: 'loan' });
+    const pricing = (await render(<PricingSection onOpenModal={() => {}} />)).textContent ?? '';
+    expect(pricing).toContain('R$ 34,90/mês, com o rastreador em comodato: sem comprar. Pague com Pix.');
+    expect(pricing).toContain('Em comodatosem comprar o rastreador');
+    expect(pricing).toContain('Comodato: instalação R$ 150 pelos nossos instaladores');
+    expect(pricing).not.toContain('Instale com o seu instalador');
+    const hero = (await render(<HeroSection onOpenModal={() => {}} />)).textContent ?? '';
+    expect(hero).toContain('rastreador em comodato, com o relé de bloqueio');
+    expect(hero).toContain('Em comodato: sem comprar o rastreador');
+    expect(hero).not.toContain('Ou em comodato');
+  });
+
   it('enquanto a oferta carrega, os preços esperam no lugar deles', async () => {
     offer = new Promise(() => undefined) as unknown as typeof OFFER;
     const host = await render(<PricingSection onOpenModal={() => {}} />);

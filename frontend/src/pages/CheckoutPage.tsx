@@ -95,6 +95,12 @@ export function CheckoutPage() {
   const quotes = quote.data;
   const freightCents = quotes?.quotes.find((q) => q.serviceId === shipping)?.priceCents ?? 0;
 
+  // Pelo link de um afiliado só de comodato, o comodato já vem marcado.
+  useEffect(() => {
+    if (o?.equipmentModes === 'loan' && choice.equipmentMode !== 'loan') {
+      setChoice((c) => ({ ...c, equipmentMode: 'loan', installments: 1, farboInstall: false }));
+    }
+  }, [o?.equipmentModes, choice.equipmentMode]);
   // A entrega volta a zero quando o CEP muda (as opções são outras).
   useEffect(() => setShipping(0), [address.zipCode]);
   // A única opção já vem marcada.
@@ -270,18 +276,20 @@ export function CheckoutPage() {
 
             <fieldset className={styles.options}>
               <legend className={styles.legend}>O rastreador</legend>
-              <Option
-                checked={!loan}
-                onChange={() => setChoice({ ...choice, equipmentMode: 'sale' })}
-                name="equipment"
-                title="Comprar o rastreador"
-                price={formatMoney(o.equipmentCents)}
-              >
-                Ele é seu.{' '}
-                {o.maxInstallments > 1
-                  ? `À vista ou em até ${o.maxInstallments}x sem juros, somadas às mensalidades.`
-                  : 'Pago à vista, no Pix.'}
-              </Option>
+              {o.equipmentModes !== 'loan' && (
+                <Option
+                  checked={!loan}
+                  onChange={() => setChoice({ ...choice, equipmentMode: 'sale' })}
+                  name="equipment"
+                  title="Comprar o rastreador"
+                  price={formatMoney(o.equipmentCents)}
+                >
+                  Ele é seu.{' '}
+                  {o.maxInstallments > 1
+                    ? `À vista ou em até ${o.maxInstallments}x sem juros, somadas às mensalidades.`
+                    : 'Pago à vista, no Pix.'}
+                </Option>
+              )}
               {o.loan && (
                 <Option
                   checked={loan}
@@ -292,7 +300,9 @@ export function CheckoutPage() {
                 >
                   Sem pagar o rastreador: ele volta quando você encerrar.{' '}
                   {o.installDirect
-                    ? `Instalação pelo representante por ${formatMoney(o.loan.installFeeCents)}, paga direto a ele`
+                    ? o.loan.installFeeCents > 0
+                      ? `Instalação pelo representante por ${formatMoney(o.loan.installFeeCents)}, paga direto a ele`
+                      : 'Instalação pelo representante, sem custo'
                     : `Instalação pelos nossos instaladores por ${formatMoney(o.loan.installFeeCents)}`}
                   {o.loan.surchargeCents > 0 && ', com a garantia de troca do rastreador na mensalidade'}
                   {o.loan.uninstallFeeCents > 0 &&
@@ -336,7 +346,7 @@ export function CheckoutPage() {
                     onChange={() => setChoice({ ...choice, farboInstall: true })}
                     name="install"
                     title={o.installDirect ? 'Com o representante' : 'Com os instaladores da Farbo'}
-                    price={formatMoney(o.install.priceCents)}
+                    price={o.install.priceCents > 0 ? formatMoney(o.install.priceCents) : 'sem custo'}
                   >
                     {o.installDirect
                       ? 'Pago direto a ele na instalação, fora do Pix. A gente agenda o dia com você.'

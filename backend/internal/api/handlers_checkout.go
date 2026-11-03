@@ -52,6 +52,9 @@ type checkoutView struct {
 	// recebe direto do cliente — os preços de Install e Loan (as taxas) ficam
 	// fora do Pix.
 	InstallDirect bool `json:"installDirect"`
+	// EquipmentModes: o rastreador que o link oferece — vazio, comprado e
+	// comodato; sale, só comprado (Loan nulo); loan, só comodato.
+	EquipmentModes string `json:"equipmentModes"`
 	// ContractVersion: a versão que o aceite confirma.
 	ContractVersion string `json:"contractVersion"`
 	ShippingEnabled bool   `json:"shippingEnabled"`
@@ -95,6 +98,11 @@ func (s *Server) handleCheckoutOffer(w http.ResponseWriter, r *http.Request) {
 			install.WithInstall(&opts.Install, &opts.Loan)
 			view.Install, view.InstallDirect = &opts.Install, install.Mode == orders.InstallDirect
 		}
+		if view.EquipmentModes, err = s.Orders.AffiliateEquipment(r.Context(), *affiliate); err != nil {
+			handleStoreError(w, err, "contratação indisponível")
+			return
+		}
+		view.Loan = orders.WithEquipment(view.EquipmentModes, &opts.Loan)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, view)

@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { ApiError } from '@/api/client';
 import { publicApi } from '@/api/resources';
 import { INSTAGRAM_HANDLE, INSTAGRAM_URL } from '@/config/contact';
-import { checkoutPath, installmentsPhrase, priceLabel, priceParts } from '@/config/landing';
+import { checkoutPath, installmentsPhrase, loanOnly, priceLabel, priceParts } from '@/config/landing';
 import { PRIVACY_PATH } from '@/config/legal';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { track, trackPageview } from '@/services/analytics';
@@ -309,7 +309,9 @@ function Highlight({ offer, open }: { offer: CheckoutOffer | undefined; open: bo
               </>
             )}
           </p>
-          {equipment !== undefined && (
+          {loanOnly(offer, open) ? (
+            <p className={styles.insanosEquipment}>Rastreador em comodato, sem comprar</p>
+          ) : equipment !== undefined && (
             <p className={styles.insanosEquipment}>
               Rastreador:{' '}
               {equipmentRegular !== undefined && equipmentRegular > equipment && (

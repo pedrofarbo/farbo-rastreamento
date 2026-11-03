@@ -157,6 +157,74 @@ func (p *InstallPrices) applyInstall(o *Order) {
 	}
 }
 
+// O rastreador pelo link do afiliado (vazio: comprado e comodato).
+const (
+	// EquipmentSaleOnly: só o rastreador comprado.
+	EquipmentSaleOnly = "sale"
+	// EquipmentLoanOnly: só o comodato.
+	EquipmentLoanOnly = "loan"
+)
+
+// AffiliateEquipment é o rastreador que o link do afiliado ativo oferece
+// (vazio: os dois).
+func (s *Service) AffiliateEquipment(ctx context.Context, affiliateID uuid.UUID) (string, error) {
+	return s.equipmentModes(ctx, `SELECT equipment_modes FROM affiliates WHERE id = $1 AND active`, affiliateID)
+}
+
+// CustomerEquipment é o rastreador do afiliado que indicou o cliente, quando
+// a central não definiu um plano para ele (vazio: os dois).
+func (s *Service) CustomerEquipment(ctx context.Context, customerID uuid.UUID) (string, error) {
+	account, err := s.AccountPlan(ctx, customerID)
+	if err != nil || account != nil {
+		return "", err
+	}
+	return s.equipmentModes(ctx, `SELECT a.equipment_modes
+		FROM affiliate_referrals r JOIN affiliates a ON a.id = r.affiliate_id WHERE r.customer_id = $1`, customerID)
+}
+
+func (s *Service) equipmentModes(ctx context.Context, query string, id uuid.UUID) (string, error) {
+	var modes string
+	err := s.db.QueryRow(ctx, query, id).Scan(&modes)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return modes, database.MapError(err)
+}
+
+// linkEquipment é o rastreador do pedido pelo que o afiliado oferece: sem
+// escolha, o único que ele oferece (ou o comprado); fora do que ele oferece,
+// recusado.
+func linkEquipment(modes, mode string) (string, error) {
+	switch {
+	case mode == "" && modes == EquipmentLoanOnly:
+		return billing.EquipmentLoan, nil
+	case mode == "":
+		return billing.EquipmentSale, nil
+	case modes == EquipmentLoanOnly && mode == billing.EquipmentSale:
+		return "", ValidationError{"por este link, o rastreador é só em comodato"}
+	case modes == EquipmentSaleOnly && mode == billing.EquipmentLoan:
+		return "", ValidationError{"por este link, o rastreador é só comprado"}
+	}
+	return mode, nil
+}
+
+// WithEquipment aplica o rastreador do afiliado ao comodato mostrado: só
+// comprado, sem o comodato (nil); só comodato, o comodato ligado (também com
+// o da Farbo desligado).
+func WithEquipment(modes string, loan *LoanOffer) *LoanOffer {
+	switch modes {
+	case EquipmentSaleOnly:
+		return nil
+	case EquipmentLoanOnly:
+		loan.Enabled = true
+		return loan
+	}
+	if !loan.Enabled {
+		return nil
+	}
+	return loan
+}
+
 // CustomerKindPrices é a tabela que vale para os veículos novos do cliente:
 // a do afiliado que o indicou, quando a central não definiu um plano para ele
 // e ele está no plano padrão (nil: o preço de sempre).

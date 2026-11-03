@@ -58,6 +58,9 @@ type catalogView struct {
 	// instala, desinstala e recebe direto dele (os preços ficam fora das
 	// faturas).
 	InstallDirect bool `json:"installDirect,omitempty"`
+	// EquipmentModes: o rastreador que o afiliado que indicou o cliente
+	// oferece — vazio, os dois; sale, só comprado; loan, só comodato.
+	EquipmentModes string `json:"equipmentModes,omitempty"`
 	// PayNow: a pessoa física paga no ato (a 1ª mensalidade, o frete e o
 	// rastreador ou a instalação); a empresa, na próxima fatura do mês.
 	PayNow bool `json:"payNow,omitempty"`
@@ -103,6 +106,9 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 		if install, err := s.Orders.CustomerInstall(r.Context(), customerID); err == nil && install != nil {
 			install.WithInstall(&opts.Install, &opts.Loan)
 			view.Install, view.InstallDirect = &opts.Install, install.Mode == orders.InstallDirect
+		}
+		if modes, err := s.Orders.CustomerEquipment(r.Context(), customerID); err == nil && modes != "" {
+			view.EquipmentModes, view.Loan = modes, orders.WithEquipment(modes, &opts.Loan)
 		}
 		if upfront, err := s.Orders.PaysUpfront(r.Context(), customerID); err == nil && upfront {
 			view.PayNow = true

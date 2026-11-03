@@ -404,3 +404,77 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* As instalações do representante: cada cliente num cartão, com as ações. */
+.installGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.installList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.installItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: #111912;
+}
+
+.installItem strong {
+  color: #ffffff;
+}
+
+.installWhen {
+  font-weight: 800;
+  color: var(--color-neon-green);
+}
+
+.installActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.installButton {
+  min-height: 40px;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: transparent;
+  color: #ffffff;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.installPrimary {
+  border-color: var(--color-neon-green);
+  background: var(--color-neon-green);
+  color: #060907;
+}
+
+.installButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.installForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  margin-top: 0.25rem;
+}

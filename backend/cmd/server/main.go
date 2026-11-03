@@ -382,6 +382,8 @@ func run() error {
 		financeSvc.SetBalanceReader(abacatepay.NewClient(cfg.Payments.AbacatePayBaseURL, key), abacatepay.IsDevKey(key))
 	}
 	affiliatesSvc := affiliates.NewService(db, log)
+	// As sessões da página do afiliado com senha (sobrevivem ao reinício).
+	affiliatesSvc.SetSessionKey([]byte(cfg.Auth.JWTSecret))
 	// O split dos afiliados na Pagar.me (a conta lá precisa ser PSP, de
 	// marketplace): a comissão sai no pagamento do cliente, e o afiliado se
 	// cadastra como recebedor pela página dele.

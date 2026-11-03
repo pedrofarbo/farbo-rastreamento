@@ -264,6 +264,9 @@ type Awaiting struct {
 	// contratada no pedido, o associado); sem isso, o cliente instala por
 	// conta própria.
 	FarboInstall bool `json:"farboInstall"`
+	// Representative: o representante que cuida da instalação deste cliente
+	// (ele agenda pela página dele); vazio, a central.
+	Representative string `json:"representative"`
 }
 
 // AwaitingInstall são os veículos de cliente sem rastreador, com o endereço
@@ -279,7 +282,9 @@ func (s *Service) AwaitingInstall(ctx context.Context) ([]Awaiting, error) {
 				AND a.status IN ('scheduled', 'arrived') LIMIT 1),
 			v.created_at,
 			u.organization_id IS NOT NULL OR EXISTS (SELECT 1 FROM subscriptions s
-				WHERE s.vehicle_id = v.id AND s.status = 'ACTIVE' AND s.farbo_install) AS farbo
+				WHERE s.vehicle_id = v.id AND s.status = 'ACTIVE' AND s.farbo_install) AS farbo,
+			COALESCE((SELECT af.name FROM affiliate_referrals r JOIN affiliates af ON af.id = r.affiliate_id
+				WHERE r.customer_id = u.id AND af.manage_installs), '')
 		FROM vehicles v JOIN users u ON u.id = v.owner_id LEFT JOIN users o ON o.id = u.organization_id
 		WHERE v.device_id IS NULL AND u.active AND u.role = 'customer'
 			-- O rastreador retirado na desinstalação não volta para a fila.
@@ -294,7 +299,7 @@ func (s *Service) AwaitingInstall(ctx context.Context) ([]Awaiting, error) {
 	for rows.Next() {
 		var a Awaiting
 		if err := rows.Scan(&a.VehicleID, &a.VehicleName, &a.Plate, &a.CustomerID, &a.CustomerName, &a.CustomerPhone,
-			&a.OrganizationName, &a.Address, &a.ScheduledFor, &a.CreatedAt, &a.FarboInstall); err != nil {
+			&a.OrganizationName, &a.Address, &a.ScheduledFor, &a.CreatedAt, &a.FarboInstall, &a.Representative); err != nil {
 			return nil, database.MapError(err)
 		}
 		out = append(out, a)
@@ -468,6 +473,12 @@ func what(kind string) string {
 // Create agenda a instalação (o veículo sem rastreador) ou a desinstalação
 // (com rastreador) — um agendamento em aberto por veículo — e avisa o cliente.
 func (s *Service) Create(ctx context.Context, by uuid.UUID, in Input) (*Appointment, error) {
+	return s.create(ctx, &by, in)
+}
+
+// create agenda; by é quem agendou na central (nil: o representante, pela
+// página dele).
+func (s *Service) create(ctx context.Context, by *uuid.UUID, in Input) (*Appointment, error) {
 	if err := s.check(&in); err != nil {
 		return nil, err
 	}

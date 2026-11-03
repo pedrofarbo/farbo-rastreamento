@@ -185,6 +185,22 @@ describe('a pessoa física paga no ato', () => {
     expect(ordered[0]).toMatchObject({ vehicle: expect.objectContaining({ kind: 'TRUCK' }) });
   });
 
+  it('cliente de um link só de comodato: o comodato, sem a escolha', async () => {
+    terms = {
+      payNow: true,
+      chargeDate: '2026-10-23',
+      equipmentModes: 'loan',
+      loan: { enabled: true, surchargeCents: 300, installFeeCents: 9900, uninstallFeeCents: 4900 },
+    };
+    quote = { enabled: false, zipCode: '', problem: '', arrange: false, quotes: [] };
+    await openWizard();
+    expect(text()).not.toContain('Comprar o rastreador');
+    expect(text()).toContain('Rastreador em comodato:');
+    await act(async () => button('Confirmar pedido').click());
+    await flush();
+    expect(ordered[0]).toMatchObject({ equipmentMode: 'loan' });
+  });
+
   it('cliente de um representante: a instalação com ele, paga direto, fora da cobrança', async () => {
     terms = { payNow: true, chargeDate: '2026-10-23', install: { enabled: true, priceCents: 12000 }, installDirect: true };
     quote = { enabled: false, zipCode: '', problem: '', arrange: false, quotes: [] };

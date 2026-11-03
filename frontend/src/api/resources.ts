@@ -1,3 +1,4 @@
+import { storedPartnerSession } from '@/services/partnerSession';
 import type { AssociateImportRow } from '@/services/associateImport';
 import type { FleetImportRow } from '@/services/fleetImport';
 import type { TeamRole } from '@/services/roles';
@@ -18,6 +19,7 @@ import type {
   BusTrip,
   InstallCheck,
   InstallationAppointment,
+  InstallPrices,
   InstallationInput,
   InstallationSlot,
   PublicInstallView,
@@ -52,7 +54,9 @@ import type {
   AffiliatePayout,
   AffiliateSettings,
   CustomerReferral,
+  PartnerQueue,
   PartnerReport,
+  PartnerScheduleInput,
   PixInfo,
   PixPlan,
   PixTransfer,
@@ -1279,6 +1283,12 @@ export const payLinkApi = {
   },
 };
 
+/** A sessão da página do afiliado com senha, quando há uma guardada. */
+function partnerHeaders(token: string): Record<string, string> {
+  const session = storedPartnerSession(token);
+  return session ? { 'X-Partner-Session': session } : {};
+}
+
 export const publicApi = {
   installers: () => request<PublicInstaller[]>('/api/public/installers', { anonymous: true }),
   /** Cadastro de interesse da landing (vira pré-cliente). */
@@ -1290,9 +1300,16 @@ export const publicApi = {
   /** O afiliado do link de indicação ("Indicado por @fulano"). */
   affiliate: (code: string) =>
     request<PublicAffiliate>(`/api/public/affiliates/${encodeURIComponent(code)}`, { anonymous: true }),
-  /** A página do afiliado, pelo link secreto. */
+  /** A página do afiliado, pelo link secreto (com a sessão da senha, se a página pede). */
   partner: (token: string) =>
-    request<PartnerReport>(`/api/public/partner/${encodeURIComponent(token)}`, { anonymous: true }),
+    request<PartnerReport>(`/api/public/partner/${encodeURIComponent(token)}`, { anonymous: true, headers: partnerHeaders(token) }),
+  /** A entrada com a senha da página do afiliado: a sessão (30 dias). */
+  partnerLogin: (token: string, password: string) =>
+    request<{ session: string; expiresAt: string }>(`/api/public/partner/${encodeURIComponent(token)}/session`, {
+      method: 'POST',
+      body: { password },
+      anonymous: true,
+    }),
   /** O QR Code do link de indicação do afiliado (para o flyer): o endereço da imagem ou do arquivo. */
   /** O cadastro do afiliado como recebedor do split (os dados vão para a Pagar.me). */
   partnerRecipient: (token: string, input: RecipientInput) =>
@@ -1300,10 +1317,49 @@ export const publicApi = {
       method: 'POST',
       body: input,
       anonymous: true,
+      headers: partnerHeaders(token),
     }),
   /** O link (e o QR) da prova de vida do recebedor: vale 20 minutos. */
   partnerKycLink: (token: string) =>
-    request<KycLink>(`/api/public/partner/${encodeURIComponent(token)}/recipient/kyc-link`, { method: 'POST', anonymous: true }),
+    request<KycLink>(`/api/public/partner/${encodeURIComponent(token)}/recipient/kyc-link`, {
+      method: 'POST',
+      anonymous: true,
+      headers: partnerHeaders(token),
+    }),
+  /** As instalações dos clientes do representante (com a gestão ligada): as filas e os agendamentos. */
+  partnerInstallations: (token: string) =>
+    request<PartnerQueue>(`/api/public/partner/${encodeURIComponent(token)}/installations`, {
+      anonymous: true,
+      headers: partnerHeaders(token),
+    }),
+  partnerSchedule: (token: string, input: PartnerScheduleInput) =>
+    request<InstallationAppointment>(`/api/public/partner/${encodeURIComponent(token)}/installations`, {
+      method: 'POST',
+      body: input,
+      anonymous: true,
+      headers: partnerHeaders(token),
+    }),
+  partnerReschedule: (token: string, id: string, input: PartnerScheduleInput) =>
+    request<InstallationAppointment>(`/api/public/partner/${encodeURIComponent(token)}/installations/${id}`, {
+      method: 'PATCH',
+      body: input,
+      anonymous: true,
+      headers: partnerHeaders(token),
+    }),
+  partnerCancel: (token: string, id: string) =>
+    request<InstallationAppointment>(`/api/public/partner/${encodeURIComponent(token)}/installations/${id}/cancel`, {
+      method: 'POST',
+      anonymous: true,
+      headers: partnerHeaders(token),
+    }),
+  /** Os valores da instalação e da desinstalação do representante que recebe direto (ele define). */
+  partnerInstallPrices: (token: string, input: { installCents: number; uninstallCents: number }) =>
+    request<InstallPrices>(`/api/public/partner/${encodeURIComponent(token)}/install-prices`, {
+      method: 'PUT',
+      body: input,
+      anonymous: true,
+      headers: partnerHeaders(token),
+    }),
   partnerQrUrl: (token: string, format: 'png' | 'svg', download = false) =>
     apiUrl(`/api/public/partner/${encodeURIComponent(token)}/qr?format=${format}${download ? '&download=1' : ''}`),
 };

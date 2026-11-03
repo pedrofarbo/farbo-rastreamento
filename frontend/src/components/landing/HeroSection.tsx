@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 
-import { CHECKOUT_PATH, installmentsOf, priceLabel, priceParts } from '@/config/landing';
+import { CHECKOUT_PATH, installmentsOf, loanOnly, priceLabel, priceParts } from '@/config/landing';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { headlineMonthly, kindPricesLabel } from '@/services/kindPrices';
 
@@ -76,14 +76,22 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenModal }) => {
             {offer && equipment !== undefined && (
               <p className={styles.priceNote}>
                 {table && `${kindPricesLabel(table, priceLabel)} · `}
-                {open && 'enquanto a assinatura durar · '}rastreador {priceLabel(equipment)}
-                {installments && ` ou ${installments} sem juros`}, com o relé de bloqueio
+                {open && 'enquanto a assinatura durar · '}
+                {loanOnly(offer, open) ? (
+                  'rastreador em comodato'
+                ) : (
+                  <>
+                    rastreador {priceLabel(equipment)}
+                    {installments && ` ou ${installments} sem juros`}
+                  </>
+                )}
+                , com o relé de bloqueio
               </p>
             )}
             {/* O comodato: sem comprar o rastreador, instalado pelos técnicos da Farbo. */}
             {open && offer?.loan && (
               <p className={styles.loanNote}>
-                <strong>Ou em comodato:</strong> sem comprar o rastreador, instalado{' '}
+                <strong>{loanOnly(offer, open) ? 'Em comodato:' : 'Ou em comodato:'}</strong> sem comprar o rastreador, instalado{' '}
                 {offer.installDirect ? 'pelo representante' : 'pelos nossos técnicos'}
                 {offer.loan.installFeeCents > 0 && ` por ${priceLabel(offer.loan.installFeeCents)}`}
                 {offer.installDirect && ', pago direto a ele'}

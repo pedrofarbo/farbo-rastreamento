@@ -463,6 +463,9 @@ export interface InstallPrices {
   guaranteeCents?: number | null;
 }
 
+/** O rastreador pelo link de um afiliado: '' comprado e comodato; sale só comprado; loan só comodato. */
+export type EquipmentModes = '' | 'sale' | 'loan';
+
 /** A mensalidade por tipo de veículo: a tabela do link de um afiliado. */
 export interface KindPrices {
   motorcycleCents: number;
@@ -1719,6 +1722,8 @@ export interface Catalog {
   planByKind?: KindPrices | null;
   /** O cliente veio pelo link de um representante: ele instala, desinstala e recebe direto (fora das faturas). */
   installDirect?: boolean;
+  /** O rastreador que o afiliado que indicou o cliente oferece (loan: só o comodato). */
+  equipmentModes?: EquipmentModes;
   defaultDueDay: number;
   equipmentName: string;
   equipmentPriceCents: number;
@@ -1776,6 +1781,8 @@ export interface CheckoutOffer {
   planByKind: KindPrices | null;
   /** Pelo link de um representante: ele instala, desinstala e recebe direto (install e as taxas do loan fora do Pix). */
   installDirect?: boolean;
+  /** O rastreador pelo link do afiliado (sale: sem o comodato; loan: só o comodato). */
+  equipmentModes?: EquipmentModes;
   /** Em até quantas vezes sem juros o rastreador comprado pode ser parcelado (1: só à vista). */
   maxInstallments: number;
   dueDay: number;
@@ -2752,6 +2759,12 @@ export interface Affiliate {
   splitPaidCents: number;
   /** A situação do recebedor na Pagar.me ("" sem cadastro). */
   recipientStatus: string;
+  /** A página dele pede senha (a senha não volta do servidor). */
+  reportPassword?: boolean;
+  /** O rastreador pelo link dele. */
+  equipmentModes?: EquipmentModes;
+  /** Ele cuida da instalação e da desinstalação dos clientes que indicou (pela página dele, com senha). */
+  manageInstalls?: boolean;
 }
 
 /** A comissão do afiliado: um valor fixo por veículo ou um percentual da mensalidade. */
@@ -2775,6 +2788,11 @@ export interface AffiliateInput {
   pixKey: string;
   notes: string;
   active: boolean;
+  /** A senha da página do afiliado: ausente não muda, vazia tira, preenchida define (ou troca). */
+  reportPassword?: string;
+  equipmentModes: EquipmentModes;
+  /** Pede a senha da página (ela mostra os dados dos clientes). */
+  manageInstalls: boolean;
 }
 
 export interface AffiliateSettings {
@@ -2857,6 +2875,9 @@ export interface PartnerReport {
   planPrices?: KindPrices | null;
   /** A instalação e a desinstalação de quem ele indica (nula: as da Farbo). */
   installPrices?: InstallPrices | null;
+  equipmentModes?: EquipmentModes;
+  /** Ele cuida das instalações dos clientes que indicou (a seção das instalações). */
+  manageInstalls?: boolean;
   signups: number;
   customers: number;
   activeCustomers: number;
@@ -3239,6 +3260,37 @@ export interface AwaitingInstall {
   createdAt: string;
   /** Quem instala é a Farbo (comodato, instalação contratada, associado); sem isso, o cliente instala por conta própria. */
   farboInstall: boolean;
+  /** O representante que cuida da instalação deste cliente (vazio: a central). */
+  representative?: string;
+}
+
+/** Um veículo de cliente do representante esperando a instalação ou a retirada do rastreador. */
+export interface PartnerVehicle {
+  vehicleId: string;
+  vehicleName: string;
+  plate: string;
+  vehicleDetails: string;
+  customerName: string;
+  customerPhone: string;
+  address: string;
+  /** O rastreador a retirar (na desinstalação). */
+  imei: string;
+  since: string;
+}
+
+/** As instalações do representante: as filas e os agendamentos (com o link do instalador). */
+export interface PartnerQueue {
+  awaitingInstall: PartnerVehicle[];
+  awaitingUninstall: PartnerVehicle[];
+  appointments: InstallationAppointment[];
+}
+
+/** O agendamento pelo representante (o endereço é o do cliente). */
+export interface PartnerScheduleInput {
+  kind?: InstallationKind;
+  vehicleId?: string;
+  scheduledFor: string;
+  notes: string;
 }
 
 /** Um veículo de associado à espera da retirada do rastreador. */

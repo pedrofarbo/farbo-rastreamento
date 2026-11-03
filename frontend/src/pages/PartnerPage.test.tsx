@@ -5,12 +5,25 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '@/api/client';
+import { storedPartnerSession } from '@/services/partnerSession';
 import type { PartnerReport } from '@/types';
 
 let respond: (token: string) => Promise<PartnerReport>;
+// A senha da página: a entrada confere e a sessão vai nas próximas chamadas.
+const logins: string[] = [];
 vi.mock('@/api/resources', async () => {
   const actual = await vi.importActual<typeof import('@/api/resources')>('@/api/resources');
-  return { publicApi: { partner: (token: string) => respond(token), partnerQrUrl: actual.publicApi.partnerQrUrl } };
+  return {
+    publicApi: {
+      partner: (token: string) => respond(token),
+      partnerQrUrl: actual.publicApi.partnerQrUrl,
+      partnerLogin: async (_: string, password: string) => {
+        logins.push(password);
+        if (password !== 'senha-do-joao') throw new (await import('@/api/client')).ApiError(401, 'senha incorreta', { code: 'WRONG_PASSWORD' });
+        return { session: 'sessao-boa', expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
+      },
+    },
+  };
 });
 
 import { PartnerPage } from './PartnerPage';
@@ -37,6 +50,8 @@ async function render() {
 
 afterEach(() => {
   document.body.innerHTML = '';
+  logins.length = 0;
+  localStorage.clear();
 });
 
 describe('PartnerPage', () => {
@@ -93,8 +108,10 @@ describe('PartnerPage', () => {
     expect(text(host)).toContain('Você ganha 12,5% da mensalidade de cada veículo ativo dos clientes que você indicou');
     // A tabela dele: o que paga quem contrata pelo link.
     expect(text(host)).toContain('Quem contrata pelo seu link paga por mês, por veículo: Moto R$ 39,90 · Carro R$ 49,90 · Caminhão R$ 59,90.');
-    // O representante: instala, desinstala e recebe direto.
-    expect(text(host)).toContain('R$ 120,00 a instalação e R$ 80,00 a desinstalação do comodato. Esses valores não passam pela Farbo.');
+    // O representante que recebe direto: os valores dele, que ele mesmo muda.
+    expect(text(host)).toContain('Seus valores de instalação');
+    expect(text(host)).toContain('hoje: R$ 120,00 a instalação e R$ 80,00 a desinstalação do comodato');
+    expect((Array.from(host.querySelectorAll('label')).find((l) => l.textContent?.startsWith('Instalação (R$)'))!.querySelector('input') as HTMLInputElement).value).toBe('120,00');
   });
 
   it('afiliado pausado: sem QR Code', async () => {
@@ -114,5 +131,36 @@ describe('PartnerPage', () => {
     };
     const host = await render();
     expect(text(host)).toContain('Este link não vale mais');
+  });
+
+  it('página com senha: pede a senha, recusa a errada e, com a certa, mostra os números (a entrada fica no aparelho)', async () => {
+    const token = 'segredo-do-joao-0123456789';
+    respond = async () => {
+      if (storedPartnerSession(token) !== 'sessao-boa') throw new ApiError(401, 'esta página pede a senha', { code: 'PARTNER_PASSWORD' });
+      return {
+        name: 'João Motoca', handle: 'joao.moto', code: 'joao-moto', active: true, commissionType: 'fixed', commissionCents: 600,
+        commissionBps: 0, signups: 0, customers: 0, activeCustomers: 0, activeVehicles: 0, toReceiveCents: 0, paidCents: 0, months: [],
+      };
+    };
+    const host = await render();
+    expect(text(host)).toContain('Esta página pede senha.');
+    expect(text(host)).not.toContain('Olá, João');
+    const input = host.querySelector('input[type="password"]') as HTMLInputElement;
+    const type = (value: string) =>
+      act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    const submit = () => act(async () => (host.querySelector('button[type="submit"]') as HTMLButtonElement).click());
+    await type('errada-123');
+    await submit();
+    await flush();
+    expect(text(host)).toContain('Senha incorreta.');
+    await type('senha-do-joao');
+    await submit();
+    await flush();
+    expect(logins).toEqual(['errada-123', 'senha-do-joao']);
+    expect(text(host)).toContain('Olá, João!');
+    expect(storedPartnerSession(token)).toBe('sessao-boa');
   });
 });

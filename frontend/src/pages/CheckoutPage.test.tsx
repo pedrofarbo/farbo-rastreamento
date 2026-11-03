@@ -227,6 +227,18 @@ describe('a contratação pelo site', () => {
     expect(placed[0]).toMatchObject({ equipmentMode: 'sale', farboInstall: true });
   });
 
+  it('pelo link só de comodato: sem a compra, o comodato já marcado', async () => {
+    offer = offerWith({ equipmentModes: 'loan' });
+    await render();
+    expect(text()).not.toContain('Comprar o rastreador');
+    expect(radio('Comodato (emprestado)').checked).toBe(true);
+    expect(text()).toContain('MensalidadeR$ 37,90/mês');
+    await fillUntilPayment();
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar'));
+    expect(placed[0]).toMatchObject({ equipmentMode: 'loan', installments: 1, farboInstall: false });
+  });
+
   it('comodato sem garantia de troca (a do afiliado em zero): sem taxa mensal', async () => {
     offer = offerWith({ loan: { enabled: true, surchargeCents: 0, installFeeCents: 15000, uninstallFeeCents: 8500 } });
     await render();

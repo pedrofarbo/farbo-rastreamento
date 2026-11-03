@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { ApiError } from '@/api/client';
 import { publicApi } from '@/api/resources';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { referralUrl } from '@/services/referral';
-import type { PartnerReport } from '@/types';
 
 import { FLYER_FORMATS, drawFlyer, flyerFileName, flyerOffer, jpegToPdf } from './partner/flyer';
 import type { FlyerAssets, FlyerFormat } from './partner/flyer';
 
+import { PasswordGate } from './partner/PasswordGate';
+import { usePartnerReport } from './partner/usePartnerReport';
 import styles from './Partner.module.css';
 import base from './PreLaunch.module.css';
 
@@ -71,7 +71,8 @@ function InstagramIcon() {
  */
 export function PartnerFlyerPage() {
   const { token = '' } = useParams();
-  const [report, setReport] = useState<PartnerReport | null>(null);
+  // Com a senha que a central pôs, a página pede a senha antes do flyer.
+  const { report, error: loadError, locked, unlock } = usePartnerReport(token);
   const [error, setError] = useState('');
   const [assets, setAssets] = useState<FlyerAssets | null>(null);
   const [format, setFormat] = useState<FlyerFormat>('a5');
@@ -95,24 +96,6 @@ export function PartnerFlyerPage() {
     metas.forEach((m) => document.head.appendChild(m));
     return () => metas.forEach((m) => m.remove());
   }, []);
-
-  useEffect(() => {
-    let alive = true;
-    publicApi
-      .partner(token)
-      .then((r) => alive && setReport(r))
-      .catch((err) => {
-        if (!alive) return;
-        setError(
-          err instanceof ApiError && err.status === 404
-            ? 'Este link não vale mais. Peça o link novo à Farbo.'
-            : 'Não deu para carregar agora. Tente de novo em instantes.',
-        );
-      });
-    return () => {
-      alive = false;
-    };
-  }, [token]);
 
   // O logo, o QR e a fonte, uma vez.
   useEffect(() => {
@@ -209,10 +192,12 @@ export function PartnerFlyerPage() {
         <span className={base.badge}>Parceiro</span>
       </header>
 
-      {error ? (
+      {error || loadError ? (
         <p className={base.error} role="alert">
-          {error}
+          {error || loadError}
         </p>
+      ) : locked ? (
+        <PasswordGate token={token} onUnlocked={unlock} />
       ) : !report ? (
         <p className={base.hint} role="status">
           Carregando…

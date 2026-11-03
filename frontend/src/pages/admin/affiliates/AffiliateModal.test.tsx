@@ -108,6 +108,44 @@ describe('o cadastro do afiliado', () => {
     });
   });
 
+  it('a senha da página do afiliado', async () => {
+    await render();
+    await setValue(control<HTMLInputElement>('Nome'), 'Rui Representante');
+    await act(async () => (Array.from(document.querySelectorAll('label')).find((l) => l.textContent?.startsWith('Pedir senha'))!.querySelector('input') as HTMLInputElement).click());
+    await act(async () => button('Criar afiliado').click());
+    expect(text()).toContain('Defina a senha da página');
+    await setValue(control<HTMLInputElement>('Senha da página'), 'curta');
+    await act(async () => button('Criar afiliado').click());
+    expect(text()).toContain('pelo menos 8 caracteres');
+    expect(calls).toHaveLength(0);
+
+    await setValue(control<HTMLInputElement>('Senha da página'), 'senha-do-rui-1');
+    await act(async () => button('Criar afiliado').click());
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0][1]).toMatchObject({ reportPassword: 'senha-do-rui-1' });
+  });
+
+  it('o representante cuida das instalações (com a senha) e o rastreador pelo link', async () => {
+    await render();
+    await setValue(control<HTMLInputElement>('Nome'), 'Rui Representante');
+    await setValue(control<HTMLSelectElement>('Rastreador pelo link'), 'loan');
+    const manage = Array.from(document.querySelectorAll('label')).find((l) => l.textContent?.startsWith('O representante cuida'))!;
+    await act(async () => (manage.querySelector('input') as HTMLInputElement).click());
+    // Marcar a gestão já marca a senha da página.
+    const passwordBox = Array.from(document.querySelectorAll('label')).find((l) => l.textContent?.startsWith('Pedir senha'))!;
+    expect((passwordBox.querySelector('input') as HTMLInputElement).checked).toBe(true);
+    await act(async () => (passwordBox.querySelector('input') as HTMLInputElement).click());
+    await act(async () => button('Criar afiliado').click());
+    expect(text()).toContain('Para o representante cuidar das instalações, marque a senha da página');
+    expect(calls).toHaveLength(0);
+
+    await act(async () => (passwordBox.querySelector('input') as HTMLInputElement).click());
+    await setValue(control<HTMLInputElement>('Senha da página'), 'senha-do-rui-1');
+    await act(async () => button('Criar afiliado').click());
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0][1]).toMatchObject({ equipmentModes: 'loan', manageInstalls: true, reportPassword: 'senha-do-rui-1' });
+  });
+
   it('valor fixo continua como antes', async () => {
     await render();
     await setValue(control<HTMLInputElement>('Nome'), 'João');
@@ -117,5 +155,7 @@ describe('o cadastro do afiliado', () => {
     expect(calls[0][1]).toMatchObject({
       commissionType: 'fixed', commissionCents: 800, commissionBps: null, planPrices: null, installPrices: null,
     });
+    // Sem mexer na senha, ela não vai.
+    expect(calls[0][1]).not.toHaveProperty('reportPassword');
   });
 });

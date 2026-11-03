@@ -212,7 +212,7 @@ func (s *Server) routes() chi.Router {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   s.Config.HTTP.CORSOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", stepUpHeader},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", stepUpHeader, partnerSessionHeader},
 		AllowCredentials: false,
 		MaxAge:           300,
 	}))
@@ -240,6 +240,8 @@ func (s *Server) routes() chi.Router {
 	launchLimiter := newRateLimiter(0.5, 20)
 	// A tela do link de indicação e a página do afiliado.
 	affiliateLimiter := newRateLimiter(0.5, 30)
+	// A senha da página do afiliado: poucas tentativas, contra a força bruta.
+	partnerLoginLimiter := newRateLimiter(0.1, 5)
 	// Visitas da landing: uma página manda a visita, as seções e os cliques.
 	analyticsLimiter := newRateLimiter(1, 40)
 	// Senha da confirmação extra: além do teto por usuário (stepup).
@@ -310,9 +312,18 @@ func (s *Server) routes() chi.Router {
 			r.With(affiliateLimiter.middleware).Get("/public/affiliates/{code}", s.handlePublicAffiliate)
 			r.With(affiliateLimiter.middleware).Get("/public/partner/{token}", s.handlePartnerReport)
 			r.With(affiliateLimiter.middleware).Get("/public/partner/{token}/qr", s.handlePartnerQR)
+			// A entrada com a senha da página (quando a central pôs uma).
+			r.With(partnerLoginLimiter.middleware).Post("/public/partner/{token}/session", s.handlePartnerSession)
 			// O cadastro do afiliado como recebedor do split (Pagar.me).
 			r.With(affiliateLimiter.middleware).Post("/public/partner/{token}/recipient", s.handlePartnerRecipient)
 			r.With(affiliateLimiter.middleware).Post("/public/partner/{token}/recipient/kyc-link", s.handlePartnerKYCLink)
+			// Os valores da instalação do representante que recebe direto.
+			r.With(affiliateLimiter.middleware).Put("/public/partner/{token}/install-prices", s.handlePartnerInstallPrices)
+			// A gestão da instalação pelo representante (com a senha da página).
+			r.With(affiliateLimiter.middleware).Get("/public/partner/{token}/installations", s.handlePartnerInstallations)
+			r.With(affiliateLimiter.middleware).Post("/public/partner/{token}/installations", s.handlePartnerSchedule)
+			r.With(affiliateLimiter.middleware).Patch("/public/partner/{token}/installations/{id}", s.handlePartnerReschedule)
+			r.With(affiliateLimiter.middleware).Post("/public/partner/{token}/installations/{id}/cancel", s.handlePartnerCancel)
 		}
 		// O contrato em vigor, para ler antes de contratar.
 		if s.Contract != nil {

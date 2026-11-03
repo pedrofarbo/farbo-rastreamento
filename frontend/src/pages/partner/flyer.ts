@@ -1,4 +1,4 @@
-import { installmentsOf, priceLabel, priceParts } from '@/config/landing';
+import { installmentsOf, loanOnly, priceLabel, priceParts } from '@/config/landing';
 import { kindPricesLabel, lowestPrice } from '@/services/kindPrices';
 import type { CheckoutOffer } from '@/types';
 
@@ -91,12 +91,15 @@ export function flyerOffer(offer: CheckoutOffer): FlyerOffer {
             { text: `enquanto a assinatura durar${regular ? ' · o normal é ' : ''}` },
             ...(regular ? [{ text: priceLabel(offer.planRegularCents), strike: true }] : []),
           ],
-      equipment: [
-        { text: 'Rastreador ' },
-        ...(equipmentRegular ? [{ text: priceLabel(offer.equipmentRegularCents), strike: true }] : []),
-        { text: `${equipmentRegular ? ' ' : ''}${priceLabel(offer.equipmentCents)}`, color: WHITE, weight: 800 },
-        ...installments(offer.equipmentCents),
-      ],
+      // Pelo link só de comodato, o rastreador não é vendido.
+      equipment: loanOnly(offer)
+        ? [{ text: 'Rastreador em comodato, sem comprar', color: WHITE, weight: 800 }]
+        : [
+            { text: 'Rastreador ' },
+            ...(equipmentRegular ? [{ text: priceLabel(offer.equipmentRegularCents), strike: true }] : []),
+            { text: `${equipmentRegular ? ' ' : ''}${priceLabel(offer.equipmentCents)}`, color: WHITE, weight: 800 },
+            ...installments(offer.equipmentCents),
+          ],
       cta: 'e contrate com Pix',
       fine: 'Contrate pelo site e pague com Pix, em quantos veículos quiser.',
     };

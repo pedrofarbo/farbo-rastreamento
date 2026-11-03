@@ -343,6 +343,11 @@ export function NewVehicleWizard({
   // O rastreador do cliente: o do plano definido pela central; sem ele, o que
   // ele escolhe — comprado, ou em comodato quando a central oferece.
   const loanOffer: LoanOffer | null = !isAdmin && c && !c.planTerms ? (c.loan ?? null) : null;
+  // Pelo link de um afiliado só de comodato: o comodato, sem a escolha.
+  const onlyLoan = loanOffer !== null && c?.equipmentModes === 'loan';
+  useEffect(() => {
+    if (onlyLoan && mode !== 'loan') setMode('loan');
+  }, [onlyLoan, mode]);
   const terms: EquipmentTerms | null = isAdmin
     ? (admin?.accountPlan ?? null)
     : c
@@ -655,7 +660,7 @@ export function NewVehicleWizard({
                 ) : (
                   address && <DeliveryBox address={address} onChange={() => setAddressDraft(address)} />
                 )}
-                {loanOffer && (
+                {loanOffer && !onlyLoan && (
                   <EquipmentChoice
                     mode={mode}
                     onChange={(next) => {
@@ -1102,7 +1107,9 @@ function InstallChoice({
             {' '}
             ·{' '}
             {direct
-              ? `${formatMoney(priceCents)}, pago direto a ele no dia (não entra na cobrança)`
+              ? priceCents > 0
+                ? `${formatMoney(priceCents)}, pago direto a ele no dia (não entra na cobrança)`
+                : 'sem custo'
               : `${formatMoney(priceCents)}, ${when}`}
             ; agendamos o dia com você.
           </span>

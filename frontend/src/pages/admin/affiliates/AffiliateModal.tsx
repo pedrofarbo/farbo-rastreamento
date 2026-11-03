@@ -8,7 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { bpsToInput, centsToInput, formatMoney, formatPhoneInput, parseMoney, parsePercentBps } from '@/services/format';
 import { partnerUrl, referralCode, referralUrl } from '@/services/referral';
-import type { Affiliate, AffiliateInput, CommissionType, InstallPrices, KindPrices } from '@/types';
+import type { Affiliate, AffiliateInput, CommissionType, EquipmentModes, InstallPrices, KindPrices } from '@/types';
 
 import company from '../company/Company.module.css';
 import styles from './Affiliates.module.css';
@@ -31,6 +31,12 @@ interface Draft {
   uninstallPrice: string;
   /** A garantia de troca do comodato (vazio: a da Farbo). */
   guarantee: string;
+  /** A página do afiliado pede senha; password: a nova (vazia mantém a que já existe). */
+  passwordOn: boolean;
+  password: string;
+  equipmentModes: EquipmentModes;
+  /** O representante cuida das instalações dos clientes dele (pede a senha da página). */
+  manageInstalls: boolean;
   email: string;
   phone: string;
   pixKey: string;
@@ -54,6 +60,10 @@ function draftOf(a: Affiliate | null, defaultCents: number): Draft {
     installPrice: a?.installPrices ? centsToInput(a.installPrices.installCents) : '',
     uninstallPrice: a?.installPrices ? centsToInput(a.installPrices.uninstallCents) : '',
     guarantee: a?.installPrices?.guaranteeCents != null ? centsToInput(a.installPrices.guaranteeCents) : '',
+    passwordOn: a?.reportPassword ?? false,
+    password: '',
+    equipmentModes: a?.equipmentModes ?? '',
+    manageInstalls: a?.manageInstalls ?? false,
     email: a?.email ?? '',
     phone: a?.phone ?? '',
     pixKey: a?.pixKey ?? '',
@@ -166,6 +176,25 @@ export function AffiliateModal({
       }
       installPrices = { mode: draft.installMode, installCents, uninstallCents, guaranteeCents };
     }
+    if (draft.manageInstalls && !draft.passwordOn) {
+      setError('Para o representante cuidar das instalações, marque a senha da página: ela mostra os dados dos clientes.');
+      return;
+    }
+    // A senha da página: nova (ou trocada), tirada, ou a mesma (sem mandar).
+    const hadPassword = affiliate?.reportPassword ?? false;
+    let reportPassword: string | undefined;
+    if (draft.passwordOn && draft.password !== '') {
+      if (draft.password.length < 8) {
+        setError('A senha da página precisa de pelo menos 8 caracteres.');
+        return;
+      }
+      reportPassword = draft.password;
+    } else if (draft.passwordOn && !hadPassword) {
+      setError('Defina a senha da página (pelo menos 8 caracteres) ou desmarque a opção.');
+      return;
+    } else if (!draft.passwordOn && hadPassword) {
+      reportPassword = '';
+    }
     save.mutate({
       name: draft.name,
       handle: draft.handle,
@@ -175,6 +204,9 @@ export function AffiliateModal({
       commissionBps: bps,
       planPrices,
       installPrices,
+      ...(reportPassword !== undefined ? { reportPassword } : {}),
+      equipmentModes: draft.equipmentModes,
+      manageInstalls: draft.manageInstalls,
       email: draft.email,
       phone: draft.phone,
       pixKey: draft.pixKey,
@@ -383,7 +415,7 @@ export function AffiliateModal({
             onChange={(e) => set('installMode', e.target.value as Draft['installMode'])}
             hint={
               draft.installMode === 'direct'
-                ? 'Ele instala, desinstala e recebe direto do cliente: os valores aparecem para o cliente, mas não entram no Pix nem nas faturas.'
+                ? 'Ele instala, desinstala e recebe direto do cliente: os valores aparecem para o cliente, mas não entram no Pix nem nas faturas. Ele mesmo pode mudar os valores na página dele.'
                 : draft.installMode === 'custom'
                   ? 'A Farbo cobra estes valores no lugar dos dela (a instalação no pedido, a desinstalação ao encerrar o comodato).'
                   : 'Quem contrata pelo link paga a instalação e a desinstalação da Farbo.'
@@ -417,6 +449,16 @@ export function AffiliateModal({
               />
             </>
           )}
+          <SelectField
+            label="Rastreador pelo link"
+            value={draft.equipmentModes}
+            onChange={(e) => set('equipmentModes', e.target.value as EquipmentModes)}
+            hint="O que quem contrata pelo link pode escolher, também nos veículos que pedir depois pelo app."
+          >
+            <option value="">Comprado e comodato</option>
+            <option value="sale">Só comprado</option>
+            <option value="loan">Só comodato</option>
+          </SelectField>
           <TextField label="E-mail" type="email" value={draft.email} maxLength={254} onChange={(e) => set('email', e.target.value)} />
           <TextField
             label="WhatsApp"
@@ -431,6 +473,36 @@ export function AffiliateModal({
           <input type="checkbox" checked={draft.active} onChange={(e) => set('active', e.target.checked)} />
           Ativo (o link indica e os meses pagos rendem comissão)
         </label>
+        <label className={company.check}>
+          <input type="checkbox" checked={draft.passwordOn} onChange={(e) => set('passwordOn', e.target.checked)} />
+          Pedir senha para abrir a página do afiliado (os números e o cadastro para receber)
+        </label>
+        <label className={company.check}>
+          <input
+            type="checkbox"
+            checked={draft.manageInstalls}
+            onChange={(e) => {
+              set('manageInstalls', e.target.checked);
+              if (e.target.checked) set('passwordOn', true);
+            }}
+          />
+          O representante cuida da instalação e da desinstalação dos clientes dele: agenda, remarca e conclui pela página
+          dele (que então mostra os dados desses clientes e pede senha). A central continua vendo tudo na Agenda.
+        </label>
+        {draft.passwordOn && (
+          <div className={company.grid}>
+            <TextField
+              label={affiliate?.reportPassword ? 'Nova senha da página' : 'Senha da página'}
+              type="password"
+              autoComplete="new-password"
+              value={draft.password}
+              maxLength={72}
+              placeholder={affiliate?.reportPassword ? 'em branco: mantém a atual' : 'pelo menos 8 caracteres'}
+              onChange={(e) => set('password', e.target.value)}
+              hint="Passe a senha ao afiliado: a entrada vale 30 dias no aparelho dele. Trocar a senha (ou o link) pede a nova."
+            />
+          </div>
+        )}
         <textarea
           className={company.textarea}
           aria-label="Observações"

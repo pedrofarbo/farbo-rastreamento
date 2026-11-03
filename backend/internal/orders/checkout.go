@@ -43,6 +43,7 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 	}
 	plan := billing.SubscriptionInput{PlanName: s.catalog.PlanName, PriceCents: opts.Checkout.PlanCents, DueDay: s.catalog.DefaultDueDay}
 	var install *InstallPrices
+	modes := ""
 	if in.Affiliate != nil {
 		table, err := s.AffiliatePrices(ctx, *in.Affiliate)
 		if err != nil {
@@ -54,12 +55,20 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 		if install, err = s.AffiliateInstall(ctx, *in.Affiliate); err != nil {
 			return Order{}, err
 		}
+		if modes, err = s.AffiliateEquipment(ctx, *in.Affiliate); err != nil {
+			return Order{}, err
+		}
+	}
+	// O rastreador que o link oferece: comprado, comodato ou os dois.
+	mode, err := linkEquipment(modes, in.EquipmentMode)
+	if err != nil {
+		return Order{}, err
 	}
 	vehicle := in.Vehicle
 	vehicle.DeviceID, vehicle.OwnerID = nil, nil
 	order := Order{Vehicle: vehicle, Plan: plan, RequireAddress: true, Installments: in.Installments}
-	switch in.EquipmentMode {
-	case "", billing.EquipmentSale:
+	switch mode {
+	case billing.EquipmentSale:
 		order.Terms = Terms{EquipmentMode: billing.EquipmentSale}
 		order.EquipmentCents = opts.Checkout.EquipmentCents
 		if in.FarboInstall {
@@ -69,7 +78,7 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 			order.FarboInstall, order.InstallCents = true, opts.Install.PriceCents
 		}
 	case billing.EquipmentLoan:
-		if !opts.Loan.Enabled {
+		if !opts.Loan.Enabled && modes != EquipmentLoanOnly {
 			return Order{}, ValidationError{"o comodato não está disponível agora: escolha comprar o rastreador"}
 		}
 		if in.Installments > 1 {

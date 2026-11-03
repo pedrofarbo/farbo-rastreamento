@@ -25,6 +25,8 @@ type Service struct {
 	// o cadastro do afiliado como recebedor na Pagar.me (recipients.go).
 	split      bool
 	recipients RecipientGateway
+	// sessionKey assina as sessões da página do afiliado com senha (password.go).
+	sessionKey []byte
 }
 
 func NewService(db *database.DB, log *slog.Logger) *Service {
@@ -32,7 +34,7 @@ func NewService(db *database.DB, log *slog.Logger) *Service {
 	if err != nil {
 		loc = time.FixedZone("BRT", -3*60*60)
 	}
-	return &Service{db: db, loc: loc, now: time.Now, log: log.With("component", "affiliates")}
+	return &Service{db: db, loc: loc, now: time.Now, log: log.With("component", "affiliates"), sessionKey: randomKey()}
 }
 
 // SetClock troca o relógio (testes).
@@ -103,7 +105,7 @@ const columns = `a.id, a.name, a.handle, a.code, a.report_token, a.commission_ty
 	a.commission_bps, a.email, a.phone, a.pix_key,
 	a.notes, a.supplier_id, a.active, a.created_at, a.recipient_status,
 	a.plan_motorcycle_cents, a.plan_car_cents, a.plan_truck_cents, a.install_mode, a.install_cents, a.uninstall_cents,
-	a.loan_surcharge_cents,
+	a.loan_surcharge_cents, a.report_password_hash <> '', a.equipment_modes, a.manage_installs,
 	(SELECT count(DISTINCT lower(x.email)) FROM (
 		SELECT email FROM launch_waitlist WHERE affiliate_id = a.id
 		UNION ALL SELECT email FROM leads WHERE affiliate_id = a.id) x),
@@ -129,7 +131,7 @@ func scan(row database.Scanner) (*Affiliate, error) {
 	err := row.Scan(&a.ID, &a.Name, &a.Handle, &a.Code, &a.ReportToken, &a.CommissionType, &a.CommissionCents,
 		&a.CommissionBps, &a.Email, &a.Phone,
 		&a.PixKey, &a.Notes, &a.SupplierID, &a.Active, &a.CreatedAt, &a.RecipientStatus, &motorcycle, &car, &truck,
-		&installMode, &install, &uninstall, &guarantee,
+		&installMode, &install, &uninstall, &guarantee, &a.ReportPassword, &a.EquipmentModes, &a.ManageInstalls,
 		&a.Signups, &a.Customers, &a.ActiveCustomers, &a.ActiveVehicles, &a.PendingCents, &a.SplitPaidCents, &a.OpenCents,
 		&a.PaidCents)
 	if err != nil {
@@ -228,14 +230,26 @@ func (s *Service) Create(ctx context.Context, in Input) (*Affiliate, error) {
 	}
 	motorcycle, car, truck := planColumns(in.PlanPrices)
 	installMode, install, uninstall, guarantee := installColumns(in.InstallPrices)
+	password, err := hashReportPassword(in.ReportPassword)
+	if err != nil {
+		return nil, err
+	}
+	if password == nil {
+		password = new(string)
+	}
+	if in.ManageInstalls && *password == "" {
+		return nil, errManageNeedsPassword
+	}
 	var id uuid.UUID
 	err = s.db.QueryRow(ctx, `
 		INSERT INTO affiliates (name, handle, code, report_token, commission_type, commission_cents, commission_bps, email,
 			phone, pix_key, notes, active, plan_motorcycle_cents, plan_car_cents, plan_truck_cents, install_mode, install_cents,
-			uninstall_cents, loan_surcharge_cents)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING id`,
+			uninstall_cents, loan_surcharge_cents, report_password_hash, equipment_modes, manage_installs)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+		RETURNING id`,
 		in.Name, in.Handle, in.Code, token, in.CommissionType, *in.CommissionCents, bps, in.Email, in.Phone, in.PixKey,
-		in.Notes, in.Active, motorcycle, car, truck, installMode, install, uninstall, guarantee).Scan(&id)
+		in.Notes, in.Active, motorcycle, car, truck, installMode, install, uninstall, guarantee, *password, in.EquipmentModes,
+		in.ManageInstalls).Scan(&id)
 	if err != nil {
 		return nil, conflictMessage(err)
 	}
@@ -255,6 +269,10 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Affiliat
 	}
 	motorcycle, car, truck := planColumns(in.PlanPrices)
 	installMode, install, uninstall, guarantee := installColumns(in.InstallPrices)
+	password, err := hashReportPassword(in.ReportPassword)
+	if err != nil {
+		return nil, err
+	}
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		var oldKey string
 		var supplier *uuid.UUID
@@ -268,11 +286,23 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Affiliat
 				commission_type = COALESCE(NULLIF($11, ''), commission_type),
 				commission_bps = COALESCE($12, commission_bps),
 				plan_motorcycle_cents = $13, plan_car_cents = $14, plan_truck_cents = $15,
-				install_mode = $16, install_cents = $17, uninstall_cents = $18, loan_surcharge_cents = $19, updated_at = NOW()
+				install_mode = $16, install_cents = $17, uninstall_cents = $18, loan_surcharge_cents = $19,
+				report_password_hash = COALESCE($20, report_password_hash), equipment_modes = $21, manage_installs = $22,
+				updated_at = NOW()
 			WHERE id = $1`,
 			id, in.Name, in.Handle, in.Code, in.CommissionCents, in.Email, in.Phone, in.PixKey, in.Notes, in.Active,
-			in.CommissionType, in.CommissionBps, motorcycle, car, truck, installMode, install, uninstall, guarantee); err != nil {
+			in.CommissionType, in.CommissionBps, motorcycle, car, truck, installMode, install, uninstall, guarantee,
+			password, in.EquipmentModes, in.ManageInstalls); err != nil {
 			return err
+		}
+		// A gestão das instalações mostra os dados dos clientes: só com a senha.
+		var unprotected bool
+		if err := tx.QueryRow(ctx, `SELECT manage_installs AND report_password_hash = '' FROM affiliates WHERE id = $1`, id).
+			Scan(&unprotected); err != nil {
+			return err
+		}
+		if unprotected {
+			return errManageNeedsPassword
 		}
 		if supplier == nil || oldKey == in.PixKey {
 			return nil
@@ -841,14 +871,18 @@ type Report struct {
 	PlanPrices *vehicles.KindPrices `json:"planPrices"`
 	// InstallPrices: a instalação e a desinstalação de quem ele indica (nil:
 	// as da Farbo; no modo direto, ele mesmo recebe do cliente).
-	InstallPrices   *orders.InstallPrices `json:"installPrices"`
-	Signups         int                   `json:"signups"`
-	Customers       int                   `json:"customers"`
-	ActiveCustomers int                   `json:"activeCustomers"`
-	ActiveVehicles  int                   `json:"activeVehicles"`
-	ToReceiveCents  int64                 `json:"toReceiveCents"`
-	PaidCents       int64                 `json:"paidCents"`
-	Months          []ReportMonth         `json:"months"`
+	InstallPrices *orders.InstallPrices `json:"installPrices"`
+	// EquipmentModes: o rastreador pelo link dele (vazio, os dois; sale ou loan).
+	EquipmentModes string `json:"equipmentModes"`
+	// ManageInstalls: ele cuida das instalações dos clientes que indicou.
+	ManageInstalls  bool          `json:"manageInstalls"`
+	Signups         int           `json:"signups"`
+	Customers       int           `json:"customers"`
+	ActiveCustomers int           `json:"activeCustomers"`
+	ActiveVehicles  int           `json:"activeVehicles"`
+	ToReceiveCents  int64         `json:"toReceiveCents"`
+	PaidCents       int64         `json:"paidCents"`
+	Months          []ReportMonth `json:"months"`
 	// Recipient: o cadastro de recebedor do split (Enabled falso: desligado).
 	Recipient *RecipientView `json:"recipient"`
 }
@@ -882,8 +916,8 @@ func (s *Service) Report(ctx context.Context, token string) (*Report, error) {
 	out := &Report{
 		Name: a.Name, Handle: a.Handle, Code: a.Code, Active: a.Active, CommissionType: a.CommissionType,
 		CommissionCents: a.CommissionCents, CommissionBps: a.CommissionBps, PlanPrices: a.PlanPrices,
-		InstallPrices: a.InstallPrices,
-		Signups:       a.Signups, Customers: a.Customers, ActiveCustomers: a.ActiveCustomers, ActiveVehicles: a.ActiveVehicles,
+		InstallPrices: a.InstallPrices, EquipmentModes: a.EquipmentModes, ManageInstalls: a.ManageInstalls,
+		Signups: a.Signups, Customers: a.Customers, ActiveCustomers: a.ActiveCustomers, ActiveVehicles: a.ActiveVehicles,
 		ToReceiveCents: a.PendingCents + a.OpenCents, PaidCents: a.PaidCents + a.SplitPaidCents, Months: []ReportMonth{},
 	}
 	if view, err := s.Recipient(ctx, token); err == nil {

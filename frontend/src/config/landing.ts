@@ -1,3 +1,5 @@
+import type { CheckoutOffer, LoanOffer } from '@/types';
+
 /**
  * Sem clientes ativos ainda para depor: os depoimentos ficam fora da landing
  * (o componente TestimonialsSection continua no código). Com clientes de
@@ -13,6 +15,14 @@ export const PRE_LAUNCH = true;
  * abrem o pré-cadastro.
  */
 export const CHECKOUT_PATH = '/contratar';
+
+/**
+ * Pelo link de um afiliado só de comodato: o rastreador não é vendido, e as
+ * páginas mostram o comodato no lugar do preço dele (com a contratação aberta).
+ */
+export function loanOnly(offer: CheckoutOffer | undefined, open = true): offer is CheckoutOffer & { loan: LoanOffer } {
+  return open && offer?.equipmentModes === 'loan' && !!offer.loan;
+}
 /** A seção da landing que chama para a contratação. */
 export const CHECKOUT_ANCHOR = '#contratar';
 
