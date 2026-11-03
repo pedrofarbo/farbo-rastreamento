@@ -317,6 +317,8 @@ func (s *Server) routes() chi.Router {
 			// O cadastro do afiliado como recebedor do split (Pagar.me).
 			r.With(affiliateLimiter.middleware).Post("/public/partner/{token}/recipient", s.handlePartnerRecipient)
 			r.With(affiliateLimiter.middleware).Post("/public/partner/{token}/recipient/kyc-link", s.handlePartnerKYCLink)
+			// Os clientes do afiliado (só na página com senha).
+			r.With(affiliateLimiter.middleware).Get("/public/partner/{token}/customers", s.handlePartnerCustomers)
 			// Os valores da instalação do representante que recebe direto.
 			r.With(affiliateLimiter.middleware).Put("/public/partner/{token}/install-prices", s.handlePartnerInstallPrices)
 			// A gestão da instalação pelo representante (com a senha da página).

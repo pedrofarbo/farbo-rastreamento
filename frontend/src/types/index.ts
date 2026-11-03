@@ -2891,6 +2891,8 @@ export interface PartnerReport {
   manageInstalls?: boolean;
   /** Ele entrega os rastreadores em mãos, com os kits dele. */
   handDelivery?: boolean;
+  /** A página tem senha: mostra os clientes (com os veículos e o pagamento mês a mês). */
+  protected?: boolean;
   signups: number;
   customers: number;
   activeCustomers: number;
@@ -2900,6 +2902,18 @@ export interface PartnerReport {
   months: PartnerMonth[];
   /** O recebedor do split (enabled falso: o split está desligado). */
   recipient?: PartnerRecipient | null;
+}
+
+/** A situação do pagamento de um cliente no mês: pago, em aberto (no prazo), vencido ou sem fatura. */
+export type CustomerPaymentStatus = 'paid' | 'open' | 'overdue' | 'none';
+
+/** Um cliente do afiliado, na página dele (com senha): os veículos e o pagamento mês a mês. */
+export interface PartnerCustomer {
+  name: string;
+  since: string;
+  vehicles: { name: string; plate: string; imei: string }[];
+  /** Do mês atual para trás (AAAA-MM). */
+  months: { month: string; status: CustomerPaymentStatus }[];
 }
 
 /**

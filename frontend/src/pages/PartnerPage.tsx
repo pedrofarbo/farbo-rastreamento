@@ -7,6 +7,7 @@ import { kindPricesLabel } from '@/services/kindPrices';
 import { monthLabel, referralUrl } from '@/services/referral';
 import type { PartnerMonth } from '@/types';
 
+import { CustomersSection } from './partner/CustomersSection';
 import { InstallationsSection } from './partner/InstallationsSection';
 import { InstallPricesSection } from './partner/InstallPricesSection';
 import { PasswordGate } from './partner/PasswordGate';
@@ -190,6 +191,15 @@ export function PartnerPage() {
               prices={report.installPrices}
               onChange={(installPrices) => setReport((r) => (r ? { ...r, installPrices } : r))}
             />
+          )}
+
+          {report.protected ? (
+            <CustomersSection token={token} />
+          ) : (
+            <p className={base.hint}>
+              Para ver os seus clientes, com os veículos e o pagamento de cada mês, peça à Farbo para colocar senha na sua
+              página.
+            </p>
           )}
 
           {report.manageInstalls && <InstallationsSection token={token} />}

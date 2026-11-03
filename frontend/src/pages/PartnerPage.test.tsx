@@ -78,6 +78,9 @@ describe('PartnerPage', () => {
     expect(t).toContain('12Cadastros pelo link');
     expect(t).toContain('5Veículos ativos');
     expect(t).toContain('nov/20261 veículoR$ 8,00Aguardando fechamento');
+    // Sem senha na página, os clientes não aparecem: só o convite para pedir a senha.
+    expect(t).toContain('peça à Farbo para colocar senha na sua página');
+    expect(t).not.toContain('Seus clientes');
     expect(t).toContain('out/20263 veículosR$ 18,00A pagar');
     expect(t).toContain('set/20261 veículoR$ 6,00Pago');
     expect(t).not.toContain('pausado');

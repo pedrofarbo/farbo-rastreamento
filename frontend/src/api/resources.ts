@@ -54,6 +54,7 @@ import type {
   AffiliatePayout,
   AffiliateSettings,
   CustomerReferral,
+  PartnerCustomer,
   PartnerQueue,
   PartnerReport,
   PartnerScheduleInput,
@@ -1354,6 +1355,12 @@ export const publicApi = {
   partnerCancel: (token: string, id: string) =>
     request<InstallationAppointment>(`/api/public/partner/${encodeURIComponent(token)}/installations/${id}/cancel`, {
       method: 'POST',
+      anonymous: true,
+      headers: partnerHeaders(token),
+    }),
+  /** Os clientes do afiliado (só na página com senha): os veículos e o pagamento mês a mês. */
+  partnerCustomers: (token: string) =>
+    request<PartnerCustomer[]>(`/api/public/partner/${encodeURIComponent(token)}/customers`, {
       anonymous: true,
       headers: partnerHeaders(token),
     }),

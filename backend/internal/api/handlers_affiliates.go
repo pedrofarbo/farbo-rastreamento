@@ -128,6 +128,26 @@ func (s *Server) handlePartnerInstallPrices(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, prices)
 }
 
+// handlePartnerCustomers: os clientes do afiliado na página dele (com a
+// senha): o nome, os veículos com a placa e o rastreador, e o pagamento mês
+// a mês.
+func (s *Server) handlePartnerCustomers(w http.ResponseWriter, r *http.Request) {
+	if !s.partnerAllowed(w, r) {
+		return
+	}
+	list, err := s.Affiliates.PartnerCustomers(r.Context(), chi.URLParam(r, "token"))
+	if errors.Is(err, affiliates.ErrCustomersNeedPassword) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": "PASSWORD_REQUIRED"})
+		return
+	}
+	if err != nil {
+		affiliateError(w, err, "link inválido: peça o novo à Farbo")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, list)
+}
+
 // handlePartnerReport: a página do afiliado, pelo link secreto. Sem dado
 // pessoal de ninguém: só os números.
 func (s *Server) handlePartnerReport(w http.ResponseWriter, r *http.Request) {

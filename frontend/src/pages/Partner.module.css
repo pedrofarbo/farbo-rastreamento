@@ -218,6 +218,25 @@
   color: var(--color-neon-green);
 }
 
+/* O pagamento dos clientes: vencido em vermelho; sem fatura, apagado. */
+.overdue {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+}
+
+.none {
+  background: transparent;
+  color: #64748b;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.paymentMonths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 0.25rem;
+}
+
 @media (max-width: 360px) {
   .money strong {
     font-size: 1.25rem;

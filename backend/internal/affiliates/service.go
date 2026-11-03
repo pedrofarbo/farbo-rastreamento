@@ -880,7 +880,9 @@ type Report struct {
 	// ManageInstalls: ele cuida das instalações dos clientes que indicou.
 	ManageInstalls bool `json:"manageInstalls"`
 	// HandDelivery: ele entrega os rastreadores em mãos, com os kits dele.
-	HandDelivery    bool          `json:"handDelivery"`
+	HandDelivery bool `json:"handDelivery"`
+	// Protected: a página tem senha (mostra os clientes, com os veículos).
+	Protected       bool          `json:"protected"`
 	Signups         int           `json:"signups"`
 	Customers       int           `json:"customers"`
 	ActiveCustomers int           `json:"activeCustomers"`
@@ -922,8 +924,8 @@ func (s *Service) Report(ctx context.Context, token string) (*Report, error) {
 		Name: a.Name, Handle: a.Handle, Code: a.Code, Active: a.Active, CommissionType: a.CommissionType,
 		CommissionCents: a.CommissionCents, CommissionBps: a.CommissionBps, PlanPrices: a.PlanPrices,
 		InstallPrices: a.InstallPrices, EquipmentModes: a.EquipmentModes, ManageInstalls: a.ManageInstalls,
-		HandDelivery: a.HandDelivery,
-		Signups:      a.Signups, Customers: a.Customers, ActiveCustomers: a.ActiveCustomers, ActiveVehicles: a.ActiveVehicles,
+		HandDelivery: a.HandDelivery, Protected: a.ReportPassword,
+		Signups: a.Signups, Customers: a.Customers, ActiveCustomers: a.ActiveCustomers, ActiveVehicles: a.ActiveVehicles,
 		ToReceiveCents: a.PendingCents + a.OpenCents, PaidCents: a.PaidCents + a.SplitPaidCents, Months: []ReportMonth{},
 	}
 	if view, err := s.Recipient(ctx, token); err == nil {
