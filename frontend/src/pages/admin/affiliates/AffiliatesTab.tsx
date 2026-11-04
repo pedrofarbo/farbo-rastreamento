@@ -24,6 +24,7 @@ import company from '../company/Company.module.css';
 import { financeKey } from '../company/EntryModals';
 import { PixPayModal } from '../company/PixModals';
 import { AffiliateModal } from './AffiliateModal';
+import { KitShipmentsCard } from './KitShipmentsCard';
 import local from './Affiliates.module.css';
 
 /** O mês anterior ao de `today` (AAAA-MM): o que se fecha no começo do mês. */
@@ -225,6 +226,7 @@ export function AffiliatesTab() {
         )}
       </Card>
 
+      <KitShipmentsCard affiliates={list} />
       {split ? <SplitCard /> : <ClosingCard />}
       <SettingsCard defaultCents={defaultCents} loaded={settings.isSuccess} />
       <CustomerRewardCard

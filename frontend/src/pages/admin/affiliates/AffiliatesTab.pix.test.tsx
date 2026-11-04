@@ -28,6 +28,7 @@ const PLAN: PixPlan = {
   source: 'key', key: 'joao@pix.test', keyType: 'EMAIL', recipient: '', feeCents: 80, sendCents: 1280,
 };
 vi.mock('@/api/resources', () => ({
+  kitShipmentsApi: { list: async () => [] },
   affiliatesApi: {
     list: async () => [],
     settings: async () => ({ defaultCommissionCents: 600, categoryId: 'c1' }),

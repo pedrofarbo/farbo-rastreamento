@@ -123,6 +123,61 @@
   width: 180px;
 }
 
+/* Os kits dos representantes: os números em cima da tabela, os rastreadores
+   de cada remessa (abrem no clique) e a lista dos livres, com rolagem. */
+.kitTiles {
+  padding: var(--space-4);
+}
+
+.kitPad {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.mono {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs);
+}
+
+.kitDevices summary {
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+
+.kitDevices ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deviceList {
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  list-style: none;
+}
+
+.deviceList li {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.deviceList li:last-child {
+  border-bottom: none;
+}
+
+.deviceList label {
+  flex-wrap: wrap;
+}
+
 @media (max-width: 600px) {
   .settings > :first-child,
   .closingFields > div {

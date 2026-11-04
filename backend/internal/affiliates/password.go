@@ -193,3 +193,16 @@ func (s *Service) SetPartnerInstall(ctx context.Context, token string, installCe
 	}
 	return &prices, nil
 }
+
+// PartnerAccount é o afiliado do link secreto da página e se ela tem senha
+// (database.ErrNotFound se o link não vale).
+func (s *Service) PartnerAccount(ctx context.Context, token string) (uuid.UUID, bool, error) {
+	if len(token) < 20 || len(token) > 64 {
+		return uuid.Nil, false, database.ErrNotFound
+	}
+	var id uuid.UUID
+	var protected bool
+	err := s.db.QueryRow(ctx, `SELECT id, report_password_hash <> '' FROM affiliates WHERE report_token = $1`, token).
+		Scan(&id, &protected)
+	return id, protected, database.MapError(err)
+}

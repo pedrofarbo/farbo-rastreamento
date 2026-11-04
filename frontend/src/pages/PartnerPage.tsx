@@ -10,6 +10,7 @@ import type { PartnerMonth } from '@/types';
 import { CustomersSection } from './partner/CustomersSection';
 import { InstallationsSection } from './partner/InstallationsSection';
 import { InstallPricesSection } from './partner/InstallPricesSection';
+import { KitsSection } from './partner/KitsSection';
 import { PasswordGate } from './partner/PasswordGate';
 import { RecipientSection } from './partner/RecipientSection';
 import { usePartnerReport } from './partner/usePartnerReport';
@@ -203,6 +204,8 @@ export function PartnerPage() {
           )}
 
           {report.manageInstalls && <InstallationsSection token={token} />}
+
+          {report.kits && <KitsSection token={token} />}
 
           {report.recipient?.enabled && (
             <RecipientSection

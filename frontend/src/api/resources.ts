@@ -54,7 +54,10 @@ import type {
   AffiliatePayout,
   AffiliateSettings,
   CustomerReferral,
+  KitDevice,
+  KitShipment,
   PartnerCustomer,
+  PartnerKits,
   PartnerQueue,
   PartnerReport,
   PartnerScheduleInput,
@@ -1372,6 +1375,32 @@ export const publicApi = {
       anonymous: true,
       headers: partnerHeaders(token),
     }),
+  /** Os kits do representante: o estoque, os instalados e as remessas (com o rastreio). */
+  partnerKits: (token: string) =>
+    request<PartnerKits>(`/api/public/partner/${encodeURIComponent(token)}/kits`, {
+      anonymous: true,
+      headers: partnerHeaders(token),
+    }),
+  partnerKitRequest: (token: string, input: { quantity: number; note: string }) =>
+    request<KitShipment>(`/api/public/partner/${encodeURIComponent(token)}/kits/request`, {
+      method: 'POST',
+      body: input,
+      anonymous: true,
+      headers: partnerHeaders(token),
+    }),
+  partnerKitReceived: (token: string, id: string) =>
+    request<KitShipment>(`/api/public/partner/${encodeURIComponent(token)}/kits/${id}/received`, {
+      method: 'POST',
+      anonymous: true,
+      headers: partnerHeaders(token),
+    }),
+  /** Desiste do pedido que ainda espera a central. */
+  partnerKitCancel: (token: string, id: string) =>
+    request<KitShipment>(`/api/public/partner/${encodeURIComponent(token)}/kits/${id}/cancel`, {
+      method: 'POST',
+      anonymous: true,
+      headers: partnerHeaders(token),
+    }),
   partnerQrUrl: (token: string, format: 'png' | 'svg', download = false) =>
     apiUrl(`/api/public/partner/${encodeURIComponent(token)}/qr?format=${format}${download ? '&download=1' : ''}`),
 };
@@ -1429,6 +1458,19 @@ export const affiliatesApi = {
   close: (input: { month: string; dueDate: string }) => api.post<AffiliatePayout[]>('/api/affiliates/closing', input),
   payouts: () => api.get<AffiliatePayout[]>('/api/affiliates/payouts'),
   undoPayout: (id: string) => api.delete<void>(`/api/affiliates/payouts/${id}`),
+};
+
+/** Os kits de instalação dos representantes: as remessas da central. */
+export const kitShipmentsApi = {
+  list: () => api.get<KitShipment[]>('/api/kit-shipments'),
+  /** Os rastreadores que podem ir num kit: sem veículo e fora de outra remessa. */
+  availableDevices: () => api.get<KitDevice[]>('/api/kit-shipments/available-devices'),
+  create: (input: { affiliateId: string; deviceIds: string[]; notes: string }) => api.post<KitShipment>('/api/kit-shipments', input),
+  /** Atende o pedido do representante com os rastreadores. */
+  prepare: (id: string, input: { deviceIds: string[]; notes: string }) => api.post<KitShipment>(`/api/kit-shipments/${id}/prepare`, input),
+  ship: (id: string, input: { carrier: string; trackingCode: string }) => api.post<KitShipment>(`/api/kit-shipments/${id}/ship`, input),
+  deliver: (id: string) => api.post<KitShipment>(`/api/kit-shipments/${id}/deliver`),
+  cancel: (id: string) => api.post<KitShipment>(`/api/kit-shipments/${id}/cancel`),
 };
 
 /** Infraestrutura: máquina, banco, backups e erros do servidor (admin). */

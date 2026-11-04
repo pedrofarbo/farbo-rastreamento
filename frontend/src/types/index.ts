@@ -2893,6 +2893,8 @@ export interface PartnerReport {
   handDelivery?: boolean;
   /** A página tem senha: mostra os clientes (com os veículos e o pagamento mês a mês). */
   protected?: boolean;
+  /** Ele recebe kits de instalação da Farbo (a seção dos kits). */
+  kits?: boolean;
   signups: number;
   customers: number;
   activeCustomers: number;
@@ -2902,6 +2904,46 @@ export interface PartnerReport {
   months: PartnerMonth[];
   /** O recebedor do split (enabled falso: o split está desligado). */
   recipient?: PartnerRecipient | null;
+}
+
+/** A situação de uma remessa de kits: pedida pelo representante, separada, enviada, entregue ou cancelada. */
+export type KitStatus = 'requested' | 'preparing' | 'shipped' | 'delivered' | 'canceled';
+
+/** Um rastreador de kit: o IMEI, o chip e, instalado, o veículo (e o cliente, na central e na página com senha). */
+export interface KitDevice {
+  id: string;
+  imei: string;
+  iccid: string;
+  installed: boolean;
+  vehicleName?: string;
+  plate?: string;
+  customerName?: string;
+}
+
+/** Uma remessa de kits de instalação para um representante. */
+export interface KitShipment {
+  id: string;
+  affiliateId: string;
+  affiliateName: string;
+  status: KitStatus;
+  /** O pedido do representante (nulo: a remessa nasceu na central). */
+  requestedQuantity: number | null;
+  requestNote: string;
+  carrier: string;
+  trackingCode: string;
+  notes: string;
+  shippedAt: string | null;
+  deliveredAt: string | null;
+  canceledAt: string | null;
+  createdAt: string;
+  devices: KitDevice[];
+}
+
+/** Os kits do representante, na página dele: o estoque, os instalados e as remessas. */
+export interface PartnerKits {
+  stock: KitDevice[];
+  installed: number;
+  shipments: KitShipment[];
 }
 
 /** A situação do pagamento de um cliente no mês: pago, em aberto (no prazo), vencido ou sem fatura. */

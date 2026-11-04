@@ -49,6 +49,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/infra"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/inspections"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/installers"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/kits"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/livelinks"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/mail"
@@ -538,6 +539,7 @@ func run() error {
 		Organizations: orgSvc, Closing: closing.NewService(db),
 		Analytics: analyticsSvc,
 		Infra:     infraSvc, Finance: financeSvc, Affiliates: affiliatesSvc, SMSSetup: smsSvc, Theft: theftSvc,
+		Kits:      kits.NewService(db),
 		LiveLinks: livelinks.NewService(db, cfg.Mail.AppURL, []byte(cfg.Auth.JWTSecret)),
 		Claims:    claimsSvc, Inspections: inspectionsSvc, Fleet: fleetSvc,
 		APIKeys: apikeys.NewService(db), Webhooks: webhooksSvc, Appointments: appointmentsSvc,

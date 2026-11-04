@@ -41,6 +41,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/infra"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/inspections"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/installers"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/kits"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/leads"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/livelinks"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/maintenance"
@@ -118,6 +119,8 @@ type Deps struct {
 	Finance *finance.Service
 	// Affiliates: o programa de afiliados (links de indicação e comissões).
 	Affiliates *affiliates.Service
+	// Kits: as remessas de kits de instalação para os representantes.
+	Kits *kits.Service
 	// SMSSetup: a configuração do rastreador por SMS (SMS Market) na ativação.
 	SMSSetup *smssetup.Service
 	// Contract: o contrato que o cliente aceita no primeiro acesso. Nil: sem
@@ -317,6 +320,13 @@ func (s *Server) routes() chi.Router {
 			// O cadastro do afiliado como recebedor do split (Pagar.me).
 			r.With(affiliateLimiter.middleware).Post("/public/partner/{token}/recipient", s.handlePartnerRecipient)
 			r.With(affiliateLimiter.middleware).Post("/public/partner/{token}/recipient/kyc-link", s.handlePartnerKYCLink)
+			// Os kits do representante: as remessas, o estoque, o pedido e o recebimento.
+			if s.Kits != nil {
+				r.With(affiliateLimiter.middleware).Get("/public/partner/{token}/kits", s.handlePartnerKits)
+				r.With(affiliateLimiter.middleware).Post("/public/partner/{token}/kits/request", s.handlePartnerKitRequest)
+				r.With(affiliateLimiter.middleware).Post("/public/partner/{token}/kits/{id}/received", s.handlePartnerKitReceived)
+				r.With(affiliateLimiter.middleware).Post("/public/partner/{token}/kits/{id}/cancel", s.handlePartnerKitCancel)
+			}
 			// Os clientes do afiliado (só na página com senha).
 			r.With(affiliateLimiter.middleware).Get("/public/partner/{token}/customers", s.handlePartnerCustomers)
 			// Os valores da instalação do representante que recebe direto.
@@ -1126,6 +1136,20 @@ func (s *Server) routes() chi.Router {
 						r.Get("/", s.handleStandaloneInstalls)
 						r.Post("/", s.handleCreateStandaloneInstall)
 						r.Post("/{id}/close", s.handleCloseStandaloneInstall)
+					})
+				}
+
+				// Os kits de instalação dos representantes: as remessas.
+				if s.Kits != nil {
+					r.Route("/kit-shipments", func(r chi.Router) {
+						r.Use(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator))
+						r.Get("/", s.handleKitShipments)
+						r.Get("/available-devices", s.handleKitDevices)
+						r.Post("/", s.handleCreateKitShipment)
+						r.Post("/{id}/prepare", s.handlePrepareKitShipment)
+						r.Post("/{id}/ship", s.handleShipKitShipment)
+						r.Post("/{id}/deliver", s.handleDeliverKitShipment)
+						r.Post("/{id}/cancel", s.handleCancelKitShipment)
 					})
 				}
 

@@ -882,7 +882,10 @@ type Report struct {
 	// HandDelivery: ele entrega os rastreadores em mãos, com os kits dele.
 	HandDelivery bool `json:"handDelivery"`
 	// Protected: a página tem senha (mostra os clientes, com os veículos).
-	Protected       bool          `json:"protected"`
+	Protected bool `json:"protected"`
+	// Kits: ele trabalha com os kits de instalação da Farbo (entrega em mãos,
+	// cuida das instalações ou já recebeu remessas): a seção dos kits.
+	Kits            bool          `json:"kits"`
 	Signups         int           `json:"signups"`
 	Customers       int           `json:"customers"`
 	ActiveCustomers int           `json:"activeCustomers"`
@@ -930,6 +933,13 @@ func (s *Service) Report(ctx context.Context, token string) (*Report, error) {
 	}
 	if view, err := s.Recipient(ctx, token); err == nil {
 		out.Recipient = view
+	}
+	out.Kits = a.HandDelivery || a.ManageInstalls
+	if !out.Kits {
+		if err := s.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM kit_shipments WHERE affiliate_id = $1)`, a.ID).
+			Scan(&out.Kits); err != nil {
+			return nil, database.MapError(err)
+		}
 	}
 	from := time.Date(s.now().In(s.loc).Year(), s.now().In(s.loc).Month()-11, 1, 0, 0, 0, 0, time.UTC)
 	rows, err := s.db.Query(ctx, `
