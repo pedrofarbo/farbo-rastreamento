@@ -316,6 +316,21 @@ describe('a contratação pelo site', () => {
     expect(logins).toEqual([]);
   });
 
+  it('contratação ainda esperando o pagamento: o link do pedido já feito', async () => {
+    placeResult = async () => {
+      throw new ApiError(409, 'você já contratou com este e-mail e o pagamento vale até 16:39 de 04/11: pague o pedido que já fez', {
+        code: 'CHECKOUT_UNPAID', payUrl: 'https://painel.farbo.test/pagar/abc?todas=1',
+      });
+    };
+    await render();
+    await fillUntilPayment();
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar'));
+    expect(text()).toContain('Você já contratou com este e-mail e o pagamento vale até 16:39 de 04/11');
+    expect(document.querySelector('a[href="https://painel.farbo.test/pagar/abc?todas=1"]')?.textContent).toBe('Pagar o pedido já feito');
+    expect(logins).toEqual([]);
+  });
+
   it('fechada na central: chama para deixar o contato', async () => {
     offer = { ...offer, enabled: false };
     await render();

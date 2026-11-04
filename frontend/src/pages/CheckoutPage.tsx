@@ -548,10 +548,28 @@ export function CheckoutPage() {
   );
 }
 
-/** O erro da contratação, como a pessoa entende (o e-mail com conta leva ao login). */
+/**
+ * O erro da contratação, como a pessoa entende: o e-mail com conta leva ao
+ * login; o de uma contratação ainda esperando o pagamento, ao pedido já
+ * feito (o link vem só com a senha dela).
+ */
 function checkoutError(err: unknown): ReactNode {
   if (err instanceof ApiError) {
-    if ((err.body as { code?: string } | undefined)?.code === 'EMAIL_TAKEN') {
+    const body = err.body as { code?: string; payUrl?: string } | undefined;
+    if (body?.code === 'CHECKOUT_UNPAID') {
+      return (
+        <>
+          {`${err.message.charAt(0).toUpperCase()}${err.message.slice(1)}.`}
+          {body.payUrl && (
+            <>
+              {' '}
+              <a href={body.payUrl}>Pagar o pedido já feito</a>
+            </>
+          )}
+        </>
+      );
+    }
+    if (body?.code === 'EMAIL_TAKEN') {
       return (
         <>
           Este e-mail já tem conta. <Link to="/login">Entre no app</Link> e use o Novo veículo (ou{' '}

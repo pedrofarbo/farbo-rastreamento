@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -298,9 +299,30 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := s.Auth.Register(ctx, auth.NewUser{
+	newUser := auth.NewUser{
 		Email: req.Email, Name: req.Name, Role: auth.RoleCustomer, Password: req.Password, Phone: req.Phone, Document: document,
-	})
+	}
+	user, err := s.Auth.Register(ctx, newUser)
+	if errors.Is(err, database.ErrConflict) {
+		// O e-mail de uma contratação pelo site que não foi paga: vencido o
+		// pagamento, o cadastro antigo sai e esta segue; ainda valendo, a
+		// pessoa paga o pedido que já fez.
+		// A senha da conta diz que é a mesma pessoa recomeçando.
+		owner := uuid.Nil
+		if u, aerr := s.Auth.Authenticate(ctx, req.Email, req.Password); aerr == nil {
+			owner = u.ID
+		}
+		unpaid, uerr := s.Orders.ReleaseUnpaidCheckout(ctx, req.Email, owner, time.Now())
+		switch {
+		case uerr != nil:
+			s.Log.Error("contratação pelo site: falha ao conferir a contratação sem pagamento do e-mail", "err", uerr)
+		case unpaid != nil && unpaid.Released:
+			user, err = s.Auth.Register(ctx, newUser)
+		case unpaid != nil:
+			s.writeUnpaidCheckout(w, unpaid, owner == unpaid.CustomerID)
+			return
+		}
+	}
 	if errors.Is(err, database.ErrConflict) {
 		writeJSON(w, http.StatusConflict, map[string]string{
 			"error": "este e-mail já tem conta: entre no app e use Novo veículo (ou Esqueci a senha)", "code": "EMAIL_TAKEN",
@@ -364,6 +386,25 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 		s.Log.Warn("contratação pelo site feita, mas a sessão do app não abriu", "user", user.ID, "err", err)
 	}
 	writeJSON(w, http.StatusCreated, out)
+}
+
+// writeUnpaidCheckout: o e-mail tem uma contratação pelo site esperando o
+// pagamento, que ainda vale. Com a senha dela (owner), vai o link para pagar
+// o pedido já feito; sem, só o aviso (o link mostraria o pedido de outra
+// pessoa a quem só sabe o e-mail).
+func (s *Server) writeUnpaidCheckout(w http.ResponseWriter, unpaid *orders.UnpaidCheckout, owner bool) {
+	until := unpaid.PayableUntil.In(time.FixedZone("BRT", -3*60*60)).Format("15:04 de 02/01")
+	out := map[string]any{"code": "CHECKOUT_UNPAID", "payableUntil": unpaid.PayableUntil}
+	if owner && s.Dunning != nil && unpaid.InvoiceID != uuid.Nil {
+		out["payUrl"] = s.Dunning.PayURL(unpaid.InvoiceID) + "?todas=1"
+		out["error"] = "você já contratou com este e-mail e o pagamento vale até " + until +
+			": pague o pedido que já fez ou, depois desse horário, contrate de novo"
+	} else {
+		out["error"] = "este e-mail tem uma contratação esperando o pagamento até " + until +
+			": entre no app com a senha dela para pagar ou, depois desse horário, contrate de novo"
+	}
+	s.Log.Info("contratação pelo site: o e-mail já tem uma contratação esperando o pagamento", "customer", unpaid.CustomerID)
+	writeJSON(w, http.StatusConflict, out)
 }
 
 // checkoutLead registra a contratação como pré-cliente já convertido (a

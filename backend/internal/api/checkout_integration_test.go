@@ -126,11 +126,15 @@ func TestCheckoutFunnel(t *testing.T) {
 	// O app já abre com a sessão da contratação.
 	env.must(r.Tokens.AccessToken, http.MethodGet, "/api/me/account", nil, http.StatusOK)
 	lia := r.Tokens.AccessToken
-	// O mesmo e-mail de novo: entra no app.
-	if status, out := env.do("", http.MethodPost, "/api/public/checkout", body("lia@site.test", "529.982.247-25", nil)); status != http.StatusConflict ||
-		!containsCode(out, "EMAIL_TAKEN") {
+	// O mesmo e-mail de novo, sem a senha dela (a contratação acabou de ser
+	// feita, ainda sem pagar): o aviso, e a conta dela fica.
+	again := body("lia@site.test", "529.982.247-25", nil)
+	again["password"] = "outra-senha-9"
+	if status, out := env.do("", http.MethodPost, "/api/public/checkout", again); status != http.StatusConflict ||
+		!containsCode(out, "CHECKOUT_UNPAID") {
 		t.Fatalf("e-mail repetido = %d %s", status, out)
 	}
+	env.must(lia, http.MethodGet, "/api/me/account", nil, http.StatusOK)
 
 	// O plano do Insanos MC (das telas antigas) é só com a central: recusado,
 	// sem criar conta.
