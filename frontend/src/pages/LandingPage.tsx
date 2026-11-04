@@ -3,6 +3,7 @@ import { Navbar } from '@/components/landing/Navbar';
 import { HeroSection } from '@/components/landing/HeroSection';
 import { PricingSection } from '@/components/landing/PricingSection';
 import { InstallationSection } from '@/components/landing/InstallationSection';
+import { RepresentativesSection } from '@/components/landing/RepresentativesSection';
 import { FeaturesSection } from '@/components/landing/FeaturesSection';
 import { HowItWorksSection } from '@/components/landing/HowItWorksSection';
 import { TestimonialsSection } from '@/components/landing/TestimonialsSection';
@@ -90,6 +91,8 @@ export const LandingPage: React.FC = () => {
         <HeroSection onOpenModal={handleOpenModal} />
         <PricingSection onOpenModal={handleOpenModal} />
         <InstallationSection onOpenInstallers={openInstallers} />
+        {/* Os representantes oficiais que a central marcou (nenhum: sai). */}
+        <RepresentativesSection />
         <FeaturesSection />
         <HowItWorksSection />
         {/* A chamada para a contratação pelo site (fechada na central, sai) e,

@@ -165,6 +165,8 @@ export function AffiliatesTab() {
                             {a.manageInstalls && <Badge tone="accent">Cuida das instalações</Badge>}
                             {a.handDelivery && ' · '}
                             {a.handDelivery && <Badge tone="neutral">Entrega em mãos</Badge>}
+                            {a.listed && ' · '}
+                            {a.listed && <Badge tone="success">Oficial na landing</Badge>}
                             {a.equipmentModes && ' · '}
                             {a.equipmentModes && (
                               <Badge tone="neutral">{a.equipmentModes === 'loan' ? 'Só comodato' : 'Só comprado'}</Badge>

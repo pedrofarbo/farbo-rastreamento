@@ -156,6 +156,26 @@ describe('o cadastro do afiliado', () => {
     expect(calls[0][1]).toMatchObject({ handDelivery: true });
   });
 
+  it('o representante oficial na landing: pede a cidade e sugere o WhatsApp do cadastro', async () => {
+    await render();
+    await setValue(control<HTMLInputElement>('Nome'), 'Rui Representante');
+    await setValue(control<HTMLInputElement>('WhatsApp'), '19999990000');
+    const listed = Array.from(document.querySelectorAll('label')).find((l) => l.textContent?.startsWith('Mostrar na landing'))!;
+    await act(async () => (listed.querySelector('input') as HTMLInputElement).click());
+    expect(control<HTMLInputElement>('WhatsApp público').value).toBe('(19) 9-9999-0000');
+    await act(async () => button('Criar afiliado').click());
+    expect(text()).toContain('Para aparecer na landing, diga a cidade');
+    expect(calls).toHaveLength(0);
+
+    await setValue(control<HTMLInputElement>('Cidade (na landing)'), 'Campinas/SP');
+    await setValue(control<HTMLInputElement>('Região que atende'), 'Campinas e Valinhos');
+    await act(async () => button('Criar afiliado').click());
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0][1]).toMatchObject({
+      listed: true, listingCity: 'Campinas/SP', listingArea: 'Campinas e Valinhos', listingWhatsapp: '(19) 9-9999-0000',
+    });
+  });
+
   it('valor fixo continua como antes', async () => {
     await render();
     await setValue(control<HTMLInputElement>('Nome'), 'João');

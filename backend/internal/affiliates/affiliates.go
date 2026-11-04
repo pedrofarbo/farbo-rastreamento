@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/installers"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 )
@@ -102,6 +103,12 @@ type Affiliate struct {
 	// HandDelivery: ele entrega o rastreador em mãos (com os kits dele) a
 	// quem contrata pelo link, sem frete.
 	HandDelivery bool `json:"handDelivery"`
+	// Listed: aparece na landing como representante oficial autorizado, com a
+	// cidade, a região que atende e o WhatsApp público (só dígitos, com o 55).
+	Listed          bool   `json:"listed"`
+	ListingCity     string `json:"listingCity"`
+	ListingArea     string `json:"listingArea"`
+	ListingWhatsApp string `json:"listingWhatsapp"`
 }
 
 // Input é o cadastro de um afiliado. Sem CommissionType, o afiliado novo fica
@@ -129,6 +136,11 @@ type Input struct {
 	// ManageInstalls pede a senha da página (ela mostra os dados dos clientes).
 	ManageInstalls bool `json:"manageInstalls"`
 	HandDelivery   bool `json:"handDelivery"`
+	// Listed pede a cidade; o WhatsApp público é opcional.
+	Listed          bool   `json:"listed"`
+	ListingCity     string `json:"listingCity"`
+	ListingArea     string `json:"listingArea"`
+	ListingWhatsApp string `json:"listingWhatsapp"`
 }
 
 var handlePattern = regexp.MustCompile(`^[A-Za-z0-9._]{1,30}$`)
@@ -141,6 +153,9 @@ func (in Input) Normalize() (Input, error) {
 	in.Phone = strings.TrimSpace(in.Phone)
 	in.PixKey = strings.TrimSpace(in.PixKey)
 	in.Notes = strings.TrimSpace(in.Notes)
+	in.ListingCity = strings.Join(strings.Fields(in.ListingCity), " ")
+	in.ListingArea = strings.Join(strings.Fields(in.ListingArea), " ")
+	in.ListingWhatsApp = strings.TrimSpace(in.ListingWhatsApp)
 	if strings.TrimSpace(in.Code) == "" {
 		in.Code = in.Handle
 		if in.Code == "" {
@@ -181,6 +196,19 @@ func (in Input) Normalize() (Input, error) {
 		if err := validReportPassword(*in.ReportPassword); err != nil {
 			return in, err
 		}
+	}
+	switch {
+	case in.Listed && in.ListingCity == "":
+		return in, invalid("Para aparecer na landing, diga a cidade do representante.")
+	case utf8.RuneCountInString(in.ListingCity) > 80 || utf8.RuneCountInString(in.ListingArea) > 200:
+		return in, invalid("A cidade (até 80) ou a região que atende (até 200) longas demais.")
+	}
+	if in.ListingWhatsApp != "" {
+		phone, ok := installers.NormalizeWhatsApp(in.ListingWhatsApp)
+		if !ok {
+			return in, invalid("WhatsApp da landing inválido: informe DDD e número, ex.: (11) 99999-0000.")
+		}
+		in.ListingWhatsApp = phone
 	}
 	return in, nil
 }

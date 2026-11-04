@@ -1,0 +1,226 @@
+/* Os representantes oficiais na landing: o mesmo cartão escuro das outras
+   seções, com os representantes em grade. */
+.section {
+  padding: 2rem 1.5rem 4rem;
+  background: #060907;
+}
+
+.container {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.outerCard {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 2.25rem 2.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  background: #0d130e;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.badge,
+.seal {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid rgba(59, 229, 88, 0.35);
+  border-radius: 999px;
+  background: var(--color-neon-soft);
+  color: var(--color-neon-green);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.title {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.125rem;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+}
+
+.lead {
+  max-width: 720px;
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.search {
+  width: 100%;
+  max-width: 420px;
+  padding: 0.7rem 0.95rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: #141c15;
+  color: #ffffff;
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.search:focus {
+  border-color: var(--color-neon-green);
+  box-shadow: 0 0 0 3px rgba(59, 229, 88, 0.15);
+}
+
+.empty {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: #111a13;
+  transition: border-color 0.2s ease;
+}
+
+.card:hover {
+  border-color: rgba(59, 229, 88, 0.4);
+}
+
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.cardHead h3 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.city {
+  display: block;
+  margin-top: 0.2rem;
+  color: #cbd5e1;
+  font-size: 0.8125rem;
+}
+
+.seal {
+  flex-shrink: 0;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.7rem;
+}
+
+.area {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.tags span {
+  padding: 0.15rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  color: #e2e8f0;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.instagram {
+  align-self: flex-start;
+  color: #cbd5e1;
+  font-size: 0.8125rem;
+  text-decoration: none;
+}
+
+.instagram:hover {
+  color: var(--color-neon-green);
+}
+
+.cardFoot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.35rem;
+}
+
+.primary,
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0.55rem 1.1rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+/* O contratar numa linha só (o WhatsApp desce se não couber). */
+.primary {
+  flex: 1 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: var(--color-neon-green);
+  color: #060907;
+  box-shadow: 0 0 14px rgba(59, 229, 88, 0.35);
+}
+
+.primary:hover {
+  box-shadow: 0 0 22px rgba(59, 229, 88, 0.55);
+}
+
+.secondary {
+  flex: 1 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.secondary:hover {
+  border-color: var(--color-neon-green);
+  color: var(--color-neon-green);
+}
+
+@media (max-width: 640px) {
+  .section {
+    padding: 1.5rem 1rem 3rem;
+  }
+
+  .outerCard {
+    padding: 1.5rem 1.1rem;
+    border-radius: 20px;
+  }
+}

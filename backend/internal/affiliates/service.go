@@ -106,7 +106,7 @@ const columns = `a.id, a.name, a.handle, a.code, a.report_token, a.commission_ty
 	a.notes, a.supplier_id, a.active, a.created_at, a.recipient_status,
 	a.plan_motorcycle_cents, a.plan_car_cents, a.plan_truck_cents, a.install_mode, a.install_cents, a.uninstall_cents,
 	a.loan_surcharge_cents, a.report_password_hash <> '', a.equipment_modes, a.manage_installs,
-	a.hand_delivery,
+	a.hand_delivery, a.listed, a.listing_city, a.listing_area, a.listing_whatsapp,
 	(SELECT count(DISTINCT lower(x.email)) FROM (
 		SELECT email FROM launch_waitlist WHERE affiliate_id = a.id
 		UNION ALL SELECT email FROM leads WHERE affiliate_id = a.id) x),
@@ -133,7 +133,7 @@ func scan(row database.Scanner) (*Affiliate, error) {
 		&a.CommissionBps, &a.Email, &a.Phone,
 		&a.PixKey, &a.Notes, &a.SupplierID, &a.Active, &a.CreatedAt, &a.RecipientStatus, &motorcycle, &car, &truck,
 		&installMode, &install, &uninstall, &guarantee, &a.ReportPassword, &a.EquipmentModes, &a.ManageInstalls,
-		&a.HandDelivery,
+		&a.HandDelivery, &a.Listed, &a.ListingCity, &a.ListingArea, &a.ListingWhatsApp,
 		&a.Signups, &a.Customers, &a.ActiveCustomers, &a.ActiveVehicles, &a.PendingCents, &a.SplitPaidCents, &a.OpenCents,
 		&a.PaidCents)
 	if err != nil {
@@ -246,12 +246,14 @@ func (s *Service) Create(ctx context.Context, in Input) (*Affiliate, error) {
 	err = s.db.QueryRow(ctx, `
 		INSERT INTO affiliates (name, handle, code, report_token, commission_type, commission_cents, commission_bps, email,
 			phone, pix_key, notes, active, plan_motorcycle_cents, plan_car_cents, plan_truck_cents, install_mode, install_cents,
-			uninstall_cents, loan_surcharge_cents, report_password_hash, equipment_modes, manage_installs, hand_delivery)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+			uninstall_cents, loan_surcharge_cents, report_password_hash, equipment_modes, manage_installs, hand_delivery,
+			listed, listing_city, listing_area, listing_whatsapp)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23,
+			$24, $25, $26, $27)
 		RETURNING id`,
 		in.Name, in.Handle, in.Code, token, in.CommissionType, *in.CommissionCents, bps, in.Email, in.Phone, in.PixKey,
 		in.Notes, in.Active, motorcycle, car, truck, installMode, install, uninstall, guarantee, *password, in.EquipmentModes,
-		in.ManageInstalls, in.HandDelivery).Scan(&id)
+		in.ManageInstalls, in.HandDelivery, in.Listed, in.ListingCity, in.ListingArea, in.ListingWhatsApp).Scan(&id)
 	if err != nil {
 		return nil, conflictMessage(err)
 	}
@@ -290,12 +292,13 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Affiliat
 				plan_motorcycle_cents = $13, plan_car_cents = $14, plan_truck_cents = $15,
 				install_mode = $16, install_cents = $17, uninstall_cents = $18, loan_surcharge_cents = $19,
 				report_password_hash = COALESCE($20, report_password_hash), equipment_modes = $21, manage_installs = $22,
-				hand_delivery = $23,
+				hand_delivery = $23, listed = $24, listing_city = $25, listing_area = $26, listing_whatsapp = $27,
 				updated_at = NOW()
 			WHERE id = $1`,
 			id, in.Name, in.Handle, in.Code, in.CommissionCents, in.Email, in.Phone, in.PixKey, in.Notes, in.Active,
 			in.CommissionType, in.CommissionBps, motorcycle, car, truck, installMode, install, uninstall, guarantee,
-			password, in.EquipmentModes, in.ManageInstalls, in.HandDelivery); err != nil {
+			password, in.EquipmentModes, in.ManageInstalls, in.HandDelivery, in.Listed, in.ListingCity, in.ListingArea,
+			in.ListingWhatsApp); err != nil {
 			return err
 		}
 		// A gestão das instalações mostra os dados dos clientes: só com a senha.

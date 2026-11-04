@@ -132,6 +132,7 @@ import type {
   Subscription,
   Installer,
   PublicInstaller,
+  PublicRepresentative,
   TrackerOrderResult,
   User,
   VehicleShare,
@@ -1300,6 +1301,8 @@ function partnerHeaders(token: string): Record<string, string> {
 
 export const publicApi = {
   installers: () => request<PublicInstaller[]>('/api/public/installers', { anonymous: true }),
+  /** Os representantes oficiais autorizados, na landing. */
+  representatives: () => request<PublicRepresentative[]>('/api/public/representatives', { anonymous: true }),
   /** Cadastro de interesse da landing (vira pré-cliente). */
   createLead: (input: LeadInput) =>
     request<{ status: string }>('/api/public/leads', { method: 'POST', body: input, anonymous: true }),

@@ -104,6 +104,10 @@ func Normalize(in Input) (Input, error) {
 	return in, nil
 }
 
+// NormalizeWhatsApp é o normalizeWhatsApp para os outros cadastros públicos
+// (o representante oficial na landing).
+func NormalizeWhatsApp(raw string) (string, bool) { return normalizeWhatsApp(raw) }
+
 // normalizeWhatsApp aceita número brasileiro com ou sem 55, com qualquer
 // pontuação, e devolve só os dígitos com o 55 na frente.
 func normalizeWhatsApp(raw string) (string, bool) {

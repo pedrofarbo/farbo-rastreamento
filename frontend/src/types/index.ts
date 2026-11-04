@@ -1893,6 +1893,21 @@ export interface PublicInstaller {
   description: string;
 }
 
+/** Um representante oficial autorizado, na landing (marcado pela central no afiliado). */
+export interface PublicRepresentative {
+  name: string;
+  handle: string;
+  /** O código do link dele (/indicacao/<code>). */
+  code: string;
+  city: string;
+  area: string;
+  /** Só dígitos, já com o 55 (vazio: sem o botão do WhatsApp). */
+  whatsapp: string;
+  handDelivery: boolean;
+  /** Ele mesmo faz a instalação. */
+  installs: boolean;
+}
+
 /** Cadastro completo, visto pela central. */
 export interface Installer extends PublicInstaller {
   /** Inativo não aparece na landing nem no painel do cliente. */
@@ -2775,6 +2790,12 @@ export interface Affiliate {
   manageInstalls?: boolean;
   /** Ele entrega o rastreador em mãos (com os kits dele) a quem contrata pelo link, sem frete. */
   handDelivery?: boolean;
+  /** Aparece na landing como representante oficial autorizado. */
+  listed?: boolean;
+  listingCity?: string;
+  listingArea?: string;
+  /** O WhatsApp público da landing: só dígitos, com o 55 (vazio: sem). */
+  listingWhatsapp?: string;
 }
 
 /** A comissão do afiliado: um valor fixo por veículo ou um percentual da mensalidade. */
@@ -2804,6 +2825,11 @@ export interface AffiliateInput {
   /** Pede a senha da página (ela mostra os dados dos clientes). */
   manageInstalls: boolean;
   handDelivery: boolean;
+  /** Na landing como representante oficial: pede a cidade; o WhatsApp público é opcional. */
+  listed: boolean;
+  listingCity: string;
+  listingArea: string;
+  listingWhatsapp: string;
 }
 
 export interface AffiliateSettings {

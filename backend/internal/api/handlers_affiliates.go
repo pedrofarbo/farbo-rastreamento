@@ -59,6 +59,19 @@ func (s *Server) handlePublicAffiliate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
+// handlePublicRepresentatives: os representantes oficiais autorizados, na
+// landing (os que a central marcou no afiliado).
+func (s *Server) handlePublicRepresentatives(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Affiliates.Representatives(r.Context())
+	if err != nil {
+		affiliateError(w, err, "")
+		return
+	}
+	// A lista muda pouco: um minuto de cache poupa o banco em dia de tráfego.
+	w.Header().Set("Cache-Control", "public, max-age=60")
+	writeJSON(w, http.StatusOK, list)
+}
+
 // partnerSessionHeader leva a sessão da página do afiliado com senha.
 const partnerSessionHeader = "X-Partner-Session"
 

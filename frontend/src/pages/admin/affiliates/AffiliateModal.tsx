@@ -39,6 +39,11 @@ interface Draft {
   manageInstalls: boolean;
   /** Ele entrega o rastreador em mãos (com os kits dele), sem frete. */
   handDelivery: boolean;
+  /** Na landing como representante oficial: a cidade, a região e o WhatsApp público. */
+  listed: boolean;
+  listingCity: string;
+  listingArea: string;
+  listingWhatsapp: string;
   email: string;
   phone: string;
   pixKey: string;
@@ -67,6 +72,10 @@ function draftOf(a: Affiliate | null, defaultCents: number): Draft {
     equipmentModes: a?.equipmentModes ?? '',
     manageInstalls: a?.manageInstalls ?? false,
     handDelivery: a?.handDelivery ?? false,
+    listed: a?.listed ?? false,
+    listingCity: a?.listingCity ?? '',
+    listingArea: a?.listingArea ?? '',
+    listingWhatsapp: a?.listingWhatsapp ? formatPhoneInput(a.listingWhatsapp) : '',
     email: a?.email ?? '',
     phone: a?.phone ?? '',
     pixKey: a?.pixKey ?? '',
@@ -179,6 +188,10 @@ export function AffiliateModal({
       }
       installPrices = { mode: draft.installMode, installCents, uninstallCents, guaranteeCents };
     }
+    if (draft.listed && !draft.listingCity.trim()) {
+      setError('Para aparecer na landing, diga a cidade do representante (por exemplo, Campinas/SP).');
+      return;
+    }
     if (draft.manageInstalls && !draft.passwordOn) {
       setError('Para o representante cuidar das instalações, marque a senha da página: ela mostra os dados dos clientes.');
       return;
@@ -211,6 +224,10 @@ export function AffiliateModal({
       equipmentModes: draft.equipmentModes,
       manageInstalls: draft.manageInstalls,
       handDelivery: draft.handDelivery,
+      listed: draft.listed,
+      listingCity: draft.listingCity,
+      listingArea: draft.listingArea,
+      listingWhatsapp: draft.listingWhatsapp,
       email: draft.email,
       phone: draft.phone,
       pixKey: draft.pixKey,
@@ -498,6 +515,45 @@ export function AffiliateModal({
           Entrega em mãos pelo representante (ele recebe kits de instalação da Farbo): quem contrata pelo link dele, e os
           próximos pedidos pelo app, não paga frete.
         </label>
+        <label className={company.check}>
+          <input
+            type="checkbox"
+            checked={draft.listed}
+            onChange={(e) => {
+              set('listed', e.target.checked);
+              // O WhatsApp do cadastro como sugestão: a central confere antes de publicar.
+              if (e.target.checked && !draft.listingWhatsapp) set('listingWhatsapp', draft.phone);
+            }}
+          />
+          Mostrar na landing como representante oficial autorizado (com a cidade, a região que atende, o WhatsApp abaixo e
+          o botão para contratar pelo link dele). Só aparece enquanto estiver ativo.
+        </label>
+        {draft.listed && (
+          <div className={company.grid}>
+            <TextField
+              label="Cidade (na landing)"
+              value={draft.listingCity}
+              maxLength={80}
+              placeholder="Campinas/SP"
+              onChange={(e) => set('listingCity', e.target.value)}
+            />
+            <TextField
+              label="Região que atende (opcional)"
+              value={draft.listingArea}
+              maxLength={200}
+              placeholder="Campinas, Valinhos e Vinhedo"
+              onChange={(e) => set('listingArea', e.target.value)}
+            />
+            <TextField
+              label="WhatsApp público (opcional)"
+              type="tel"
+              value={draft.listingWhatsapp}
+              maxLength={16}
+              onChange={(e) => set('listingWhatsapp', formatPhoneInput(e.target.value, draft.listingWhatsapp))}
+              hint="Aparece na landing para qualquer pessoa. Em branco, sem o botão do WhatsApp."
+            />
+          </div>
+        )}
         {draft.passwordOn && (
           <div className={company.grid}>
             <TextField

@@ -313,6 +313,8 @@ func (s *Server) routes() chi.Router {
 		// afiliado (link secreto).
 		if s.Affiliates != nil {
 			r.With(affiliateLimiter.middleware).Get("/public/affiliates/{code}", s.handlePublicAffiliate)
+			// Os representantes oficiais autorizados, na landing.
+			r.Get("/public/representatives", s.handlePublicRepresentatives)
 			r.With(affiliateLimiter.middleware).Get("/public/partner/{token}", s.handlePartnerReport)
 			r.With(affiliateLimiter.middleware).Get("/public/partner/{token}/qr", s.handlePartnerQR)
 			// A entrada com a senha da página (quando a central pôs uma).
