@@ -33,20 +33,20 @@ import (
 // A versão em vigor. Ao mudar o texto (contrato.md), mude a versão e a data:
 // todo cliente aceita de novo no próximo acesso.
 const (
-	Version       = "7"
-	EffectiveDate = "24 de outubro de 2026"
+	Version       = "8"
+	EffectiveDate = "5 de novembro de 2026"
 	// Changes resume o que mudou desde a versão anterior (o cliente que
 	// aceitou a anterior lê ao aceitar de novo, e recebe por e-mail).
-	Changes = "Pessoa física paga no pedido a 1ª mensalidade, o frete e o rastreador à vista (no comodato, a taxa de instalação), e a 2ª mensalidade vence pelo menos um mês depois, no dia da conta; para empresa, tudo continua na 1ª fatura, no dia da conta (cláusula 5). O comodato pode ser escolhido no pedido, quando a Farbo oferece, com a mensalidade e as taxas mostradas antes da confirmação; no rastreador comprado, o Cliente escolhe instalar por conta própria ou com os instaladores da Farbo, pela taxa mostrada no pedido (cláusula 4)."
+	Changes = "A CONTRATADA passa a ser a FARBO RASTREADORES DESENVOLVIMENTO DE SOFTWARE CUSTOMIZAVEL LTDA, CNPJ 69.989.550/0001-81: o serviço, os preços e as demais condições continuam os mesmos."
 	// MinMonths é a permanência mínima de cada assinatura.
 	MinMonths = 3
 
 	// AssociateVersion é a versão do termo do associado (com o prefixo A:
 	// o aceite de um não vale pelo outro). Ao mudar o texto
 	// (termo-associado.md), mude a versão e a data.
-	AssociateVersion       = "A1"
-	AssociateEffectiveDate = "24 de outubro de 2026"
-	AssociateChanges       = ""
+	AssociateVersion       = "A2"
+	AssociateEffectiveDate = "5 de novembro de 2026"
+	AssociateChanges       = "A PRESTADORA passa a ser a FARBO RASTREADORES DESENVOLVIMENTO DE SOFTWARE CUSTOMIZAVEL LTDA, CNPJ 69.989.550/0001-81: as demais condições continuam as mesmas."
 )
 
 //go:embed contrato.md

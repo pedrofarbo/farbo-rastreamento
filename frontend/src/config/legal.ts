@@ -7,15 +7,15 @@ import { CONTACT_EMAIL, WHATSAPP_NUMBER, whatsappDisplay } from './contact';
  */
 export const COMPANY = {
   name: 'Farbo Rastreadores',
-  legalName: 'FARBO TECNOLOGIA DE SISTEMAS E CLOUD LTDA',
-  cnpj: '49.757.084/0001-00',
+  legalName: 'FARBO RASTREADORES DESENVOLVIMENTO DE SOFTWARE CUSTOMIZAVEL LTDA',
+  cnpj: '69.989.550/0001-81',
   address: '',
   email: CONTACT_EMAIL,
   whatsapp: WHATSAPP_NUMBER ? whatsappDisplay() : '',
 };
 
 /** A data da versão em vigor dos dois documentos (mude ao alterar o texto). */
-export const LEGAL_UPDATED_AT = '25 de outubro de 2026';
+export const LEGAL_UPDATED_AT = '5 de novembro de 2026';
 
 export const TERMS_PATH = '/termos-de-uso';
 export const PRIVACY_PATH = '/politica-de-privacidade';

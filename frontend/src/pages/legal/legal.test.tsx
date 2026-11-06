@@ -89,7 +89,7 @@ describe('links para os documentos', () => {
     expect(Array.from(host.querySelectorAll(`a[href="${PRIVACY_PATH}"]`)).some((a) => a.textContent === 'Política de Privacidade')).toBe(true);
     expect(host.querySelector('a[href="/#planos"]')).not.toBeNull();
     // A empresa por trás da marca, com o CNPJ.
-    expect(host.textContent).toContain('Farbo Tecnologia de Sistemas e Cloud LTDA - 49.757.084/0001-00');
+    expect(host.textContent).toContain('Farbo Rastreadores Desenvolvimento De Software Customizavel Ltda - 69.989.550/0001-81');
     // Regulamentação: a homologação conferível na Anatel, o canal da LGPD e o arrependimento.
     const anatel = Array.from(host.querySelectorAll('a')).find((a) => a.textContent?.startsWith('Anatel'));
     expect(anatel?.getAttribute('href')).toContain('informacoes.anatel.gov.br');

@@ -109,7 +109,7 @@ func TestAssociateTermText(t *testing.T) {
 		t.Fatalf("termo = %q %s, %d cláusulas", doc.Title, doc.Version, len(doc.Sections))
 	}
 	for _, want := range []string{
-		"versão A1", "a {{Farbo}} não cobra nada do Associado", "a Organização, que cobra dele conforme as regras dela",
+		"versão " + AssociateVersion, "a {{Farbo}} não cobra nada do Associado", "a Organização, que cobra dele conforme as regras dela",
 		"fica com o Associado em comodato", "arts. 579 a 585 do Código Civil", "em até 30 (trinta) dias",
 		"comprovado pelo boletim de ocorrência", "bloquear e desbloquear o motor remotamente",
 		"Medida Provisória nº 2.200-2/2001", "7, 14 ou 30 dias", "contato@farborastreadores.com.br",

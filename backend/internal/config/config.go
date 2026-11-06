@@ -934,8 +934,8 @@ func Load() (*Config, error) {
 	}
 	cfg.Company = Company{
 		Name:      str("COMPANY_NAME", "Farbo Rastreadores"),
-		LegalName: str("COMPANY_LEGAL_NAME", "FARBO TECNOLOGIA DE SISTEMAS E CLOUD LTDA"),
-		CNPJ:      str("COMPANY_CNPJ", "49.757.084/0001-00"),
+		LegalName: str("COMPANY_LEGAL_NAME", "FARBO RASTREADORES DESENVOLVIMENTO DE SOFTWARE CUSTOMIZAVEL LTDA"),
+		CNPJ:      str("COMPANY_CNPJ", "69.989.550/0001-81"),
 		Address:   str("COMPANY_ADDRESS", ""),
 		Email:     str("COMPANY_EMAIL", "contato@farborastreadores.com.br"),
 	}

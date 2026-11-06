@@ -130,7 +130,7 @@ export const Footer: React.FC = () => {
           <div className={styles.copyright}>
             <span>© {new Date().getFullYear()} Farbo Rastreadores. Todos os direitos reservados.</span>
             {/* A empresa por trás da marca: razão social e CNPJ. */}
-            <span className={styles.company}>Farbo Tecnologia de Sistemas e Cloud LTDA - {COMPANY.cnpj}</span>
+            <span className={styles.company}>Farbo Rastreadores Desenvolvimento De Software Customizavel Ltda - {COMPANY.cnpj}</span>
           </div>
           <div className={styles.legalLinks}>
             <Link to={TERMS_PATH}>Termos de Uso</Link>
