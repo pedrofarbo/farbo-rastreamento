@@ -9,6 +9,7 @@ import { AddressModal } from '@/components/address/AddressModal';
 import billing from '@/components/billing/Billing.module.css';
 import { InvoiceDayRows } from '@/components/billing/InvoiceDayRows';
 import { CustomerStatus, InvoiceStatus } from '@/components/billing/InvoiceStatus';
+import { gatewayName } from '@/components/billing/PixCheckout';
 import { MonthlyPrice, promoActive } from '@/components/billing/MonthlyPrice';
 import { installmentProgress } from '@/components/billing/installments';
 import { FleetImportModal } from '@/components/billing/FleetImportModal';
@@ -753,7 +754,7 @@ export function CustomerDetailsPage() {
         {data.payments.length > 0 && (
           <Card
             title="Pagamentos online"
-            subtitle="Pix, boletos e cartões recebidos pela AbacatePay. O estorno do Pix e do cartão devolve o valor integral ao cliente; o boleto não tem estorno pela AbacatePay."
+            subtitle="Pix, boletos e cartões recebidos pela AbacatePay ou pela Pagar.me (a coluna Gateway diz qual). O estorno do Pix e do cartão devolve o valor integral ao cliente, pelo mesmo gateway; o boleto não tem estorno por aqui."
             flush
           >
             <>
@@ -764,6 +765,7 @@ export function CustomerDetailsPage() {
                       <th>Pago em</th>
                       <th>Fatura</th>
                       <th>Forma</th>
+                      <th>Gateway</th>
                       <th>Valor</th>
                       <th>Situação</th>
                       <th />
@@ -787,6 +789,7 @@ export function CustomerDetailsPage() {
                               ? `Cartão ${payment.cardBrand} ${payment.cardLast4}`.trim()
                               : 'Pix'}
                         </td>
+                        <td>{gatewayName(payment)}</td>
                         <td className={billing.amount}>{formatMoney(payment.amountCents)}</td>
                         <td>
                           <PaymentStatus payment={payment} />

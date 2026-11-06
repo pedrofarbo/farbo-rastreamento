@@ -355,7 +355,7 @@ function BoletoView({ state, charge, description }: { state: PixCheckoutState; c
 }
 
 /** O gateway da cobrança, como aparece na tela. */
-function gatewayName(charge: PixCharge): string {
+export function gatewayName(charge: Pick<PixCharge, 'provider'>): string {
   return charge.provider === 'pagarme' ? 'Pagar.me' : 'AbacatePay';
 }
 

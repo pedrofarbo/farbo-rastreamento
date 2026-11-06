@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatBoletoLine } from './PixCheckout';
+import { formatBoletoLine, gatewayName } from './PixCheckout';
 
 describe('linha digitável', () => {
   it('sai em blocos, como no boleto impresso', () => {
@@ -13,5 +13,12 @@ describe('linha digitável', () => {
   it('o que não tem 47 dígitos passa como veio', () => {
     expect(formatBoletoLine('123')).toBe('123');
     expect(formatBoletoLine('')).toBe('');
+  });
+});
+
+describe('o gateway do pagamento', () => {
+  it('Pagar.me ou AbacatePay, como na ficha do cliente', () => {
+    expect(gatewayName({ provider: 'pagarme' })).toBe('Pagar.me');
+    expect(gatewayName({ provider: 'abacatepay' })).toBe('AbacatePay');
   });
 });
