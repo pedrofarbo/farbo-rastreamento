@@ -114,4 +114,29 @@ func TestAffiliatePercentCommission(t *testing.T) {
 	if report.CommissionType != affiliates.CommissionPercent || report.CommissionBps != 1250 || report.ToReceiveCents != 874+499 {
 		t.Fatalf("página da lia = %+v", report)
 	}
+
+	// Com os impostos da Farbo (6%), o percentual é da mensalidade líquida:
+	// 12,5% de 69,90 × 0,94 = 8,21. As comissões já geradas ficam.
+	env.must(admin, http.MethodPut, "/api/affiliates/settings", map[string]any{"defaultCommissionCents": 600, "commissionTaxBps": 3001},
+		http.StatusBadRequest)
+	var settings affiliates.Settings
+	call(http.MethodPut, "/api/affiliates/settings", map[string]any{"defaultCommissionCents": 600, "commissionTaxBps": 600},
+		http.StatusOK, &settings)
+	if settings.CommissionTaxBps != 600 || settings.DefaultCommissionCents != 600 {
+		t.Fatalf("configuração = %+v", settings)
+	}
+	paidInvoice(subscription(), 6990)
+	call(http.MethodGet, "/api/affiliates", nil, http.StatusOK, &list)
+	for _, a := range list {
+		if a.ID == lia.ID {
+			got = a
+		}
+	}
+	if got.PendingCents != 874+499+821 {
+		t.Fatalf("comissões com os impostos = %d", got.PendingCents)
+	}
+	_ = json.Unmarshal(env.must("", http.MethodGet, "/api/public/partner/"+lia.ReportToken, nil, http.StatusOK), &report)
+	if report.CommissionTaxBps != 600 {
+		t.Errorf("página da lia sem os impostos = %+v", report)
+	}
 }

@@ -117,6 +117,18 @@ describe('PartnerPage', () => {
     expect((Array.from(host.querySelectorAll('label')).find((l) => l.textContent?.startsWith('Instalação (R$)'))!.querySelector('input') as HTMLInputElement).value).toBe('120,00');
   });
 
+  it('comissão em percentual com os impostos da Farbo: a da mensalidade líquida', async () => {
+    respond = async () => ({
+      name: 'Rafael Magalhães', handle: '', code: 'rafael', active: true, commissionType: 'percent', commissionCents: 0,
+      commissionBps: 4000, commissionTaxBps: 600, signups: 0, customers: 0, activeCustomers: 0, activeVehicles: 0,
+      toReceiveCents: 0, paidCents: 0, months: [],
+    });
+    const host = await render();
+    expect(text(host)).toContain(
+      'Você ganha 40% da mensalidade (líquida dos impostos da Farbo, de 6%) de cada veículo ativo dos clientes que você indicou',
+    );
+  });
+
   it('afiliado pausado: sem QR Code', async () => {
     respond = async () => ({
       name: 'João Motoca', handle: 'joao.moto', code: 'joao-moto', active: false, commissionType: 'fixed', commissionCents: 600, commissionBps: 0,

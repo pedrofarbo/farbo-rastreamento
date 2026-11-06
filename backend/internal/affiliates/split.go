@@ -38,14 +38,14 @@ func (s *Service) SplitEnabled() bool { return s.split }
 func (s *Service) PlanSplit(ctx context.Context, chargeID, customerID uuid.UUID, invoices []*billing.Invoice, maxCents int) (*payments.SplitPlan, error) {
 	var plan payments.SplitPlan
 	var kind string
-	var fixedCents, bps int
+	var fixedCents, bps, taxBps int
 	var since time.Time
 	err := s.db.QueryRow(ctx, `
 		SELECT a.id, a.recipient_id, a.commission_type, a.commission_cents, a.commission_bps,
-			date_trunc('month', r.created_at AT TIME ZONE $2)::date
+			date_trunc('month', r.created_at AT TIME ZONE $2)::date, (SELECT commission_tax_bps FROM affiliate_settings)
 		FROM affiliate_referrals r JOIN affiliates a ON a.id = r.affiliate_id
 		WHERE r.customer_id = $1 AND a.active AND a.recipient_id <> '' AND a.recipient_status = 'active'`,
-		customerID, s.loc.String()).Scan(&plan.AffiliateID, &plan.RecipientID, &kind, &fixedCents, &bps, &since)
+		customerID, s.loc.String()).Scan(&plan.AffiliateID, &plan.RecipientID, &kind, &fixedCents, &bps, &since, &taxBps)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -53,7 +53,7 @@ func (s *Service) PlanSplit(ctx context.Context, chargeID, customerID uuid.UUID,
 		return nil, database.MapError(err)
 	}
 
-	items, err := s.splitItems(ctx, plan.AffiliateID, invoices, kind, fixedCents, bps, since)
+	items, err := s.splitItems(ctx, plan.AffiliateID, invoices, kind, fixedCents, bps, taxBps, since)
 	if err != nil {
 		return nil, err
 	}
@@ -109,10 +109,11 @@ func (s *Service) PlanSplit(ctx context.Context, chargeID, customerID uuid.UUID,
 
 // splitItems são as comissões das faturas da cobrança (as de veículo, a
 // partir do mês da indicação), pela regra do afiliado: uma por veículo e
-// mês; no percentual, sobre a mensalidade sem a parcela do rastreador. As
-// que já existem (o mês já rendeu) ficam de fora.
+// mês; no percentual, sobre a mensalidade sem a parcela do rastreador e
+// líquida dos impostos (taxBps). As que já existem (o mês já rendeu) ficam
+// de fora.
 func (s *Service) splitItems(ctx context.Context, affiliateID uuid.UUID, invoices []*billing.Invoice, kind string,
-	fixedCents, bps int, since time.Time) ([]payments.SplitItem, error) {
+	fixedCents, bps, taxBps int, since time.Time) ([]payments.SplitItem, error) {
 	type key struct {
 		sub   uuid.UUID
 		month time.Time
@@ -180,7 +181,8 @@ func (s *Service) splitItems(ctx context.Context, affiliateID uuid.UUID, invoice
 		}
 		amount := fixedCents
 		if kind == CommissionPercent {
-			amount = int(math.Round(float64(bases[k]) * float64(bps) / 10000))
+			// O percentual da mensalidade líquida dos impostos da Farbo.
+			amount = int(math.Round(float64(bases[k]) * float64(bps) / 10000 * float64(10000-taxBps) / 10000))
 		}
 		if amount > 0 {
 			out = append(out, payments.SplitItem{SubscriptionID: k.sub, Month: k.month, AmountCents: amount})

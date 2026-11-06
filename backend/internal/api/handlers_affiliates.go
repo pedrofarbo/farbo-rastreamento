@@ -284,12 +284,21 @@ func (s *Server) handleSaveAffiliateSettings(w http.ResponseWriter, r *http.Requ
 		ApplyToAll bool `json:"applyToAll"`
 		// CustomerRewardCents: o crédito do indique e ganhe (sem ele, fica).
 		CustomerRewardCents *int `json:"customerRewardCents"`
+		// CommissionTaxBps: os impostos que saem da mensalidade antes do
+		// percentual dos afiliados (sem ele, fica).
+		CommissionTaxBps *int `json:"commissionTaxBps"`
 	}
 	if !decodeOr400(w, r, &req) {
 		return
 	}
 	if req.CustomerRewardCents != nil {
 		if err := s.Affiliates.SaveCustomerReward(r.Context(), *req.CustomerRewardCents); err != nil {
+			affiliateError(w, err, "")
+			return
+		}
+	}
+	if req.CommissionTaxBps != nil {
+		if err := s.Affiliates.SaveCommissionTax(r.Context(), *req.CommissionTaxBps); err != nil {
 			affiliateError(w, err, "")
 			return
 		}
@@ -301,7 +310,7 @@ func (s *Server) handleSaveAffiliateSettings(w http.ResponseWriter, r *http.Requ
 	}
 	s.auditAffiliate(r, "settings", map[string]any{
 		"defaultCommissionCents": req.DefaultCommissionCents, "applyToAll": req.ApplyToAll,
-		"customerRewardCents": settings.CustomerRewardCents,
+		"customerRewardCents": settings.CustomerRewardCents, "commissionTaxBps": settings.CommissionTaxBps,
 	})
 	writeJSON(w, http.StatusOK, settings)
 }

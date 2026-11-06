@@ -1458,7 +1458,12 @@ export const affiliatesApi = {
   /** Troca o link secreto da página do afiliado (o antigo para de abrir). */
   renewReportLink: (id: string) => api.post<Affiliate>(`/api/affiliates/${id}/report-token`),
   settings: () => api.get<AffiliateSettings>('/api/affiliates/settings'),
-  saveSettings: (input: { defaultCommissionCents: number; applyToAll: boolean; customerRewardCents?: number }) =>
+  saveSettings: (input: {
+    defaultCommissionCents: number;
+    applyToAll: boolean;
+    customerRewardCents?: number;
+    commissionTaxBps?: number;
+  }) =>
     api.put<AffiliateSettings>('/api/affiliates/settings', input),
   /** month: AAAA-MM. */
   closing: (month: string) => api.get<AffiliateClosingLine[]>(`/api/affiliates/closing?month=${month}`),

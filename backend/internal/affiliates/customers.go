@@ -53,6 +53,20 @@ func (s *Service) SaveCustomerReward(ctx context.Context, cents int) error {
 	return database.MapError(err)
 }
 
+// MaxCommissionTaxBps: até 30% de impostos sobre a receita.
+const MaxCommissionTaxBps = 3000
+
+// SaveCommissionTax muda os impostos que saem da mensalidade antes do
+// percentual dos afiliados. Vale para as comissões que ainda vão nascer; as
+// geradas ficam com o valor de quando nasceram.
+func (s *Service) SaveCommissionTax(ctx context.Context, bps int) error {
+	if bps < 0 || bps > MaxCommissionTaxBps {
+		return invalid("Impostos inválidos: de 0 a 30%%.")
+	}
+	_, err := s.db.Exec(ctx, `UPDATE affiliate_settings SET commission_tax_bps = $1, updated_at = NOW()`, bps)
+	return database.MapError(err)
+}
+
 // customerCode acha (ou cria) o link do cliente.
 func (s *Service) customerCode(ctx context.Context, customerID uuid.UUID) (string, error) {
 	var code string

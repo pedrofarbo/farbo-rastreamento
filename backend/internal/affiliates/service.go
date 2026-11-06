@@ -60,12 +60,15 @@ type Settings struct {
 	CustomerRewardCents int `json:"customerRewardCents"`
 	// SplitEnabled: as comissões saem no pagamento do cliente (sem fechamento).
 	SplitEnabled bool `json:"splitEnabled"`
+	// CommissionTaxBps: os impostos da Farbo sobre a receita (600 = 6%); as
+	// comissões em percentual saem da mensalidade líquida deles.
+	CommissionTaxBps int `json:"commissionTaxBps"`
 }
 
 func (s *Service) Settings(ctx context.Context) (*Settings, error) {
 	var out Settings
-	err := s.db.QueryRow(ctx, `SELECT default_commission_cents, category_id, customer_reward_cents FROM affiliate_settings`).
-		Scan(&out.DefaultCommissionCents, &out.CategoryID, &out.CustomerRewardCents)
+	err := s.db.QueryRow(ctx, `SELECT default_commission_cents, category_id, customer_reward_cents, commission_tax_bps
+		FROM affiliate_settings`).Scan(&out.DefaultCommissionCents, &out.CategoryID, &out.CustomerRewardCents, &out.CommissionTaxBps)
 	out.SplitEnabled = s.split
 	return &out, database.MapError(err)
 }
@@ -488,19 +491,22 @@ func (s *Service) Reconcile(ctx context.Context) (created, removed int64, err er
 			INSERT INTO affiliate_commissions (affiliate_id, customer_id, subscription_id, month, amount_cents)
 			SELECT affiliate_id, customer_id, subscription_id, month, amount FROM (
 				SELECT r.affiliate_id, i.customer_id, i.subscription_id, date_trunc('month', i.due_date)::date AS month,
+					-- O percentual é da mensalidade líquida dos impostos da Farbo.
 					CASE WHEN a.commission_type = 'percent'
-						THEN round(sum(greatest(i.amount_cents - inst.cents, 0)) * a.commission_bps / 10000.0)::int
+						THEN round(sum(greatest(i.amount_cents - inst.cents, 0)) * a.commission_bps / 10000.0
+							* (10000 - st.commission_tax_bps) / 10000.0)::int
 						ELSE a.commission_cents END AS amount
 				FROM invoices i
 				JOIN affiliate_referrals r ON r.customer_id = i.customer_id
 				JOIN affiliates a ON a.id = r.affiliate_id
+				CROSS JOIN affiliate_settings st
 				-- A parcela do rastreador vem na fatura do veículo: fica fora do percentual.
 				CROSS JOIN LATERAL (SELECT COALESCE(sum(ei.amount_cents), 0) AS cents
 					FROM equipment_installments ei WHERE ei.invoice_id = i.id) inst
 				WHERE i.status = 'PAID' AND i.subscription_id IS NOT NULL AND i.amount_cents > 0 AND a.active
 					AND i.due_date >= date_trunc('month', r.created_at AT TIME ZONE $1)::date
 				GROUP BY r.affiliate_id, i.customer_id, i.subscription_id, month, a.commission_type, a.commission_cents,
-					a.commission_bps) c
+					a.commission_bps, st.commission_tax_bps) c
 			WHERE amount > 0
 			ON CONFLICT (affiliate_id, subscription_id, month) DO NOTHING`, s.loc.String())
 		if err != nil {
@@ -888,14 +894,17 @@ type Report struct {
 	Protected bool `json:"protected"`
 	// Kits: ele trabalha com os kits de instalação da Farbo (entrega em mãos,
 	// cuida das instalações ou já recebeu remessas): a seção dos kits.
-	Kits            bool          `json:"kits"`
-	Signups         int           `json:"signups"`
-	Customers       int           `json:"customers"`
-	ActiveCustomers int           `json:"activeCustomers"`
-	ActiveVehicles  int           `json:"activeVehicles"`
-	ToReceiveCents  int64         `json:"toReceiveCents"`
-	PaidCents       int64         `json:"paidCents"`
-	Months          []ReportMonth `json:"months"`
+	Kits bool `json:"kits"`
+	// CommissionTaxBps: os impostos que saem da mensalidade antes do
+	// percentual dele (zero: o percentual é do valor cheio).
+	CommissionTaxBps int           `json:"commissionTaxBps"`
+	Signups          int           `json:"signups"`
+	Customers        int           `json:"customers"`
+	ActiveCustomers  int           `json:"activeCustomers"`
+	ActiveVehicles   int           `json:"activeVehicles"`
+	ToReceiveCents   int64         `json:"toReceiveCents"`
+	PaidCents        int64         `json:"paidCents"`
+	Months           []ReportMonth `json:"months"`
 	// Recipient: o cadastro de recebedor do split (Enabled falso: desligado).
 	Recipient *RecipientView `json:"recipient"`
 }
@@ -936,6 +945,9 @@ func (s *Service) Report(ctx context.Context, token string) (*Report, error) {
 	}
 	if view, err := s.Recipient(ctx, token); err == nil {
 		out.Recipient = view
+	}
+	if err := s.db.QueryRow(ctx, `SELECT commission_tax_bps FROM affiliate_settings`).Scan(&out.CommissionTaxBps); err != nil {
+		return nil, database.MapError(err)
 	}
 	out.Kits = a.HandDelivery || a.ManageInstalls
 	if !out.Kits {

@@ -289,4 +289,17 @@ func TestAffiliateSplit(t *testing.T) {
 	if _, ok := got["12/split"]; ok || got["11"] != 600 || got["01"] != 600 {
 		t.Fatalf("depois do estorno = %v", got)
 	}
+
+	// No percentual (10%) com os impostos da Farbo (6%), a parte do mês sai da
+	// mensalidade líquida: 10% de 149,90 × 0,94 = 14,09; as acumuladas (R$ 6
+	// cada) vão como nasceram.
+	env.must(admin, http.MethodPatch, "/api/affiliates/"+lia.ID.String(), map[string]any{
+		"name": lia.Name, "code": lia.Code, "active": true, "commissionType": "percent", "commissionBps": 1000,
+	}, http.StatusOK)
+	env.must(admin, http.MethodPut, "/api/affiliates/settings", map[string]any{"defaultCommissionCents": 600, "commissionTaxBps": 600},
+		http.StatusOK)
+	payPix(invoice(time.Date(2027, 3, 10, 0, 0, 0, 0, time.UTC)))
+	if s := pm.last().Split; len(s) != 2 || s[0].Amount != 1409+600+600 || s[1].Amount != 14990-(1409+600+600) {
+		t.Fatalf("split no percentual com os impostos = %+v", s)
+	}
 }

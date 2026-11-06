@@ -89,6 +89,9 @@ export function PartnerPage() {
               {report.commissionType === 'percent' ? (
                 <>
                   Você ganha <strong className={styles.white}>{formatPercentBps(report.commissionBps)}</strong> da mensalidade
+                  {report.commissionTaxBps
+                    ? ` (líquida dos impostos da Farbo, de ${formatPercentBps(report.commissionTaxBps)})`
+                    : ''}{' '}
                   de cada veículo ativo dos clientes que você indicou, em cada mês em que ela é paga.
                 </>
               ) : (

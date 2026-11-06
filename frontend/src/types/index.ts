@@ -2861,6 +2861,8 @@ export interface AffiliateSettings {
   customerRewardCents: number;
   /** As comissões saem no pagamento do cliente, pelo split da Pagar.me (sem fechamento). */
   splitEnabled?: boolean;
+  /** Os impostos da Farbo sobre a receita (600 = 6%): a comissão em percentual sai da mensalidade líquida deles. */
+  commissionTaxBps?: number;
 }
 
 /** O afiliado como a tela de cadastro mostra ("Indicado por @fulano"). */
@@ -2941,6 +2943,8 @@ export interface PartnerReport {
   handDelivery?: boolean;
   /** A página tem senha: mostra os clientes (com os veículos e o pagamento mês a mês). */
   protected?: boolean;
+  /** Os impostos que saem da mensalidade antes do percentual dele (zero: valor cheio). */
+  commissionTaxBps?: number;
   /** Ele recebe kits de instalação da Farbo (a seção dos kits). */
   kits?: boolean;
   signups: number;

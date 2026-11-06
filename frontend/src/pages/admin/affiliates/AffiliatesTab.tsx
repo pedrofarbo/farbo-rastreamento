@@ -12,7 +12,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { TextField } from '@/components/ui/Field';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { centsToInput, formatDateOnly, formatMoney, formatPercentBps, parseMoney } from '@/services/format';
+import { bpsToInput, centsToInput, formatDateOnly, formatMoney, formatPercentBps, parseMoney, parsePercentBps } from '@/services/format';
 import { kindPricesLabel } from '@/services/kindPrices';
 import { monthLabel, referralUrl } from '@/services/referral';
 import type { Affiliate, AffiliatePayout } from '@/types';
@@ -60,6 +60,7 @@ export function AffiliatesTab() {
   const list = affiliates.data ?? [];
   const paged = usePagedList(list, 'affiliates');
   const defaultCents = settings.data?.defaultCommissionCents ?? 600;
+  const taxBps = settings.data?.commissionTaxBps ?? 0;
   const split = settings.data?.splitEnabled === true;
   const sum = (pick: (a: Affiliate) => number) => list.reduce((total, a) => total + pick(a), 0);
 
@@ -195,7 +196,9 @@ export function AffiliatesTab() {
                         )}
                       </td>
                       <td data-label="Comissão por veículo/mês" className={company.right}>
-                        {a.commissionType === 'percent' ? `${formatPercentBps(a.commissionBps)} da mensalidade` : formatMoney(a.commissionCents)}
+                        {a.commissionType === 'percent'
+                          ? `${formatPercentBps(a.commissionBps)} da mensalidade${taxBps > 0 ? ' líquida' : ''}`
+                          : formatMoney(a.commissionCents)}
                       </td>
                       <td data-label="Cadastros" className={company.right}>
                         {a.signups}
@@ -231,6 +234,7 @@ export function AffiliatesTab() {
       <KitShipmentsCard affiliates={list} />
       {split ? <SplitCard /> : <ClosingCard />}
       <SettingsCard defaultCents={defaultCents} loaded={settings.isSuccess} />
+      <CommissionTaxCard defaultCents={defaultCents} taxBps={taxBps} loaded={settings.isSuccess} />
       <CustomerRewardCard
         defaultCents={defaultCents}
         rewardCents={settings.data?.customerRewardCents ?? 3000}
@@ -291,6 +295,60 @@ function SettingsCard({ defaultCents, loaded }: { defaultCents: number; loaded: 
           loading={save.isPending}
           disabled={!loaded || cents === null || (cents === defaultCents && !applyToAll)}
           onClick={() => cents !== null && save.mutate(cents)}
+        >
+          Salvar
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Os impostos da Farbo sobre a receita: a comissão em percentual sai da
+ * mensalidade líquida deles, e o afiliado arca com a parte dele do imposto.
+ * A comissão em valor fixo não muda.
+ */
+function CommissionTaxCard({ defaultCents, taxBps, loaded }: { defaultCents: number; taxBps: number; loaded: boolean }) {
+  const { notify } = useToast();
+  const queryClient = useQueryClient();
+  const [value, setValue] = useState(bpsToInput(taxBps));
+  useEffect(() => setValue(bpsToInput(taxBps)), [taxBps]);
+  const save = useMutation({
+    mutationFn: (bps: number) =>
+      affiliatesApi.saveSettings({ defaultCommissionCents: defaultCents, applyToAll: false, commissionTaxBps: bps }),
+    onSuccess: (_, bps) => {
+      queryClient.invalidateQueries({ queryKey: ['affiliates'] });
+      notify({
+        tone: 'success',
+        title: bps > 0 ? 'Impostos nas comissões salvos' : 'Comissões sobre o valor cheio',
+        description: 'Vale para as comissões dos próximos pagamentos; as já geradas ficam como estão.',
+      });
+    },
+    onError: (err: Error) => notify({ tone: 'error', title: 'Não foi possível salvar', description: err.message }),
+  });
+  const bps = value.trim() === '' ? 0 : parsePercentBps(value);
+  const valid = bps !== null && bps >= 0 && bps <= 3000;
+  // O exemplo: 40% de uma mensalidade de R$ 69,90.
+  const example = valid ? Math.round(6990 * 0.4 * (10000 - (bps ?? 0)) / 10000) : null;
+  return (
+    <Card
+      title="Impostos nas comissões"
+      subtitle="Os impostos da Farbo sobre a receita (a alíquota efetiva que o contador passar). A comissão em percentual sai da mensalidade líquida deles: o afiliado arca com a parte dele do imposto. A nota fiscal continua pelo valor cheio; a comissão em valor fixo não muda. Zero: sobre o valor cheio."
+    >
+      <div className={local.settings}>
+        <TextField
+          label="Impostos sobre a receita (%)"
+          value={value}
+          inputMode="decimal"
+          placeholder="0"
+          onChange={(e) => setValue(e.target.value)}
+          hint={example !== null ? `Ex.: 40% de R$ 69,90 = ${formatMoney(example)}` : 'De 0 a 30 (por exemplo, 6 ou 6,5).'}
+        />
+        <Button
+          variant="primary"
+          loading={save.isPending}
+          disabled={!loaded || !valid || bps === taxBps}
+          onClick={() => valid && bps !== null && save.mutate(bps)}
         >
           Salvar
         </Button>
