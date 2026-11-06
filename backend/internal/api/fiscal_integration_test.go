@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -30,11 +31,13 @@ type fakeNotaas struct {
 	status   map[string]*fiscal.Status
 	refuse   *fiscal.APIError
 	canceled []string
+	tries    int // cada chamada da emissão, recusada ou não
 }
 
 func (f *fakeNotaas) Emit(_ context.Context, req fiscal.EmitRequest) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.tries++
 	if f.refuse != nil {
 		return "", f.refuse
 	}
@@ -62,8 +65,18 @@ func (f *fakeNotaas) PDF(_ context.Context, id string) (*fiscal.PDF, error) {
 }
 
 type recordingFiscalMailer struct {
-	mu   sync.Mutex
-	sent []mail.FiscalDocument
+	mu        sync.Mutex
+	sent      []mail.FiscalDocument
+	credits   []mail.FiscalCredits
+	creditsTo [][]string
+}
+
+func (m *recordingFiscalMailer) FiscalCreditsOver(_ context.Context, to []string, d mail.FiscalCredits) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.credits = append(m.credits, d)
+	m.creditsTo = append(m.creditsTo, to)
+	return nil
 }
 
 func (m *recordingFiscalMailer) FiscalIssued(_ context.Context, d mail.FiscalDocument) error {
@@ -77,8 +90,9 @@ func (m *recordingFiscalMailer) FiscalIssued(_ context.Context, d mail.FiscalDoc
 // mensalidade (sem a parcela do rastreador), não o rastreador vendido nem o
 // frete; o tomador com o CPF e o endereço; a nota emitida vai por e-mail
 // uma vez e aparece na ficha e no app (o PDF só do dono); sem CPF, a nota
-// fica recusada até a central emitir de novo; acabado o limite do plano,
-// espera o mês seguinte; a fatura estornada cancela a nota; o webhook
+// fica recusada até a central emitir de novo; sem créditos na Notaas, a
+// fila espera (um aviso à central, uma nota tentando a cada 15 minutos) e
+// sai toda quando o crédito volta; a fatura estornada cancela a nota; o webhook
 // assinado só faz consultar de novo. Precisa de FARBO_TEST_DATABASE_URL.
 func TestFiscalDocuments(t *testing.T) {
 	notaas := &fakeNotaas{status: map[string]*fiscal.Status{}}
@@ -235,20 +249,59 @@ func TestFiscalDocuments(t *testing.T) {
 	if refused.Status != fiscal.StatusError || !strings.Contains(refused.Error, "sem CPF ou CNPJ") {
 		t.Fatalf("sem CPF = %+v", refused)
 	}
-	// Ainda sem o CPF e com o limite do plano acabado: espera o mês seguinte.
+	// Com o CPF, mas sem créditos na Notaas: espera os créditos.
 	if _, err := env.db.Exec(ctx, `UPDATE users SET document = '11144477735' WHERE id = $1`, caio.Tokens.User.ID); err != nil {
 		t.Fatal(err)
 	}
 	env.must(admin, http.MethodPost, "/api/fiscal-documents/"+refused.ID.String()+"/retry", nil, http.StatusOK)
 	env.must(admin, http.MethodPost, "/api/fiscal-documents/"+note.ID.String()+"/retry", nil, http.StatusConflict)
+	clock := time.Now().Add(time.Hour)
+	svc.SetClock(func() time.Time { return clock })
 	notaas.refuse = &fiscal.APIError{Status: http.StatusForbidden, Code: "CREDIT_LIMIT", Message: "Créditos esgotados"}
 	work()
-	var blocked string
-	_ = env.db.QueryRow(ctx, `SELECT status FROM fiscal_documents WHERE id = $1`, refused.ID).Scan(&blocked)
-	if blocked != fiscal.StatusBlocked {
-		t.Errorf("limite do plano = %s", blocked)
+	statusOf := func(id uuid.UUID) (status, reason string) {
+		t.Helper()
+		_ = env.db.QueryRow(ctx, `SELECT status, error FROM fiscal_documents WHERE id = $1`, id).Scan(&status, &reason)
+		return status, reason
 	}
+	if st, reason := statusOf(refused.ID); st != fiscal.StatusBlocked || !strings.Contains(reason, "coloque créditos") {
+		t.Errorf("sem créditos = %s (%s)", st, reason)
+	}
+	if len(mailer.credits) != 1 || mailer.credits[0].Waiting != 1 ||
+		!slices.Contains(mailer.creditsTo[0], auth.RoleAdmin+"@leads.test") {
+		t.Errorf("aviso dos créditos = %+v para %v", mailer.credits, mailer.creditsTo)
+	}
+	tries := notaas.tries
+	work() // antes dos 15 minutos: ninguém tenta
+	if notaas.tries != tries {
+		t.Errorf("tentou antes da hora: %d", notaas.tries-tries)
+	}
+	// Uma fatura paga enquanto isso: tenta, espera junto, sem outro aviso.
+	duda := checkout("Duda Depois", "duda@fiscal.test", "935.411.347-80")
+	pay(duda.Tokens.User.ID)
+	work()
+	var dudaNote uuid.UUID
+	_ = env.db.QueryRow(ctx, `SELECT id FROM fiscal_documents WHERE customer_id = $1`, duda.Tokens.User.ID).Scan(&dudaNote)
+	if st, _ := statusOf(dudaNote); st != fiscal.StatusBlocked || len(mailer.credits) != 1 {
+		t.Errorf("paga sem créditos = %s, avisos %d", st, len(mailer.credits))
+	}
+	// Passados 15 minutos, só a mais antiga tenta de novo.
+	tries = notaas.tries
+	clock = clock.Add(16 * time.Minute)
+	work()
+	if notaas.tries != tries+1 || len(mailer.credits) != 1 {
+		t.Errorf("nova tentativa: %d chamadas, %d avisos", notaas.tries-tries, len(mailer.credits))
+	}
+	// Com crédito de novo: a que tenta sai, e as outras saem atrás.
 	notaas.refuse = nil
+	clock = clock.Add(16 * time.Minute)
+	work()
+	work()
+	for _, id := range []uuid.UUID{refused.ID, dudaNote} {
+		if st, reason := statusOf(id); st != fiscal.StatusProcessing || reason != "" {
+			t.Errorf("com crédito = %s (%s)", st, reason)
+		}
+	}
 
 	// O estorno da mensalidade cancela a nota emitida.
 	if _, err := env.db.Exec(ctx, `UPDATE invoices SET status = 'OPEN', paid_at = NULL WHERE id = $1`, monthly); err != nil {

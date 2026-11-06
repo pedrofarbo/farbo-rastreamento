@@ -29,13 +29,20 @@ const (
 	StatusProcessing    = "processing"     // na prefeitura
 	StatusIssued        = "issued"         // emitida
 	StatusError         = "error"          // recusada (a central corrige e tenta de novo)
-	StatusBlocked       = "blocked"        // o limite de notas do plano acabou: no mês seguinte
+	StatusBlocked       = "blocked"        // os créditos da Notaas acabaram: sai quando houver crédito
 	StatusCancelPending = "cancel_pending" // a fatura foi estornada: cancelando
 	StatusCancelled     = "cancelled"
 )
 
 // batch: quantas notas a rotina trata por vez (a Notaas aceita 30 por minuto).
 const batch = 20
+
+// creditRecheck: sem créditos na Notaas, de quanto em quanto tempo uma nota
+// (só uma) tenta de novo. Quando ela sai, as outras saem atrás.
+const creditRecheck = 15 * time.Minute
+
+// creditsMessage é o motivo da nota que espera créditos.
+const creditsMessage = "os créditos da Notaas acabaram: coloque créditos na Notaas e a nota sai sozinha em até 15 minutos"
 
 // ErrNotFound: a nota não existe.
 var ErrNotFound = errors.New("nota fiscal não encontrada")
@@ -48,9 +55,11 @@ type Gateway interface {
 	PDF(ctx context.Context, id string) (*PDF, error)
 }
 
-// Mailer manda a nota ao cliente.
+// Mailer manda a nota ao cliente e avisa a central de que os créditos
+// da Notaas acabaram.
 type Mailer interface {
 	FiscalIssued(ctx context.Context, d mail.FiscalDocument) error
+	FiscalCreditsOver(ctx context.Context, to []string, d mail.FiscalCredits) error
 }
 
 // Document é a nota de uma fatura, como a ficha e o app mostram.
@@ -234,6 +243,7 @@ func (s *Service) enqueue(ctx context.Context, since time.Time) error {
 // job é uma nota a emitir, com o tomador.
 type job struct {
 	id          uuid.UUID
+	status      string
 	invoiceID   uuid.UUID
 	attempts    int
 	amountCents int
@@ -248,13 +258,16 @@ type job struct {
 
 func (s *Service) emitPending(ctx context.Context) {
 	rows, err := s.db.Query(ctx, `
-		SELECT f.id, f.invoice_id, f.attempts, f.amount_cents, i.description, i.due_date,
+		SELECT f.id, f.status, f.invoice_id, f.attempts, f.amount_cents, i.description, i.due_date,
 			COALESCE(u.name, ''), COALESCE(u.email, ''), COALESCE(u.phone, ''), COALESCE(u.document, ''),
 			a.street, a.number, a.complement, a.district, a.city, a.state, a.zip_code
 		FROM fiscal_documents f JOIN invoices i ON i.id = f.invoice_id
 		LEFT JOIN users u ON u.id = f.customer_id
 		LEFT JOIN customer_addresses a ON a.customer_id = f.customer_id
-		WHERE f.status = 'pending' AND f.next_try_at <= $1
+		WHERE (f.status = 'pending' AND f.next_try_at <= $1)
+			-- Sem créditos, só a nota mais antiga tenta de novo, de tempos em tempos.
+			OR f.id = (SELECT id FROM fiscal_documents WHERE status = 'blocked' AND next_try_at <= $1
+				ORDER BY created_at LIMIT 1)
 		ORDER BY f.created_at LIMIT `+fmt.Sprint(batch), s.now())
 	if err != nil {
 		s.log.Error("falha ao listar as notas a emitir", "err", err)
@@ -264,7 +277,7 @@ func (s *Service) emitPending(ctx context.Context) {
 	for rows.Next() {
 		var j job
 		var street, number, complement, district, city, state, zip *string
-		if err := rows.Scan(&j.id, &j.invoiceID, &j.attempts, &j.amountCents, &j.description, &j.due, &j.name, &j.email,
+		if err := rows.Scan(&j.id, &j.status, &j.invoiceID, &j.attempts, &j.amountCents, &j.description, &j.due, &j.name, &j.email,
 			&j.phone, &j.document, &street, &number, &complement, &district, &city, &state, &zip); err != nil {
 			rows.Close()
 			s.log.Error("falha ao ler a nota a emitir", "err", err)
@@ -278,12 +291,15 @@ func (s *Service) emitPending(ctx context.Context) {
 	}
 	rows.Close()
 	for _, j := range jobs {
-		s.emit(ctx, j)
+		if !s.emit(ctx, j) {
+			return // os créditos acabaram: as outras esperam junto
+		}
 	}
 }
 
-// emit manda uma nota para a Notaas.
-func (s *Service) emit(ctx context.Context, j job) {
+// emit manda uma nota para a Notaas. Falso: os créditos acabaram e não vale
+// mandar as próximas.
+func (s *Service) emit(ctx context.Context, j job) bool {
 	document := digits(j.document)
 	taker := Taker{Name: strings.TrimSpace(j.name), Email: j.email, Phone: digits(j.phone), Address: j.address}
 	switch len(document) {
@@ -293,11 +309,11 @@ func (s *Service) emit(ctx context.Context, j job) {
 		taker.CNPJ = document
 	default:
 		s.fail(ctx, j.id, "o cliente está sem CPF ou CNPJ: preencha o cadastro e emita de novo")
-		return
+		return true
 	}
 	if taker.Name == "" {
 		s.fail(ctx, j.id, "o cliente está sem nome: preencha o cadastro e emita de novo")
-		return
+		return true
 	}
 	text := strings.TrimSpace(s.cfg.Description)
 	if desc := strings.TrimSpace(j.description); desc != "" {
@@ -308,28 +324,33 @@ func (s *Service) emit(ctx context.Context, j job) {
 		Total: float64(j.amountCents) / 100, ISSRate: s.cfg.ISSRate, Month: j.due.Format("2006-01"),
 	})
 	if err != nil {
-		s.emitFailed(ctx, j, err)
-		return
+		return s.emitFailed(ctx, j, err)
 	}
 	if _, err := s.db.Exec(ctx, `UPDATE fiscal_documents SET status = 'processing', provider_id = $2, error = '',
 		attempts = attempts + 1, next_try_at = $3, updated_at = NOW() WHERE id = $1`, j.id, id, s.now().Add(time.Minute)); err != nil {
 		s.log.Error("nota fiscal enviada e não marcada (o webhook ou a consulta acertam)", "document", j.id, "notaas", id, "err", err)
-		return
+	} else {
+		s.log.Info("nota fiscal enviada", "document", j.id, "invoice", j.invoiceID, "notaas", id)
 	}
-	s.log.Info("nota fiscal enviada", "document", j.id, "invoice", j.invoiceID, "notaas", id)
+	// A Notaas aceitou: se havia notas esperando créditos, elas saem atrás.
+	if tag, err := s.db.Exec(ctx, `UPDATE fiscal_documents SET status = 'pending', error = '', next_try_at = $1,
+		updated_at = NOW() WHERE status = 'blocked'`, s.now()); err != nil {
+		s.log.Error("falha ao liberar as notas que esperavam créditos", "err", err)
+	} else if n := tag.RowsAffected(); n > 0 {
+		s.log.Info("créditos da Notaas de volta: notas liberadas", "count", n)
+	}
+	return true
 }
 
-// emitFailed decide o que fazer com a recusa: o limite do plano espera o
-// mês seguinte; o problema temporário tenta de novo mais tarde; o resto
-// (cadastro, configuração) espera a central.
-func (s *Service) emitFailed(ctx context.Context, j job, err error) {
+// emitFailed decide o que fazer com a recusa: sem créditos, a fila espera
+// (falso: não manda as próximas); o problema temporário tenta de novo mais
+// tarde; o resto (cadastro, configuração) espera a central.
+func (s *Service) emitFailed(ctx context.Context, j job, err error) bool {
 	var api *APIError
 	switch {
 	case errors.As(err, &api) && api.CreditLimit():
-		now := s.now()
-		next := time.Date(now.Year(), now.Month()+1, 1, 6, 0, 0, 0, now.Location())
-		s.mark(ctx, j.id, StatusBlocked, "o limite de notas do plano da Notaas acabou neste mês: sai no mês que vem (ou mude o plano e emita de novo)", next)
-		s.log.Warn("limite de notas fiscais do plano atingido", "document", j.id)
+		s.creditsOver(ctx, j)
+		return false
 	case errors.As(err, &api) && !api.Temporary():
 		s.fail(ctx, j.id, api.Message)
 		s.log.Warn("nota fiscal recusada pela Notaas", "document", j.id, "status", api.Status, "code", api.Code, "err", api.Message)
@@ -342,6 +363,59 @@ func (s *Service) emitFailed(ctx context.Context, j job, err error) {
 		}
 		s.log.Warn("nota fiscal não enviada (tenta de novo)", "document", j.id, "err", err)
 	}
+	return true
+}
+
+// creditsOver põe a fila para esperar créditos: a nota recusada e as que
+// aguardavam a vez. A central recebe um e-mail quando a fila começa a
+// esperar (não a cada nova tentativa).
+func (s *Service) creditsOver(ctx context.Context, j job) {
+	var already bool
+	if err := s.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM fiscal_documents WHERE status = 'blocked' AND id <> $1)`,
+		j.id).Scan(&already); err != nil {
+		s.log.Error("falha ao conferir as notas que esperam créditos", "err", err)
+		already = true
+	}
+	tag, err := s.db.Exec(ctx, `UPDATE fiscal_documents SET status = 'blocked', error = $2, next_try_at = $3, updated_at = NOW()
+		WHERE id = $1 OR status = 'pending'`, j.id, creditsMessage, s.now().Add(creditRecheck))
+	if err != nil {
+		s.log.Error("falha ao pôr as notas para esperar créditos", "document", j.id, "err", err)
+		return
+	}
+	waiting := tag.RowsAffected()
+	if already || j.status == StatusBlocked {
+		return
+	}
+	s.log.Warn("os créditos da Notaas acabaram: notas fiscais esperando", "count", waiting)
+	if s.mailer == nil {
+		return
+	}
+	to, err := s.adminEmails(ctx)
+	if err != nil || len(to) == 0 {
+		s.log.Warn("sem administrador para avisar dos créditos da Notaas", "err", err)
+		return
+	}
+	if err := s.mailer.FiscalCreditsOver(ctx, to, mail.FiscalCredits{Waiting: int(waiting)}); err != nil {
+		s.log.Warn("aviso dos créditos da Notaas não enviado", "err", err)
+	}
+}
+
+// adminEmails são os administradores ativos.
+func (s *Service) adminEmails(ctx context.Context) ([]string, error) {
+	rows, err := s.db.Query(ctx, `SELECT email FROM users WHERE role = 'admin' AND active ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		out = append(out, email)
+	}
+	return out, rows.Err()
 }
 
 func (s *Service) fail(ctx context.Context, id uuid.UUID, reason string) {

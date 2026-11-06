@@ -14,7 +14,7 @@ export function fiscalLabel(doc: FiscalDocument): string {
     case 'error':
       return `NFS-e recusada: ${doc.error}`;
     case 'blocked':
-      return 'NFS-e: o limite de notas do plano da Notaas acabou neste mês';
+      return 'NFS-e esperando créditos na Notaas: sai sozinha até 15 minutos depois de colocar créditos';
     case 'cancel_pending':
       return 'NFS-e em cancelamento (fatura estornada)';
     case 'cancelled':

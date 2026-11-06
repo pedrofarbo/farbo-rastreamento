@@ -35,7 +35,7 @@ describe('a NFS-e sob a fatura', () => {
     expect(fiscalLabel(doc({ status: 'error', error: 'o cliente está sem CPF ou CNPJ' }))).toBe(
       'NFS-e recusada: o cliente está sem CPF ou CNPJ',
     );
-    expect(fiscalLabel(doc({ status: 'blocked' }))).toContain('limite de notas do plano');
+    expect(fiscalLabel(doc({ status: 'blocked' }))).toContain('esperando créditos na Notaas');
     expect(fiscalLabel(doc({ status: 'cancelled' }))).toBe('NFS-e nº 1234 cancelada');
   });
 
