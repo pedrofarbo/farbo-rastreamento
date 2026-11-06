@@ -9,6 +9,7 @@ import { AddressModal } from '@/components/address/AddressModal';
 import billing from '@/components/billing/Billing.module.css';
 import { InvoiceDayRows } from '@/components/billing/InvoiceDayRows';
 import { CustomerStatus, InvoiceStatus } from '@/components/billing/InvoiceStatus';
+import { FiscalDocumentLine } from '@/components/billing/FiscalDocumentLine';
 import { gatewayName } from '@/components/billing/PixCheckout';
 import { MonthlyPrice, promoActive } from '@/components/billing/MonthlyPrice';
 import { installmentProgress } from '@/components/billing/installments';
@@ -861,6 +862,13 @@ export function CustomerDetailsPage() {
                                 <div className={billing.muted}>sem link nem Pix informado</div>
                               )}
                               {invoice.paidAt && <div className={billing.muted}>paga em {formatDateTime(invoice.paidAt)}</div>}
+                              {data.fiscal?.[invoice.id] && (
+                                <FiscalDocumentLine
+                                  doc={data.fiscal[invoice.id]}
+                                  onDownload={customersApi.downloadFiscalDocument}
+                                  onRetry={(id) => run('Nota fiscal na fila de novo', () => customersApi.retryFiscalDocument(id))}
+                                />
+                              )}
                               {invoice.status === 'OPEN' && data.reminders?.[invoice.id] && (
                                 <div className={billing.muted}>
                                   lembrete: {reminderLabel(data.reminders[invoice.id].kind)} ·{' '}

@@ -34,6 +34,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/dunning"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/events"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/finance"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fiscal"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fleet"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geocoding"
@@ -121,6 +122,8 @@ type Deps struct {
 	Affiliates *affiliates.Service
 	// Kits: as remessas de kits de instalação para os representantes.
 	Kits *kits.Service
+	// Fiscal: as notas fiscais de serviço (NFS-e) das faturas pagas.
+	Fiscal *fiscal.Service
 	// SMSSetup: a configuração do rastreador por SMS (SMS Market) na ativação.
 	SMSSetup *smssetup.Service
 	// Contract: o contrato que o cliente aceita no primeiro acesso. Nil: sem
@@ -296,6 +299,10 @@ func (s *Server) routes() chi.Router {
 		// pelo segredo e pela assinatura (ver o handler).
 		r.Post("/payments/abacatepay/webhook", s.handleAbacatePayWebhook)
 		r.Post("/payments/pagarme/webhook", s.handlePagarmeWebhook)
+		// O aviso da Notaas de que a nota fiscal mudou (assinado).
+		if s.Fiscal != nil {
+			r.Post("/fiscal/notaas/webhook", s.handleNotaasWebhook)
+		}
 
 		// Prestadores recomendados para a landing page (público).
 		r.Get("/public/installers", s.handlePublicInstallers)
@@ -602,6 +609,11 @@ func (s *Server) routes() chi.Router {
 					// Da conta inteira: quem está restrito a grupos não vê.
 					r.Use(s.requireWholeAccount)
 					r.Get("/invoices", s.handleMyInvoices)
+					// As notas fiscais das faturas pagas.
+					if s.Fiscal != nil {
+						r.Get("/fiscal-documents", s.handleMyFiscalDocuments)
+						r.Get("/fiscal-documents/{id}/pdf", s.handleMyFiscalDocumentPDF)
+					}
 					r.Post("/invoices/{id}/pix", s.handleMyInvoicePix)
 					r.Post("/invoices/{id}/boleto", s.handleMyInvoiceBoleto)
 					// Várias de uma vez: a fatura do mês da frota, ou as vencidas.
@@ -1138,6 +1150,15 @@ func (s *Server) routes() chi.Router {
 						r.Get("/", s.handleStandaloneInstalls)
 						r.Post("/", s.handleCreateStandaloneInstall)
 						r.Post("/{id}/close", s.handleCloseStandaloneInstall)
+					})
+				}
+
+				// As notas fiscais: emitir de novo a recusada e o PDF.
+				if s.Fiscal != nil {
+					r.Route("/fiscal-documents", func(r chi.Router) {
+						r.Use(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator))
+						r.Post("/{id}/retry", s.handleRetryFiscalDocument)
+						r.Get("/{id}/pdf", s.handleFiscalDocumentPDF)
 					})
 				}
 

@@ -1025,3 +1025,25 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* A NFS-e sob a fatura: o PDF e o emitir de novo como links; a recusada em
+   vermelho. */
+.inlineLink {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.inlineLink:hover {
+  text-decoration: underline;
+}
+
+.fiscalFailed {
+  margin-top: 2px;
+  color: var(--danger);
+  font-size: var(--text-xs);
+}

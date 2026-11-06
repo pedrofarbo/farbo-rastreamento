@@ -1285,6 +1285,26 @@ export interface Invoice {
   updatedAt: string;
 }
 
+/**
+ * A NFS-e de uma fatura paga, emitida pela Notaas: pending espera a emissão;
+ * processing, na prefeitura; error, recusada (a central corrige e emite de
+ * novo); blocked, o limite de notas do plano acabou; cancel_pending e
+ * cancelled, a fatura foi estornada.
+ */
+export interface FiscalDocument {
+  id: string;
+  invoiceId: string;
+  status: 'pending' | 'processing' | 'issued' | 'error' | 'blocked' | 'cancel_pending' | 'cancelled';
+  number: string;
+  verificationCode: string;
+  amountCents: number;
+  hasPdf: boolean;
+  error: string;
+  issuedAt: string | null;
+  cancelledAt: string | null;
+  createdAt: string;
+}
+
 /** A forma de pagamento online de uma fatura: Pix, boleto (que traz um Pix junto) ou cartão de crédito. */
 export type ChargeMethod = 'PIX' | 'BOLETO' | 'CARD';
 
@@ -1602,6 +1622,8 @@ export interface CustomerDetail extends CustomerSummary {
   plan: AccountPlan | null;
   /** O cartão salvo do cliente e o débito automático (nulo: nenhum). */
   card: SavedCard | null;
+  /** A NFS-e de cada fatura paga, pelo id da fatura (nulo: emissão desligada). */
+  fiscal?: Record<string, FiscalDocument> | null;
   /** O último aceite do contrato (nulo: ainda não aceitou). */
   contract: ContractAcceptance | null;
   /** A versão do contrato em vigor. */

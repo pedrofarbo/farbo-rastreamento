@@ -43,7 +43,30 @@ type Config struct {
 	SMS       SMS
 	Theft     Theft
 	Company   Company
+	Fiscal    Fiscal
 }
+
+// Fiscal é a emissão das notas fiscais de serviço (NFS-e) pela Notaas: com
+// a chave e a alíquota do ISS, a NFS-e de cada mensalidade paga sai sozinha.
+// A empresa emissora (CNPJ, inscrição municipal, regime e certificado A1)
+// fica cadastrada no projeto da Notaas.
+type Fiscal struct {
+	NotaasAPIKey        string
+	NotaasBaseURL       string
+	NotaasWebhookSecret string
+	// ServiceCode: o código do serviço (cTribNac, 6 dígitos); vazio usa o
+	// padrão do projeto na Notaas.
+	ServiceCode string
+	// ISSRate: a alíquota do ISS em % (2 = 2%). Sem ela a emissão fica
+	// desligada: zero seria imunidade.
+	ISSRate    float64
+	ISSRateSet bool
+	// Description: o serviço na nota, antes da descrição da fatura.
+	Description string
+}
+
+// Enabled diz se a NFS-e sai sozinha.
+func (f Fiscal) Enabled() bool { return f.NotaasAPIKey != "" && f.ISSRateSet }
 
 // Company é a empresa no contrato com o cliente (a CONTRATADA).
 type Company struct {
@@ -938,6 +961,18 @@ func Load() (*Config, error) {
 		CNPJ:      str("COMPANY_CNPJ", "69.989.550/0001-81"),
 		Address:   str("COMPANY_ADDRESS", ""),
 		Email:     str("COMPANY_EMAIL", "contato@farborastreadores.com.br"),
+	}
+	cfg.Fiscal = Fiscal{
+		NotaasAPIKey:        str("NOTAAS_API_KEY", ""),
+		NotaasBaseURL:       str("NOTAAS_BASE_URL", ""),
+		NotaasWebhookSecret: str("NOTAAS_WEBHOOK_SECRET", ""),
+		ServiceCode:         str("NFSE_SERVICE_CODE", ""),
+		Description:         str("NFSE_DESCRIPTION", "Serviço de rastreamento veicular"),
+	}
+	if raw := strings.ReplaceAll(str("NFSE_ISS_RATE", ""), ",", "."); raw != "" {
+		if rate, err := strconv.ParseFloat(raw, 64); err == nil && rate >= 0 && rate <= 5 {
+			cfg.Fiscal.ISSRate, cfg.Fiscal.ISSRateSet = rate, true
+		}
 	}
 	cfg.Theft = Theft{
 		ParkedSeconds: num("THEFT_PARKED_INTERVAL_SECONDS", 30),

@@ -54,6 +54,7 @@ import type {
   AffiliatePayout,
   AffiliateSettings,
   CustomerReferral,
+  FiscalDocument,
   KitDevice,
   KitShipment,
   PartnerCustomer,
@@ -1125,6 +1126,9 @@ export const customersApi = {
   /** Manda agora um lembrete da fatura (e-mail e push, com o link de pagamento). */
   remindInvoice: (id: string) => api.post<InvoiceReminder>(`/api/invoices/${id}/remind`),
   cancelInvoice: (id: string) => api.post<Invoice>(`/api/invoices/${id}/cancel`),
+  /** Emite de novo a NFS-e recusada (depois de corrigir o cadastro ou o plano). */
+  retryFiscalDocument: (id: string) => api.post<FiscalDocument>(`/api/fiscal-documents/${id}/retry`),
+  downloadFiscalDocument: (id: string) => download(`/api/fiscal-documents/${id}/pdf`),
   /** Muda o vencimento de uma fatura em aberto (hoje ou depois). */
   changeInvoiceDueDate: (id: string, dueDate: string) => api.post<Invoice>(`/api/invoices/${id}/due-date`, { dueDate }),
   /**
@@ -1589,6 +1593,9 @@ export const meApi = {
   submitInspection: (id: string) => api.post<Inspection>(`/api/me/inspections/${id}/submit`),
   /** As notas fiscais de cada mês. */
   fiscalNotes: () => api.get<FiscalNote[]>('/api/me/fiscal-notes'),
+  /** A NFS-e de cada fatura paga, pelo id da fatura. */
+  fiscalDocuments: () => api.get<Record<string, FiscalDocument>>('/api/me/fiscal-documents'),
+  downloadFiscalDocument: (id: string) => download(`/api/me/fiscal-documents/${id}/pdf`),
   downloadNote: (id: string) => download(`/api/me/fiscal-notes/${id}/file`),
   account: () => api.get<CustomerAccount>('/api/me/account'),
   subscriptions: () => api.get<Subscription[]>('/api/me/subscriptions'),

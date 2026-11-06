@@ -19,6 +19,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/dunning"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fiscal"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/mail"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/orders"
@@ -61,6 +62,9 @@ type customerDetail struct {
 	Plan *orders.AccountPlan `json:"plan"`
 	// Card: o cartão salvo do cliente e o débito automático (nulo: nenhum).
 	Card *payments.SavedCard `json:"card"`
+	// Fiscal: a nota fiscal de cada fatura paga, pelo id da fatura (nulo:
+	// emissão desligada).
+	Fiscal map[string]*fiscal.Document `json:"fiscal"`
 }
 
 func (s *Server) customerDetail(ctx context.Context, id uuid.UUID) (*customerDetail, error) {
@@ -152,8 +156,14 @@ func (s *Server) customerDetail(ctx context.Context, id uuid.UUID) (*customerDet
 		}
 		security = briefs[id]
 	}
+	var notes map[string]*fiscal.Document
+	if s.Fiscal != nil {
+		if notes, err = s.Fiscal.ForCustomer(ctx, id); err != nil {
+			return nil, err
+		}
+	}
 	return &customerDetail{
-		CustomerSummary: summary, Subscriptions: subscriptions, Invoices: invoices, Vehicles: views,
+		CustomerSummary: summary, Subscriptions: subscriptions, Invoices: invoices, Vehicles: views, Fiscal: notes,
 		OnlinePayment: s.Payments.Enabled(), Payments: paid, DeliveryAddress: address, Fulfillments: tracking,
 		HistoryRetentionDays: retentionDays, DefaultHistoryDays: s.Retention.Default(), Affiliate: referral,
 		Reminders: reminders, PaymentLinks: links, Contract: accepted, ContractVersion: version, TwoFactor: security,

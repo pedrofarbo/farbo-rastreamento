@@ -42,6 +42,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/dunning"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/events"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/finance"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fiscal"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fleet"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/geocoding"
@@ -387,6 +388,21 @@ func run() error {
 		financeSvc.SetPagarmeBalance(pagarme.NewClient(p.PagarmeBaseURL, p.PagarmeSecretKey), p.PagarmeRecipientID,
 			pagarme.IsTestKey(p.PagarmeSecretKey))
 	}
+	// As notas fiscais de serviço (NFS-e) das faturas pagas, pela Notaas.
+	var notaas fiscal.Gateway
+	if f := cfg.Fiscal; f.NotaasAPIKey != "" {
+		notaas = fiscal.NewClient(f.NotaasBaseURL, f.NotaasAPIKey)
+		switch {
+		case !f.ISSRateSet:
+			log.Warn("NOTAAS_API_KEY sem NFSE_ISS_RATE: notas fiscais desligadas (a alíquota do ISS é obrigatória)")
+		case f.NotaasWebhookSecret == "":
+			log.Info("notas fiscais pela Notaas ligadas, sem webhook (a situação vem da consulta a cada minuto)",
+				"aliquota_iss", f.ISSRate, "codigo_servico", f.ServiceCode)
+		default:
+			log.Info("notas fiscais pela Notaas ligadas", "aliquota_iss", f.ISSRate, "codigo_servico", f.ServiceCode)
+		}
+	}
+	fiscalSvc := fiscal.NewService(db, notaas, cfg.Fiscal, mail.NewFiscalMailer(mailer, cfg.Mail.AppURL), log)
 	affiliatesSvc := affiliates.NewService(db, log)
 	// As sessões da página do afiliado com senha (sobrevivem ao reinício).
 	affiliatesSvc.SetSessionKey([]byte(cfg.Auth.JWTSecret))
@@ -540,6 +556,7 @@ func run() error {
 		Analytics: analyticsSvc,
 		Infra:     infraSvc, Finance: financeSvc, Affiliates: affiliatesSvc, SMSSetup: smsSvc, Theft: theftSvc,
 		Kits:      kits.NewService(db),
+		Fiscal:    fiscalSvc,
 		LiveLinks: livelinks.NewService(db, cfg.Mail.AppURL, []byte(cfg.Auth.JWTSecret)),
 		Claims:    claimsSvc, Inspections: inspectionsSvc, Fleet: fleetSvc,
 		APIKeys: apikeys.NewService(db), Webhooks: webhooksSvc, Appointments: appointmentsSvc,
@@ -631,7 +648,7 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, theftSvc, dunningSvc, adjustmentSvc, contractSvc, pushSvc, orgSvc, ordersSvc, log)
+		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, theftSvc, dunningSvc, adjustmentSvc, contractSvc, pushSvc, orgSvc, ordersSvc, fiscalSvc, log)
 	}()
 
 	log.Info("plataforma no ar",
@@ -675,6 +692,7 @@ func runWorkers(
 	pushSvc *push.Service,
 	orgSvc *organizations.Service,
 	ordersSvc *orders.Service,
+	fiscalSvc *fiscal.Service,
 	log *slog.Logger,
 ) {
 	statusTicker := time.NewTicker(cfg.Tracking.StatusSweepInterval)
@@ -772,6 +790,8 @@ func runWorkers(
 
 		case <-paymentsTicker.C:
 			paymentsSvc.SyncPending(ctx)
+			// As notas fiscais das faturas pagas (depois da baixa dos pagamentos).
+			fiscalSvc.Work(ctx)
 			// Os Pix aos fornecedores: sem resposta e os que podem falhar depois.
 			financeSvc.WatchPix(ctx)
 			// A tarifa da AbacatePay de cada Pix recebido, nas contas pagas.

@@ -10,6 +10,7 @@ import { InvoiceLines } from '@/components/billing/InvoiceLines';
 import { InvoiceStatus } from '@/components/billing/InvoiceStatus';
 import { MonthlyPrice, isFree } from '@/components/billing/MonthlyPrice';
 import { CardSettings } from '@/components/billing/CardSettings';
+import { FiscalDocumentLine } from '@/components/billing/FiscalDocumentLine';
 import { FiscalNotesCard } from '@/components/billing/FiscalNotes';
 import { PixPaymentModal } from '@/components/billing/PixPaymentModal';
 import { Badge } from '@/components/ui/Badge';
@@ -29,7 +30,7 @@ import {
   overdueGroup,
 } from '@/services/invoiceGroups';
 import type { HistoryDay, InvoiceGroup } from '@/services/invoiceGroups';
-import type { Invoice } from '@/types';
+import type { FiscalDocument, Invoice } from '@/types';
 import { Pager } from '@/components/ui/Pager';
 import { usePagedList } from '@/hooks/usePagination';
 
@@ -362,9 +363,15 @@ function InvoiceRow({
   /** Uma das faturas de um vencimento aberto no histórico. */
   sub?: boolean;
 }) {
+  // A NFS-e da fatura paga (emitida pela Notaas), quando houver.
+  const fiscal = useQuery({ queryKey: ['me', 'fiscal-documents'], queryFn: meApi.fiscalDocuments, staleTime: 60_000, retry: false });
+  const doc: FiscalDocument | undefined = fiscal.data?.[invoice.id];
   return (
     <tr className={sub ? billing.subRow : undefined}>
-      <td>{invoice.description}</td>
+      <td>
+        {invoice.description}
+        {doc?.status === 'issued' && <FiscalDocumentLine doc={doc} onDownload={meApi.downloadFiscalDocument} />}
+      </td>
       <td data-label="Vencimento">{formatDateOnly(invoice.dueDate)}</td>
       <td data-label="Valor" className={billing.amount}>
         {formatMoney(invoice.amountCents)}
