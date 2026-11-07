@@ -14,7 +14,8 @@ import (
 
 // TestVehicleDirectory: a listagem de veículos da central, paginada, com os
 // filtros por placa (sem a pontuação), associação (ou sem nenhuma), nome do
-// cliente, CPF/CNPJ (com ou sem a pontuação) e e-mail; só o administrador.
+// cliente, CPF/CNPJ (com ou sem a pontuação), e-mail e rastreador (IMEI,
+// ICCID ou linha); só o administrador.
 // Precisa de FARBO_TEST_DATABASE_URL.
 func TestVehicleDirectory(t *testing.T) {
 	env, _ := newLeadsEnv(t)
@@ -33,7 +34,8 @@ func TestVehicleDirectory(t *testing.T) {
 		VALUES ('lia.souza@exemplo.test', 'Lia Souza', 'customer', 'x', '529.982.247-25', $1) RETURNING id`, org)
 	empresa := exec(`INSERT INTO users (email, name, role, password_hash, document)
 		VALUES ('frota@transportes.test', 'Transportes Rápidos Ltda', 'customer', 'x', '11.222.333/0001-81') RETURNING id`)
-	device := exec(`INSERT INTO devices (imei, status, last_seen_at) VALUES ('869247061900077', 'ONLINE', NOW()) RETURNING id`)
+	device := exec(`INSERT INTO devices (imei, iccid, phone_number, status, last_seen_at)
+		VALUES ('869247061900077', '89553202100093795330', '(34) 99999-0001', 'ONLINE', NOW()) RETURNING id`)
 	exec(`INSERT INTO vehicles (name, plate, owner_id, device_id, created_at) VALUES ('Honda CG 160', 'ABC1D23', $1, $2, NOW() - interval '3 days') RETURNING id`, lia, device)
 	// 30 da empresa (a mais nova por último) e um da central, sem dono.
 	for i := range 30 {
@@ -95,6 +97,16 @@ func TestVehicleDirectory(t *testing.T) {
 	one(url.Values{"document": {"529.982"}})
 	one(url.Values{"email": {"LIA.SOUZA@"}})
 	one(url.Values{"organization": {org}})
+	one(url.Values{"device": {"0619000"}})
+	one(url.Values{"device": {"8955 3202 1000"}})
+	one(url.Values{"device": {"(34) 99999-0001"}})
+	// Um pedaço que só existe juntando o fim do IMEI com o começo do ICCID não casa.
+	if p := list(url.Values{"device": {"07789553"}}); p.Total != 0 {
+		t.Errorf("IMEI e ICCID juntos = %v", names(p))
+	}
+	if p := list(url.Values{"device": {"0619000"}, "page": {"5"}}); p.Total != 1 || len(p.Items) != 0 {
+		t.Errorf("rastreador, depois da última página = total %d", p.Total)
+	}
 	// Os filtros somam.
 	if p := list(url.Values{"organization": {org}, "email": {"frota@"}}); p.Total != 0 {
 		t.Errorf("associação e e-mail de outro = %v", names(p))

@@ -13,10 +13,13 @@ import { Modal } from '@/components/ui/Modal';
 import { Pager } from '@/components/ui/Pager';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
+import { ScanButton } from '@/components/scan/ScanButton';
+import fieldStyles from '@/components/ui/Field.module.css';
 import { usePagedList } from '@/hooks/usePagination';
 import { formatDateTime } from '@/services/format';
+import { matchesSearch } from '@/services/search';
 import { trackingUrl } from '@/services/fulfillment';
-import type { Affiliate, KitShipment, KitStatus } from '@/types';
+import type { Affiliate, KitDevice, KitShipment, KitStatus } from '@/types';
 
 import styles from '../../Page.module.css';
 import company from '../company/Company.module.css';
@@ -52,6 +55,17 @@ export function kitTotals(list: KitShipment[]) {
   return totals;
 }
 
+/** Onde a busca procura o rastreador do kit: o IMEI, o chip e o veículo em que foi instalado. */
+const kitDeviceFields = (d: KitDevice) => [d.imei, d.iccid, d.vehicleName, d.plate, d.customerName];
+
+/** A remessa na busca: o representante, o rastreio, a observação ou um dos rastreadores. */
+export function shipmentMatches(k: KitShipment, term: string): boolean {
+  return (
+    matchesSearch(term, [k.affiliateName, k.trackingCode, k.carrier, k.notes, k.requestNote]) ||
+    k.devices.some((d) => matchesSearch(term, kitDeviceFields(d)))
+  );
+}
+
 /** "enviada em 03/11/2026 14:00": quando a remessa chegou à situação de agora. */
 function statusWhen(k: KitShipment): string {
   switch (k.status) {
@@ -77,7 +91,10 @@ export function KitShipmentsCard({ affiliates }: { affiliates: Affiliate[] }) {
   const queryClient = useQueryClient();
   const shipments = useQuery({ queryKey: kitsKey, queryFn: kitShipmentsApi.list });
   const list = useMemo(() => sortShipments(shipments.data ?? []), [shipments.data]);
-  const paged = usePagedList(list, 'kit-shipments');
+  const [search, setSearch] = useState('');
+  const term = search.trim();
+  const shown = useMemo(() => (term ? list.filter((k) => shipmentMatches(k, term)) : list), [list, term]);
+  const paged = usePagedList(shown, 'kit-shipments', term);
   const totals = kitTotals(list);
   // Montando (nova ou atendendo um pedido) e enviando: uma janela por vez.
   const [picking, setPicking] = useState<KitShipment | 'new' | null>(null);
@@ -149,124 +166,147 @@ export function KitShipmentsCard({ affiliates }: { affiliates: Affiliate[] }) {
         />
       ) : (
         <>
-          <div className={styles.tableWrap}>
-            <table className={`${styles.table} ${styles.stackTable}`}>
-              <thead>
-                <tr>
-                  <th>Representante</th>
-                  <th>Situação</th>
-                  <th>Rastreadores</th>
-                  <th>Envio</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {paged.items.map((k) => (
-                  <tr key={k.id}>
-                    <td data-label="Representante">
-                      <span className={local.who}>
-                        <strong>{k.affiliateName}</strong>
-                        {k.requestedQuantity != null && (
-                          <span className={company.muted}>
-                            pediu {k.requestedQuantity} {k.requestedQuantity === 1 ? 'kit' : 'kits'}
-                            {k.requestNote && `: “${k.requestNote}”`}
-                          </span>
-                        )}
-                        {k.notes && <span className={company.muted}>Obs.: {k.notes}</span>}
-                      </span>
-                    </td>
-                    <td data-label="Situação">
-                      <Badge tone={KIT_STATUS[k.status].tone}>{KIT_STATUS[k.status].label}</Badge>
-                      <div className={company.muted}>{statusWhen(k)}</div>
-                    </td>
-                    <td data-label="Rastreadores">
-                      {k.devices.length === 0 ? (
-                        <span className={company.muted}>{k.status === 'requested' ? 'a separar' : '—'}</span>
-                      ) : (
-                        <details className={local.kitDevices}>
-                          <summary>
-                            {k.devices.length} {k.devices.length === 1 ? 'rastreador' : 'rastreadores'}
-                            {k.devices.some((d) => d.installed) && ` · ${k.devices.filter((d) => d.installed).length} instalados`}
-                          </summary>
-                          <ul>
-                            {k.devices.map((d) => (
-                              <li key={d.id}>
-                                <span className={local.mono}>{d.imei}</span>
-                                {d.iccid && <div className={company.muted}>chip {d.iccid}</div>}
-                                {d.installed && (
-                                  <div className={company.muted}>
-                                    no {d.vehicleName}
-                                    {d.plate && ` (${d.plate})`}
-                                    {d.customerName && ` · ${d.customerName}`}
-                                  </div>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        </details>
-                      )}
-                    </td>
-                    <td data-label="Envio">
-                      {k.carrier ? (
-                        <span className={local.who}>
-                          <span>{k.carrier}</span>
-                          {k.trackingCode && (
-                            <a href={trackingUrl(k.trackingCode)} target="_blank" rel="noreferrer" className={local.mono}>
-                              {k.trackingCode}
-                            </a>
-                          )}
-                        </span>
-                      ) : (
-                        <span className={company.muted}>—</span>
-                      )}
-                    </td>
-                    <td className={company.right}>
-                      {canceling === k.id ? (
-                        <span className={local.confirm}>
-                          Cancelar a remessa?
-                          <Button size="small" variant="danger" loading={cancel.isPending} onClick={() => cancel.mutate(k.id)}>
-                            Sim, cancelar
-                          </Button>
-                          <Button size="small" variant="ghost" onClick={() => setCanceling(null)}>
-                            Não
-                          </Button>
-                        </span>
-                      ) : (
-                        <span className={local.actions}>
-                          {k.status === 'requested' && (
-                            <Button size="small" variant="primary" onClick={() => setPicking(k)}>
-                              Atender
-                            </Button>
-                          )}
-                          {k.status === 'preparing' && (
-                            <Button size="small" variant="primary" onClick={() => setShipping(k)}>
-                              Marcar como enviada
-                            </Button>
-                          )}
-                          {k.status === 'shipped' && (
-                            <Button
-                              size="small"
-                              variant="secondary"
-                              loading={deliver.isPending && deliver.variables === k.id}
-                              onClick={() => deliver.mutate(k.id)}
-                            >
-                              Marcar como entregue
-                            </Button>
-                          )}
-                          {(k.status === 'requested' || k.status === 'preparing' || k.status === 'shipped') && (
-                            <Button size="small" variant="ghost" onClick={() => setCanceling(k.id)}>
-                              Cancelar
-                            </Button>
-                          )}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className={local.kitPad}>
+            <div className={`${fieldStyles.adorned} ${styles.listSearch}`}>
+              <input
+                type="search"
+                className={fieldStyles.input}
+                placeholder="Representante, IMEI, chip ou rastreio"
+                aria-label="Buscar remessa ou rastreador"
+                autoComplete="off"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <ScanButton kind="imei" onRead={setSearch} />
+            </div>
           </div>
-          <Pager {...paged.pager} />
+          {shown.length === 0 ? (
+            <EmptyState icon="🔎" title={`Nenhuma remessa com “${term}”`} />
+          ) : (
+            <>
+              <div className={styles.tableWrap}>
+                <table className={`${styles.table} ${styles.stackTable}`}>
+                  <thead>
+                    <tr>
+                      <th>Representante</th>
+                      <th>Situação</th>
+                      <th>Rastreadores</th>
+                      <th>Envio</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paged.items.map((k) => (
+                      <tr key={k.id}>
+                        <td data-label="Representante">
+                          <span className={local.who}>
+                            <strong>{k.affiliateName}</strong>
+                            {k.requestedQuantity != null && (
+                              <span className={company.muted}>
+                                pediu {k.requestedQuantity} {k.requestedQuantity === 1 ? 'kit' : 'kits'}
+                                {k.requestNote && `: “${k.requestNote}”`}
+                              </span>
+                            )}
+                            {k.notes && <span className={company.muted}>Obs.: {k.notes}</span>}
+                          </span>
+                        </td>
+                        <td data-label="Situação">
+                          <Badge tone={KIT_STATUS[k.status].tone}>{KIT_STATUS[k.status].label}</Badge>
+                          <div className={company.muted}>{statusWhen(k)}</div>
+                        </td>
+                        <td data-label="Rastreadores">
+                          {k.devices.length === 0 ? (
+                            <span className={company.muted}>{k.status === 'requested' ? 'a separar' : '—'}</span>
+                          ) : (
+                            <details
+                              className={local.kitDevices}
+                              open={Boolean(term) && k.devices.some((d) => matchesSearch(term, kitDeviceFields(d)))}
+                            >
+                              <summary>
+                                {k.devices.length} {k.devices.length === 1 ? 'rastreador' : 'rastreadores'}
+                                {k.devices.some((d) => d.installed) && ` · ${k.devices.filter((d) => d.installed).length} instalados`}
+                              </summary>
+                              <ul>
+                                {k.devices.map((d) => (
+                                  <li key={d.id}>
+                                    <span className={local.mono}>{d.imei}</span>
+                                    {d.iccid && <div className={company.muted}>chip {d.iccid}</div>}
+                                    {d.installed && (
+                                      <div className={company.muted}>
+                                        no {d.vehicleName}
+                                        {d.plate && ` (${d.plate})`}
+                                        {d.customerName && ` · ${d.customerName}`}
+                                      </div>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            </details>
+                          )}
+                        </td>
+                        <td data-label="Envio">
+                          {k.carrier ? (
+                            <span className={local.who}>
+                              <span>{k.carrier}</span>
+                              {k.trackingCode && (
+                                <a href={trackingUrl(k.trackingCode)} target="_blank" rel="noreferrer" className={local.mono}>
+                                  {k.trackingCode}
+                                </a>
+                              )}
+                            </span>
+                          ) : (
+                            <span className={company.muted}>—</span>
+                          )}
+                        </td>
+                        <td className={company.right}>
+                          {canceling === k.id ? (
+                            <span className={local.confirm}>
+                              Cancelar a remessa?
+                              <Button size="small" variant="danger" loading={cancel.isPending} onClick={() => cancel.mutate(k.id)}>
+                                Sim, cancelar
+                              </Button>
+                              <Button size="small" variant="ghost" onClick={() => setCanceling(null)}>
+                                Não
+                              </Button>
+                            </span>
+                          ) : (
+                            <span className={local.actions}>
+                              {k.status === 'requested' && (
+                                <Button size="small" variant="primary" onClick={() => setPicking(k)}>
+                                  Atender
+                                </Button>
+                              )}
+                              {k.status === 'preparing' && (
+                                <Button size="small" variant="primary" onClick={() => setShipping(k)}>
+                                  Marcar como enviada
+                                </Button>
+                              )}
+                              {k.status === 'shipped' && (
+                                <Button
+                                  size="small"
+                                  variant="secondary"
+                                  loading={deliver.isPending && deliver.variables === k.id}
+                                  onClick={() => deliver.mutate(k.id)}
+                                >
+                                  Marcar como entregue
+                                </Button>
+                              )}
+                              {(k.status === 'requested' || k.status === 'preparing' || k.status === 'shipped') && (
+                                <Button size="small" variant="ghost" onClick={() => setCanceling(k.id)}>
+                                  Cancelar
+                                </Button>
+                              )}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager {...paged.pager} />
+            </>
+          )}
         </>
       )}
 

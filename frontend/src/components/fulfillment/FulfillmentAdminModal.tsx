@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { ApiError } from '@/api/client';
 import { devicesApi, fulfillmentsApi, shippingIntegrationApi, vehiclesApi } from '@/api/resources';
 import { Button } from '@/components/ui/Button';
+import { DeviceSelectField } from '@/components/devices/DeviceSelectField';
 import { SelectField, TextField } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
@@ -242,19 +243,14 @@ export function FulfillmentAdminModal({
 
               {f.trackerStatus === 'CONFIGURING' && (
                 <>
-                  <SelectField
+                  <DeviceSelectField
+                    devices={freeDevices}
                     label="Aparelho configurado (IMEI)"
                     hint="Fica vinculado ao veículo: assim que for instalado, ele aparece no mapa."
                     value={deviceId}
-                    onChange={(e) => setDeviceId(e.target.value)}
-                  >
-                    <option value="">Escolha o aparelho</option>
-                    {freeDevices.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.imei} {d.model ? `· ${d.model}` : ''}
-                      </option>
-                    ))}
-                  </SelectField>
+                    emptyOption="Escolha o aparelho"
+                    onChange={setDeviceId}
+                  />
                   {deviceId && <SmsSetupPanel deviceId={deviceId} fulfillmentId={f.id} />}
                   <div className={styles.actionRow}>
                     <Button

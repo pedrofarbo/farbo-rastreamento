@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 
 import { publicApi } from '@/api/resources';
 import { trackingUrl } from '@/services/fulfillment';
+import { matchesSearch } from '@/services/search';
 import type { KitDevice, KitShipment, KitStatus, PartnerKits } from '@/types';
 
 import { whenLabel } from './InstallationsSection';
@@ -104,7 +105,7 @@ export function KitsSection({ token }: { token: string }) {
           {kits.stock.length > 0 && (
             <details className={styles.kitDetails}>
               <summary>Rastreadores no estoque ({kits.stock.length})</summary>
-              <DeviceList devices={kits.stock} />
+              <StockList devices={kits.stock} />
             </details>
           )}
 
@@ -250,6 +251,35 @@ function DeviceList({ devices }: { devices: KitDevice[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** O estoque, com a busca pelo IMEI ou pelo chip (para achar o da etiqueta). */
+function StockList({ devices }: { devices: KitDevice[] }) {
+  const [search, setSearch] = useState('');
+  const term = search.trim();
+  const shown = term ? devices.filter((d) => matchesSearch(term, [d.imei, d.iccid])) : devices;
+  return (
+    <>
+      <label className={base.field}>
+        <span>Buscar rastreador</span>
+        <input
+          type="search"
+          inputMode="numeric"
+          autoComplete="off"
+          placeholder="Parte do IMEI ou do chip"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </label>
+      {shown.length === 0 ? (
+        <p className={styles.muted} role="status">
+          Nenhum rastreador do estoque com “{term}”.
+        </p>
+      ) : (
+        <DeviceList devices={shown} />
+      )}
+    </>
   );
 }
 

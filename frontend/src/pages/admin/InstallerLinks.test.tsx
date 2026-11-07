@@ -61,6 +61,7 @@ const setValue = async (el: HTMLInputElement | HTMLSelectElement, value: string)
     Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, value);
     el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
   });
+const searchBox = () => document.querySelector('input[aria-label="Buscar rastreador"]') as HTMLInputElement;
 const options = () =>
   Array.from(control<HTMLSelectElement>('Rastreador').options).map((o) => `${o.textContent}${o.disabled ? ' [x]' : ''}`);
 
@@ -117,15 +118,15 @@ describe('a instalação avulsa na tela de Prestadores', () => {
     expect(options()).toContain('869247061230055 · Coban TK910 (link aberto) [x]');
     expect(button('Gerar o link').disabled).toBe(true);
 
-    await setValue(control<HTMLInputElement>('Buscar o rastreador'), 'j16');
+    await setValue(searchBox(), 'j16');
     expect(options()).toEqual(['Escolha o rastreador', '861234567890127 · J16', '869247061230111 · J16']);
-    await setValue(control<HTMLInputElement>('Buscar o rastreador'), '0111');
+    await setValue(searchBox(), '0111');
     expect(options()).toEqual(['Escolha o rastreador', '869247061230111 · J16']);
 
     // A etiqueta lida pela câmera já escolhe o rastreador.
     await act(async () => (document.querySelector('button[aria-label="Ler o IMEI pela câmera"]') as HTMLButtonElement).click());
     await act(async () => button('leitura simulada').click());
-    expect(control<HTMLInputElement>('Buscar o rastreador').value).toBe('861234567890127');
+    expect(searchBox().value).toBe('861234567890127');
     expect(control<HTMLSelectElement>('Rastreador').value).toBe('d2');
 
     await act(async () => button('Gerar o link').click());

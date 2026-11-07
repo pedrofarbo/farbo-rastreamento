@@ -3,6 +3,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import { organizationsApi, vehiclesApi } from '@/api/resources';
+import { ScanButton } from '@/components/scan/ScanButton';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -25,6 +26,7 @@ const PARAMS: Record<keyof VehicleDirectoryFilter, string> = {
   customer: 'cliente',
   document: 'documento',
   email: 'email',
+  device: 'rastreador',
 };
 const KEYS = Object.keys(PARAMS) as (keyof VehicleDirectoryFilter)[];
 
@@ -53,7 +55,7 @@ function useDebounced<T>(value: T, delay: number): T {
   return debounced;
 }
 
-const EMPTY: VehicleDirectoryFilter = { plate: '', organization: '', customer: '', document: '', email: '' };
+const EMPTY: VehicleDirectoryFilter = { plate: '', organization: '', customer: '', document: '', email: '', device: '' };
 
 /** Os veículos de todas as contas (central): paginados, com filtros. */
 export function VehiclesPage() {
@@ -92,8 +94,8 @@ export function VehiclesPage() {
           <div>
             <h1 className={pageStyles.title}>Veículos</h1>
             <p className={pageStyles.description}>
-              Os veículos de todos os clientes e associações. Busque pela placa, pela associação ou pelos dados do
-              cliente.
+              Os veículos de todos os clientes e associações. Busque pela placa, pela associação, pelos dados do
+              cliente ou pelo rastreador (IMEI ou chip).
             </p>
           </div>
         </header>
@@ -133,6 +135,15 @@ export function VehiclesPage() {
               autoCapitalize="none"
               value={draft.email}
               onChange={(e) => set('email')(e.target.value)}
+            />
+            <TextField
+              label="Rastreador"
+              type="search"
+              placeholder="IMEI, ICCID ou linha"
+              autoComplete="off"
+              value={draft.device}
+              onChange={(e) => set('device')(e.target.value)}
+              action={<ScanButton kind="imei" onRead={set('device')} />}
             />
           </form>
           <div className={styles.summary}>

@@ -1,4 +1,5 @@
 import type { VehicleInput } from '@/api/resources';
+import { DeviceSelectField } from '@/components/devices/DeviceSelectField';
 import { SelectField, TextField } from '@/components/ui/Field';
 import fieldStyles from '@/components/ui/Field.module.css';
 import { fieldLabel } from '@/hooks/useFleet';
@@ -132,19 +133,13 @@ export function VehicleFields({
         </>
       )}
       {devices && (
-        <SelectField
-          label="Rastreador"
+        <DeviceSelectField
+          devices={devices}
           hint="Opcional: vincule agora se o aparelho já foi instalado."
           value={value.deviceId ?? ''}
-          onChange={(event) => onChange({ ...value, deviceId: event.target.value || null })}
-        >
-          <option value="">aguardando instalação</option>
-          {devices.map((device) => (
-            <option key={device.id} value={device.id}>
-              {device.imei} {device.model ? `· ${device.model}` : ''}
-            </option>
-          ))}
-        </SelectField>
+          emptyOption="aguardando instalação"
+          onChange={(deviceId) => onChange({ ...value, deviceId: deviceId || null })}
+        />
       )}
     </>
   );

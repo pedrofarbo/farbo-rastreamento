@@ -303,3 +303,10 @@
     display: none;
   }
 }
+
+/* A busca de uma lista, ao lado dos filtros: ocupa o que sobra da linha e,
+   no celular, desce para a linha de baixo inteira. */
+.listSearch {
+  flex: 1 1 280px;
+  max-width: 440px;
+}

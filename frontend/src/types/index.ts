@@ -557,6 +557,8 @@ export interface VehicleDirectoryFilter {
   customer: string;
   document: string;
   email: string;
+  /** Um pedaço do IMEI, do ICCID ou da linha do chip. */
+  device: string;
 }
 
 export interface VehicleDirectoryPage {

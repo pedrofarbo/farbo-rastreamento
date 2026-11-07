@@ -19,12 +19,14 @@ const (
 
 // DirectoryFilter são os filtros da listagem de veículos da central. Os de
 // texto valem por pedaço (sem diferença de maiúsculas); a placa e o CPF/CNPJ
-// ignoram a pontuação.
+// ignoram a pontuação. Device é o rastreador: um pedaço do IMEI, do ICCID
+// ou da linha do chip, sem a pontuação.
 type DirectoryFilter struct {
 	Plate    string
 	Customer string
 	Document string
 	Email    string
+	Device   string
 	// Organization: os veículos dos associados dela; NoOrganization, os de
 	// quem não é associado.
 	Organization   *uuid.UUID
@@ -106,6 +108,11 @@ func (s *Service) Directory(ctx context.Context, f DirectoryFilter) (*DirectoryP
 	if email := strings.TrimSpace(f.Email); email != "" {
 		where = append(where, `strpos(lower(COALESCE(u.email, '')), lower(`+arg(email)+`)) > 0`)
 	}
+	if device := onlyDigitsAndLetters(f.Device); device != "" {
+		// Com o espaço entre eles, um pedaço não casa juntando dois campos.
+		where = append(where, `strpos(upper(COALESCE(d.imei, '') || ' ' || COALESCE(d.iccid, '') || ' ' ||
+			regexp_replace(COALESCE(d.phone_number, ''), '[^0-9]', '', 'g')), `+arg(device)+`) > 0`)
+	}
 	switch {
 	case f.Organization != nil:
 		where = append(where, `u.organization_id = `+arg(*f.Organization))
@@ -154,7 +161,8 @@ func (s *Service) Directory(ctx context.Context, f DirectoryFilter) (*DirectoryP
 	// Uma página depois da última não traz linha nenhuma, e com ela o total.
 	if len(out.Items) == 0 && f.Page > 1 {
 		if err := s.repo.db.QueryRow(ctx, `
-			SELECT count(*) FROM vehicles v LEFT JOIN users u ON u.id = v.owner_id `+cond, args[:len(args)-2]...).
+			SELECT count(*) FROM vehicles v LEFT JOIN users u ON u.id = v.owner_id LEFT JOIN devices d ON d.id = v.device_id `+cond,
+			args[:len(args)-2]...).
 			Scan(&out.Total); err != nil {
 			return nil, database.MapError(err)
 		}

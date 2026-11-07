@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { devicesApi, installerLinksApi } from '@/api/resources';
 import styles from '@/components/install/Appointments.module.css';
-import { ScanButton } from '@/components/scan/ScanButton';
+import { DeviceSelectField } from '@/components/devices/DeviceSelectField';
 import { Badge } from '@/components/ui/Badge';
 import type { BadgeTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -187,7 +187,6 @@ export function InstallerLinkModal({
   const { notify } = useToast();
   const devices = useQuery({ queryKey: ['devices'], queryFn: devicesApi.list });
   const links = useQuery({ queryKey: installerLinksKey, queryFn: installerLinksApi.list });
-  const [search, setSearch] = useState('');
   const [deviceId, setDeviceId] = useState('');
   const [installerId, setInstallerId] = useState(initialInstaller);
   const [installerName, setInstallerName] = useState('');
@@ -197,24 +196,6 @@ export function InstallerLinkModal({
 
   // Os rastreadores com link aberto não entram de novo (um por rastreador).
   const busy = new Set((links.data ?? []).filter((l) => l.status === 'open').map((l) => l.deviceId));
-  const term = search.trim().toLowerCase();
-  const digits = search.replace(/\D/g, '');
-  const all = devices.data ?? [];
-  const options = term
-    ? all.filter(
-        (d) =>
-          d.id === deviceId ||
-          (digits.length >= 3 && d.imei.includes(digits)) ||
-          `${d.manufacturer} ${d.model} ${d.notes}`.toLowerCase().includes(term),
-      )
-    : all;
-
-  const pickSearch = (text: string) => {
-    setSearch(text);
-    // O IMEI inteiro (digitado ou lido da etiqueta) já escolhe o rastreador.
-    const exact = all.find((d) => d.imei === text.replace(/\D/g, ''));
-    if (exact && !busy.has(exact.id)) setDeviceId(exact.id);
-  };
 
   const save = useMutation({
     mutationFn: () => {
@@ -299,27 +280,15 @@ export function InstallerLinkModal({
     >
       <div className={pageStyles.form}>
         {error && <div className={pageStyles.note}>{error}</div>}
-        <TextField
-          label="Buscar o rastreador"
-          placeholder="Parte do IMEI ou o modelo"
-          hint="O botão no campo lê o IMEI da etiqueta pela câmera."
-          inputMode="search"
-          autoComplete="off"
-          value={search}
-          onChange={(e) => pickSearch(e.target.value)}
-          action={<ScanButton kind="imei" onRead={pickSearch} />}
+        <DeviceSelectField
+          devices={devices.data ?? []}
+          hint="O botão na busca lê o IMEI da etiqueta pela câmera; o IMEI inteiro já escolhe o rastreador."
+          value={deviceId}
+          emptyOption={devices.isLoading ? 'Carregando…' : 'Escolha o rastreador'}
+          optionLabel={deviceLabel}
+          unavailable={(d) => (busy.has(d.id) ? 'link aberto' : '')}
+          onChange={setDeviceId}
         />
-        <SelectField label="Rastreador" value={deviceId} onChange={(e) => setDeviceId(e.target.value)}>
-          <option value="">
-            {devices.isLoading ? 'Carregando…' : options.length === 0 ? 'Nenhum rastreador encontrado' : 'Escolha o rastreador'}
-          </option>
-          {options.map((d) => (
-            <option key={d.id} value={d.id} disabled={busy.has(d.id)}>
-              {deviceLabel(d)}
-              {busy.has(d.id) ? ' (link aberto)' : ''}
-            </option>
-          ))}
-        </SelectField>
         <SelectField label="Instalador" value={installerId} onChange={(e) => setInstallerId(e.target.value)}>
           <option value="">Outro (digitar o nome)</option>
           {installers.map((i) => (

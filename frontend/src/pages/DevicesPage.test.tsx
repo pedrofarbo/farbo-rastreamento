@@ -428,6 +428,27 @@ describe('DevicesPage', () => {
     expect(buttonNamed('Salvar')!.disabled).toBe(false);
   });
 
+  it('a busca da lista acha pelo IMEI, pelo chip, pela placa e pelo cliente', async () => {
+    await render();
+    const box = document.querySelector('input[aria-label="Buscar rastreador"]') as HTMLInputElement;
+    const imeis = () => Array.from(document.querySelectorAll('tbody tr td:nth-child(2) span')).map((s) => s.textContent);
+    expect(imeis()).toEqual(['869247061230011', '869247061230022']);
+
+    act(() => typeInto(box, '1230022'));
+    expect(imeis()).toEqual(['869247061230022']);
+    act(() => typeInto(box, '8955 3202 1000 9379 5330'));
+    expect(imeis()).toEqual(['869247061230011']);
+    act(() => typeInto(box, 'abc-1d23'));
+    expect(imeis()).toEqual(['869247061230011']);
+    act(() => typeInto(box, 'silva'));
+    expect(imeis()).toEqual(['869247061230011']);
+
+    act(() => typeInto(box, 'nada disso'));
+    expect(document.body.textContent).toContain('Nenhum rastreador com “nada disso”');
+    act(() => buttonNamed('Limpar a busca')!.click());
+    expect(imeis()).toHaveLength(2);
+  });
+
   it('o chip do estoque: escolhido, os dados vêm dele; o que está em outro rastreador não aparece', async () => {
     await render();
     act(() => buttonNamed('Novo rastreador')!.click());

@@ -16,6 +16,7 @@ import { installmentProgress } from '@/components/billing/installments';
 import { FleetImportModal } from '@/components/billing/FleetImportModal';
 import { NewVehicleWizard } from '@/components/billing/NewVehicleWizard';
 import { FulfillmentAdminModal } from '@/components/fulfillment/FulfillmentAdminModal';
+import { DeviceSelectField } from '@/components/devices/DeviceSelectField';
 import { PixPaymentModal } from '@/components/billing/PixPaymentModal';
 import {
   DEFAULT_SUBSCRIPTION,
@@ -504,27 +505,22 @@ export function CustomerDetailsPage() {
                             )}
                           </td>
                           <td>
-                            <select
-                              className={fieldStyles.select}
-                              aria-label={`Rastreador de ${vehicle.name}`}
+                            {/* Escolher já vincula: o IMEI inteiro na busca só filtra. */}
+                            <DeviceSelectField
+                              devices={availableDevices(vehicle)}
+                              label={`Rastreador de ${vehicle.name}`}
+                              hideLabel
+                              autoPick={false}
                               value={vehicle.deviceId ?? ''}
+                              emptyOption="aguardando instalação"
                               disabled={action.isPending}
-                              onChange={(event) => {
-                                // Lido agora: quando a chamada rodar, o select controlado já
-                                // terá voltado ao valor antigo.
-                                const deviceId = event.target.value || null;
+                              onChange={(picked) => {
+                                const deviceId = picked || null;
                                 run(deviceId ? 'Rastreador vinculado' : 'Rastreador desvinculado', () =>
                                   vehiclesApi.update(vehicle.id, vehicleInputFrom(vehicle, { deviceId })),
                                 );
                               }}
-                            >
-                              <option value="">aguardando instalação</option>
-                              {availableDevices(vehicle).map((device) => (
-                                <option key={device.id} value={device.id}>
-                                  {device.imei} {device.model ? `· ${device.model}` : ''}
-                                </option>
-                              ))}
-                            </select>
+                            />
                             <div style={{ marginTop: 'var(--space-1)', display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
                               {vehicle.device?.lastSeenAt ? (
                                 <Badge

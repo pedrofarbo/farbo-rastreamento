@@ -16,6 +16,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { usePagedList } from '@/hooks/usePagination';
 import { formatICCID, formatPhoneInput } from '@/services/format';
+import { chipSearchFields, matchesSearch } from '@/services/search';
 import type { Chip } from '@/types';
 
 import pageStyles from '../Page.module.css';
@@ -45,16 +46,10 @@ export function ChipsPage() {
   const all = list.data ?? [];
   const free = all.filter((c) => !c.device).length;
   const shown = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    const digits = term.replace(/\D/g, '');
     return all.filter((c) => {
       if (filter === 'free' && c.device) return false;
       if (filter === 'used' && !c.device) return false;
-      if (!term) return true;
-      return (
-        (digits.length >= 3 && (c.iccid.includes(digits) || c.phoneNumber.replace(/\D/g, '').includes(digits) || c.device?.imei.includes(digits))) ||
-        [c.carrier, c.apn, c.notes].some((v) => v.toLowerCase().includes(term))
-      );
+      return matchesSearch(search, chipSearchFields(c));
     });
   }, [all, filter, search]);
   const paged = usePagedList(shown, 'chips', [filter, search]);

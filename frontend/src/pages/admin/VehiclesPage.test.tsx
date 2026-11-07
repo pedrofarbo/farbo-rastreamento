@@ -26,6 +26,11 @@ vi.mock('@/api/resources', () => ({
   organizationsApi: { list: async () => [{ id: 'o1', name: 'Associação Protege' }] },
 }));
 
+// O botão de ler o IMEI pela câmera avisa pelo toast.
+vi.mock('@/components/ui/Toast', () => ({
+  useToast: () => ({ notify: () => {} }),
+}));
+
 import { VehiclesPage } from './VehiclesPage';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -73,7 +78,7 @@ afterEach(() => {
 describe('a listagem de veículos da central', () => {
   it('mostra o dono, a associação e o rastreador, e pagina', async () => {
     await render();
-    expect(calls[0]).toEqual({ filter: { plate: '', organization: '', customer: '', document: '', email: '' }, page: 1 });
+    expect(calls[0]).toEqual({ filter: { plate: '', organization: '', customer: '', document: '', email: '', device: '' }, page: 1 });
     expect(text()).toContain('60 veículos');
     expect(text()).toContain('ABC1D23');
     expect(text()).toContain('529.982.247-25');
@@ -102,10 +107,14 @@ describe('a listagem de veículos da central', () => {
     await type('Placa', 'abc-1d');
     await type('CPF ou CNPJ', '529.982');
     await type('Associação', 'o1');
+    await type('Rastreador', '0619000');
     await vi.waitFor(() =>
-      expect(calls.at(-1)).toEqual({ filter: { plate: 'abc-1d', organization: 'o1', customer: '', document: '529.982', email: '' }, page: 1 }),
+      expect(calls.at(-1)).toEqual({
+        filter: { plate: 'abc-1d', organization: 'o1', customer: '', document: '529.982', email: '', device: '0619000' },
+        page: 1,
+      }),
     );
-    expect(location).toBe('/veiculos?placa=abc-1d&associacao=o1&documento=529.982');
+    expect(location).toBe('/veiculos?placa=abc-1d&associacao=o1&documento=529.982&rastreador=0619000');
 
     await act(async () => button('Limpar filtros')!.click());
     await vi.waitFor(() => expect(location).toBe('/veiculos'));
@@ -126,7 +135,7 @@ describe('a listagem de veículos da central', () => {
       ),
     );
     await vi.waitFor(() => expect(text()).toContain('Nenhum veículo com esses filtros'));
-    expect(calls[0].filter).toEqual({ plate: '', organization: 'none', customer: '', document: '', email: 'ninguem@x.com' });
+    expect(calls[0].filter).toEqual({ plate: '', organization: 'none', customer: '', document: '', email: 'ninguem@x.com', device: '' });
     expect((document.querySelector('input[type="search"]') as HTMLInputElement).value).toBe('ninguem@x.com');
   });
 });

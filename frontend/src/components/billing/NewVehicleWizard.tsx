@@ -19,6 +19,7 @@ import type { SubscriptionDraft } from '@/components/billing/SubscriptionFields'
 import { ContractAcceptForm, contractKey } from '@/components/contract/ContractAcceptForm';
 import { InstallersModal } from '@/components/landing/InstallersModal';
 import { Button } from '@/components/ui/Button';
+import { DeviceSelectField, deviceOptionLabel } from '@/components/devices/DeviceSelectField';
 import { SelectField, TextField } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
@@ -544,19 +545,15 @@ export function NewVehicleWizard({
 
             {step === 1 && admin && adminDraft && (
               <>
-                <SelectField
+                <DeviceSelectField
+                  devices={admin.devices}
                   label="Aparelho"
                   hint="Se o rastreador já foi instalado no veículo, escolha o aparelho para vincular agora."
                   value={adminDraft.deviceId}
-                  onChange={(e) => setAdminDraft({ ...adminDraft, deviceId: e.target.value })}
-                >
-                  <option value="">Enviar ao cliente (instalação depois)</option>
-                  {admin.devices.map((device) => (
-                    <option key={device.id} value={device.id}>
-                      Já instalado: {device.imei} {device.model ? `· ${device.model}` : ''}
-                    </option>
-                  ))}
-                </SelectField>
+                  emptyOption="Enviar ao cliente (instalação depois)"
+                  optionLabel={(device) => `Já instalado: ${deviceOptionLabel(device)}`}
+                  onChange={(deviceId) => setAdminDraft({ ...adminDraft, deviceId })}
+                />
                 {promoStatus.data?.eligible ? (
                   <label className={styles.promoOption}>
                     <input

@@ -11,6 +11,8 @@ import { Card } from '@/components/ui/Card';
 import { DeviceActivationModal } from '@/components/devices/DeviceActivationModal';
 import { DeviceBulkActivationModal } from '@/components/devices/DeviceBulkActivationModal';
 import { DeviceBulkModal } from '@/components/devices/DeviceBulkModal';
+import { DeviceSelectField } from '@/components/devices/DeviceSelectField';
+import { ChipSelectField } from '@/components/chips/ChipSelectField';
 import { ScanButton } from '@/components/scan/ScanButton';
 import { UnknownDevicesCard } from '@/components/devices/UnknownDevicesCard';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -25,6 +27,7 @@ import { usePagedList } from '@/hooks/usePagination';
 import { isDeviceActivated } from '@/services/deviceBulk';
 import { imeiProblem } from '@/services/imei';
 import { formatDeviceStatus, formatICCID, formatPhoneInput, formatRelative } from '@/services/format';
+import { deviceSearchFields, matchesSearch } from '@/services/search';
 import { useAuth } from '@/stores/AuthContext';
 import type { Device } from '@/types';
 
@@ -106,6 +109,7 @@ export function DevicesPage() {
   const [bulkActivationOpen, setBulkActivationOpen] = useState(false);
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<Set<string>>(new Set());
   const [activationFilter, setActivationFilter] = useState<'all' | 'pending' | 'activated'>('all');
+  const [search, setSearch] = useState('');
 
   const devices = useQuery({ queryKey: ['devices'], queryFn: devicesApi.list });
   const vehicles = useQuery({ queryKey: ['vehicles'], queryFn: vehiclesApi.list });
@@ -144,14 +148,19 @@ export function DevicesPage() {
       notify({ tone: 'error', title: 'Não foi possível salvar', description: error.message }),
   });
 
-  const vehicleByDevice = new Map(
-    (vehicles.data ?? [])
-      .filter((vehicle) => vehicle.deviceId)
-      .map((vehicle) => [vehicle.deviceId as string, vehicle]),
+  const vehicleByDevice = useMemo(
+    () =>
+      new Map(
+        (vehicles.data ?? [])
+          .filter((vehicle) => vehicle.deviceId)
+          .map((vehicle) => [vehicle.deviceId as string, vehicle]),
+      ),
+    [vehicles.data],
   );
 
-  const customerById = new Map(
-    (customers.data ?? []).map((customer) => [customer.id, customer]),
+  const customerById = useMemo(
+    () => new Map((customers.data ?? []).map((customer) => [customer.id, customer])),
+    [customers.data],
   );
 
   const allDevices = devices.data ?? [];
@@ -172,12 +181,19 @@ export function DevicesPage() {
   const imeiIssue = deviceForm ? imeiProblem(deviceForm.imei) : '';
   const imeiBlocked = Boolean(imeiIssue) && !deviceForm?.imeiConfirmed;
 
-  const displayedDevices = useMemo(() => {
-    if (activationFilter === 'pending') return allDevices.filter((d) => !isDeviceActivated(d));
-    if (activationFilter === 'activated') return allDevices.filter(isDeviceActivated);
-    return allDevices;
-  }, [allDevices, activationFilter]);
-  const paged = usePagedList(displayedDevices, 'devices', activationFilter);
+  // A busca olha o rastreador, o chip e de quem ele é (veículo, placa, cliente).
+  const displayedDevices = useMemo(
+    () =>
+      allDevices.filter((d) => {
+        if (activationFilter === 'pending' && isDeviceActivated(d)) return false;
+        if (activationFilter === 'activated' && !isDeviceActivated(d)) return false;
+        const vehicle = vehicleByDevice.get(d.id);
+        const customer = vehicle?.ownerId ? customerById.get(vehicle.ownerId) : null;
+        return matchesSearch(search, [...deviceSearchFields(d), vehicle?.name, vehicle?.plate, customer?.name, customer?.email]);
+      }),
+    [allDevices, activationFilter, search, vehicleByDevice, customerById],
+  );
+  const paged = usePagedList(displayedDevices, 'devices', [activationFilter, search]);
   const pageIds = paged.items.map((d) => d.id);
   const [tableWrap, tableOverflowing] = useOverflowX<HTMLDivElement>();
 
@@ -252,6 +268,18 @@ export function DevicesPage() {
                 Já ativados ({activatedCount})
               </Button>
             </div>
+            <div className={`${fieldStyles.adorned} ${styles.listSearch}`}>
+              <input
+                type="search"
+                className={fieldStyles.input}
+                placeholder="IMEI, chip, placa ou cliente"
+                aria-label="Buscar rastreador"
+                autoComplete="off"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <ScanButton kind="imei" onRead={setSearch} />
+            </div>
           </div>
         )}
 
@@ -299,6 +327,18 @@ export function DevicesPage() {
               icon="📡"
               title="Nenhum rastreador cadastrado"
               description="Cadastre o IMEI impresso no aparelho para que ele possa se conectar."
+            />
+          ) : displayedDevices.length === 0 ? (
+            <EmptyState
+              icon="🔎"
+              title={search.trim() ? `Nenhum rastreador com “${search.trim()}”` : 'Nenhum rastreador neste filtro'}
+              action={
+                search.trim() ? (
+                  <Button size="small" onClick={() => setSearch('')}>
+                    Limpar a busca
+                  </Button>
+                ) : undefined
+              }
             />
           ) : (
             <div ref={tableWrap} className={`${styles.tableWrap} ${tableOverflowing ? styles.overflowing : ''}`}>
@@ -550,8 +590,8 @@ export function DevicesPage() {
               ))}
             </SelectField>
 
-            <SelectField
-              label="Chip"
+            <ChipSelectField
+              chips={selectableChips}
               hint={
                 selectedChip
                   ? 'A linha, o ICCID e o APN vêm do estoque. Para corrigir, edite o chip em Chips.'
@@ -560,8 +600,9 @@ export function DevicesPage() {
                     : 'Escolha um chip livre do estoque, ou digite os dados abaixo (o chip entra no estoque).'
               }
               value={selectedChip?.id ?? ''}
-              onChange={(event) => {
-                const chip = chipList.find((c) => c.id === event.target.value);
+              emptyOption="Digitar os dados do chip"
+              onChange={(chipId) => {
+                const chip = chipList.find((c) => c.id === chipId);
                 setDeviceForm(
                   chip
                     ? {
@@ -577,16 +618,7 @@ export function DevicesPage() {
                     : { ...deviceForm, chipId: null, phoneNumber: '', iccid: '', apn: '', apnUser: '', apnPassword: '' },
                 );
               }}
-            >
-              <option value="">Digitar os dados do chip</option>
-              {selectableChips.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {formatICCID(c.iccid)}
-                  {c.phoneNumber ? ` · ${formatPhoneInput(c.phoneNumber)}` : ''}
-                  {c.carrier ? ` · ${c.carrier}` : ''}
-                </option>
-              ))}
-            </SelectField>
+            />
 
             {selectedChip && (
               <p className={styles.note}>
@@ -835,20 +867,12 @@ export function DevicesPage() {
                 }
               />
             </div>
-            <SelectField
-              label="Rastreador"
+            <DeviceSelectField
+              devices={devices.data ?? []}
               value={vehicleForm.deviceId ?? ''}
-              onChange={(event) =>
-                setVehicleForm({ ...vehicleForm, deviceId: event.target.value || null })
-              }
-            >
-              <option value="">sem vínculo</option>
-              {(devices.data ?? []).map((device) => (
-                <option key={device.id} value={device.id}>
-                  {device.imei} {device.model ? `· ${device.model}` : ''}
-                </option>
-              ))}
-            </SelectField>
+              emptyOption="sem vínculo"
+              onChange={(deviceId) => setVehicleForm({ ...vehicleForm, deviceId: deviceId || null })}
+            />
           </div>
         )}
       </Modal>
