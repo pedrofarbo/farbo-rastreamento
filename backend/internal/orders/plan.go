@@ -25,8 +25,9 @@ type AccountPlan struct {
 }
 
 // Terms é o rastreador do cliente e as taxas, definidos pela central no
-// plano dele: vendido (o padrão) ou em comodato, com a instalação cobrada na
-// fatura da contratação e a desinstalação no encerramento.
+// plano dele: incluso (sale, o padrão: fica com o cliente) ou em comodato,
+// com a instalação cobrada na fatura da contratação e a desinstalação no
+// encerramento.
 type Terms struct {
 	EquipmentMode     string `json:"equipmentMode"`
 	InstallFeeCents   int    `json:"installFeeCents"`
@@ -37,14 +38,14 @@ type Terms struct {
 	GuaranteeCents int `json:"-"`
 }
 
-// check confere os termos (vazio é venda).
+// check confere os termos (vazio é o rastreador incluso).
 func (t *Terms) check() error {
 	if t.EquipmentMode == "" {
 		t.EquipmentMode = billing.EquipmentSale
 	}
 	switch {
 	case t.EquipmentMode != billing.EquipmentSale && t.EquipmentMode != billing.EquipmentLoan:
-		return ValidationError{"escolha o rastreador: venda ou comodato"}
+		return ValidationError{"escolha o rastreador: incluso ou comodato"}
 	case t.InstallFeeCents < 0 || t.InstallFeeCents > 100_000_00 || t.UninstallFeeCents < 0 || t.UninstallFeeCents > 100_000_00:
 		return ValidationError{"as taxas de instalação e de desinstalação vão de R$ 0 a R$ 100.000"}
 	}
@@ -58,7 +59,7 @@ type PlanInput struct {
 }
 
 // CustomerTerms é o rastreador e as taxas do cliente: os do plano dele; sem
-// plano, vendido e sem taxas.
+// plano, incluso e sem taxas.
 func (s *Service) CustomerTerms(ctx context.Context, customerID uuid.UUID) (Terms, error) {
 	plan, err := s.AccountPlan(ctx, customerID)
 	if err != nil || plan == nil {

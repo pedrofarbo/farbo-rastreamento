@@ -83,7 +83,8 @@ describe('ReferralSignupPage', () => {
     expect(offerRefs).toContain('joao-moto');
     expect(host.textContent).toContain('Preço promocional');
     expect(host.textContent).toContain('R$34,90/mês');
-    expect(host.textContent).toContain('ou 10x de R$ 12,00 sem juros no Pix, direto na mensalidade');
+    expect(host.textContent).toContain('Rastreador incluso, que fica com você: só o frete à parte');
+    expect(host.textContent).not.toMatch(/sem juros|parcel|à vista/);
     expect(host.textContent).not.toContain('Insanos');
     // O botão leva à contratação (o link fica guardado no aparelho e vai junto).
     const cta = Array.from(host.querySelectorAll('a')).find((a) => a.textContent === 'Contratar agora');

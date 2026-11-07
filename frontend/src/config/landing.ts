@@ -1,4 +1,4 @@
-import type { CheckoutOffer, LoanOffer } from '@/types';
+import type { CheckoutOffer, LoanOffer, Tracker } from '@/types';
 
 /**
  * Sem clientes ativos ainda para depor: os depoimentos ficam fora da landing
@@ -8,17 +8,19 @@ import type { CheckoutOffer, LoanOffer } from '@/types';
 export const PRE_LAUNCH = true;
 
 /**
- * A contratação pelo site (/contratar): a pessoa física escolhe o plano e o
- * rastreador (comprado ou em comodato) e paga com Pix na hora. Nenhum preço
- * fica no código: as páginas mostram os da oferta do servidor (as opções do
+ * A contratação pelo site (/contratar): a pessoa física escolhe o rastreador
+ * (incluso na mensalidade ou em comodato) e paga com Pix na hora. A Farbo não
+ * vende o rastreador: as páginas nunca falam em comprá-lo. Nenhum preço fica
+ * no código: as páginas mostram os da oferta do servidor (as opções do
  * pedido, na central), os mesmos cobrados. Fechada na central, os botões
  * abrem o pré-cadastro.
  */
 export const CHECKOUT_PATH = '/contratar';
 
 /**
- * Pelo link de um afiliado só de comodato: o rastreador não é vendido, e as
- * páginas mostram o comodato no lugar do preço dele (com a contratação aberta).
+ * Pelo link de um afiliado só de comodato: o rastreador não fica com a
+ * pessoa, e as páginas mostram o comodato no lugar do incluso (com a
+ * contratação aberta).
  */
 export function loanOnly(offer: CheckoutOffer | undefined, open = true): offer is CheckoutOffer & { loan: LoanOffer } {
   return open && offer?.equipmentModes === 'loan' && !!offer.loan;
@@ -37,19 +39,49 @@ export function priceLabel(cents: number): string {
   return `R$ ${parts.reais}${parts.cents === ',00' ? '' : parts.cents}`;
 }
 
-/** "10x de R$ 12,00": a parcela do rastreador em n vezes (o teto vem da oferta). */
-export function installmentsOf(cents: number, n: number): string {
-  const parcel = Math.floor(cents / n);
-  return `${n}x de R$ ${Math.floor(parcel / 100)},${String(parcel % 100).padStart(2, '0')}`;
+/**
+ * A mensalidade com o rastreador incluso: a das primeiras `months` (com a
+ * parte do rastreador, quando ela é somada ao plano) e a de depois. No plano
+ * do site, a parte já está no preço: as duas são iguais.
+ */
+export function includedMonthly(monthlyCents: number, tracker: Tracker | undefined): {
+  first: number;
+  after: number;
+  months: number;
+} {
+  const added = tracker && tracker.added && tracker.cents > 0 && tracker.months > 0;
+  return { first: monthlyCents + (added ? tracker.cents : 0), after: monthlyCents, months: added ? tracker.months : 0 };
 }
 
 /**
- * "10x de R$ 12,00 sem juros no Pix, direto na mensalidade": o rastreador
- * parcelado como as páginas públicas dizem (as parcelas vêm somadas às
- * mensalidades, uma por mês). Vazio se ele é só à vista.
+ * O rastreador como as páginas públicas dizem: "rastreador incluso" (no
+ * plano do site, a parte dele já está no preço) ou, pela tabela do afiliado,
+ * "rastreador incluso (+ R$ 12/mês nas 10 primeiras mensalidades)".
  */
-export function installmentsPhrase(cents: number, n: number): string {
-  return n > 1 ? `${installmentsOf(cents, n)} sem juros no Pix, direto na mensalidade` : '';
+export function includedLabel(offer: CheckoutOffer | undefined, open = true): string {
+  const added = trackerAdded(offer, open);
+  return added
+    ? `rastreador incluso (+ ${priceLabel(added.cents)}/mês nas ${added.months} primeiras mensalidades)`
+    : 'rastreador incluso';
+}
+
+/**
+ * A parte do rastreador incluso somada à mensalidade (pela tabela do
+ * afiliado), quando há; nula no plano do site, em que ela já está no preço.
+ */
+export function trackerAdded(offer: CheckoutOffer | undefined, open = true): { cents: number; months: number } | null {
+  const t = offer?.tracker;
+  return open && offer?.planByKind && t && t.added && t.cents > 0 && t.months > 0 ? t : null;
+}
+
+/**
+ * "R$ 61,90/mês nas 10 primeiras mensalidades, depois R$ 49,90/mês": a
+ * mensalidade com a parte do rastreador somada (vazio quando ela já está no
+ * preço).
+ */
+export function includedPhrase(monthlyCents: number, tracker: Tracker | undefined): string {
+  const m = includedMonthly(monthlyCents, tracker);
+  return m.months > 0 ? `${priceLabel(m.first)}/mês nas ${m.months} primeiras mensalidades, depois ${priceLabel(m.after)}/mês` : '';
 }
 
 /** O endereço público do site: o QR Code dos eventos aponta para ele. */

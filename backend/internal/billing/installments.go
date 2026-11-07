@@ -12,9 +12,10 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 )
 
-// O rastreador parcelado sem juros, por Pix: no pedido, o frete e a 1ª
-// mensalidade; as parcelas vêm somadas às mensalidades da assinatura, uma por
-// mês (a 1ª na 1ª mensalidade). Ela fica ativa até a última parcela (CommitmentUntil); se
+// O rastreador comprado parcelado sem juros, de antes do rastreador incluso
+// (o pedido novo não parcela: a Farbo não vende mais o rastreador). As
+// assinaturas que já têm parcelas seguem: elas vêm somadas às mensalidades, uma
+// por mês (a 1ª na 1ª mensalidade). Ela fica ativa até a última parcela (CommitmentUntil); se
 // for encerrada antes, o saldo vira uma fatura só — ou é dispensado
 // (arrependimento, pedido desfeito).
 
@@ -163,7 +164,7 @@ const (
 
 // ErrBalanceChoice: a assinatura tem parcelas do rastreador por pagar e o
 // encerramento precisa dizer o que fazer com elas.
-var ErrBalanceChoice = errors.New("o rastreador desta assinatura tem parcelas por pagar: escolha se o saldo será cobrado numa fatura ou dispensado")
+var ErrBalanceChoice = errors.New("o rastreador desta assinatura ainda não se pagou (parcelas, ou a parte dele nas primeiras mensalidades): escolha se o saldo será cobrado numa fatura ou dispensado")
 
 // settleBalance resolve as parcelas que ficaram sem fatura no encerramento
 // (as das mensalidades futuras canceladas voltam para cá): cobradas numa

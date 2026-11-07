@@ -107,22 +107,23 @@ export function ContractAcceptForm({
               recuperação do veículo em caso de roubo ou furto.
             </li>
             <li>
-              <strong>Comprou o rastreador?</strong> Ele é seu, mesmo depois que a assinatura termina.{' '}
+              <strong>A Farbo não vende o rastreador.</strong> <strong>Rastreador incluso?</strong> Ele fica com você, mesmo
+              depois que a assinatura termina, e a parte dele vem nas primeiras mensalidades.{' '}
               <strong>Está em comodato?</strong> Ele é emprestado pela Farbo e volta na desinstalação, com as taxas do seu
               plano.
             </li>
             <li>
-              <strong>No pedido</strong> (pessoa física), você paga a 1ª mensalidade, o frete, o rastreador à vista e a
-              instalação, se escolher a nossa; depois, uma fatura por mês, no dia de vencimento da conta. Empresa: tudo
-              na fatura do mês.
+              <strong>No pedido</strong> (pessoa física), você paga a 1ª mensalidade, o frete e a instalação, se escolher a
+              nossa; depois, uma fatura por mês, no dia de vencimento da conta. Empresa: tudo na fatura do mês.
             </li>
             <li>
               <strong>Permanência mínima de 3 meses</strong> por veículo. Se cancelar antes, a multa é de{' '}
               <strong>1 mensalidade</strong>.
             </li>
             <li>
-              <strong>Parcelou o rastreador?</strong> A assinatura fica ativa até a última parcela. Se sair antes, as
-              parcelas que faltam vencem de uma vez.
+              <strong>Saiu antes do fim da parte do rastreador incluso?</strong> O que falta dela vence de uma vez. Quem
+              parcelou um rastreador comprado antes fica até a última parcela; saindo antes, as que faltam vencem de uma
+              vez.
             </li>
             <li>
               <strong>Reajuste anual em agosto</strong>, pelo IPCA dos 12 meses até maio, com aviso por e-mail 30 dias

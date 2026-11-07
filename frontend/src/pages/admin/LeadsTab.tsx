@@ -134,8 +134,8 @@ function promoPhrase(plan: string, offer: PromoOffer): string {
   const insanos = offer.insanosPlanName !== '' && plan.toLowerCase().includes(offer.insanosPlanName.toLowerCase());
   const money = (cents: number) => formatMoney(cents).replace(/ /g, ' ');
   return (
-    `cada rastreador sai por ${money(offer.equipmentCents)}, com mensalidade de ` +
-    `${money(insanos ? offer.insanosMonthlyCents : offer.monthlyCents)} nos ${offer.months} primeiros meses, enquanto houver vagas`
+    `a mensalidade sai por ${money(insanos ? offer.insanosMonthlyCents : offer.monthlyCents)} nos ${offer.months} primeiros ` +
+    `meses, com o rastreador incluso, enquanto houver vagas`
   );
 }
 
@@ -269,8 +269,8 @@ export function LeadsTab({ onConvert }: { onConvert: (lead: Lead) => void }) {
               <strong>
                 Promoção de pré-lançamento: {usage.used} de {usage.slots} vagas usadas.
               </strong>{' '}
-              Quem está na lista de lançamento contrata cada rastreador por {formatMoney(usage.offer.equipmentCents)} e
-              paga {formatMoney(usage.offer.monthlyCents)} de mensalidade ({formatMoney(usage.offer.insanosMonthlyCents)} no plano{' '}
+              Quem está na lista de lançamento contrata cada rastreador e paga {formatMoney(usage.offer.monthlyCents)} de
+              mensalidade ({formatMoney(usage.offer.insanosMonthlyCents)} no plano{' '}
               {usage.offer.insanosPlanName}) nos {usage.offer.months} primeiros meses, em quantos veículos quiser. A vaga é do cliente, ocupada na primeira
               contratação, pelo e-mail da conta.
             </>

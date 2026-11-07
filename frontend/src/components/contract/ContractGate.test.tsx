@@ -84,7 +84,7 @@ describe('o contrato no primeiro acesso', () => {
     expect(text()).not.toContain('o painel');
     expect(text()).toContain('Lia, antes de continuar');
     expect(text()).toContain('Os pontos principais');
-    expect(text()).toContain('Comprou o rastreador? Ele é seu');
+    expect(text()).toContain('A Farbo não vende o rastreador. Rastreador incluso? Ele fica com você');
     expect(text()).toContain('Está em comodato? Ele é emprestado pela Farbo');
     expect(text()).toContain('É só o sistema de rastreamento');
     expect(text()).toContain('não garantimos a recuperação do veículo');

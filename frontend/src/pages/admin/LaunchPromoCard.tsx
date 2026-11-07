@@ -12,9 +12,9 @@ import pageStyles from '../Page.module.css';
 /** A chave da situação da promoção do cliente (a mesma do Novo veículo). */
 export const launchPromoKey = (customerId: string) => ['customer', customerId, 'launch-promo'];
 
-/** "rastreador por R$ 120,00 e mensalidade de R$ 34,90 nos 12 primeiros meses". */
+/** "mensalidade de R$ 34,90 nos 12 primeiros meses" (o rastreador vem incluso). */
 function offerText(s: PromoStatus): string {
-  return `rastreador por ${formatMoney(s.offer.equipmentCents)} e mensalidade de ${formatMoney(s.offer.monthlyCents)} nos ${s.offer.months} primeiros meses`;
+  return `mensalidade de ${formatMoney(s.offer.monthlyCents)} nos ${s.offer.months} primeiros meses`;
 }
 
 /** O que a ficha diz da promoção do cliente. */

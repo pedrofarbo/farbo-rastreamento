@@ -238,7 +238,8 @@ func (s *Service) project(ctx context.Context, today billing.Date, days int, bal
 
 	// As mensalidades que ainda não viraram fatura.
 	rows, err := s.db.Query(ctx, `
-		SELECT price_cents, promo_price_cents, promo_until, due_day, next_due_date, next_price_cents, next_price_from
+		SELECT price_cents, promo_price_cents, promo_until, due_day, next_due_date, next_price_cents, next_price_from,
+			CASE WHEN tracker_added THEN tracker_cents ELSE 0 END, tracker_until
 		FROM subscriptions WHERE status = 'ACTIVE' AND next_due_date <= $1`, until.Time)
 	if err != nil {
 		return nil, database.MapError(err)
@@ -246,15 +247,20 @@ func (s *Service) project(ctx context.Context, today billing.Date, days int, bal
 	for rows.Next() {
 		var price int64
 		var promo *int64
-		var promoUntil, nextFrom *time.Time
+		var promoUntil, nextFrom, trackerUntil *time.Time
 		var nextPrice *int64
 		var dueDay int16
 		var next time.Time
-		if err := rows.Scan(&price, &promo, &promoUntil, &dueDay, &next, &nextPrice, &nextFrom); err != nil {
+		var tracker int64
+		if err := rows.Scan(&price, &promo, &promoUntil, &dueDay, &next, &nextPrice, &nextFrom, &tracker, &trackerUntil); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		for d := (billing.Date{Time: next}); !until.Before(d); d = billing.NewDate(d.Year(), d.Month()+1, int(dueDay)) {
+			// A parte do rastreador incluso, nas primeiras mensalidades.
+			if trackerUntil != nil && d.Time.Before(*trackerUntil) {
+				p.InCents += tracker
+			}
 			switch {
 			case promo != nil && promoUntil != nil && d.Time.Before(*promoUntil):
 				p.InCents += *promo

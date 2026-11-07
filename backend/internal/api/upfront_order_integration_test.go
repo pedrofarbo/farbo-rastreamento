@@ -85,20 +85,20 @@ func TestUpfrontIndividualOrder(t *testing.T) {
 	// O comodato começa desligado neste teste (a central liga mais abaixo).
 	install := map[string]any{"enabled": true, "priceCents": 15000}
 	env.must(admin, http.MethodPut, "/api/order-options", map[string]any{"loan": map[string]any{"enabled": false}, "install": install,
-		"checkout": map[string]any{"enabled": true, "planCents": 3490, "insanosCents": 2790, "equipmentCents": 12000}}, http.StatusOK)
+		"checkout": map[string]any{"enabled": true, "planCents": 3490, "insanosCents": 2790},
+		"tracker":  map[string]any{"cents": 1200, "months": 10}}, http.StatusOK)
 	if c := readCatalog(); !c.PayNow || c.ChargeDate != "2026-10-13" || c.Loan != nil || c.PlanTerms ||
 		c.Install == nil || c.Install.PriceCents != 15000 {
 		t.Fatalf("catálogo sem comodato = %+v", c)
 	}
 
-	// À vista: o rastreador e a 1ª mensalidade hoje, sem proporcional, nos
-	// preços do site (a pessoa física paga no app o mesmo); a 2ª em 10/12
-	// (pelo menos um mês depois de 13/10, no dia da conta).
+	// O rastreador incluso: a 1ª mensalidade hoje, sem proporcional e sem
+	// fatura de equipamento, no preço do site (a pessoa física paga no app o
+	// mesmo); a 2ª em 10/12 (pelo menos um mês depois de 13/10, no dia da conta).
 	r := order("NOA1A11", map[string]any{}, http.StatusCreated)
-	if !r.PayNow || r.ChargeDate != "2026-10-13" || r.ProrataInvoice != nil ||
-		r.SetupInvoice == nil || r.SetupInvoice.DueDate.String() != "2026-10-13" || r.SetupInvoice.AmountCents != 12000 ||
+	if !r.PayNow || r.ChargeDate != "2026-10-13" || r.ProrataInvoice != nil || r.SetupInvoice != nil ||
 		r.FirstInvoice == nil || r.FirstInvoice.DueDate.String() != "2026-10-13" || r.FirstInvoice.AmountCents != 3490 {
-		t.Fatalf("à vista = %+v", r)
+		t.Fatalf("rastreador incluso = %+v", r)
 	}
 	if got := nextDue(r.Subscription.ID.String()); got != "2026-12-10" {
 		t.Errorf("2ª mensalidade em %s, quer 2026-12-10", got)
@@ -106,14 +106,14 @@ func TestUpfrontIndividualOrder(t *testing.T) {
 	if r.InstallInvoice != nil {
 		t.Errorf("por conta própria, sem a instalação: %+v", r.InstallInvoice)
 	}
-	// Parcelado, com a instalação pelos instaladores da Farbo (R$ 150,00):
-	// nada do equipamento à parte; a 1ª parcela na 1ª mensalidade e a
-	// instalação, hoje.
-	r = order("NOA2B22", map[string]any{"installments": 10, "farboInstall": true}, http.StatusCreated)
+	// Com a instalação pelos instaladores da Farbo (R$ 150,00): a 1ª
+	// mensalidade e a instalação, hoje. Parcelar não dá mais.
+	order("NOA2B22", map[string]any{"installments": 10}, http.StatusBadRequest)
+	r = order("NOA2B22", map[string]any{"farboInstall": true}, http.StatusCreated)
 	if !r.PayNow || r.SetupInvoice != nil || r.FirstInvoice == nil || r.FirstInvoice.DueDate.String() != "2026-10-13" ||
-		r.FirstInvoice.AmountCents != 3490+1200 || r.InstallInvoice == nil || r.InstallInvoice.AmountCents != 15000 ||
+		r.FirstInvoice.AmountCents != 3490 || r.InstallInvoice == nil || r.InstallInvoice.AmountCents != 15000 ||
 		r.InstallInvoice.DueDate.String() != "2026-10-13" {
-		t.Fatalf("parcelado com a instalação = %+v", r)
+		t.Fatalf("com a instalação = %+v", r)
 	}
 	farbo := func(id string) bool {
 		t.Helper()

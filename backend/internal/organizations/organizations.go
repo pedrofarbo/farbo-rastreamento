@@ -41,11 +41,16 @@ const (
 func ValidKind(kind string) bool { return kind == KindAssociation || kind == KindInsurer }
 
 // O rastreador dos associados: em comodato (emprestado, volta na
-// desinstalação) ou vendido.
+// desinstalação) ou vendido. A Farbo não vende mais o rastreador: a
+// organização nova é só em comodato, e a que já tinha a venda continua com
+// ela (ErrNoSale).
 const (
 	EquipmentLoan = "loan"
 	EquipmentSale = "sale"
 )
+
+// ErrNoSale recusa a venda do rastreador numa organização que não a tinha.
+var ErrNoSale = &InputError{"a Farbo não vende mais o rastreador: a organização fica em comodato"}
 
 // InputError é um dado recusado; a mensagem vai para a tela.
 type InputError struct{ Message string }
@@ -314,6 +319,9 @@ func (s *Service) Create(ctx context.Context, in Input, actor uuid.UUID) (*Organ
 	if err := clean(&in); err != nil {
 		return nil, err
 	}
+	if in.EquipmentMode == EquipmentSale {
+		return nil, ErrNoSale
+	}
 	var id uuid.UUID
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		// Sem senha: a organização não entra no painel (quem entra é a equipe).
@@ -353,6 +361,14 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Organiza
 		}
 		if tag.RowsAffected() == 0 {
 			return database.ErrNotFound
+		}
+		// A venda só continua onde já estava.
+		var current string
+		if err := tx.QueryRow(ctx, `SELECT equipment_mode FROM organizations WHERE id = $1 FOR UPDATE`, id).Scan(&current); err != nil {
+			return err
+		}
+		if in.EquipmentMode == EquipmentSale && current != EquipmentSale {
+			return ErrNoSale
 		}
 		_, err = tx.Exec(ctx, `
 			UPDATE organizations SET kind = $2, price_cents = $3, due_day = $4, notes = $5,

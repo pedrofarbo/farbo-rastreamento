@@ -63,10 +63,19 @@ type Subscription struct {
 	// assinatura fica ativa até ela.
 	Installments    int   `json:"installments"`
 	CommitmentUntil *Date `json:"commitmentUntil"`
-	// EquipmentMode: o rastreador vendido (sale) ou em comodato (loan); no
-	// comodato, UninstallFeeCents é cobrado no encerramento.
+	// EquipmentMode: o rastreador que fica com o cliente (sale: o incluso
+	// e, antes dele, o vendido) ou em comodato (loan); no comodato,
+	// UninstallFeeCents é cobrado no encerramento.
 	EquipmentMode     string `json:"equipmentMode"`
 	UninstallFeeCents int    `json:"uninstallFeeCents"`
+	// O rastreador incluso (fica com o cliente): TrackerCents é a parte dele
+	// em cada uma das TrackerMonths primeiras mensalidades, as que vencem
+	// antes de TrackerUntil — somada ao preço do plano (TrackerAdded) ou já
+	// dentro dele. Encerrada antes, o que falta vence numa fatura só.
+	TrackerCents  int   `json:"trackerCents"`
+	TrackerMonths int   `json:"trackerMonths"`
+	TrackerUntil  *Date `json:"trackerUntil"`
+	TrackerAdded  bool  `json:"trackerAdded"`
 	// O andamento das parcelas (só nas parceladas, preenchido na leitura): o
 	// valor parcelado, a parcela, quantas foram pagas e quanto falta pagar.
 	EquipmentCents       int       `json:"equipmentCents"`
@@ -77,10 +86,26 @@ type Subscription struct {
 	UpdatedAt            time.Time `json:"updatedAt"`
 }
 
-// PriceOn é o valor da fatura que vence em due.
+// PriceOn é o preço do plano na fatura que vence em due (sem a parte do
+// rastreador incluso: é a base do proporcional).
 func (s *Subscription) PriceOn(due Date) int {
 	amount, _ := priceOn(s.PriceCents, s.NextPriceCents, s.NextPriceFrom, s.PromoPriceCents, s.PromoUntil, due)
 	return amount
+}
+
+// MonthlyOn é o valor da mensalidade que vence em due: o preço do plano e a
+// parte do rastreador incluso, quando ela é somada.
+func (s *Subscription) MonthlyOn(due Date) int {
+	return s.PriceOn(due) + trackerOn(s.TrackerCents, s.TrackerAdded, s.TrackerUntil, due)
+}
+
+// trackerOn é o que o rastreador incluso soma na mensalidade que vence em
+// due: a parte dele, nas primeiras (as que vencem antes de until).
+func trackerOn(cents int, added bool, until *Date, due Date) int {
+	if added && until != nil && due.Before(*until) {
+		return cents
+	}
+	return 0
 }
 
 // priceOn é o valor da fatura que vence em due: a promoção, enquanto vale;
@@ -159,16 +184,16 @@ func NewRepository(db *database.DB) *Repository { return &Repository{db: db} }
 const subscriptionColumns = `id, customer_id, plan_name, price_cents, due_day, next_due_date,
 	status, canceled_at, vehicle_id, delivery_address, promo_price_cents, promo_until,
 	next_price_cents, next_price_from, installments, commitment_until, equipment_mode, uninstall_fee_cents,
-	created_at, updated_at`
+	tracker_cents, tracker_months, tracker_until, tracker_added, created_at, updated_at`
 
 func scanSubscription(row database.Scanner) (*Subscription, error) {
 	var s Subscription
 	var next time.Time
-	var promoUntil, nextFrom, commitment *time.Time
+	var promoUntil, nextFrom, commitment, trackerUntil *time.Time
 	if err := row.Scan(&s.ID, &s.CustomerID, &s.PlanName, &s.PriceCents, &s.DueDay, &next,
 		&s.Status, &s.CanceledAt, &s.VehicleID, &s.DeliveryAddress, &s.PromoPriceCents, &promoUntil,
 		&s.NextPriceCents, &nextFrom, &s.Installments, &commitment, &s.EquipmentMode, &s.UninstallFeeCents,
-		&s.CreatedAt, &s.UpdatedAt); err != nil {
+		&s.TrackerCents, &s.TrackerMonths, &trackerUntil, &s.TrackerAdded, &s.CreatedAt, &s.UpdatedAt); err != nil {
 		return nil, database.MapError(err)
 	}
 	s.NextDueDate = Date{next}
@@ -181,6 +206,9 @@ func scanSubscription(row database.Scanner) (*Subscription, error) {
 	if commitment != nil {
 		s.CommitmentUntil = &Date{*commitment}
 	}
+	if trackerUntil != nil {
+		s.TrackerUntil = &Date{*trackerUntil}
+	}
 	return &s, nil
 }
 
@@ -190,12 +218,12 @@ func InsertSubscription(ctx context.Context, q database.Querier, s *Subscription
 	return scanSubscription(q.QueryRow(ctx, `
 		INSERT INTO subscriptions (customer_id, plan_name, price_cents, due_day, next_due_date,
 			vehicle_id, delivery_address, promo_price_cents, promo_until, installments, commitment_until,
-			equipment_mode, uninstall_fee_cents)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE(NULLIF($12, ''), 'sale'), $13)
+			equipment_mode, uninstall_fee_cents, tracker_cents, tracker_months, tracker_until, tracker_added)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE(NULLIF($12, ''), 'sale'), $13, $14, $15, $16, $17)
 		RETURNING `+subscriptionColumns,
 		s.CustomerID, s.PlanName, s.PriceCents, s.DueDay, s.NextDueDate.Time, s.VehicleID, s.DeliveryAddress,
 		s.PromoPriceCents, dateOrNil(s.PromoUntil), s.Installments, dateOrNil(s.CommitmentUntil),
-		s.EquipmentMode, s.UninstallFeeCents))
+		s.EquipmentMode, s.UninstallFeeCents, s.TrackerCents, s.TrackerMonths, dateOrNil(s.TrackerUntil), s.TrackerAdded))
 }
 
 func dateOrNil(d *Date) *time.Time {
@@ -249,9 +277,9 @@ func (r *Repository) UpdateSubscription(ctx context.Context, id uuid.UUID, planN
 		RETURNING `+subscriptionColumns, id, planName, priceCents, promoCents))
 }
 
-// CancelOptions diz o que fazer com o saldo do rastreador parcelado
-// (BalanceCharge ou BalanceWaive; obrigatório se faltar parcela a pagar) e em
-// quantos dias vence a fatura do saldo.
+// CancelOptions diz o que fazer com o saldo do rastreador — as parcelas do
+// comprado ou a parte do incluso nas mensalidades que ainda não saíram
+// (BalanceCharge ou BalanceWaive; obrigatório se houver saldo).
 type CancelOptions struct {
 	Balance string
 	// WaiveUninstall dispensa a taxa de desinstalação do comodato.
@@ -259,8 +287,8 @@ type CancelOptions struct {
 }
 
 // Canceled é o encerramento: a assinatura e o que ele lançou na próxima
-// fatura da conta (o saldo do rastreador parcelado e a desinstalação do
-// comodato), nulos se nada.
+// fatura da conta (o saldo do rastreador — parcelado ou incluso — e a
+// desinstalação do comodato), nulos se nada.
 type Canceled struct {
 	Subscription *Subscription
 	Balance      *Invoice
@@ -270,7 +298,8 @@ type Canceled struct {
 // CancelSubscription encerra a assinatura e cancela as faturas dela que ainda
 // não venceram. As já vencidas continuam em aberto: são dívida. Com o
 // rastreador parcelado, as parcelas que ficaram sem fatura vão para a fatura
-// do saldo (devolvida junto) ou são dispensadas.
+// do saldo (devolvida junto) ou são dispensadas; com o incluso, a parte dele
+// nas mensalidades que não vão sair, também.
 func (r *Repository) CancelSubscription(ctx context.Context, id uuid.UUID, today Date, opts CancelOptions) (*Canceled, error) {
 	if opts.Balance != "" && opts.Balance != BalanceCharge && opts.Balance != BalanceWaive {
 		return nil, ValidationError{"saldo do rastreador: use CHARGE (cobrar) ou WAIVE (dispensar)"}
@@ -300,6 +329,17 @@ func (r *Repository) CancelSubscription(ctx context.Context, id uuid.UUID, today
 			WHERE subscription_id = $1 AND status = 'OPEN' AND due_date >= $2`, id, today.Time)
 		if err != nil {
 			return err
+		}
+		// O rastreador incluso: a parte dele nas mensalidades que não vão sair.
+		if pending, err := trackerPending(ctx, tx, sub); err != nil {
+			return err
+		} else if pending > 0 {
+			if opts.Balance == "" {
+				return ErrBalanceChoice
+			}
+			if balance, err = settleTracker(ctx, tx, sub, opts.Balance, today); err != nil {
+				return err
+			}
 		}
 		// O comodato: a desinstalação vai para a próxima fatura da conta.
 		if sub.EquipmentMode == EquipmentLoan && sub.UninstallFeeCents > 0 && !opts.WaiveUninstall {
@@ -571,6 +611,9 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 		nextFrom       *Date
 		installments   int
 		first          bool
+		trackerCents   int
+		trackerUntil   *Date
+		trackerAdded   bool
 	}
 
 	var created int64
@@ -578,7 +621,8 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 		rows, err := tx.Query(ctx, `
 			SELECT s.id, s.customer_id, s.plan_name, s.price_cents, s.due_day, s.next_due_date, s.promo_price_cents,
 				s.promo_until, s.next_price_cents, s.next_price_from, s.installments,
-				NOT EXISTS (SELECT 1 FROM invoices i WHERE i.subscription_id = s.id)
+				NOT EXISTS (SELECT 1 FROM invoices i WHERE i.subscription_id = s.id),
+				s.tracker_cents, s.tracker_until, s.tracker_added
 			FROM subscriptions s
 			WHERE s.status = 'ACTIVE'
 				AND (s.next_due_date <= $1 OR NOT EXISTS (SELECT 1 FROM invoices i WHERE i.subscription_id = s.id))
@@ -591,9 +635,10 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 		for rows.Next() {
 			var d due
 			var next time.Time
-			var promoUntil, nextFrom *time.Time
+			var promoUntil, nextFrom, trackerUntil *time.Time
 			if err := rows.Scan(&d.id, &d.customerID, &d.planName, &d.priceCents, &d.dueDay, &next,
-				&d.promoCents, &promoUntil, &d.nextPrice, &nextFrom, &d.installments, &d.first); err != nil {
+				&d.promoCents, &promoUntil, &d.nextPrice, &nextFrom, &d.installments, &d.first,
+				&d.trackerCents, &trackerUntil, &d.trackerAdded); err != nil {
 				rows.Close()
 				return err
 			}
@@ -603,6 +648,9 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 			}
 			if nextFrom != nil {
 				d.nextFrom = &Date{*nextFrom}
+			}
+			if trackerUntil != nil {
+				d.trackerUntil = &Date{*trackerUntil}
 			}
 			pending = append(pending, d)
 		}
@@ -624,6 +672,8 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 				if promotional {
 					description += " · promoção de pré-lançamento"
 				}
+				// O rastreador incluso: a parte dele nas primeiras mensalidades.
+				amount += trackerOn(d.trackerCents, d.trackerAdded, d.trackerUntil, next)
 				// A parcela do rastreador do mês, se ainda houver.
 				var installment *pendingInstallment
 				if d.installments > 0 {

@@ -68,18 +68,23 @@ type MRR struct {
 
 // mrrSub é o preço de uma assinatura e quando ela foi encerrada.
 type mrrSub struct {
-	priceCents int
-	promoCents *int
-	promoUntil *Date
-	nextCents  *int
-	nextFrom   *Date
-	canceled   time.Time
-	isCanceled bool
+	priceCents   int
+	promoCents   *int
+	promoUntil   *Date
+	nextCents    *int
+	nextFrom     *Date
+	trackerCents int
+	trackerUntil *Date
+	trackerAdded bool
+	canceled     time.Time
+	isCanceled   bool
 }
 
+// priceOn é a mensalidade do dia, com a parte do rastreador incluso quando
+// ela é somada (como o gerador faz).
 func (m mrrSub) priceOn(day Date) int {
 	amount, _ := priceOn(m.priceCents, m.nextCents, m.nextFrom, m.promoCents, m.promoUntil, day)
-	return amount
+	return amount + trackerOn(m.trackerCents, m.trackerAdded, m.trackerUntil, day)
 }
 
 // mrrBill é o que as faturas de um mês cobram.
@@ -338,7 +343,7 @@ func (r *Repository) orgMonth(ctx context.Context, start, end Date) ([]orgMonthR
 func (r *Repository) mrrCanceled(ctx context.Context, from time.Time) ([]mrrSub, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT s.price_cents, s.promo_price_cents, s.promo_until, s.next_price_cents, s.next_price_from,
-			COALESCE(s.canceled_at, s.updated_at)
+			COALESCE(s.canceled_at, s.updated_at), s.tracker_cents, s.tracker_until, s.tracker_added
 		FROM subscriptions s JOIN users u ON u.id = s.customer_id
 		WHERE u.role = 'customer' AND s.status = 'CANCELED' AND COALESCE(s.canceled_at, s.updated_at) >= $1`, from)
 	if err != nil {
@@ -348,11 +353,15 @@ func (r *Repository) mrrCanceled(ctx context.Context, from time.Time) ([]mrrSub,
 	var out []mrrSub
 	for rows.Next() {
 		var m mrrSub
-		var promoUntil, nextFrom *time.Time
-		if err := rows.Scan(&m.priceCents, &m.promoCents, &promoUntil, &m.nextCents, &nextFrom, &m.canceled); err != nil {
+		var promoUntil, nextFrom, trackerUntil *time.Time
+		if err := rows.Scan(&m.priceCents, &m.promoCents, &promoUntil, &m.nextCents, &nextFrom, &m.canceled,
+			&m.trackerCents, &trackerUntil, &m.trackerAdded); err != nil {
 			return nil, err
 		}
 		m.isCanceled = true
+		if trackerUntil != nil {
+			m.trackerUntil = &Date{*trackerUntil}
+		}
 		if promoUntil != nil {
 			m.promoUntil = &Date{*promoUntil}
 		}
@@ -461,7 +470,8 @@ func (r *Repository) forecastData(ctx context.Context, start, end Date) ([]forec
 	rows, err := r.db.Query(ctx, `
 		SELECT s.id, s.due_day, s.next_due_date, s.price_cents, s.promo_price_cents, s.promo_until, s.next_price_cents, s.next_price_from,
 			COALESCE((SELECT array_agg(e.amount_cents::bigint ORDER BY e.number) FROM equipment_installments e
-				WHERE e.subscription_id = s.id AND e.invoice_id IS NULL AND e.waived_at IS NULL), '{}')
+				WHERE e.subscription_id = s.id AND e.invoice_id IS NULL AND e.waived_at IS NULL), '{}'),
+			s.tracker_cents, s.tracker_until, s.tracker_added
 		FROM subscriptions s JOIN users u ON u.id = s.customer_id
 		WHERE s.status = 'ACTIVE' AND u.role = 'customer' AND NOT checkout_pending(u.id) AND s.next_due_date < $1::date`,
 		end.String())
@@ -472,12 +482,16 @@ func (r *Repository) forecastData(ctx context.Context, start, end Date) ([]forec
 	for rows.Next() {
 		var f forecastSub
 		var next time.Time
-		var promoUntil, nextFrom *time.Time
-		if err := rows.Scan(&f.id, &f.dueDay, &next, &f.priceCents, &f.promoCents, &promoUntil, &f.nextCents, &nextFrom, &f.pending); err != nil {
+		var promoUntil, nextFrom, trackerUntil *time.Time
+		if err := rows.Scan(&f.id, &f.dueDay, &next, &f.priceCents, &f.promoCents, &promoUntil, &f.nextCents, &nextFrom, &f.pending,
+			&f.trackerCents, &trackerUntil, &f.trackerAdded); err != nil {
 			rows.Close()
 			return nil, nil, err
 		}
 		f.next = Date{next}
+		if trackerUntil != nil {
+			f.trackerUntil = &Date{*trackerUntil}
+		}
 		if promoUntil != nil {
 			f.promoUntil = &Date{*promoUntil}
 		}

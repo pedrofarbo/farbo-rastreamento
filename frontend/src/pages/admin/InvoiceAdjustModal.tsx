@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 
-import { catalogApi, customersApi } from '@/api/resources';
+import { customersApi } from '@/api/resources';
 import { installmentChoices, splitInstallments } from '@/components/billing/installments';
 import { Button } from '@/components/ui/Button';
 import { SelectField, TextField } from '@/components/ui/Field';
@@ -44,7 +44,6 @@ export function InvoiceAdjustModal({
   onClose: () => void;
   onDone: (message: string) => void;
 }) {
-  const catalog = useQuery({ queryKey: ['catalog'], queryFn: catalogApi.get });
   // Os veículos que podem receber o parcelamento: assinatura ativa, ainda à
   // vista. Mensalidade, fatura só do frete ou já parcelada: nada a parcelar.
   const financeable =
@@ -61,7 +60,8 @@ export function InvoiceAdjustModal({
   const [error, setError] = useState('');
 
   const equipmentCents = parseMoney(equipment);
-  const max = catalog.data?.equipmentMaxInstallments ?? 10;
+  // Só as faturas do rastreador comprado antes do rastreador incluso: até 10x.
+  const max = 10;
   const choices = equipmentCents && equipmentCents > 0 ? installmentChoices(equipmentCents, max).filter((c) => c.value > 1) : [];
   const n = Math.min(installments, max);
   const parcels = equipmentCents && equipmentCents > 0 && equipmentCents <= invoice.amountCents ? splitInstallments(equipmentCents, n) : null;

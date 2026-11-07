@@ -15,8 +15,8 @@ import (
 
 // A fatura única do mês, para a empresa (CNPJ): na contratação nada é
 // cobrado na hora. A próxima fatura da conta traz o proporcional dos dias até
-// ela, a 1ª mensalidade (com a 1ª parcela do rastreador), o equipamento (ou a
-// instalação, no comodato) — tudo no dia da conta. Se a fatura desse dia já
+// ela, a 1ª mensalidade (o rastreador vem incluso, sem fatura de
+// equipamento) e a instalação, no comodato — tudo no dia da conta. Se a fatura desse dia já
 // foi paga, vai para a do mês seguinte. No comodato, o encerramento lança a
 // desinstalação. Precisa de FARBO_TEST_DATABASE_URL.
 func TestSingleMonthlyInvoice(t *testing.T) {
@@ -55,11 +55,11 @@ func TestSingleMonthlyInvoice(t *testing.T) {
 		ProrataInvoice *billing.Invoice     `json:"prorataInvoice"`
 		FirstInvoice   *billing.Invoice     `json:"firstInvoice"`
 	}
-	order := func(plate string, installments int) result {
+	order := func(plate string) result {
 		t.Helper()
 		var r result
 		_ = json.Unmarshal(env.must(token, http.MethodPost, "/api/me/trackers", map[string]any{
-			"vehicle": map[string]any{"name": "Moto " + plate, "plate": plate}, "installments": installments,
+			"vehicle": map[string]any{"name": "Moto " + plate, "plate": plate},
 		}, http.StatusCreated), &r)
 		return r
 	}
@@ -97,54 +97,52 @@ func TestSingleMonthlyInvoice(t *testing.T) {
 		return next.Format(time.DateOnly)
 	}
 
-	// Parcelado: nada de equipamento à parte; em 10/11, a 1ª mensalidade com
-	// a 1ª parcela e o proporcional. A permanência vai até a 10ª parcela.
-	r := order("UNI1A11", 10)
+	// O rastreador incluso (a parte dele já no preço do site): nada de
+	// equipamento; em 10/11, a 1ª mensalidade e o proporcional.
+	r := order("UNI1A11")
 	id := r.Subscription.ID.String()
-	if r.SetupInvoice != nil || r.ChargeDate != "2026-11-10" {
-		t.Errorf("pedido = %+v (vencimento %s)", r.SetupInvoice, r.ChargeDate)
+	if r.SetupInvoice != nil || r.ChargeDate != "2026-11-10" || r.Subscription.TrackerCents != 1200 || r.Subscription.TrackerAdded {
+		t.Errorf("pedido = %+v (vencimento %s, assinatura %+v)", r.SetupInvoice, r.ChargeDate, r.Subscription)
 	}
-	if f := r.FirstInvoice; f == nil || f.DueDate.String() != "2026-11-10" || f.AmountCents != 6990+1500 ||
-		f.Description != "Plano Mensal — novembro/2026 + parcela 1/10 do rastreador" {
+	if f := r.FirstInvoice; f == nil || f.DueDate.String() != "2026-11-10" || f.AmountCents != 6990 ||
+		f.Description != "Plano Mensal — novembro/2026" {
 		t.Fatalf("1ª mensalidade = %+v", r.FirstInvoice)
 	}
 	if p := r.ProrataInvoice; p == nil || p.DueDate.String() != "2026-11-10" || p.AmountCents != 6524 ||
 		p.SubscriptionID != nil || !strings.Contains(p.Description, "proporcional de 13/10 a 10/11 (28 dias)") {
 		t.Fatalf("proporcional = %+v", r.ProrataInvoice)
 	}
-	if c := r.Subscription.CommitmentUntil; c == nil || c.String() != "2027-08-10" {
-		t.Errorf("permanência = %v", c)
+	if c := r.Subscription.TrackerUntil; c == nil || c.String() != "2027-09-10" {
+		t.Errorf("rastreador incluso até %v", c)
 	}
 	if got := nextDue(id); got != "2026-12-10" {
 		t.Errorf("2ª mensalidade em %s, quer 2026-12-10", got)
 	}
-	// A 2ª sai na antecedência de sempre, com a 2ª parcela.
+	// A 2ª sai na antecedência de sempre.
 	bs.GenerateInvoices(ctx)
 	if got := monthly(id); len(got) != 1 {
 		t.Errorf("a 2ª saiu adiantada: %+v", got)
 	}
 	today(30, 11)
 	bs.GenerateInvoices(ctx)
-	if got := monthly(id); len(got) != 2 || got[1].DueDate.String() != "2026-12-10" || got[1].AmountCents != 6990+1500 {
+	if got := monthly(id); len(got) != 2 || got[1].DueDate.String() != "2026-12-10" || got[1].AmountCents != 6990 {
 		t.Errorf("a 2ª, na antecedência = %+v", got)
 	}
 
-	// À vista: o equipamento também em 10/11, na mesma fatura.
+	// O pedido parcelado (tela antiga) é recusado: não há o que parcelar.
 	today(13, 10)
-	r = order("UNI2B22", 0)
-	if r.SetupInvoice == nil || r.SetupInvoice.DueDate.String() != "2026-11-10" || r.SetupInvoice.AmountCents != 15000 ||
-		r.FirstInvoice == nil || r.FirstInvoice.DueDate.String() != "2026-11-10" || r.FirstInvoice.AmountCents != 6990 {
-		t.Fatalf("à vista: pedido %+v, 1ª mensalidade %+v", r.SetupInvoice, r.FirstInvoice)
-	}
+	env.must(token, http.MethodPost, "/api/me/trackers", map[string]any{
+		"vehicle": map[string]any{"name": "Moto UNI2B22", "plate": "UNI2B22"}, "installments": 10,
+	}, http.StatusBadRequest)
 
 	// A central marcando a cobrança do pedido (tela antiga): vale o dia da conta.
 	var placed result
 	_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/customers/"+davi.ID+"/trackers", map[string]any{
-		"vehicle":        map[string]any{"name": "Carro", "plate": "UNI3C33"},
-		"equipmentCents": 15000, "setupDueDate": "2026-12-13",
+		"vehicle": map[string]any{"name": "Carro", "plate": "UNI3C33"}, "setupDueDate": "2026-12-13",
 		"plan": map[string]any{"planName": "Plano Mensal", "priceCents": 6990, "dueDay": 10},
 	}, http.StatusCreated), &placed)
-	if placed.ChargeDate != "2026-11-10" || placed.SetupInvoice == nil || placed.SetupInvoice.DueDate.String() != "2026-11-10" {
+	if placed.ChargeDate != "2026-11-10" || placed.SetupInvoice != nil || placed.FirstInvoice == nil ||
+		placed.FirstInvoice.DueDate.String() != "2026-11-10" {
 		t.Fatalf("pedido pela central = %+v", placed)
 	}
 
@@ -159,9 +157,9 @@ func TestSingleMonthlyInvoice(t *testing.T) {
 		loan.Subscription.UninstallFeeCents != 5000 {
 		t.Fatalf("comodato = %+v / %+v / %+v", loan.SetupInvoice, loan.InstallInvoice, loan.Subscription)
 	}
-	// O comodato não parcela (não há o que vender).
+	// O pedido da central também não parcela (tela antiga: recusado).
 	env.must(admin, http.MethodPost, "/api/customers/"+davi.ID+"/trackers", map[string]any{
-		"vehicle": map[string]any{"name": "Moto X", "plate": "UNI9Z99"}, "installments": 3, "equipmentCents": 15000,
+		"vehicle": map[string]any{"name": "Moto X", "plate": "UNI9Z99"}, "installments": 3,
 		"plan": map[string]any{"planName": "Plano Mensal", "priceCents": 6990, "dueDay": 10},
 	}, http.StatusBadRequest)
 	// Encerrar lança a desinstalação na próxima fatura; dispensar, não.

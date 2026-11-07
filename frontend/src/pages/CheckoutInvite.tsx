@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { ApiError } from '@/api/client';
 import { publicApi } from '@/api/resources';
 import { INSTAGRAM_HANDLE, INSTAGRAM_URL } from '@/config/contact';
-import { checkoutPath, installmentsPhrase, loanOnly, priceLabel, priceParts } from '@/config/landing';
+import { checkoutPath, loanOnly, priceLabel, priceParts, trackerAdded } from '@/config/landing';
 import { PRIVACY_PATH } from '@/config/legal';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { track, trackPageview } from '@/services/analytics';
@@ -281,16 +281,15 @@ export function CheckoutInvite({
   );
 }
 
-/** O preço em destaque e o rastreador, da oferta do servidor (carregando, o lugar deles). */
+/** O preço em destaque e o rastreador incluso, da oferta do servidor (carregando, o lugar deles). */
 function Highlight({ offer, open }: { offer: CheckoutOffer | undefined; open: boolean }) {
   // Pelo link de um afiliado com tabela: a menor mensalidade e as três.
   const headline = offer && headlineMonthly(offer, open);
   const table = headline?.table ?? null;
   const monthly = headline?.cents;
   const regular = offer && open ? offer.planRegularCents : undefined;
-  const equipment = offer && (open ? offer.equipmentCents : offer.equipmentRegularCents);
-  const equipmentRegular = offer && open ? offer.equipmentRegularCents : undefined;
-  const installments = offer && equipment !== undefined ? installmentsPhrase(equipment, offer.maxInstallments) : '';
+  // Pela tabela do afiliado, a parte do rastreador incluso soma nas primeiras.
+  const added = trackerAdded(offer, open);
   return (
     <div className={styles.insanos} aria-busy={!offer}>
       <span className={styles.insanosTag}>
@@ -310,18 +309,16 @@ function Highlight({ offer, open }: { offer: CheckoutOffer | undefined; open: bo
             )}
           </p>
           {loanOnly(offer, open) ? (
-            <p className={styles.insanosEquipment}>Rastreador em comodato, sem comprar</p>
-          ) : equipment !== undefined && (
+            <p className={styles.insanosEquipment}>Rastreador em comodato</p>
+          ) : (
             <p className={styles.insanosEquipment}>
-              Rastreador:{' '}
-              {equipmentRegular !== undefined && equipmentRegular > equipment && (
-                <>
-                  <s className={styles.nowrap}>{priceLabel(equipmentRegular)}</s>{' '}
-                </>
+              <strong className={styles.nowrap}>Rastreador incluso</strong>, que fica com você: só o frete à parte
+              {added && (
+                <span className={styles.installments}>
+                  + {priceLabel(added.cents)}/mês nas {added.months} primeiras mensalidades
+                </span>
               )}
-              <strong className={styles.nowrap}>{priceLabel(equipment)}</strong>
-              {installments && <span className={styles.installments}>ou {installments}</span>}
-              {open && offer.loan && <span className={styles.installments}>ou em comodato, sem comprar</span>}
+              {open && offer.loan && <span className={styles.installments}>ou em comodato</span>}
             </p>
           )}
         </>

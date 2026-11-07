@@ -170,7 +170,7 @@ export function AffiliatesTab() {
                             {a.listed && <Badge tone="success">Oficial na landing</Badge>}
                             {a.equipmentModes && ' · '}
                             {a.equipmentModes && (
-                              <Badge tone="neutral">{a.equipmentModes === 'loan' ? 'Só comodato' : 'Só comprado'}</Badge>
+                              <Badge tone="neutral">{a.equipmentModes === 'loan' ? 'Só comodato' : 'Só incluso'}</Badge>
                             )}
                             {split && ' · '}
                             {split && <RecipientBadge status={a.recipientStatus} />}

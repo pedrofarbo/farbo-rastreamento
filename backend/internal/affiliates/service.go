@@ -475,8 +475,8 @@ func (s *Service) SetCustomer(ctx context.Context, customerID uuid.UUID, affilia
 // Reconcile acerta as comissões com as mensalidades: cada mês pago de cada
 // veículo (assinatura) de um cliente indicado, a partir do mês da indicação,
 // rende uma comissão ao afiliado ativo — o valor fixo dele ou o percentual
-// da mensalidade paga (sem a parcela do rastreador, que vem na mesma
-// fatura). O cliente com dois veículos rende duas. A de uma mensalidade estornada — ou de um cliente que
+// da mensalidade paga (sem a parcela do rastreador comprado nem a parte do
+// incluso somada ao plano, que vêm na mesma fatura). O cliente com dois veículos rende duas. A de uma mensalidade estornada — ou de um cliente que
 // mudou de afiliado — sai, se ainda não foi fechada. Idempotente: roda de
 // hora em hora e antes dos relatórios.
 func (s *Service) Reconcile(ctx context.Context) (created, removed int64, err error) {
@@ -493,7 +493,7 @@ func (s *Service) Reconcile(ctx context.Context) (created, removed int64, err er
 				SELECT r.affiliate_id, i.customer_id, i.subscription_id, date_trunc('month', i.due_date)::date AS month,
 					-- O percentual é da mensalidade líquida dos impostos da Farbo.
 					CASE WHEN a.commission_type = 'percent'
-						THEN round(sum(greatest(i.amount_cents - inst.cents, 0)) * a.commission_bps / 10000.0
+						THEN round(sum(greatest(i.amount_cents - inst.cents - tr.cents, 0)) * a.commission_bps / 10000.0
 							* (10000 - st.commission_tax_bps) / 10000.0)::int
 						ELSE a.commission_cents END AS amount
 				FROM invoices i
@@ -503,6 +503,9 @@ func (s *Service) Reconcile(ctx context.Context) (created, removed int64, err er
 				-- A parcela do rastreador vem na fatura do veículo: fica fora do percentual.
 				CROSS JOIN LATERAL (SELECT COALESCE(sum(ei.amount_cents), 0) AS cents
 					FROM equipment_installments ei WHERE ei.invoice_id = i.id) inst
+				-- A parte do rastreador incluso somada ao plano, nas primeiras, também.
+				CROSS JOIN LATERAL (SELECT COALESCE(max(CASE WHEN s.tracker_added AND i.due_date < s.tracker_until
+					THEN s.tracker_cents END), 0) AS cents FROM subscriptions s WHERE s.id = i.subscription_id) tr
 				WHERE i.status = 'PAID' AND i.subscription_id IS NOT NULL AND i.amount_cents > 0 AND a.active
 					AND i.due_date >= date_trunc('month', r.created_at AT TIME ZONE $1)::date
 				GROUP BY r.affiliate_id, i.customer_id, i.subscription_id, month, a.commission_type, a.commission_cents,

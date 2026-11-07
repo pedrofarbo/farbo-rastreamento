@@ -2,9 +2,10 @@ import { formatDateOnly, formatMoney } from '@/services/format';
 import type { Subscription } from '@/types';
 
 /**
- * O rastreador parcelado sem juros, por Pix: no pedido, o frete e a 1ª
- * mensalidade; as parcelas vêm somadas às mensalidades, a 1ª na 1ª. A assinatura fica ativa
- * até a última; encerrada antes, o saldo vence de uma vez.
+ * O rastreador comprado parcelado sem juros (antes do rastreador incluso):
+ * as parcelas vêm somadas às mensalidades, a 1ª na 1ª. A assinatura fica
+ * ativa até a última; encerrada antes, o saldo vence de uma vez. E o
+ * rastreador incluso, que tem a parte dele nas primeiras mensalidades.
  */
 
 /** Divide como o servidor: a 1ª leva os centavos que sobram (R$ 120,00 em 7x: 17,16 + 6 × 17,14). */
@@ -45,4 +46,31 @@ export function installmentProgress(sub: Financed): string | null {
   const due = sub.installmentsDueCents > 0 ? `, faltam ${formatMoney(sub.installmentsDueCents)}` : ' (quitado)';
   const until = sub.commitmentUntil && sub.installmentsDueCents > 0 ? ` · ativa até ${formatDateOnly(sub.commitmentUntil)}` : '';
   return `Rastreador em ${sub.installments}x de ${formatMoney(sub.installmentCents)}: ${paid}${due}${until}`;
+}
+
+type Included = Pick<Subscription, 'trackerCents' | 'trackerMonths' | 'trackerUntil' | 'trackerAdded'>;
+
+/**
+ * O rastreador incluso na assinatura, para a central: "Rastreador incluso:
+ * + R$ 12,00 nas 10 primeiras mensalidades (até a de 10/07/2027)" ou "já no
+ * preço". Nulo sem rastreador incluso.
+ */
+export function trackerProgress(sub: Included): string | null {
+  if (!sub.trackerCents || !sub.trackerMonths || !sub.trackerUntil) return null;
+  const [y, m, d] = sub.trackerUntil.split('-').map(Number);
+  const last = new Date(y, m - 2, d);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const lastDue = `${pad(last.getDate())}/${pad(last.getMonth() + 1)}/${last.getFullYear()}`;
+  return sub.trackerAdded
+    ? `Rastreador incluso: + ${formatMoney(sub.trackerCents)} nas ${sub.trackerMonths} primeiras mensalidades (até a de ${lastDue})`
+    : `Rastreador incluso, já no preço: ${formatMoney(sub.trackerCents)} em cada uma das ${sub.trackerMonths} primeiras (até a de ${lastDue})`;
+}
+
+/**
+ * Encerrar agora pode deixar parte do rastreador incluso por pagar (ainda
+ * há mensalidade com a parte dele por vir): a central escolhe cobrar ou
+ * dispensar.
+ */
+export function trackerOpen(sub: Included, today: string): boolean {
+  return Boolean(sub.trackerCents && sub.trackerMonths && sub.trackerUntil && sub.trackerUntil > today);
 }

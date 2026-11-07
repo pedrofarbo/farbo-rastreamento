@@ -102,7 +102,7 @@ export const FLEET_FEATURES: { title: string; text: string; icon: React.ReactNod
   },
   {
     title: 'Implantação sem trabalho',
-    text: 'Mande a planilha da frota e cadastramos todos os veículos de uma vez, já nos grupos certos e com uma fatura só do equipamento.',
+    text: 'Mande a planilha da frota e cadastramos todos os veículos de uma vez, já nos grupos certos e com o rastreador incluso.',
     icon: (
       <>
         <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" />

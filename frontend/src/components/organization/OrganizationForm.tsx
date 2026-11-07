@@ -81,8 +81,9 @@ export function organizationFromDraft(
 
 /**
  * O cadastro da associação ou seguradora pela central: o contato de cobrança,
- * a mensalidade por veículo, o rastreador (comodato ou venda) e as taxas de
- * instalação e desinstalação. No cadastro novo, o primeiro Administrador
+ * a mensalidade por veículo, o rastreador (comodato; a venda só continua na
+ * organização que já a tinha: a Farbo não vende mais o rastreador) e as taxas
+ * de instalação e desinstalação. No cadastro novo, o primeiro Administrador
  * recebe o convite para o painel.
  */
 export function OrganizationFormModal({
@@ -107,6 +108,8 @@ export function OrganizationFormModal({
   }, [open, organization]);
   const creating = organization === null;
   const set = (patch: Partial<Draft>) => setDraft({ ...draft, ...patch });
+  // A venda só aparece para a organização que já a tinha.
+  const hadSale = organization?.equipmentMode === 'sale';
 
   const submit = () => {
     const result = organizationFromDraft(draft, creating);
@@ -197,13 +200,18 @@ export function OrganizationFormModal({
                 <input type="radio" name="org-equipment" checked={draft.equipmentMode === 'loan'} onChange={() => set({ equipmentMode: 'loan' })} />
                 Comodato (volta na desinstalação)
               </label>
-              <label className={`${styles.choice} ${draft.equipmentMode === 'sale' ? styles.choiceActive : ''}`}>
-                <input type="radio" name="org-equipment" checked={draft.equipmentMode === 'sale'} onChange={() => set({ equipmentMode: 'sale' })} />
-                Venda
-              </label>
+              {hadSale && (
+                <label className={`${styles.choice} ${draft.equipmentMode === 'sale' ? styles.choiceActive : ''}`}>
+                  <input type="radio" name="org-equipment" checked={draft.equipmentMode === 'sale'} onChange={() => set({ equipmentMode: 'sale' })} />
+                  Venda (só desta organização)
+                </label>
+              )}
             </div>
           )}
         </Field>
+        {!hadSale && (
+          <p className={page.description}>A Farbo não vende o rastreador: os associados ficam com ele em comodato.</p>
+        )}
         <div className={page.formRow}>
           {draft.equipmentMode === 'sale' && (
             <TextField

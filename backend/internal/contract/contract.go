@@ -1,8 +1,8 @@
 // Package contract é o contrato de prestação de serviços que o cliente aceita
 // no primeiro acesso (e a cada versão nova): o texto, com a versão e o hash,
 // e o registro do aceite eletrônico — nome, CPF/CNPJ, data, IP e navegador.
-// O CPF é obrigatório: é com ele que saem a NF-e do rastreador e a NFS-e das
-// mensalidades. O associado de uma associação ou seguradora aceita outro
+// O CPF é obrigatório: é com ele que sai a NFS-e das mensalidades (a Farbo não
+// vende o rastreador: ele vai incluso no serviço ou em comodato). O associado de uma associação ou seguradora aceita outro
 // texto, o termo do associado (o uso do app e o rastreador em comodato; quem
 // paga é a organização), com versões próprias (A1, A2…).
 package contract
@@ -33,11 +33,11 @@ import (
 // A versão em vigor. Ao mudar o texto (contrato.md), mude a versão e a data:
 // todo cliente aceita de novo no próximo acesso.
 const (
-	Version       = "8"
-	EffectiveDate = "5 de novembro de 2026"
+	Version       = "9"
+	EffectiveDate = "7 de novembro de 2026"
 	// Changes resume o que mudou desde a versão anterior (o cliente que
 	// aceitou a anterior lê ao aceitar de novo, e recebe por e-mail).
-	Changes = "A CONTRATADA passa a ser a FARBO RASTREADORES DESENVOLVIMENTO DE SOFTWARE CUSTOMIZAVEL LTDA, CNPJ 69.989.550/0001-81: o serviço, os preços e as demais condições continuam os mesmos."
+	Changes = "A Farbo deixa de vender o rastreador: fora do comodato, ele vai incluso no serviço e fica com o Cliente, com o custo dele nas primeiras mensalidades (em alguns planos, somado à mensalidade nesse período). Se a assinatura for encerrada antes da última dessas mensalidades, a parte do rastreador que falta vence numa fatura só. As notas fiscais passam a ser só de serviço (NFS-e). Quem já comprou o rastreador continua com ele, nas mesmas condições."
 	// MinMonths é a permanência mínima de cada assinatura.
 	MinMonths = 3
 
@@ -91,15 +91,6 @@ type Params struct {
 	Company          config.Company
 	SuspendAfterDays int
 	HistoryOptions   []int
-	// MaxInstallments: em até quantas vezes o rastreador pode ser parcelado
-	// (1: só à vista, e o contrato não fala em parcelamento).
-	MaxInstallments int
-}
-
-// numberWords escreve por extenso as vezes do parcelamento.
-var numberWords = map[int]string{
-	2: "duas", 3: "três", 4: "quatro", 5: "cinco", 6: "seis", 7: "sete", 8: "oito", 9: "nove", 10: "dez",
-	11: "onze", 12: "doze",
 }
 
 // Render monta o contrato em vigor.
@@ -139,7 +130,6 @@ func renderText(source, version, effectiveDate, changes string, p Params) (*Docu
 		"Name": name, "LegalName": legal, "CNPJ": strings.TrimSpace(p.Company.CNPJ),
 		"Address": strings.TrimSpace(p.Company.Address), "Email": strings.TrimSpace(p.Company.Email),
 		"SuspendAfterDays": p.SuspendAfterDays, "HistoryOptions": historyOptions,
-		"MaxInstallments": p.MaxInstallments, "MaxInstallmentsWords": numberWords[p.MaxInstallments],
 	}); err != nil {
 		return nil, fmt.Errorf("contrato: %w", err)
 	}

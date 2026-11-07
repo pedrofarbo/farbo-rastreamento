@@ -9,15 +9,10 @@ import (
 
 func render(t *testing.T, address string) *Document {
 	t.Helper()
-	return renderWith(t, address, 10)
-}
-
-func renderWith(t *testing.T, address string, maxInstallments int) *Document {
-	t.Helper()
 	doc, err := Render(Params{
 		Company: config.Company{Name: "Farbo Rastreadores", LegalName: "FARBO TECNOLOGIA DE SISTEMAS E CLOUD LTDA",
 			CNPJ: "49.757.084/0001-00", Address: address, Email: "contato@farborastreadores.com.br"},
-		SuspendAfterDays: 10, HistoryOptions: []int{7, 14, 30}, MaxInstallments: maxInstallments,
+		SuspendAfterDays: 10, HistoryOptions: []int{7, 14, 30},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -27,8 +22,9 @@ func renderWith(t *testing.T, address string, maxInstallments int) *Document {
 
 // O contrato tem o que foi pedido: permanência de 3 meses, multa de 1
 // mensalidade, negativação com mais de 1 mês de atraso e o porquê (o plano
-// M2M e o chip), o rastreador comprado ou em comodato e o CPF para as notas
-// fiscais.
+// M2M e o chip), o rastreador incluso (a Farbo não o vende; o que falta da
+// parte dele vence no encerramento antecipado) ou em comodato e o CPF para a
+// nota de serviço.
 func TestContractText(t *testing.T) {
 	doc := render(t, "")
 	if doc.Title != "Contrato de Prestação de Serviços de Rastreamento Veicular" || len(doc.Sections) != 16 || doc.Version != Version {
@@ -39,25 +35,28 @@ func TestContractText(t *testing.T) {
 		"permanência mínima de 3 (três) meses", "multa equivalente a 1 (uma) mensalidade",
 		"atraso de mais de 1 (um) mês", "órgãos de proteção ao crédito", "art. 43, § 2º",
 		"plano de telecomunicações M2M", "geração, a habilitação e a entrega do chip",
-		"o rastreador comprado pelo Cliente é de propriedade exclusiva dele", "NF-e", "NFS-e",
+		"A Farbo Rastreadores não vende o rastreador", "o Cliente não o compra nem o paga à parte",
+		"passa a ser de propriedade dele desde a entrega", "NFS-e (nota fiscal de serviço eletrônica) das mensalidades",
 		"mais de 10 dias", "7, 14 ou 30 dias", "art. 49", "MP", "contato@farborastreadores.com.br",
 		"exclusivamente o sistema de rastreamento remoto", "comandados pelo próprio Cliente",
 		"serviços de segurança ou de vigilância", "central de monitoramento", "seguro veicular",
 		"equipe tática ou de pronta-resposta de prontidão", "não garante a recuperação do veículo em caso de roubo ou furto",
 		"prazo de arrependimento (cláusula 9)", "nova versão deste contrato (cláusula 14)",
-		"parcelado em até 10 (dez) vezes sem juros, por Pix", "o frete é pago no pedido (pessoa física) ou vem na 1ª fatura (empresa)",
-		"a 1ª junto com a 1ª mensalidade", "Pessoa física (CPF): no pedido, paga-se a 1ª mensalidade, o frete, o rastreador à vista e a taxa de instalação",
+		"o único valor ligado a ele é o frete", "a mensalidade das primeiras mensalidades e a das seguintes",
+		"Pessoa física (CPF): no pedido, paga-se a 1ª mensalidade, o frete e a taxa de instalação",
+		"A parte do rastreador incluso somada ao plano não é reajustada",
 		"por conta própria, com o instalador de preferência dele", "com os instaladores indicados pela Farbo Rastreadores",
 		"a 2ª pelo menos um mês depois da 1ª", "Empresa (CNPJ): nada é cobrado no pedido",
 		"o proporcional dos dias entre a contratação e o vencimento",
-		"ativa até a mensalidade que traz a última parcela", "as parcelas restantes vencem de uma vez, numa fatura só",
-		"não são multa: são o preço do rastreador",
+		"a parte do rastreador das mensalidades que faltam vence de uma vez, numa fatura só",
+		"Ela não é multa: é o custo do rastreador", "pago aos poucos nas primeiras mensalidades",
+		"Rastreador comprado antes da versão 9", "as parcelas restantes vencem de uma vez, numa fatura só",
 		// O comodato.
 		"o Cliente escolhe no pedido, quando a Farbo Rastreadores oferece o comodato", "arts. 579 a 585 do Código Civil",
 		"a mensalidade do comodato pode ser diferente", "A taxa de instalação, quando houver, é cobrada junto com a 1ª mensalidade",
 		"a taxa de desinstalação, quando houver",
 		"permite a retirada do rastreador no dia e no endereço combinados, em até 30 (trinta) dias",
-		"o preço de venda do mesmo rastreador na plataforma na data", "comprovado pelo boletim de ocorrência",
+		"o valor de reposição do mesmo rastreador na data", "comprovado pelo boletim de ocorrência",
 		"no comodato, a retirada não tem a taxa de desinstalação", "o rastreador em comodato é devolvido",
 	} {
 		if want == "MP" {
@@ -70,18 +69,22 @@ func TestContractText(t *testing.T) {
 	if strings.Contains(doc.Text, "{{") || strings.Contains(doc.Text, "com sede em") {
 		t.Error("sobrou marcação ou endereço vazio")
 	}
-	// As cláusulas viram blocos: a de permanência é uma lista (com o
-	// parcelamento, um item a mais; o de preço também).
-	if s := doc.Sections[6]; s.Title != "7. Permanência mínima e multa" || len(s.Blocks) != 1 || s.Blocks[0].Kind != "ul" || len(s.Blocks[0].Items) != 5 {
+	// Nada de vender o rastreador nem de nota de produto.
+	for _, gone := range []string{"NF-e", "rastreador à vista", "preço de venda", "rastreador comprado pelo Cliente"} {
+		if strings.Contains(doc.Text, gone) {
+			t.Errorf("sobrou %q", gone)
+		}
+	}
+	// As cláusulas viram blocos: a de permanência é uma lista, com o
+	// rastreador incluso e o comprado antes; a de preço também.
+	if s := doc.Sections[6]; s.Title != "7. Permanência mínima e multa" || len(s.Blocks) != 1 || s.Blocks[0].Kind != "ul" || len(s.Blocks[0].Items) != 6 {
 		t.Errorf("cláusula 7 = %+v", s)
 	}
 	if s := doc.Sections[4]; len(s.Blocks) != 1 || len(s.Blocks[0].Items) != 8 {
 		t.Errorf("cláusula 5 = %+v", s)
 	}
-	// Só à vista: o contrato não fala em parcelamento.
-	cash := renderWith(t, "", 1)
-	if strings.Contains(cash.Text, "parcela") || len(cash.Sections[6].Blocks[0].Items) != 4 || len(cash.Sections[4].Blocks[0].Items) != 7 {
-		t.Errorf("contrato sem parcelamento:\n%s", cash.Text)
+	if s := doc.Sections[3]; s.Title != "4. O rastreador: incluso ou em comodato" {
+		t.Errorf("cláusula 4 = %q", s.Title)
 	}
 	// Com o endereço, ele entra; o hash muda junto com o texto.
 	withAddress := render(t, "Rua Exemplo, 100, São Paulo/SP")
@@ -99,7 +102,7 @@ func TestContractText(t *testing.T) {
 func TestAssociateTermText(t *testing.T) {
 	doc, err := RenderAssociate(Params{
 		Company:        config.Company{Name: "Farbo Rastreadores", LegalName: "FARBO TECNOLOGIA DE SISTEMAS E CLOUD LTDA", CNPJ: "49.757.084/0001-00", Email: "contato@farborastreadores.com.br"},
-		HistoryOptions: []int{7, 14, 30}, SuspendAfterDays: 10, MaxInstallments: 10,
+		HistoryOptions: []int{7, 14, 30}, SuspendAfterDays: 10,
 	})
 	if err != nil {
 		t.Fatal(err)

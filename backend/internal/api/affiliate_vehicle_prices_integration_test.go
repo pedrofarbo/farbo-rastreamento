@@ -52,6 +52,11 @@ func TestAffiliateVehiclePrices(t *testing.T) {
 		PlanCents       int                  `json:"planCents"`
 		PlanByKind      *vehicles.KindPrices `json:"planByKind"`
 		ContractVersion string               `json:"contractVersion"`
+		Tracker         struct {
+			Cents  int  `json:"cents"`
+			Months int  `json:"months"`
+			Added  bool `json:"added"`
+		} `json:"tracker"`
 	}
 	offer := func(query string) offerView {
 		t.Helper()
@@ -59,11 +64,14 @@ func TestAffiliateVehiclePrices(t *testing.T) {
 		_ = json.Unmarshal(env.must("", http.MethodGet, "/api/public/checkout"+query, nil, http.StatusOK), &o)
 		return o
 	}
-	if o := offer(""); o.PlanByKind != nil || o.PlanCents != 3490 {
+	// Sem o link, o plano do site com o rastreador incluso (a parte dele já
+	// está no preço); pela tabela, + R$ 12 nas 10 primeiras.
+	if o := offer(""); o.PlanByKind != nil || o.PlanCents != 6990 || o.Tracker.Cents != 1200 || o.Tracker.Months != 10 ||
+		o.Tracker.Added {
 		t.Errorf("oferta sem o link = %+v", o)
 	}
 	o := offer("?ref=lia-tabela")
-	if o.PlanByKind == nil || *o.PlanByKind != table {
+	if o.PlanByKind == nil || *o.PlanByKind != table || !o.Tracker.Added || o.Tracker.Cents != 1200 {
 		t.Fatalf("oferta pelo link = %+v", o)
 	}
 
@@ -87,9 +95,11 @@ func TestAffiliateVehiclePrices(t *testing.T) {
 		return r
 	}
 
-	// O caminhão pelo link: a mensalidade dele na tabela.
+	// O caminhão pelo link: a mensalidade dele na tabela, mais a parte do
+	// rastreador incluso nas 10 primeiras.
 	gil := contractWith("gil@tabela.test", "529.982.247-25", vehicles.KindTruck)
-	if gil.Subscription.PriceCents != 5990 || gil.FirstInvoice == nil || gil.FirstInvoice.AmountCents != 5990 || gil.Tokens == nil {
+	if s := gil.Subscription; s.PriceCents != 5990 || !s.TrackerAdded || s.TrackerCents != 1200 || s.TrackerMonths != 10 ||
+		gil.FirstInvoice == nil || gil.FirstInvoice.AmountCents != 5990+1200 || gil.Tokens == nil {
 		t.Fatalf("caminhão pelo link = %+v", gil)
 	}
 	var kind, leadType string
@@ -127,7 +137,7 @@ func TestAffiliateVehiclePrices(t *testing.T) {
 	_ = json.Unmarshal(env.must(token, http.MethodPost, "/api/me/trackers", map[string]any{
 		"vehicle": map[string]any{"name": "Carro do Gil", "kind": vehicles.KindCar, "plate": "GIL1A11"},
 	}, http.StatusCreated), &placed)
-	if placed.Subscription.PriceCents != 4990 || placed.Subscription.PlanName != "Plano Mensal" {
+	if placed.Subscription.PriceCents != 4990 || placed.Subscription.PlanName != "Plano Mensal" || !placed.Subscription.TrackerAdded {
 		t.Errorf("carro do Gil pelo app = %+v", placed.Subscription)
 	}
 

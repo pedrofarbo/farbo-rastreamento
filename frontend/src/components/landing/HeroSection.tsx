@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 
-import { CHECKOUT_PATH, installmentsOf, loanOnly, priceLabel, priceParts } from '@/config/landing';
+import { CHECKOUT_PATH, includedLabel, loanOnly, priceLabel, priceParts } from '@/config/landing';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { headlineMonthly, kindPricesLabel } from '@/services/kindPrices';
 
@@ -14,8 +14,9 @@ interface HeroSectionProps {
 /**
  * O topo da landing: a proposta direta (bloquear e desbloquear o veículo pelo
  * celular, pelo melhor preço do mercado, com o relé no kit), o preço da oferta
- * do servidor com o normal riscado, o comodato com a instalação dos técnicos
- * da Farbo e o botão que abre a contratação. O bloqueio tem as condições dos
+ * do servidor com o normal riscado e o rastreador incluso (só o frete à
+ * parte), o comodato com a instalação dos técnicos da Farbo e o botão que
+ * abre a contratação. O bloqueio tem as condições dos
  * Termos (o relé instalado e o veículo parado), ditas embaixo.
  */
 export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenModal }) => {
@@ -27,9 +28,6 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenModal }) => {
   const monthly = headline?.cents;
   const regular = offer && open && monthly !== undefined && offer.planRegularCents > monthly ? offer.planRegularCents : undefined;
   const off = regular && monthly !== undefined && !table ? Math.round((1 - monthly / regular) * 100) : 0;
-  const equipment = offer && (open ? offer.equipmentCents : offer.equipmentRegularCents);
-  const installments =
-    offer && equipment !== undefined && offer.maxInstallments > 1 ? installmentsOf(equipment, offer.maxInstallments) : '';
   const parts = monthly !== undefined ? priceParts(monthly) : null;
   return (
     <section className={styles.heroSection} id="beneficios">
@@ -73,25 +71,18 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenModal }) => {
                 <span className={styles.pricePending}>R$ —</span>
               )}
             </div>
-            {offer && equipment !== undefined && (
+            {offer && (
               <p className={styles.priceNote}>
                 {table && `${kindPricesLabel(table, priceLabel)} · `}
                 {open && 'enquanto a assinatura durar · '}
-                {loanOnly(offer, open) ? (
-                  'rastreador em comodato'
-                ) : (
-                  <>
-                    rastreador {priceLabel(equipment)}
-                    {installments && ` ou ${installments} sem juros`}
-                  </>
-                )}
+                {loanOnly(offer, open) ? 'rastreador em comodato' : `${includedLabel(offer, open)}: você só paga o frete`}
                 , com o relé de bloqueio
               </p>
             )}
-            {/* O comodato: sem comprar o rastreador, instalado pelos técnicos da Farbo. */}
+            {/* O comodato: o rastreador emprestado, instalado pelos técnicos da Farbo. */}
             {open && offer?.loan && (
               <p className={styles.loanNote}>
-                <strong>{loanOnly(offer, open) ? 'Em comodato:' : 'Ou em comodato:'}</strong> sem comprar o rastreador, instalado{' '}
+                <strong>{loanOnly(offer, open) ? 'Em comodato:' : 'Ou em comodato:'}</strong> o rastreador emprestado, instalado{' '}
                 {offer.installDirect ? 'pelo representante' : 'pelos nossos técnicos'}
                 {offer.loan.installFeeCents > 0 && ` por ${priceLabel(offer.loan.installFeeCents)}`}
                 {offer.installDirect && ', pago direto a ele'}

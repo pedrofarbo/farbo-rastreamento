@@ -1,8 +1,9 @@
 // Package orders cuida do fluxo único de contratação: 1. veículo, 2. rastreador,
 // 3. assinatura. Numa transação só, cadastra o veículo, cria a assinatura dele
-// (com a cópia do endereço de entrega) e lança a fatura do equipamento. A
-// instalação não é cobrada pela plataforma: o cliente paga direto ao
-// prestador (ver o pacote installers).
+// (com a cópia do endereço de entrega e o rastreador incluso ou em comodato)
+// e lança o frete e as taxas. A Farbo não vende o rastreador: fora do
+// comodato, ele vai incluso e fica com o cliente, e a parte dele está nas
+// primeiras mensalidades.
 package orders
 
 import (
@@ -53,31 +54,27 @@ func (e ValidationError) Error() string { return e.Message }
 // conta (ver billing.ChargeDate), com o proporcional dos dias até ela.
 type Order struct {
 	Vehicle vehicles.Input
-	// EquipmentCents é o valor do aparelho; zero não cobra (aparelho do
-	// cliente, cortesia, comodato).
-	EquipmentCents int
-	// Terms: o rastreador vendido ou em comodato e as taxas (o comodato
+	// Terms: o rastreador incluso ou em comodato e as taxas (o comodato
 	// cobra a instalação na fatura e a desinstalação no encerramento).
 	Terms Terms
+	// Tracker: o rastreador incluso (fora do comodato) — a parte dele nas
+	// primeiras mensalidades, somada ao plano ou já dentro do preço. Zero: o
+	// aparelho do cliente.
+	Tracker Tracker
 	// RequireAddress recusa o pedido se o cliente não tiver endereço de
 	// entrega. Vale para o pedido do cliente; a central pode lançar sem ele
 	// (aparelho instalado na hora, entregue em mãos).
 	RequireAddress bool
 	Plan           billing.SubscriptionInput
-	// LaunchPromo pede a promoção de pré-lançamento: o equipamento sai pelo
-	// valor dela (se for cobrado) e a mensalidade, pelo dela nos primeiros
-	// meses. Sem direito, o pedido é recusado com PromoUnavailable.
+	// LaunchPromo pede a promoção de pré-lançamento: a mensalidade, pelo
+	// dela nos primeiros meses. Sem direito, o pedido é recusado com
+	// PromoUnavailable.
 	LaunchPromo bool
-	// Shipping é o frete escolhido (cotado de novo no servidor): entra na
-	// fatura do equipamento e fica no acompanhamento. Nulo: sem frete; na
-	// entrega combinada, só fica no acompanhamento.
+	// Shipping é o frete escolhido (cotado de novo no servidor): vira a
+	// fatura do frete e fica no acompanhamento. Nulo: sem frete; na entrega
+	// combinada, só fica no acompanhamento.
 	Shipping *fulfillment.Choice
-	// Installments parcela o equipamento sem juros (0 ou 1: à vista; até o
-	// EquipmentMaxInstallments do catálogo): no pedido, o frete e a 1ª
-	// mensalidade; as parcelas vêm somadas às mensalidades, a 1ª na 1ª. A assinatura fica
-	// ativa até a última.
-	Installments int
-	// FarboInstall: o rastreador comprado instalado pelos instaladores da
+	// FarboInstall: o rastreador incluso instalado pelos instaladores da
 	// Farbo, por InstallCents (cobrada junto com a 1ª mensalidade); sem isso,
 	// o cliente instala por conta própria. No comodato, a instalação é sempre
 	// da Farbo, com a taxa dos Terms.
@@ -94,8 +91,7 @@ type Result struct {
 	ChargeDate billing.Date `json:"chargeDate"`
 	// PayNow: a pessoa física paga no ato (a tela abre o pagamento).
 	PayNow bool `json:"payNow"`
-	// SetupInvoice é a linha do equipamento (com o frete); nula quando nada
-	// foi cobrado (aparelho do cliente, cortesia, comodato sem frete...).
+	// SetupInvoice é a linha do frete; nula sem frete.
 	SetupInvoice *billing.Invoice `json:"setupInvoice"`
 	// InstallInvoice é a linha da instalação no comodato (nula sem taxa).
 	InstallInvoice *billing.Invoice `json:"installInvoice"`
@@ -145,49 +141,25 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 	if err := o.Terms.check(); err != nil {
 		return nil, err
 	}
+	if err := o.Tracker.check(); err != nil {
+		return nil, err
+	}
 	loan := o.Terms.EquipmentMode == billing.EquipmentLoan
 	if loan {
-		// O rastreador emprestado não é vendido nem parcelado.
-		if o.Installments > 1 {
-			return nil, ValidationError{"no comodato o rastreador não é vendido: não há o que parcelar"}
-		}
-		o.EquipmentCents = 0
+		// O rastreador emprestado volta à Farbo: não há parte dele a pagar.
+		o.Tracker = Tracker{}
 		sub.EquipmentMode, sub.UninstallFeeCents = billing.EquipmentLoan, o.Terms.UninstallFeeCents
 	}
 
 	var setup *billing.Invoice
-	if o.EquipmentCents < 0 {
-		return nil, ValidationError{"o valor do equipamento não pode ser negativo"}
-	}
-	if o.Installments == 1 {
-		o.Installments = 0
-	}
-	if max := s.catalog.EquipmentMaxInstallments; o.Installments < 0 || o.Installments > max ||
-		o.Installments > billing.MaxInstallments {
-		if max <= 1 {
-			return nil, ValidationError{"o rastreador só pode ser pago à vista"}
-		}
-		return nil, ValidationError{fmt.Sprintf("o rastreador pode ser parcelado em até %d vezes", max)}
-	}
 	// A pessoa física paga no ato; a empresa, na próxima fatura do mês.
 	upfront, err := s.PaysUpfront(ctx, customerID)
 	if err != nil {
 		return nil, err
 	}
-	// O vencimento sai na transação (o dia da conta e a fatura do mês);
-	// aqui só a validação dos valores.
+	// O vencimento sai na transação (o dia da conta e a fatura do mês).
 	today := s.billing.Today()
 	due := today
-	if o.EquipmentCents > 0 {
-		setup, err = s.billing.NewInvoice(customerID, billing.InvoiceInput{
-			Description: s.catalog.EquipmentName,
-			AmountCents: o.EquipmentCents,
-			DueDate:     due,
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	result := &Result{}
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
@@ -198,10 +170,9 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 		if err := s.billing.AlignDueDay(ctx, tx, sub, o.Plan.FirstDueDate != nil); err != nil {
 			return err
 		}
-		// A pessoa física paga no ato: a 1ª mensalidade, o frete e o
-		// rastreador (ou a instalação, no comodato) vencem no dia da
-		// contratação (mais o prazo do catálogo), e a 2ª pelo menos um mês
-		// depois, no dia da conta. A empresa: nada é cobrado na hora; tudo
+		// A pessoa física paga no ato: a 1ª mensalidade, o frete e a
+		// instalação, quando houver, vencem no dia da contratação (mais o
+		// prazo do catálogo), e a 2ª pelo menos um mês depois, no dia da conta. A empresa: nada é cobrado na hora; tudo
 		// entra na próxima fatura do mês da conta (a que ainda não foi
 		// paga), com o proporcional. Um 1º vencimento combinado prevalece.
 		switch {
@@ -218,44 +189,22 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 			sub.NextDueDate = due
 		}
 		result.ChargeDate = due
-		if setup != nil {
-			setup.DueDate = due
-		}
 		if o.LaunchPromo {
-			var err error
-			if setup, err = s.applyPromo(ctx, tx, customerID, sub, setup); err != nil {
+			if err := s.applyPromo(ctx, tx, customerID, sub); err != nil {
 				return err
 			}
 		}
-		// Parcelado: o rastreador vai inteiro nas mensalidades (a 1ª parcela
-		// na 1ª, que vence com o pedido); a fatura do pedido fica só com o
-		// frete, se houver.
-		var installments []int
-		financed := ""
-		if o.Installments > 0 {
-			if setup == nil {
-				return ValidationError{"não há valor de equipamento para parcelar"}
-			}
-			installments = billing.SplitInstallments(setup.AmountCents, o.Installments)
-			financed = fmt.Sprintf(" · rastreador de %s em %dx sem juros, nas mensalidades", money(setup.AmountCents), o.Installments)
-			setup = nil
-			sub.PlanInstallments(o.Installments)
-		}
-		// O frete entra na fatura do equipamento (ou é a fatura, se o
-		// equipamento não for cobrado).
+		// O rastreador incluso: a parte dele nas primeiras mensalidades, a
+		// partir da 1ª.
+		sub.IncludeTracker(o.Tracker.Cents, o.Tracker.Months, o.Tracker.Added)
+		// O frete é a única cobrança do rastreador, na fatura do pedido.
 		if o.Shipping != nil && o.Vehicle.DeviceID == nil {
 			if o.Shipping.PriceCents > 0 {
-				freight := fmt.Sprintf("frete %s (%s)", o.Shipping.Name, money(o.Shipping.PriceCents))
-				if setup == nil {
-					var err error
-					if setup, err = s.billing.NewInvoice(customerID, billing.InvoiceInput{
-						Description: "Frete do rastreador: " + o.Shipping.Name + financed, AmountCents: o.Shipping.PriceCents, DueDate: due,
-					}); err != nil {
-						return err
-					}
-				} else {
-					setup.AmountCents += o.Shipping.PriceCents
-					setup.Description += " + " + freight
+				var err error
+				if setup, err = s.billing.NewInvoice(customerID, billing.InvoiceInput{
+					Description: "Frete do rastreador: " + o.Shipping.Name, AmountCents: o.Shipping.PriceCents, DueDate: due,
+				}); err != nil {
+					return err
 				}
 			}
 			result.Shipping = o.Shipping
@@ -301,7 +250,7 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 			}
 		}
 		if setup != nil {
-			// A linha do equipamento é avulsa (sem assinatura): se tivesse a
+			// A linha do frete é avulsa (sem assinatura): se tivesse a
 			// assinatura, a chave única (assinatura, vencimento) impediria a
 			// mensalidade do mesmo dia.
 			if result.SetupInvoice, err = billing.InsertInvoice(ctx, tx, setup); err != nil {
@@ -321,7 +270,7 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 				return err
 			}
 		}
-		// O rastreador comprado com a instalação da Farbo: a taxa, junto.
+		// O rastreador incluso com a instalação da Farbo: a taxa, junto.
 		if !loan && o.FarboInstall && o.InstallCents > 0 {
 			if result.InstallInvoice, err = billing.InsertInvoice(ctx, tx, &billing.Invoice{
 				CustomerID: customerID, Description: "Instalação do rastreador (instaladores Farbo): " + vehicleLabel,
@@ -349,9 +298,6 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 			}); err != nil {
 				return err
 			}
-		}
-		if installments != nil {
-			return billing.InsertInstallments(ctx, tx, result.Subscription.ID, installments)
 		}
 		return nil
 	})
@@ -387,45 +333,35 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 		freightCents = result.Shipping.PriceCents
 	}
 	s.log.Info("rastreador contratado", "customer", customerID, "vehicle", result.Vehicle.ID,
-		"subscription", result.Subscription.ID, "equipment_cents", o.EquipmentCents, "promo", o.LaunchPromo,
-		"freight_cents", freightCents, "installments", o.Installments, "equipment_mode", o.Terms.EquipmentMode,
-		"charge_date", result.ChargeDate.String(), "pay_now", result.PayNow)
+		"subscription", result.Subscription.ID, "promo", o.LaunchPromo, "freight_cents", freightCents,
+		"equipment_mode", o.Terms.EquipmentMode, "tracker_cents", o.Tracker.Cents, "tracker_months", o.Tracker.Months,
+		"tracker_added", o.Tracker.Added, "charge_date", result.ChargeDate.String(), "pay_now", result.PayNow)
 	return result, nil
 }
 
-// applyPromo reserva a vaga da promoção (na transação do pedido) e troca os
-// valores: o equipamento cobrado sai pelo da promoção e a assinatura ganha a
-// mensalidade promocional pelos primeiros meses (a do plano do Insanos MC,
-// se for o plano deles).
-func (s *Service) applyPromo(ctx context.Context, tx pgx.Tx, customerID uuid.UUID, sub *billing.Subscription,
-	setup *billing.Invoice) (*billing.Invoice, error) {
+// applyPromo reserva a vaga da promoção (na transação do pedido) e dá à
+// assinatura a mensalidade promocional pelos primeiros meses (a do plano do
+// Insanos MC, se for o plano deles).
+func (s *Service) applyPromo(ctx context.Context, tx pgx.Tx, customerID uuid.UUID, sub *billing.Subscription) error {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, promoLockKey); err != nil {
-		return nil, err
+		return err
 	}
 	p := s.catalog.LaunchPromo
 	reason, err := promoCheck(ctx, tx, customerID, p)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if reason != "" {
-		return nil, PromoUnavailable{reason}
+		return PromoUnavailable{reason}
 	}
 	monthly := p.MonthlyFor(sub.PlanName)
 	until := billing.Date{Time: sub.NextDueDate.AddDate(0, p.Months, 0)}
 	sub.PromoPriceCents, sub.PromoUntil = &monthly, &until
-	// Equipamento já com o cliente (sem cobrança) continua sem cobrança.
-	if setup != nil {
-		if p.EquipmentCents == 0 {
-			return nil, nil
-		}
-		setup.AmountCents = p.EquipmentCents
-		setup.Description += " · promoção de pré-lançamento"
-	}
-	return setup, nil
+	return nil
 }
 
 // OrderTerms é o rastreador do pedido do cliente: o do plano definido pela
-// central para ele (sem escolha); sem plano, o que ele escolheu — comprado,
+// central para ele (sem escolha); sem plano, o que ele escolheu — incluso,
 // ou em comodato quando a central oferece (para a pessoa física, a garantia
 // de troca do rastreador soma na mensalidade do plano).
 func (s *Service) OrderTerms(ctx context.Context, customerID uuid.UUID, equipmentMode string,
@@ -440,7 +376,7 @@ func (s *Service) OrderTerms(ctx context.Context, customerID uuid.UUID, equipmen
 		}
 		return account.Terms, nil
 	}
-	// O rastreador que o afiliado que indicou o cliente oferece: comprado,
+	// O rastreador que o afiliado que indicou o cliente oferece: incluso,
 	// comodato ou os dois.
 	modes, err := s.CustomerEquipment(ctx, customerID)
 	if err != nil {
@@ -458,7 +394,7 @@ func (s *Service) OrderTerms(ctx context.Context, customerID uuid.UUID, equipmen
 			return Terms{}, err
 		}
 		if !offer.Enabled && modes != EquipmentLoanOnly {
-			return Terms{}, ValidationError{"o comodato não está disponível agora: escolha comprar o rastreador"}
+			return Terms{}, ValidationError{"o comodato não está disponível agora: escolha o rastreador incluso"}
 		}
 		terms := Terms{EquipmentMode: billing.EquipmentLoan, InstallFeeCents: offer.InstallFeeCents,
 			UninstallFeeCents: offer.UninstallFeeCents}
@@ -473,7 +409,7 @@ func (s *Service) OrderTerms(ctx context.Context, customerID uuid.UUID, equipmen
 		}
 		return terms, nil
 	}
-	return Terms{}, ValidationError{"escolha o rastreador: comprado ou em comodato"}
+	return Terms{}, ValidationError{"escolha o rastreador: incluso ou em comodato"}
 }
 
 // withGuarantee soma a garantia de troca do rastreador na mensalidade (e no
@@ -505,7 +441,7 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehic
 		return Order{}, ErrTooManyPending
 	}
 
-	plan, equipment, err := s.CustomerPrices(ctx, customerID, vehicle.Kind)
+	plan, tracker, err := s.CustomerPrices(ctx, customerID, vehicle.Kind)
 	if err != nil {
 		return Order{}, err
 	}
@@ -518,17 +454,14 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehic
 		return Order{}, err
 	}
 	if terms.EquipmentMode == billing.EquipmentLoan && launchPromo {
-		return Order{}, ValidationError{"a promoção de pré-lançamento vale para o rastreador comprado"}
-	}
-	if terms.EquipmentMode == billing.EquipmentLoan {
-		equipment = 0
+		return Order{}, ValidationError{"a promoção de pré-lançamento vale para o rastreador incluso"}
 	}
 
 	// O cliente não vincula aparelho nem escolhe dono.
 	vehicle.DeviceID, vehicle.OwnerID = nil, nil
 
 	order := Order{
-		Vehicle: vehicle, EquipmentCents: equipment, Terms: terms, RequireAddress: true, Plan: plan,
+		Vehicle: vehicle, Tracker: tracker, Terms: terms, RequireAddress: true, Plan: plan,
 		LaunchPromo: launchPromo,
 	}
 	// A instalação do afiliado que indicou o cliente (sem plano da central):
@@ -537,7 +470,7 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehic
 	if err != nil {
 		return Order{}, err
 	}
-	// O rastreador comprado: instalar por conta própria ou com os
+	// O rastreador incluso: instalar por conta própria ou com os
 	// instaladores da Farbo (pelo preço das opções do pedido).
 	if farboInstall && terms.EquipmentMode == billing.EquipmentSale {
 		if err := s.withFarboInstall(ctx, &order, install == nil); err != nil {
@@ -564,7 +497,7 @@ func (s *Service) withFarboInstall(ctx context.Context, o *Order, offered bool) 
 }
 
 // WithFarboInstall: a central contrata a instalação da Farbo no pedido dela
-// (no rastreador comprado; no comodato, ela já é da Farbo).
+// (no rastreador incluso; no comodato, ela já é da Farbo).
 func (s *Service) WithFarboInstall(ctx context.Context, o *Order) error {
 	if o.Terms.EquipmentMode == billing.EquipmentLoan {
 		return nil
@@ -572,38 +505,38 @@ func (s *Service) WithFarboInstall(ctx context.Context, o *Order) error {
 	return s.withFarboInstall(ctx, o, false)
 }
 
-// CustomerPrices são o plano e o rastreador comprado de um novo veículo do
+// CustomerPrices são o plano e o rastreador incluso de um novo veículo do
 // cliente, do tipo informado. O cliente indicado por um afiliado com a tabela
-// por tipo de veículo paga a mensalidade dela (CustomerKindPrices). A pessoa
-// física sem plano definido pela central paga no app o mesmo que no site: o
-// plano normal (sem a tabela do afiliado) e o do Insanos MC no preço da
-// contratação pelo site, e o rastreador também (com a contratação pelo site
-// fechada, os do catálogo). A empresa, e quem tem plano da central ou um plano
-// próprio na assinatura, segue com o plano dele e o rastreador do catálogo.
-func (s *Service) CustomerPrices(ctx context.Context, customerID uuid.UUID, kind string) (billing.SubscriptionInput, int, error) {
+// por tipo de veículo paga a mensalidade dela (CustomerKindPrices), mais a
+// parte do rastreador nas primeiras. A pessoa física sem plano definido pela
+// central paga no app o mesmo que no site: o plano normal (sem a tabela do
+// afiliado) e o do Insanos MC no preço da contratação pelo site (com ela
+// fechada, os do catálogo). A empresa, e quem tem plano da central ou um
+// plano próprio na assinatura, segue com o plano dele. Abaixo do preço do
+// site, a parte do rastreador é somada nas primeiras mensalidades (TrackerFor).
+func (s *Service) CustomerPrices(ctx context.Context, customerID uuid.UUID, kind string) (billing.SubscriptionInput, Tracker, error) {
 	plan, err := s.CustomerPlan(ctx, customerID)
 	if err != nil {
-		return plan, 0, err
+		return plan, Tracker{}, err
 	}
-	equipment := s.catalog.EquipmentPriceCents
+	opts, err := s.Options(ctx)
+	if err != nil {
+		return plan, Tracker{}, err
+	}
 	account, err := s.AccountPlan(ctx, customerID)
 	if err != nil || account != nil {
-		return plan, equipment, err
+		return plan, s.TrackerFor(opts, plan, false), err
 	}
 	table, err := s.CustomerKindPrices(ctx, customerID)
 	if err != nil {
-		return plan, equipment, err
+		return plan, Tracker{}, err
 	}
 	if table != nil {
 		plan.PriceCents = table.For(kind)
 	}
 	individual, err := s.PaysUpfront(ctx, customerID)
-	if err != nil || !individual {
-		return plan, equipment, err
-	}
-	opts, err := s.Options(ctx)
-	if err != nil || !opts.Checkout.Enabled {
-		return plan, equipment, err
+	if err != nil || !individual || !opts.Checkout.Enabled {
+		return plan, s.TrackerFor(opts, plan, table != nil), err
 	}
 	switch insanos := s.catalog.LaunchPromo.InsanosPlanName; {
 	case insanos != "" && strings.EqualFold(plan.PlanName, insanos):
@@ -612,11 +545,9 @@ func (s *Service) CustomerPrices(ctx context.Context, customerID uuid.UUID, kind
 		if table == nil {
 			plan.PriceCents = opts.Checkout.PlanCents
 		}
-	default:
-		// Um plano próprio na assinatura (combinado com a central): fica.
-		return plan, equipment, nil
 	}
-	return plan, opts.Checkout.EquipmentCents, nil
+	// Um plano próprio na assinatura (combinado com a central) fica como está.
+	return plan, s.TrackerFor(opts, plan, table != nil), nil
 }
 
 // CustomerPlan é o plano de um novo veículo do cliente: o que a central

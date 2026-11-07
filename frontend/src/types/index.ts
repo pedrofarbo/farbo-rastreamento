@@ -63,7 +63,11 @@ export interface OrgMembership {
   role: OrgRole;
 }
 
-/** O rastreador dos associados (comodato ou venda) e as taxas, definidos pela central. */
+/**
+ * O rastreador dos associados (comodato ou, nas organizações que já a
+ * tinham, venda) e as taxas, definidos pela central. A Farbo não vende mais o
+ * rastreador: a organização nova é só em comodato.
+ */
 export interface OrgTerms {
   equipmentMode: 'loan' | 'sale';
   equipmentCents: number;
@@ -463,7 +467,7 @@ export interface InstallPrices {
   guaranteeCents?: number | null;
 }
 
-/** O rastreador pelo link de um afiliado: '' comprado e comodato; sale só comprado; loan só comodato. */
+/** O rastreador pelo link de um afiliado: '' incluso e comodato; sale só o incluso; loan só comodato. */
 export type EquipmentModes = '' | 'sale' | 'loan';
 
 /** A mensalidade por tipo de veículo: a tabela do link de um afiliado. */
@@ -1219,9 +1223,22 @@ export interface Subscription {
    */
   installments: number;
   commitmentUntil: DateOnly | null;
-  /** O rastreador vendido ou em comodato; no comodato, a desinstalação cobrada no encerramento. */
+  /**
+   * O rastreador que fica com o cliente (sale: o incluso e, antes dele, o
+   * comprado) ou em comodato; no comodato, a desinstalação cobrada no encerramento.
+   */
   equipmentMode: 'sale' | 'loan';
   uninstallFeeCents: number;
+  /**
+   * O rastreador incluso: a parte dele (trackerCents) em cada uma das
+   * trackerMonths primeiras mensalidades, as que vencem antes de
+   * trackerUntil — somada ao plano (trackerAdded) ou já dentro do preço.
+   * Encerrada antes, o que falta vence numa fatura só. Zero: sem rastreador incluso.
+   */
+  trackerCents: number;
+  trackerMonths: number;
+  trackerUntil: DateOnly | null;
+  trackerAdded: boolean;
   equipmentCents: number;
   installmentCents: number;
   installmentsPaid: number;
@@ -1655,7 +1672,8 @@ export interface AccountPlan extends EquipmentTerms {
 }
 
 /**
- * O rastreador do cliente e as taxas, no plano dele: vendido (o padrão) ou em
+ * O rastreador do cliente e as taxas, no plano dele: incluso (sale, o padrão:
+ * fica com o cliente) ou em
  * comodato, com a instalação na fatura da contratação e a desinstalação no
  * encerramento.
  */
@@ -1756,11 +1774,16 @@ export interface Catalog {
   equipmentModes?: EquipmentModes;
   defaultDueDay: number;
   equipmentName: string;
-  equipmentPriceCents: number;
-  /** Prazo, em dias, da fatura do equipamento. */
+  /** Prazo, em dias, da cobrança do pedido (a 1ª mensalidade e o frete). */
   setupDueDays: number;
-  /** Em até quantas vezes sem juros o rastreador pode ser parcelado (1: só à vista). */
-  equipmentMaxInstallments: number;
+  /**
+   * O rastreador incluso do plano mostrado: a parte dele nas primeiras
+   * mensalidades, somada (added) ou já dentro do preço. Para a central, a
+   * regra dos pedidos novos.
+   */
+  tracker: Tracker;
+  /** O preço do plano do site, que já inclui o rastreador: abaixo dele, a parte do rastreador é somada. */
+  sitePlanCents: number;
   /** O cliente pode contratar com a promoção de pré-lançamento (nulo: não pode). */
   launchPromo?: PromoOffer | null;
   /** Para o cliente: o rastreador dele e as taxas, e o vencimento da cobrança de um veículo contratado hoje. */
@@ -1770,12 +1793,30 @@ export interface Catalog {
   chargeDate?: DateOnly;
   /** O rastreador vem do plano definido pela central (sem escolha). */
   planTerms?: boolean;
-  /** Sem plano definido: o comodato que o cliente pode escolher (nulo: só comprado). */
+  /** Sem plano definido: o comodato que o cliente pode escolher (nulo: só o incluso). */
   loan?: LoanOffer | null;
-  /** A instalação pelos instaladores da Farbo no rastreador comprado (nula: só por conta própria). */
+  /** A instalação pelos instaladores da Farbo no rastreador incluso (nula: só por conta própria). */
   install?: InstallService | null;
-  /** Pessoa física: paga no ato a 1ª mensalidade, o frete e o rastreador (ou a instalação). */
+  /** Pessoa física: paga no ato a 1ª mensalidade, o frete e a instalação, quando houver. */
   payNow?: boolean;
+}
+
+/**
+ * O rastreador incluso (a Farbo não vende o rastreador): a parte dele em
+ * cada uma das `months` primeiras mensalidades, somada ao plano (`added`) ou
+ * já dentro do preço. Encerrada a assinatura antes, o que falta vence numa
+ * fatura só. Zero: sem rastreador incluso (comodato, aparelho do cliente).
+ */
+export interface Tracker {
+  cents: number;
+  months: number;
+  added: boolean;
+}
+
+/** A regra do rastreador incluso dos pedidos novos: a parte dele e em quantas mensalidades. */
+export interface TrackerRule {
+  cents: number;
+  months: number;
 }
 
 /**
@@ -1789,34 +1830,39 @@ export interface LoanOffer {
   uninstallFeeCents: number;
 }
 
-/** Os preços da contratação pelo site (pessoa física): o plano, o do Insanos MC (dos clientes que a central põe nele) e o rastreador. */
+/**
+ * Os preços da contratação pelo site (pessoa física): o plano, já com o
+ * rastreador incluso, e o do Insanos MC (dos clientes que a central põe nele;
+ * nas primeiras mensalidades, mais a parte do rastreador).
+ */
 export interface CheckoutPrices {
   enabled: boolean;
   planCents: number;
   insanosCents: number;
-  equipmentCents: number;
 }
 
 /** O que a contratação pelo site oferece. */
 export interface CheckoutOffer {
   enabled: boolean;
   planName: string;
+  /** A mensalidade do site, com o rastreador incluso. */
   planCents: number;
   equipmentName: string;
-  equipmentCents: number;
-  /** Os preços normais (do catálogo): riscados ao lado dos do site; os cobrados com a contratação fechada. */
+  /** O preço normal do plano (do catálogo): riscado ao lado do do site; o cobrado com a contratação fechada. */
   planRegularCents: number;
-  equipmentRegularCents: number;
   /** Pelo link de um afiliado com tabela: a mensalidade por tipo de veículo, no lugar de planCents. */
   planByKind: KindPrices | null;
+  /**
+   * O rastreador incluso: a parte dele nas primeiras mensalidades — somada à
+   * mensalidade pela tabela do afiliado (added) ou já dentro do preço do site.
+   */
+  tracker: Tracker;
   /** Pelo link de um representante: ele instala, desinstala e recebe direto (install e as taxas do loan fora do Pix). */
   installDirect?: boolean;
   /** O rastreador pelo link do afiliado (sale: sem o comodato; loan: só o comodato). */
   equipmentModes?: EquipmentModes;
   /** O representante do link entrega em mãos, com os kits dele, sem frete (vazio: a entrega de sempre). */
   handDelivery?: string;
-  /** Em até quantas vezes sem juros o rastreador comprado pode ser parcelado (1: só à vista). */
-  maxInstallments: number;
   dueDay: number;
   loan: LoanOffer | null;
   install: InstallService | null;
@@ -1826,8 +1872,8 @@ export interface CheckoutOffer {
 
 /** A contratação pelo site: a escolha, o veículo, quem contrata, o endereço, a entrega e o aceite. */
 export interface CheckoutInput {
+  /** O rastreador incluso (sale) ou em comodato (loan). */
   equipmentMode: 'sale' | 'loan';
-  installments: number;
   farboInstall: boolean;
   vehicle: { kind: VehicleKind; name: string; brand: string; model: string; plate: string };
   name: string;
@@ -1852,17 +1898,18 @@ export interface CheckoutResult extends TrackerOrderResult {
   tokens: AuthTokens | null;
 }
 
-/** A instalação pelos instaladores da Farbo no rastreador comprado (no comodato, ela é sempre da Farbo). */
+/** A instalação pelos instaladores da Farbo no rastreador incluso (no comodato, ela é sempre da Farbo). */
 export interface InstallService {
   enabled: boolean;
   priceCents: number;
 }
 
-/** As opções do pedido do cliente (central): o comodato e a instalação Farbo. */
+/** As opções do pedido do cliente (central): o comodato, a instalação Farbo, os preços do site e o rastreador incluso. */
 export interface OrderOptions {
   loan: LoanOffer;
   install: InstallService;
   checkout: CheckoutPrices;
+  tracker: TrackerRule;
   updatedAt?: string;
 }
 
@@ -1948,7 +1995,7 @@ export interface TrackerOrderResult {
   chargeDate: DateOnly;
   /** A pessoa física paga no ato: a tela abre o pagamento do pedido. */
   payNow: boolean;
-  /** A linha do equipamento (com o frete); nula quando nada foi cobrado. */
+  /** A linha do frete (o rastreador não é vendido); nula sem frete. */
   setupInvoice: Invoice | null;
   /** A instalação no comodato (nula sem taxa). */
   installInvoice: Invoice | null;
@@ -2048,9 +2095,6 @@ export interface FleetImportResult {
   installed: number;
   /** Os grupos que a planilha cria na conta. */
   newGroups: string[] | null;
-  /** O total do equipamento. */
-  equipmentCents: number;
-  setupInvoice: Invoice | null;
   installInvoice?: Invoice | null;
   prorataInvoice?: Invoice | null;
   /** O vencimento da fatura do mês em que a frota entra. */

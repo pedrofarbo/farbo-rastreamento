@@ -5,7 +5,15 @@ import type { PromoOffer, Subscription } from '@/types';
 import styles from './Billing.module.css';
 
 type Priced = Pick<Subscription, 'priceCents' | 'promoPriceCents' | 'promoUntil' | 'nextDueDate'> &
-  Partial<Pick<Subscription, 'nextPriceCents' | 'nextPriceFrom'>>;
+  Partial<Pick<Subscription, 'nextPriceCents' | 'nextPriceFrom' | 'trackerCents' | 'trackerUntil' | 'trackerAdded'>>;
+
+/**
+ * A parte do rastreador incluso somada à próxima mensalidade (zero: já no
+ * preço, fora das primeiras ou sem rastreador incluso).
+ */
+export function trackerPart(sub: Priced): number {
+  return sub.trackerAdded && sub.trackerCents && sub.trackerUntil && sub.nextDueDate < sub.trackerUntil ? sub.trackerCents : 0;
+}
 
 /** A próxima fatura ainda sai pelo preço da promoção de pré-lançamento? */
 export function promoActive(sub: Priced): boolean {
@@ -25,9 +33,10 @@ export function promoMonthlyFor(offer: PromoOffer, planName: string): number {
 
 /**
  * A mensalidade como o cliente paga agora: com a promoção de pré-lançamento,
- * o valor dela e quando passa ao do plano; a de valor zero, "Grátis". Sai num
- * elemento só, para a linha da tabela no celular não separar o valor do
- * "/mês".
+ * o valor dela e quando passa ao do plano; com a parte do rastreador incluso
+ * somada nas primeiras, o valor delas e quando volta ao do plano; a de valor
+ * zero, "Grátis". Sai num elemento só, para a linha da tabela no celular não
+ * separar o valor do "/mês".
  */
 export function MonthlyPrice({ sub, staff = false }: { sub: Priced; staff?: boolean }) {
   // O reajuste anual já avisado: o valor novo e desde quando. A equipe vê
@@ -41,6 +50,19 @@ export function MonthlyPrice({ sub, staff = false }: { sub: Priced; staff?: bool
     ) : null;
   if (isFree(sub)) {
     return <span className={styles.amount}>Grátis</span>;
+  }
+  const tracker = trackerPart(sub);
+  if (tracker > 0) {
+    const base = promoActive(sub) ? (sub.promoPriceCents as number) : sub.priceCents;
+    return (
+      <span>
+        <span className={styles.amount}>{formatMoney(base + tracker)}</span>/mês{' '}
+        <span className={styles.muted}>
+          (com o rastreador incluso; a partir de {formatDateOnly(sub.trackerUntil as string)}, {formatMoney(base)})
+        </span>
+        {adjustment}
+      </span>
+    );
   }
   if (!promoActive(sub)) {
     return (

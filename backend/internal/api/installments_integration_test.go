@@ -12,11 +12,12 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 )
 
-// O rastreador parcelado sem juros (de uma empresa: tudo na fatura do mês da
-// conta): as parcelas somadas às mensalidades, a 1ª na 1ª (a de uma fatura
-// cancelada volta na seguinte), a assinatura presa até a última e,
-// encerrada antes, o saldo numa fatura só — ou dispensado. Precisa de
-// FARBO_TEST_DATABASE_URL.
+// O rastreador comprado parcelado antes do rastreador incluso (de uma
+// empresa: tudo na fatura do mês da conta). O pedido novo não parcela mais;
+// as assinaturas que já tinham parcelas seguem: as parcelas somadas às
+// mensalidades, a 1ª na 1ª (a de uma fatura cancelada volta na seguinte), a
+// assinatura presa até a última e, encerrada antes, o saldo numa fatura só —
+// ou dispensado. Precisa de FARBO_TEST_DATABASE_URL.
 func TestEquipmentInstallments(t *testing.T) {
 	var bs *billing.Service
 	env, _ := newLeadsEnv(t, func(d *Deps) { bs = d.Billing })
@@ -41,14 +42,37 @@ func TestEquipmentInstallments(t *testing.T) {
 		Subscription billing.Subscription `json:"subscription"`
 		SetupInvoice *billing.Invoice     `json:"setupInvoice"`
 	}
-	order := func(plate string, installments, want int) (result, []byte) {
+	// Uma assinatura de antes: o pedido (sem rastreador incluso) e, pelo
+	// banco, o rastreador parcelado em n vezes desde a 1ª mensalidade, que sai
+	// de novo com a 1ª parcela.
+	repo := billing.NewRepository(env.db)
+	legacy := func(plate string, total, n int) result {
 		t.Helper()
-		body := env.must(token, http.MethodPost, "/api/me/trackers", map[string]any{
-			"vehicle": map[string]any{"name": "Moto " + plate, "plate": plate}, "installments": installments,
-		}, want)
 		var out result
-		_ = json.Unmarshal(body, &out)
-		return out, body
+		_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/customers/"+carla.ID+"/trackers", map[string]any{
+			"vehicle": map[string]any{"name": "Carro " + plate, "plate": plate}, "tracker": map[string]any{"cents": 0, "months": 0},
+			"plan": map[string]any{"planName": "Plano Mensal", "priceCents": 6990, "dueDay": 10},
+		}, http.StatusCreated), &out)
+		var first time.Time
+		if err := env.db.QueryRow(ctx, `DELETE FROM invoices WHERE subscription_id = $1 RETURNING due_date`,
+			out.Subscription.ID).Scan(&first); err != nil {
+			t.Fatal(err)
+		}
+		sub := out.Subscription
+		sub.NextDueDate = billing.Date{Time: first}
+		sub.PlanInstallments(n)
+		if _, err := env.db.Exec(ctx, `UPDATE subscriptions SET next_due_date = $2, installments = $3, commitment_until = $4
+			WHERE id = $1`, sub.ID, first, n, sub.CommitmentUntil.Time); err != nil {
+			t.Fatal(err)
+		}
+		if err := billing.InsertInstallments(ctx, env.db, sub.ID, billing.SplitInstallments(total, n)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repo.GenerateDue(ctx, billing.Date{Time: first}); err != nil {
+			t.Fatal(err)
+		}
+		out.Subscription = sub
+		return out
 	}
 	subscription := func(id string) billing.Subscription {
 		t.Helper()
@@ -81,18 +105,18 @@ func TestEquipmentInstallments(t *testing.T) {
 		return out
 	}
 
-	// Acima do teto do catálogo (10x), recusado.
-	if _, body := order("PAR1A11", 11, http.StatusBadRequest); !strings.Contains(string(body), "até 10 vezes") {
-		t.Errorf("11x: %s", body)
+	// O pedido novo não parcela: o rastreador vem incluso.
+	body := env.must(token, http.MethodPost, "/api/me/trackers", map[string]any{
+		"vehicle": map[string]any{"name": "Moto PAR0A00", "plate": "PAR0A00"}, "installments": 10,
+	}, http.StatusBadRequest)
+	if !strings.Contains(string(body), "não há o que parcelar") {
+		t.Errorf("pedido parcelado: %s", body)
 	}
 
-	// 10x de R$ 15,00, sem frete: o pedido não gera fatura; a mensalidade de
-	// outubro leva a 1ª, e a permanência vai até a com a 10ª (julho/2027).
-	r, _ := order("PAR1A11", 10, http.StatusCreated)
+	// 10x de R$ 15,00: a mensalidade de outubro leva a 1ª, e a permanência
+	// vai até a com a 10ª (julho/2027).
+	r := legacy("PAR1A11", 15000, 10)
 	sub := r.Subscription
-	if r.SetupInvoice != nil {
-		t.Fatalf("fatura do pedido = %+v", r.SetupInvoice)
-	}
 	if sub.Installments != 10 || sub.CommitmentUntil == nil || sub.CommitmentUntil.Format(time.DateOnly) != "2027-07-10" {
 		t.Fatalf("assinatura = %+v", sub)
 	}
@@ -116,7 +140,6 @@ func TestEquipmentInstallments(t *testing.T) {
 
 	// A central cancela a mensalidade de novembro: a 2ª parcela vai na de
 	// dezembro.
-	repo := billing.NewRepository(env.db)
 	if _, err := repo.GenerateDue(ctx, billing.NewDate(2026, 11, 10)); err != nil {
 		t.Fatal(err)
 	}
@@ -171,28 +194,13 @@ func TestEquipmentInstallments(t *testing.T) {
 		t.Errorf("parcelas na fatura do saldo = %d", linked)
 	}
 
-	// Dispensar (arrependimento): pedido em 3x de R$ 120,00 pela central
-	// (40,00 cada); nada é cobrado — a mensalidade de outubro, com a 1ª,
-	// ainda não venceu e é cancelada junto.
-	adminOrder := func(plate string, equipment, installments, want int) (result, []byte) {
-		t.Helper()
-		body := env.must(admin, http.MethodPost, "/api/customers/"+carla.ID+"/trackers", map[string]any{
-			"vehicle":        map[string]any{"name": "Carro " + plate, "plate": plate},
-			"equipmentCents": equipment, "installments": installments,
-			"plan": map[string]any{"planName": "Plano Mensal", "priceCents": 6990, "dueDay": 10},
-		}, want)
-		var out result
-		_ = json.Unmarshal(body, &out)
-		return out, body
-	}
-	if _, body := adminOrder("PAR0Z00", 0, 3, http.StatusBadRequest); !strings.Contains(string(body), "não há valor de equipamento") {
-		t.Errorf("parcelar sem equipamento: %s", body)
-	}
+	// Dispensar (arrependimento): em 3x de R$ 120,00 (40,00 cada); nada é
+	// cobrado — a mensalidade com a 1ª ainda não venceu e é cancelada junto.
 	// Na próxima fatura do mês da conta (a de outubro já foi paga): de
 	// novembro a janeiro.
-	r, _ = adminOrder("PAR2B22", 12000, 3, http.StatusCreated)
-	if r.SetupInvoice != nil || r.Subscription.CommitmentUntil.Format(time.DateOnly) != "2027-01-10" {
-		t.Fatalf("3x = %+v / %+v", r.SetupInvoice, r.Subscription)
+	r = legacy("PAR2B22", 12000, 3)
+	if r.Subscription.CommitmentUntil.Format(time.DateOnly) != "2027-01-10" {
+		t.Fatalf("3x = %+v", r.Subscription)
 	}
 	if invoices := monthly(r.Subscription.ID.String()); len(invoices) != 1 || invoices[0].AmountCents != 6990+4000 {
 		t.Fatalf("3x: mensalidades = %+v", invoices)
@@ -205,9 +213,9 @@ func TestEquipmentInstallments(t *testing.T) {
 		t.Errorf("dispensado: nada a pagar, %+v", s)
 	}
 
-	// Tudo pago: encerra sem perguntar. 7x de R$ 120,00 (17,16 + 6 × 17,14)
-	// pela central, com a assinatura começando em novembro.
-	r, _ = adminOrder("PAR3C33", 12000, 7, http.StatusCreated)
+	// Tudo pago: encerra sem perguntar. 7x de R$ 120,00 (17,16 + 6 × 17,14),
+	// com a assinatura começando em novembro.
+	r = legacy("PAR3C33", 12000, 7)
 	if invoices := monthly(r.Subscription.ID.String()); len(invoices) != 1 || invoices[0].AmountCents != 6990+1716 {
 		t.Fatalf("7x: 1ª = %+v", invoices)
 	}

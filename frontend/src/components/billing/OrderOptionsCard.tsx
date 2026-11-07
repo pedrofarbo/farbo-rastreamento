@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { TextField } from '@/components/ui/Field';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { centsToInput, parseMoney } from '@/services/format';
+import { centsToInput, formatMoney, parseMoney } from '@/services/format';
 import type { OrderOptions } from '@/types';
 
 import pageStyles from '@/pages/Page.module.css';
@@ -23,10 +23,13 @@ function money(text: string): number | null {
 
 /**
  * As opções do pedido do cliente (central): os preços da contratação pelo
- * site; o comodato — ligado, o "Novo veículo" oferece comprar o rastreador ou
- * o comodato, com as taxas e a garantia de troca daqui — e a instalação pelos
- * instaladores da Farbo no rastreador comprado, pelo preço daqui. O plano
- * definido para um cliente (na ficha dele) continua valendo para ele.
+ * site (o plano já com o rastreador incluso); o rastreador incluso — a parte
+ * dele nas primeiras mensalidades, somada nos planos abaixo do preço do site
+ * (a tabela dos afiliados, o Insanos MC) —; o comodato — ligado, o "Novo
+ * veículo" oferece o rastreador incluso ou o comodato, com as taxas e a
+ * garantia de troca daqui — e a instalação pelos instaladores da Farbo no
+ * rastreador incluso, pelo preço daqui. A Farbo não vende o rastreador. O
+ * plano definido para um cliente (na ficha dele) continua valendo para ele.
  */
 export function OrderOptionsCard() {
   const queryClient = useQueryClient();
@@ -41,7 +44,8 @@ export function OrderOptionsCard() {
   const [checkoutOn, setCheckoutOn] = useState(true);
   const [sitePlan, setSitePlan] = useState('');
   const [siteInsanos, setSiteInsanos] = useState('');
-  const [siteEquipment, setSiteEquipment] = useState('');
+  const [trackerPart, setTrackerPart] = useState('');
+  const [trackerMonths, setTrackerMonths] = useState('');
   const [error, setError] = useState('');
   useEffect(() => {
     const o = options.data;
@@ -55,14 +59,19 @@ export function OrderOptionsCard() {
     setCheckoutOn(o.checkout.enabled);
     setSitePlan(centsToInput(o.checkout.planCents));
     setSiteInsanos(centsToInput(o.checkout.insanosCents));
-    setSiteEquipment(centsToInput(o.checkout.equipmentCents));
+    setTrackerPart(centsToInput(o.tracker.cents));
+    setTrackerMonths(String(o.tracker.months));
   }, [options.data]);
   const save = useMutation({
     mutationFn: () => {
       const values = [money(guarantee), money(install), money(uninstall), money(farboPrice), money(sitePlan), money(siteInsanos),
-        money(siteEquipment)];
+        money(trackerPart)];
       if (values.some((v) => Number.isNaN(v))) throw new Error('Valor inválido: use, por exemplo, 79,90.');
-      const [surchargeCents, installFeeCents, uninstallFeeCents, priceCents, planCents, insanosCents, equipmentCents] = values;
+      const [surchargeCents, installFeeCents, uninstallFeeCents, priceCents, planCents, insanosCents, trackerCents] = values;
+      const months = Number(trackerMonths);
+      if (!Number.isInteger(months) || months < 1 || months > 60) {
+        throw new Error('O rastreador incluso vai de 1 a 60 mensalidades.');
+      }
       const input: Omit<OrderOptions, 'updatedAt'> = {
         loan: {
           enabled: loanOn,
@@ -71,12 +80,8 @@ export function OrderOptionsCard() {
           uninstallFeeCents: uninstallFeeCents ?? 0,
         },
         install: { enabled: farboOn, priceCents: priceCents ?? 0 },
-        checkout: {
-          enabled: checkoutOn,
-          planCents: planCents ?? 0,
-          insanosCents: insanosCents ?? 0,
-          equipmentCents: equipmentCents ?? 0,
-        },
+        checkout: { enabled: checkoutOn, planCents: planCents ?? 0, insanosCents: insanosCents ?? 0 },
+        tracker: { cents: trackerCents ?? 0, months },
       };
       return catalogApi.setOrderOptions(input);
     },
@@ -91,7 +96,7 @@ export function OrderOptionsCard() {
   return (
     <Card
       title="Opções do pedido do cliente"
-      subtitle="O que o cliente escolhe no Novo veículo: comprar o rastreador ou o comodato, e quem instala o rastreador comprado. O plano definido na ficha de um cliente continua valendo para ele."
+      subtitle="O que o cliente escolhe no Novo veículo: o rastreador incluso ou o comodato, e quem instala. A Farbo não vende o rastreador. O plano definido na ficha de um cliente continua valendo para ele."
     >
       {options.isLoading ? (
         <Spinner label="Carregando" />
@@ -104,28 +109,52 @@ export function OrderOptionsCard() {
             <span>
               <strong>Aberta na landing (/contratar)</strong>
               <br />
-              Pessoa física contrata e paga com Pix na hora. O preço do plano vale enquanto a assinatura durar (só o
-              reajuste anual). Mude a landing junto, se mudar os valores.
+              Pessoa física contrata e paga com Pix na hora, com o rastreador incluso (só o frete à parte). O preço do
+              plano vale enquanto a assinatura durar (só o reajuste anual).
             </span>
           </label>
           <div className={pageStyles.formRow}>
-            <TextField label="Plano normal (R$/mês)" inputMode="decimal" value={sitePlan} onChange={(e) => setSitePlan(e.target.value)} />
+            <TextField
+              label="Plano do site (R$/mês)"
+              hint="Já com o rastreador incluso: a parte dele não é somada."
+              inputMode="decimal"
+              value={sitePlan}
+              onChange={(e) => setSitePlan(e.target.value)}
+            />
             <TextField
               label="Plano Insanos MC (R$/mês)"
-              hint="Fora do site: só de quem a central põe no plano do Insanos (os pedidos pelo app)."
+              hint={`Fora do site: de quem a central põe no plano do Insanos. Nas primeiras mensalidades, mais a parte do rastreador${
+                money(siteInsanos) && money(trackerPart) ? ` (${formatMoney((money(siteInsanos) ?? 0) + (money(trackerPart) ?? 0))})` : ''
+              }.`}
               inputMode="decimal"
               value={siteInsanos}
               onChange={(e) => setSiteInsanos(e.target.value)}
             />
+          </div>
+
+          <h3 className={pageStyles.sectionTitle}>Rastreador incluso</h3>
+          <p className={pageStyles.description}>
+            O rastreador fica com o cliente e não é vendido. A parte dele vai nas primeiras mensalidades: somada à
+            mensalidade nos planos abaixo do preço do site (a tabela dos afiliados, sempre, e o Insanos MC); no plano do
+            site, ela já está no preço. Se a assinatura for encerrada antes, o que falta vence numa fatura só.
+          </p>
+          <div className={pageStyles.formRow}>
             <TextField
-              label="Rastreador comprado (R$)"
+              label="Parte do rastreador (R$/mês)"
               inputMode="decimal"
-              value={siteEquipment}
-              onChange={(e) => setSiteEquipment(e.target.value)}
+              value={trackerPart}
+              onChange={(e) => setTrackerPart(e.target.value)}
+            />
+            <TextField
+              label="Nas primeiras (mensalidades)"
+              inputMode="numeric"
+              hint="Vale para os pedidos novos."
+              value={trackerMonths}
+              onChange={(e) => setTrackerMonths(e.target.value.replace(/\D/g, '').slice(0, 2))}
             />
           </div>
 
-          <h3 className={pageStyles.sectionTitle}>Instalação do rastreador comprado</h3>
+          <h3 className={pageStyles.sectionTitle}>Instalação do rastreador incluso</h3>
           <label className={styles.promoOption}>
             <input type="checkbox" checked={farboOn} onChange={(e) => setFarboOn(e.target.checked)} />
             <span>
@@ -151,7 +180,7 @@ export function OrderOptionsCard() {
             <span>
               <strong>Oferecer o comodato no pedido</strong>
               <br />O rastreador emprestado, que volta na desinstalação; a instalação é sempre nossa. Desligado, o cliente
-              só compra o rastreador.
+              só tem o rastreador incluso.
             </span>
           </label>
           <div className={pageStyles.formRow}>

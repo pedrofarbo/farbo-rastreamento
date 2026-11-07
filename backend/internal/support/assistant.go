@@ -39,14 +39,17 @@ type PriceFacts struct {
 	// os preços são os do catálogo e quem contrata é a equipe.
 	SiteOpen    bool
 	CheckoutURL string
-	Plan        string
-	Equipment   string
-	// Installments: em até quantas vezes o rastreador comprado sai sem juros.
-	Installments int
+	// Plan: a mensalidade do site, com o rastreador incluso.
+	Plan string
+	// TrackerPart e TrackerMonths: a parte do rastreador incluso nas
+	// primeiras mensalidades — o que falta dela vence de uma vez se a
+	// assinatura for encerrada antes.
+	TrackerPart   string
+	TrackerMonths int
 	// FarboInstall: a instalação pelos instaladores da Farbo no rastreador
-	// comprado (vazio: só por conta própria).
+	// incluso (vazio: só por conta própria).
 	FarboInstall string
-	// Loan: o comodato (nulo: só o rastreador comprado).
+	// Loan: o comodato (nulo: só o rastreador incluso).
 	Loan *LoanFacts
 }
 
@@ -277,14 +280,14 @@ func writePrices(b *strings.Builder, p *PriceFacts) {
 	if p.SiteOpen {
 		note = "por mês, enquanto a assinatura durar (só o reajuste anual)"
 	}
-	fmt.Fprintf(b, "  - Plano mensal: %s %s.\n", p.Plan, note)
-	equipment := "à vista"
-	if p.Installments > 1 {
-		equipment = fmt.Sprintf("à vista ou em até %dx sem juros, somadas às mensalidades", p.Installments)
+	fmt.Fprintf(b, "  - Plano mensal: %s %s, com o rastreador incluso: ele fica com a pessoa e não é cobrado à parte "+
+		"(só o frete, quando houver). A Farbo não vende o rastreador.\n", p.Plan, note)
+	if p.TrackerPart != "" && p.TrackerMonths > 0 {
+		fmt.Fprintf(b, "  - Se a assinatura for encerrada antes da %dª mensalidade, a parte do rastreador incluso que falta "+
+			"(%s por mensalidade que não saiu) vence numa fatura só.\n", p.TrackerMonths, p.TrackerPart)
 	}
-	fmt.Fprintf(b, "  - Rastreador comprado: %s, %s.\n", p.Equipment, equipment)
 	if p.FarboInstall != "" {
-		fmt.Fprintf(b, "  - Instalação do rastreador comprado: por conta própria (com o instalador da pessoa, pago direto a ele) "+
+		fmt.Fprintf(b, "  - Instalação do rastreador incluso: por conta própria (com o instalador da pessoa, pago direto a ele) "+
 			"ou pelos instaladores da Farbo, por %s.\n", p.FarboInstall)
 	}
 	if l := p.Loan; l != nil {
@@ -426,10 +429,13 @@ func FactsFrom(c config.Catalog, b config.Billing, panelURL string) Facts {
 func PricesFrom(c config.Catalog, o orders.Options, panelURL string) PriceFacts {
 	p := PriceFacts{
 		SiteOpen: o.Checkout.Enabled, CheckoutURL: strings.TrimRight(panelURL, "/") + "/contratar",
-		Plan: brl(c.PlanPriceCents), Equipment: brl(c.EquipmentPriceCents), Installments: c.EquipmentMaxInstallments,
+		Plan: brl(c.PlanPriceCents), TrackerMonths: o.Tracker.Months,
+	}
+	if o.Tracker.Cents > 0 {
+		p.TrackerPart = brl(o.Tracker.Cents)
 	}
 	if o.Checkout.Enabled {
-		p.Plan, p.Equipment = brl(o.Checkout.PlanCents), brl(o.Checkout.EquipmentCents)
+		p.Plan = brl(o.Checkout.PlanCents)
 	}
 	if o.Install.Enabled {
 		p.FarboInstall = brl(o.Install.PriceCents)

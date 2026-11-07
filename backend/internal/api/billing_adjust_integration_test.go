@@ -15,7 +15,7 @@ import (
 )
 
 // Os acertos da central na cobrança: parcelar o rastreador de um pedido
-// feito à vista (com e sem frete), o Pix de antes do acerto que não quita
+// feito à vista antes do rastreador incluso (com e sem frete), o Pix de antes do acerto que não quita
 // sozinho, mudar o vencimento de uma fatura e o dia de vencimento da
 // assinatura. Precisa de FARBO_TEST_DATABASE_URL.
 func TestBillingAdjustments(t *testing.T) {
@@ -44,7 +44,9 @@ func TestBillingAdjustments(t *testing.T) {
 		"zipCode": "01305-000", "street": "Rua Augusta", "number": "500", "district": "Consolação", "city": "São Paulo", "state": "SP",
 	}, http.StatusOK)
 
-	// A Bia contrata à vista (escolheu errado): o rastreador numa fatura só.
+	// A Bia contratou à vista (escolheu errado), antes do rastreador
+	// incluso: o rastreador numa fatura só, avulsa. O pedido de hoje não tem
+	// mais fatura de equipamento.
 	var order struct {
 		Subscription billing.Subscription `json:"subscription"`
 		SetupInvoice *billing.Invoice     `json:"setupInvoice"`
@@ -52,10 +54,14 @@ func TestBillingAdjustments(t *testing.T) {
 	_ = json.Unmarshal(env.must(token, http.MethodPost, "/api/me/trackers", map[string]any{
 		"vehicle": map[string]any{"name": "Moto", "plate": "ACE1A11"},
 	}, http.StatusCreated), &order)
-	sub, setup := order.Subscription, order.SetupInvoice
-	if setup == nil || setup.AmountCents != 15000 || sub.Installments != 0 {
-		t.Fatalf("pedido à vista = %+v %+v", sub, setup)
+	sub := order.Subscription
+	if order.SetupInvoice != nil || sub.Installments != 0 {
+		t.Fatalf("pedido = %+v %+v", sub, order.SetupInvoice)
 	}
+	var setup *billing.Invoice
+	_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/customers/"+bia.ID+"/invoices", map[string]any{
+		"description": "Rastreador J16 GT06", "amountCents": 15000, "dueDate": "2026-10-07",
+	}, http.StatusCreated), &setup)
 	// Ela já tinha gerado o Pix do pedido (R$ 150,00) e o da mensalidade de
 	// outubro (R$ 69,90).
 	pix := func(invoice string) payments.Charge {
@@ -136,7 +142,7 @@ func TestBillingAdjustments(t *testing.T) {
 		Subscription billing.Subscription `json:"subscription"`
 	}
 	_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/customers/"+bia.ID+"/trackers", map[string]any{
-		"vehicle": map[string]any{"name": "Carro", "plate": "ACE2B22"}, "equipmentCents": 0,
+		"vehicle": map[string]any{"name": "Carro", "plate": "ACE2B22"}, "tracker": map[string]any{"cents": 0, "months": 0},
 		"plan": map[string]any{"planName": "Plano Mensal", "priceCents": 6990, "dueDay": 10},
 	}, http.StatusCreated), &second)
 	var withFreight billing.Invoice

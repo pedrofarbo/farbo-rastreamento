@@ -3,15 +3,7 @@ import { Link } from 'react-router-dom';
 
 import { WHATSAPP_NUMBER, whatsappUrl } from '@/config/contact';
 
-import {
-  ANATEL_HOMOLOGATION,
-  CHECKOUT_PATH,
-  installmentsOf,
-  loanOnly,
-  installmentsPhrase,
-  priceLabel,
-  priceParts,
-} from '@/config/landing';
+import { ANATEL_HOMOLOGATION, CHECKOUT_PATH, loanOnly, priceLabel, priceParts, trackerAdded } from '@/config/landing';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { headlineMonthly, kindPricesLabel, lowestPrice } from '@/services/kindPrices';
 import type { CheckoutOffer } from '@/types';
@@ -51,9 +43,10 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
   const table = headline?.table ?? null;
   const plan = headline?.cents;
   const promo = open && !!offer && plan !== undefined && offer.planRegularCents > plan;
-  const equipment = offer && (open ? offer.equipmentCents : offer.equipmentRegularCents);
-  // Pelo link de um afiliado só de comodato: o comodato no lugar do preço do rastreador.
+  // Pelo link de um afiliado só de comodato: o comodato no lugar do rastreador incluso.
   const onlyLoan = loanOnly(offer, open);
+  // Pela tabela do afiliado, a parte do rastreador incluso soma nas primeiras.
+  const added = trackerAdded(offer, open);
   return (
     <section className={styles.pricingSection} id="planos">
       <div className={styles.container}>
@@ -66,7 +59,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
               <strong>{bannerHeadline(offer)}</strong>
               <span>
                 O preço da mensalidade vale enquanto a assinatura durar
-                {offer?.loan && ' · ou o rastreador em comodato, sem comprar'}.
+                {offer?.loan ? ' · o rastreador vem incluso, ou em comodato' : ' · o rastreador vem incluso'}.
               </span>
             </div>
             <Link className={styles.launchBannerBtn} to={CHECKOUT_PATH} data-analytics="planos-banner">
@@ -91,6 +84,11 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
                     {kindPricesLabel(table, priceLabel)}
                   </>
                 )}
+                {added && !onlyLoan && (
+                  <>
+                    <br />+ {priceLabel(added.cents)}/mês nas {added.months} primeiras mensalidades
+                  </>
+                )}
                 {open && (
                   <>
                     <br />
@@ -101,6 +99,10 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
             </div>
 
             <ul className={styles.checkList}>
+              <li>
+                <span className={styles.checkIcon}>✓</span>
+                {onlyLoan ? 'Rastreador em comodato' : 'Rastreador incluso, que fica com você'}
+              </li>
               <li>
                 <span className={styles.checkIcon}>✓</span>
                 Rastreamento em tempo real
@@ -219,8 +221,8 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
           </div>
         </div>
 
-      {/* O rastreador (o equipamento), largo, embaixo dos planos: o preço
-          vale para qualquer plano. */}
+      {/* O rastreador (o equipamento), largo, embaixo dos planos: incluso na
+          mensalidade (a Farbo não vende o rastreador) ou em comodato. */}
       <div className={`${styles.card} ${styles.equipmentCard}`} id="rastreador">
           <div className={styles.cardHeader}>
             <h3 className={styles.cardTitle}>EQUIPAMENTO</h3>
@@ -228,25 +230,21 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
             {onlyLoan ? (
               <>
                 <div className={styles.fleetPrice}>Em comodato</div>
-                <div className={styles.priceSub}>sem comprar o rastreador: ele volta quando você encerrar</div>
+                <div className={styles.priceSub}>o rastreador emprestado: ele volta quando você encerrar</div>
               </>
             ) : (
-              <CardPrice cents={equipment} regular={open ? offer?.equipmentRegularCents : undefined} />
+              <>
+                <div className={styles.fleetPrice}>Incluso</div>
+                <div className={styles.priceSub}>
+                  na mensalidade: ele fica com você
+                  <br />
+                  {added
+                    ? `+ ${priceLabel(added.cents)}/mês nas ${added.months} primeiras mensalidades · só o frete à parte`
+                    : 'você só paga o frete'}
+                </div>
+              </>
             )}
-            {!onlyLoan && offer && equipment !== undefined && (
-              <div className={styles.priceSub}>
-                {offer.maxInstallments > 1 ? (
-                  <>
-                    à vista, ou {installmentsOf(equipment, offer.maxInstallments)}
-                    <br />
-                    sem juros no Pix, direto na mensalidade
-                  </>
-                ) : (
-                  'à vista, no Pix'
-                )}
-              </div>
-            )}
-            {/* Quem instala, e o comodato para quem não quer comprar. */}
+            {/* Quem instala, e o comodato para quem prefere o emprestado. */}
             {onlyLoan ? (
               <p className={styles.equipmentNote}>
                 <strong>Comodato</strong>: {loanTerms(offer.loan, offer.installDirect)}.
@@ -264,7 +262,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenModal }) =
                 </p>
                 {offer.loan && (
                   <p className={styles.equipmentNote}>
-                    <strong>Ou em comodato</strong>, sem comprar: {loanTerms(offer.loan, offer.installDirect)}.
+                    <strong>Ou em comodato</strong> (emprestado): {loanTerms(offer.loan, offer.installDirect)}.
                   </p>
                 )}
               </>
@@ -344,15 +342,14 @@ function CardPrice({ cents, regular }: { cents?: number; regular?: number }) {
   );
 }
 
-/** "R$ 34,90/mês e R$ 120 no rastreador, ou 10x de R$ 12,00 ...": o destaque da faixa. */
+/** "R$ 69,90/mês com o rastreador incluso: você só paga o frete ...": o destaque da faixa. */
 export function bannerHeadline(offer: CheckoutOffer | undefined): string {
-  if (!offer) return 'Escolha o plano, pague com Pix e receba em casa.';
-  const installments = installmentsPhrase(offer.equipmentCents, offer.maxInstallments);
+  if (!offer) return 'Escolha o rastreador, pague com Pix e receba em casa.';
   const monthly = offer.planByKind ? `A partir de ${priceLabel(lowestPrice(offer.planByKind))}` : priceLabel(offer.planCents);
-  if (loanOnly(offer)) return `${monthly}/mês, com o rastreador em comodato: sem comprar. Pague com Pix.`;
-  return `${monthly}/mês e ${priceLabel(offer.equipmentCents)} no rastreador${
-    installments ? `, ou ${installments}` : ''
-  }. Pague com Pix e receba em casa.`;
+  if (loanOnly(offer)) return `${monthly}/mês, com o rastreador em comodato. Pague com Pix.`;
+  const added = trackerAdded(offer);
+  const first = added ? ` (+ ${priceLabel(added.cents)}/mês nas ${added.months} primeiras mensalidades)` : '';
+  return `${monthly}/mês com o rastreador incluso${first}: você só paga o frete. Pague com Pix e receba em casa.`;
 }
 
 /**

@@ -12,7 +12,7 @@ import { CustomerStatus, InvoiceStatus } from '@/components/billing/InvoiceStatu
 import { FiscalDocumentLine } from '@/components/billing/FiscalDocumentLine';
 import { gatewayName } from '@/components/billing/PixCheckout';
 import { MonthlyPrice, promoActive } from '@/components/billing/MonthlyPrice';
-import { installmentProgress } from '@/components/billing/installments';
+import { installmentProgress, trackerOpen, trackerProgress } from '@/components/billing/installments';
 import { FleetImportModal } from '@/components/billing/FleetImportModal';
 import { NewVehicleWizard } from '@/components/billing/NewVehicleWizard';
 import { FulfillmentAdminModal } from '@/components/fulfillment/FulfillmentAdminModal';
@@ -553,6 +553,7 @@ export function CustomerDetailsPage() {
                                   dia {sub.dueDay} · próxima fatura {formatDateOnly(sub.nextDueDate)}
                                 </div>
                                 {installmentProgress(sub) && <div className={billing.muted}>{installmentProgress(sub)}</div>}
+                                {trackerProgress(sub) && <div className={billing.muted}>{trackerProgress(sub)}</div>}
                               </>
                             ) : sub ? (
                               <Badge tone="neutral">Encerrada</Badge>
@@ -586,7 +587,7 @@ export function CustomerDetailsPage() {
                                     size="small"
                                     variant="ghost"
                                     onClick={() =>
-                                      sub.installmentsDueCents > 0
+                                      sub.installmentsDueCents > 0 || trackerOpen(sub, todayISO())
                                         ? openModal(() => setEndFinanced({ sub, vehicle: vehicle.name, balance: 'CHARGE' }))
                                         : setConfirmation({
                                             title: 'Encerrar assinatura?',
@@ -1002,7 +1003,7 @@ export function CustomerDetailsPage() {
             description: `${result.vehicle.name}: assinatura iniciada; ${
               result.payNow ? 'o pedido vence em' : 'tudo entra na fatura de'
             } ${formatDateOnly(result.chargeDate)}${
-              result.setupInvoice ? ` (equipamento ${formatMoney(result.setupInvoice.amountCents)})` : ''
+              result.setupInvoice ? ` (frete ${formatMoney(result.setupInvoice.amountCents)})` : ''
             }.`,
           });
         }}
@@ -1029,9 +1030,7 @@ export function CustomerDetailsPage() {
             title: `${result.vehicles} ${result.vehicles === 1 ? 'veículo importado' : 'veículos importados'}`,
             description: [
               `${result.installed} com o rastreador já vinculado, ${result.vehicles - result.installed} no envio`,
-              result.setupInvoice
-                ? `equipamento de ${formatMoney(result.setupInvoice.amountCents)} na fatura de ${formatDateOnly(result.chargeDate ?? '')}`
-                : 'sem cobrança de equipamento',
+              `a 1ª mensalidade na fatura de ${formatDateOnly(result.chargeDate ?? '')}`,
             ].join('; ') + '.',
           });
         }}
@@ -1470,7 +1469,8 @@ export function CustomerDetailsPage() {
         onPaid={refresh}
       />
 
-      {/* Encerrar com o rastreador parcelado: o saldo é cobrado ou dispensado. */}
+      {/* Encerrar com o rastreador ainda por pagar (parcelado, ou a parte do
+          incluso nas primeiras mensalidades): o saldo é cobrado ou dispensado. */}
       <Modal
         open={endFinanced !== null}
         title="Encerrar assinatura?"
@@ -1498,11 +1498,19 @@ export function CustomerDetailsPage() {
       >
         {endFinanced && (
           <div className={styles.form}>
-            <p>
-              {endFinanced.vehicle}: {installmentProgress(endFinanced.sub)}. Pelo contrato (cláusula 7), quem parcela fica até a
-              última parcela; saindo antes, o que falta vence de uma vez. As faturas que ainda não venceram são canceladas e as
-              vencidas continuam em aberto.
-            </p>
+            {endFinanced.sub.installments > 0 ? (
+              <p>
+                {endFinanced.vehicle}: {installmentProgress(endFinanced.sub)}. Pelo contrato (cláusula 7), quem parcela fica até a
+                última parcela; saindo antes, o que falta vence de uma vez. As faturas que ainda não venceram são canceladas e as
+                vencidas continuam em aberto.
+              </p>
+            ) : (
+              <p>
+                {endFinanced.vehicle}: {trackerProgress(endFinanced.sub)}. Pelo contrato (cláusula 7), encerrando antes da última,
+                a parte do rastreador das mensalidades que não vão sair ({formatMoney(endFinanced.sub.trackerCents)} cada) vence de
+                uma vez. As faturas que ainda não venceram são canceladas e as vencidas continuam em aberto.
+              </p>
+            )}
             <label className={billing.promoOption}>
               <input
                 type="radio"
@@ -1513,7 +1521,9 @@ export function CustomerDetailsPage() {
               <span>
                 <strong>Cobrar o saldo numa fatura só</strong>
                 <br />
-                As parcelas que ainda não estão em fatura vencida vão para uma fatura nova, com o prazo da fatura do pedido.
+                {endFinanced.sub.installments > 0
+                  ? 'As parcelas que ainda não estão em fatura vencida vão para uma fatura nova, com o prazo da fatura do pedido.'
+                  : 'A parte do rastreador que falta vai para a próxima fatura do cliente (com nota fiscal de serviço).'}
               </span>
             </label>
             <label className={billing.promoOption}>

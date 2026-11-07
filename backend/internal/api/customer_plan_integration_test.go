@@ -56,17 +56,17 @@ func TestCustomerAccountPlan(t *testing.T) {
 	if p := detail(); p != nil {
 		t.Fatalf("plano antes = %+v", p)
 	}
-	if c := catalog(); c.PlanName != "Plano Mensal" || c.PlanPriceCents != 3490 {
+	if c := catalog(); c.PlanName != "Plano Mensal" || c.PlanPriceCents != 6990 {
 		t.Fatalf("catálogo antes = %+v", c)
 	}
 
 	// A central define o do Insanos MC (só o admin; dia de vencimento válido).
-	insanos := map[string]any{"planName": "Especial Insanos MC", "priceCents": 3990, "dueDay": 15}
+	insanos := map[string]any{"planName": "Especial Insanos MC", "priceCents": 2790, "dueDay": 15}
 	env.must(env.login(auth.RoleOperator+"@leads.test"), http.MethodPut, path+"/plan", insanos, http.StatusForbidden)
-	env.must(admin, http.MethodPut, path+"/plan", map[string]any{"planName": "Especial Insanos MC", "priceCents": 3990, "dueDay": 31}, http.StatusBadRequest)
+	env.must(admin, http.MethodPut, path+"/plan", map[string]any{"planName": "Especial Insanos MC", "priceCents": 2790, "dueDay": 31}, http.StatusBadRequest)
 	var plan orders.AccountPlan
 	_ = json.Unmarshal(env.must(admin, http.MethodPut, path+"/plan", insanos, http.StatusOK), &plan)
-	if plan.PlanName != "Especial Insanos MC" || plan.PriceCents != 3990 || plan.DueDay != 15 {
+	if plan.PlanName != "Especial Insanos MC" || plan.PriceCents != 2790 || plan.DueDay != 15 {
 		t.Fatalf("plano definido = %+v", plan)
 	}
 	if p := detail(); p == nil || p.PlanName != "Especial Insanos MC" {
@@ -77,7 +77,7 @@ func TestCustomerAccountPlan(t *testing.T) {
 	// promocional é a do Insanos.
 	env.must(admin, http.MethodPost, path+"/launch-promo/grant", nil, http.StatusOK)
 	c := catalog()
-	if c.PlanName != "Especial Insanos MC" || c.PlanPriceCents != 3990 || c.DefaultDueDay != 15 || c.LaunchPromo == nil ||
+	if c.PlanName != "Especial Insanos MC" || c.PlanPriceCents != 2790 || c.DefaultDueDay != 15 || c.LaunchPromo == nil ||
 		c.LaunchPromo.MonthlyCents != 2790 {
 		t.Fatalf("catálogo com o plano = %+v", c)
 	}
@@ -98,7 +98,7 @@ func TestCustomerAccountPlan(t *testing.T) {
 	first := order("INS1A11", true)
 	second := order("INS2B22", false)
 	for _, s := range []billing.Subscription{first, second} {
-		if s.PlanName != "Especial Insanos MC" || s.PriceCents != 3990 || s.DueDay != 15 {
+		if s.PlanName != "Especial Insanos MC" || s.PriceCents != 2790 || s.DueDay != 15 || !s.TrackerAdded || s.TrackerCents != 1200 {
 			t.Errorf("assinatura = %+v", s)
 		}
 	}
@@ -120,7 +120,7 @@ func TestCustomerAccountPlan(t *testing.T) {
 	_ = json.Unmarshal(env.must(token, http.MethodGet, "/api/me/subscriptions", nil, http.StatusOK), &subs)
 	insanosSubs := 0
 	for _, s := range subs {
-		if s.PlanName == "Especial Insanos MC" && s.PriceCents == 3990 {
+		if s.PlanName == "Especial Insanos MC" && s.PriceCents == 2790 {
 			insanosSubs++
 		}
 	}

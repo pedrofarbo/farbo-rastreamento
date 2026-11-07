@@ -72,7 +72,8 @@ describe('a promoção de pré-lançamento na ficha do cliente', () => {
       ),
     );
     await flush();
-    expect(text()).toContain('rastreador por R$ 120,00 e mensalidade de R$ 34,90 nos 12 primeiros meses');
+    expect(text()).toContain('mensalidade de R$ 34,90 nos 12 primeiros meses');
+    expect(text()).not.toContain('rastreador por');
     expect(button('Retirar a liberação')).toBeUndefined();
     await act(async () => button('Liberar a promoção')!.click());
     await flush();

@@ -93,8 +93,8 @@ describe('EventSignupPage', () => {
     expect(text(host)).toContain('Preço promocional');
     expect(text(host)).toContain('R$34,90/mês');
     expect(text(host)).toContain('enquanto a assinatura durar · o normal é R$ 69,90');
-    expect(text(host)).toContain('Rastreador: R$ 150 R$ 120');
-    expect(text(host)).toContain('ou 10x de R$ 12,00 sem juros no Pix, direto na mensalidade');
+    expect(text(host)).toContain('Rastreador incluso, que fica com você: só o frete à parte');
+    expect(text(host)).not.toMatch(/sem juros|R\$ 120|R\$ 150/);
     // O plano do Insanos MC é só com a central.
     expect(text(host)).not.toContain('Insanos MC?');
     expect(text(host)).not.toContain('Preço exclusivo');

@@ -29,13 +29,13 @@ A {{.Name}} não presta, e este contrato não inclui:
 
 A {{.Name}} não garante a recuperação do veículo em caso de roubo ou furto. O rastreamento é uma ferramenta para o próprio Cliente acompanhar o veículo e agir: em caso de roubo ou furto, é o Cliente quem aciona a polícia (190).
 
-## 4. O rastreador: comprado ou em comodato
+## 4. O rastreador: incluso ou em comodato
 
-O rastreador de cada veículo é comprado pelo Cliente ou emprestado a ele em comodato pela {{.Name}}: o Cliente escolhe no pedido, quando a {{.Name}} oferece o comodato, ou vale o plano definido para ele. O pedido mostra a escolha antes da confirmação.
+A {{.Name}} não vende o rastreador. O rastreador de cada veículo vai incluso no serviço ou é emprestado ao Cliente em comodato pela {{.Name}}: o Cliente escolhe no pedido, quando a {{.Name}} oferece o comodato, ou vale o plano definido para ele. O pedido mostra a escolha antes da confirmação.
 
-Rastreador comprado: o rastreador comprado pelo Cliente é de propriedade exclusiva dele desde a entrega. Não é comodato, locação nem empréstimo: o equipamento continua sendo do Cliente depois do fim da assinatura, por qualquer motivo, e a {{.Name}} não pode exigir a sua devolução nem retê-lo por dívida. Na instalação do rastreador comprado, o Cliente escolhe no pedido: por conta própria, com o instalador de preferência dele (a plataforma indica prestadores independentes), contratado e pago diretamente por ele; ou com os instaladores indicados pela {{.Name}}, pela taxa de instalação mostrada no pedido, cobrada junto com a 1ª mensalidade (cláusula 5), no dia agendado pela {{.Name}} com o Cliente.
+Rastreador incluso: o rastreador faz parte do serviço contratado e não tem preço próprio: o Cliente não o compra nem o paga à parte. Ele é entregue ao Cliente para uso no veículo do pedido e passa a ser de propriedade dele desde a entrega. Não é comodato, locação nem empréstimo: o equipamento continua sendo do Cliente depois do fim da assinatura, por qualquer motivo, e a {{.Name}} não pode exigir a sua devolução nem retê-lo por dívida. O custo do rastreador está nas primeiras mensalidades daquele veículo: conforme o plano, essa parte é somada à mensalidade do plano nessas mensalidades ou já está no preço dela. O pedido mostra, antes da confirmação, a mensalidade de cada período e em quantas mensalidades está a parte do rastreador (cláusulas 5 e 7). Na instalação do rastreador incluso, o Cliente escolhe no pedido: por conta própria, com o instalador de preferência dele (a plataforma indica prestadores independentes), contratado e pago diretamente por ele; ou com os instaladores indicados pela {{.Name}}, pela taxa de instalação mostrada no pedido, cobrada junto com a 1ª mensalidade (cláusula 5), no dia agendado pela {{.Name}} com o Cliente.
 
-Rastreador em comodato: o rastreador é de propriedade da {{.Name}} e é emprestado gratuitamente ao Cliente, para uso no veículo do pedido, enquanto durar a assinatura daquele veículo (comodato, arts. 579 a 585 do Código Civil). Não há preço do equipamento a pagar, e a mensalidade do comodato pode ser diferente da do rastreador comprado. A taxa de instalação, quando houver, é cobrada junto com a 1ª mensalidade (cláusula 5); a taxa de desinstalação, quando houver, vem na fatura seguinte ao encerramento da assinatura. A mensalidade e as duas taxas são mostradas no pedido antes da confirmação. A instalação e a retirada são agendadas pela {{.Name}} com o Cliente e feitas por instaladores indicados por ela.
+Rastreador em comodato: o rastreador é de propriedade da {{.Name}} e é emprestado gratuitamente ao Cliente, para uso no veículo do pedido, enquanto durar a assinatura daquele veículo (comodato, arts. 579 a 585 do Código Civil). Não há preço do equipamento a pagar, e a mensalidade do comodato pode ser diferente da do rastreador incluso. A taxa de instalação, quando houver, é cobrada junto com a 1ª mensalidade (cláusula 5); a taxa de desinstalação, quando houver, vem na fatura seguinte ao encerramento da assinatura. A mensalidade e as duas taxas são mostradas no pedido antes da confirmação. A instalação e a retirada são agendadas pela {{.Name}} com o Cliente e feitas por instaladores indicados por ela.
 
 No comodato, o Cliente:
 
@@ -44,20 +44,18 @@ No comodato, o Cliente:
 - avisa a {{.Name}} em até 2 (dois) dias se o rastreador for danificado, perdido, roubado ou furtado, ou se o veículo for vendido;
 - quando a assinatura daquele veículo termina, por qualquer motivo, permite a retirada do rastreador no dia e no endereço combinados, em até 30 (trinta) dias.
 
-Se o rastreador em comodato não for devolvido nesse prazo, ou voltar danificado por mau uso, o Cliente paga o valor dele: o preço de venda do mesmo rastreador na plataforma na data, informado por e-mail antes da cobrança. O Cliente não paga pelo desgaste normal de uso, nem pelo rastreador levado em roubo ou furto do veículo, comprovado pelo boletim de ocorrência.
+Se o rastreador em comodato não for devolvido nesse prazo, ou voltar danificado por mau uso, o Cliente paga o valor dele: o valor de reposição do mesmo rastreador na data, informado por e-mail antes da cobrança. O Cliente não paga pelo desgaste normal de uso, nem pelo rastreador levado em roubo ou furto do veículo, comprovado pelo boletim de ocorrência.
 
-O chip M2M instalado no rastreador, comprado ou em comodato, é vinculado ao plano de telecomunicações da {{.Name}} junto à operadora e serve apenas para a comunicação do rastreador com a plataforma. Quando a assinatura termina, a linha do chip é desativada.
+O chip M2M instalado no rastreador, incluso ou em comodato, é vinculado ao plano de telecomunicações da {{.Name}} junto à operadora e serve apenas para a comunicação do rastreador com a plataforma. Quando a assinatura termina, a linha do chip é desativada.
 
 ## 5. Preço, faturas e pagamento
 
-- A mensalidade de cada veículo é a do plano escolhido no pedido, mostrada antes da confirmação. Condições promocionais valem pelo prazo informado na contratação.
-- Pessoa física (CPF): no pedido, paga-se a 1ª mensalidade, o frete, o rastreador à vista e a taxa de instalação, quando houver (no comodato, ou com os instaladores da {{.Name}}), com vencimento no dia da contratação. As mensalidades seguintes vencem todo mês no dia de vencimento da conta, a 2ª pelo menos um mês depois da 1ª.
-- Empresa (CNPJ): nada é cobrado no pedido. Tudo o que a conta deve vence num dia só de cada mês, o dia de vencimento da conta: a 1ª fatura depois do pedido traz o rastreador, a taxa de instalação, quando houver, o frete, o proporcional dos dias entre a contratação e o vencimento (pelo mês de 30 dias) e a 1ª mensalidade; as seguintes vencem todo mês nesse mesmo dia.
+- A mensalidade de cada veículo é a do plano escolhido no pedido, mostrada antes da confirmação. Com o rastreador incluso, quando a parte dele é somada ao plano, o pedido mostra a mensalidade das primeiras mensalidades e a das seguintes. Condições promocionais valem pelo prazo informado na contratação.
+- O rastreador não é cobrado à parte: no pedido, o único valor ligado a ele é o frete, quando houver.
+- Pessoa física (CPF): no pedido, paga-se a 1ª mensalidade, o frete e a taxa de instalação, quando houver (no comodato, ou com os instaladores da {{.Name}}), com vencimento no dia da contratação. As mensalidades seguintes vencem todo mês no dia de vencimento da conta, a 2ª pelo menos um mês depois da 1ª.
+- Empresa (CNPJ): nada é cobrado no pedido. Tudo o que a conta deve vence num dia só de cada mês, o dia de vencimento da conta: a 1ª fatura depois do pedido traz a taxa de instalação, quando houver, o frete, o proporcional dos dias entre a contratação e o vencimento (pelo mês de 30 dias) e a 1ª mensalidade; as seguintes vencem todo mês nesse mesmo dia.
 - As faturas ficam disponíveis na plataforma antes do vencimento e são enviadas por e-mail, com o link para pagar por Pix.
-{{- if gt .MaxInstallments 1}}
-- O rastreador comprado pode ser pago à vista ou parcelado em até {{.MaxInstallments}} ({{.MaxInstallmentsWords}}) vezes sem juros, por Pix: o frete é pago no pedido (pessoa física) ou vem na 1ª fatura (empresa), e as parcelas vêm somadas às mensalidades daquele veículo, uma por mês, a 1ª junto com a 1ª mensalidade. O número e o valor das parcelas são mostrados antes da confirmação do pedido.
-{{- end}}
-- Reajuste anual pelo IPCA: a mensalidade é reajustada uma vez por ano, em agosto, pela variação do IPCA (IBGE) acumulada nos 12 meses encerrados em maio daquele ano, o último índice publicado antes do aviso. O valor novo vale para as faturas que vencem a partir de 1º de agosto e é avisado por e-mail com pelo menos 30 dias de antecedência; se o aviso sair depois de 1º de julho, o reajuste passa a valer 30 dias depois dele.
+- Reajuste anual pelo IPCA: a mensalidade é reajustada uma vez por ano, em agosto, pela variação do IPCA (IBGE) acumulada nos 12 meses encerrados em maio daquele ano, o último índice publicado antes do aviso. O valor novo vale para as faturas que vencem a partir de 1º de agosto e é avisado por e-mail com pelo menos 30 dias de antecedência; se o aviso sair depois de 1º de julho, o reajuste passa a valer 30 dias depois dele. A parte do rastreador incluso somada ao plano não é reajustada.
 - Só é reajustada a assinatura que completar 12 meses até a data do reajuste (Lei 10.192/2001); as mais novas são reajustadas no agosto seguinte. Se o índice acumulado for zero ou negativo, a mensalidade fica como está. Se o IPCA deixar de ser publicado, vale o índice oficial que o substituir.
 - Outras mudanças no preço da mensalidade também são avisadas por e-mail com pelo menos 30 dias de antecedência. Nenhuma mudança, nem o reajuste, altera condições promocionais já contratadas durante o seu prazo.
 
@@ -73,13 +71,12 @@ O chip M2M instalado no rastreador, comprado ou em comodato, é vinculado ao pla
 - Se o Cliente encerrar a assinatura ou a conta antes de completar os {{.MinMonths}} meses, paga multa equivalente a 1 (uma) mensalidade do plano daquele veículo, além das faturas vencidas.
 - A multa não se aplica: à desistência no prazo de arrependimento (cláusula 9); ao encerramento causado por falha da {{.Name}} na prestação do serviço; ao encerramento pela {{.Name}} sem culpa do Cliente; e à recusa de uma nova versão deste contrato (cláusula 14).
 - Depois dos {{.MinMonths}} meses, o Cliente pode cancelar a qualquer momento, sem multa.
-{{- if gt .MaxInstallments 1}}
-- Quem parcela o rastreador mantém a assinatura daquele veículo ativa até a mensalidade que traz a última parcela, prazo informado no pedido. Se a assinatura for encerrada antes, a pedido do Cliente ou por atraso no pagamento, as parcelas restantes vencem de uma vez, numa fatura só. Elas não são multa: são o preço do rastreador, que já é do Cliente (cláusula 4). Na desistência dentro do prazo de arrependimento (cláusula 9), com a devolução do equipamento, as parcelas restantes não são cobradas.
-{{- end}}
+- Rastreador incluso: a parte do rastreador está nas primeiras mensalidades daquele veículo, em número informado no pedido. Se a assinatura for encerrada antes da última delas, a pedido do Cliente ou por atraso no pagamento, a parte do rastreador das mensalidades que faltam vence de uma vez, numa fatura só. Ela não é multa: é o custo do rastreador, que já é do Cliente (cláusula 4). Na desistência dentro do prazo de arrependimento (cláusula 9), com a devolução do equipamento, ela não é cobrada.
+- Rastreador comprado antes da versão 9 deste contrato: continua sendo do Cliente. Quem o parcelou mantém a assinatura daquele veículo ativa até a mensalidade que traz a última parcela; se ela for encerrada antes, as parcelas restantes vencem de uma vez, numa fatura só. Elas não são multa: são o preço do rastreador comprado.
 
 ## 8. Por que existem a permanência mínima, a multa e a negativação
 
-Para cada rastreador, a {{.Name}} contrata e mantém junto a uma operadora um plano de telecomunicações M2M (máquina a máquina) e arca com a geração, a habilitação e a entrega do chip. Esses custos não são cobrados à parte do Cliente: eles são diluídos nas mensalidades.
+Para cada rastreador, a {{.Name}} contrata e mantém junto a uma operadora um plano de telecomunicações M2M (máquina a máquina) e arca com a geração, a habilitação e a entrega do chip. Esses custos não são cobrados à parte do Cliente: eles são diluídos nas mensalidades. No rastreador incluso, a {{.Name}} também arca com o equipamento, pago aos poucos nas primeiras mensalidades: por isso o que falta dele vence de uma vez no encerramento antecipado (cláusula 7).
 
 A permanência mínima, a multa e a possibilidade de inclusão nos órgãos de proteção ao crédito existem para cobrir esses custos quando a assinatura termina cedo ou não é paga.
 
@@ -89,7 +86,7 @@ O Cliente pode desistir em até 7 (sete) dias a contar do recebimento do rastrea
 
 ## 10. Cadastro, CPF e notas fiscais
 
-- O CPF do Cliente (ou o CNPJ, se o Cliente for empresa) é obrigatório e deve estar correto: é com ele que a {{.Name}} emite a NF-e (nota fiscal eletrônica) do rastreador e a NFS-e (nota fiscal de serviço eletrônica) das mensalidades.
+- O CPF do Cliente (ou o CNPJ, se o Cliente for empresa) é obrigatório e deve estar correto: é com ele que a {{.Name}} emite a NFS-e (nota fiscal de serviço eletrônica) das mensalidades e das demais cobranças do serviço.
 - O Cliente mantém atualizados o nome, o CPF, o telefone, o e-mail e o endereço de entrega.
 - A conta é pessoal e só pode ser criada por maiores de 18 anos.
 
@@ -110,7 +107,7 @@ A {{.Name}} trata os dados do Cliente, inclusive as posições do veículo, conf
 - Este contrato vale por prazo indeterminado, respeitada a permanência mínima de cada assinatura.
 - O Cliente pode encerrar uma assinatura ou a conta pelos canais de contato ({{.Email}}).
 - A {{.Name}} pode encerrar a conta em caso de uso proibido ou de atraso prolongado no pagamento, com aviso prévio sempre que possível.
-- Com o fim da assinatura, a linha do chip M2M é desativada. O rastreador comprado continua sendo do Cliente; o rastreador em comodato é devolvido à {{.Name}} (cláusula 4).
+- Com o fim da assinatura, a linha do chip M2M é desativada. O rastreador incluso (e o comprado antes da versão 9) continua sendo do Cliente; o rastreador em comodato é devolvido à {{.Name}} (cláusula 4).
 
 ## 14. Mudanças neste contrato
 

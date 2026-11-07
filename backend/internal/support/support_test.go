@@ -171,15 +171,17 @@ func TestPricesOfNow(t *testing.T) {
 	catalog := config.Catalog{PlanPriceCents: 6990, EquipmentPriceCents: 15000, EquipmentMaxInstallments: 10,
 		LaunchPromo: config.LaunchPromo{InsanosPlanName: "Especial Insanos MC", InsanosPlanCents: 3990}}
 	opts := orders.Options{
-		Checkout: orders.Checkout{Enabled: true, PlanCents: 3490, InsanosCents: 2790, EquipmentCents: 12000},
+		Checkout: orders.Checkout{Enabled: true, PlanCents: 5990, InsanosCents: 2790},
+		Tracker:  orders.TrackerRule{Cents: 1200, Months: 10},
 		Loan:     orders.LoanOffer{Enabled: true, SurchargeCents: 300, InstallFeeCents: 15000, UninstallFeeCents: 8500},
 		Install:  orders.InstallService{Enabled: true, PriceCents: 15000},
 	}
 	a := &Assistant{tz: time.UTC}
 	prices := PricesFrom(catalog, opts, "https://farborastreadores.com.br/")
 	note := a.situation(Situation{Now: time.Now(), Prices: &prices})
-	for _, want := range []string{"Plano mensal: R$ 34,90 por mês, enquanto a assinatura durar",
-		"Rastreador comprado: R$ 120,00, à vista ou em até 10x", "pelos instaladores da Farbo, por R$ 150,00",
+	for _, want := range []string{"Plano mensal: R$ 59,90 por mês, enquanto a assinatura durar",
+		"com o rastreador incluso", "A Farbo não vende o rastreador", "antes da 10ª mensalidade",
+		"R$ 12,00 por mensalidade que não saiu", "pelos instaladores da Farbo, por R$ 150,00",
 		"mais R$ 3,00 de garantia de troca", "desinstalação de R$ 85,00", "https://farborastreadores.com.br/contratar"} {
 		if !strings.Contains(note, want) {
 			t.Errorf("contexto sem %q:\n%s", want, note)
@@ -189,11 +191,14 @@ func TestPricesOfNow(t *testing.T) {
 	if strings.Contains(note, "Insanos") || strings.Contains(note, "27,90") {
 		t.Errorf("contexto com o preço do Insanos:\n%s", note)
 	}
+	if strings.Contains(note, "comprado") || strings.Contains(note, "à vista") || strings.Contains(note, "120,00") {
+		t.Errorf("contexto vendendo o rastreador:\n%s", note)
+	}
 	// Com o site fechado: os do catálogo, e quem contrata é a equipe.
 	opts.Checkout.Enabled, opts.Loan.Enabled, opts.Install.Enabled = false, false, false
 	prices = PricesFrom(catalog, opts, "https://farborastreadores.com.br")
 	note = a.situation(Situation{Now: time.Now(), Prices: &prices})
-	for _, want := range []string{"Plano mensal: R$ 69,90 por mês.", "R$ 150,00", "fala com a equipe"} {
+	for _, want := range []string{"Plano mensal: R$ 69,90 por mês, com o rastreador incluso", "fala com a equipe"} {
 		if !strings.Contains(note, want) {
 			t.Errorf("fechado, contexto sem %q:\n%s", want, note)
 		}

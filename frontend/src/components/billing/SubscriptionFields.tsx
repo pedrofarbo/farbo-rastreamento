@@ -4,10 +4,14 @@ import { centsToInput, parseMoney } from '@/services/format';
 
 import styles from '@/pages/Page.module.css';
 
-/** Planos da landing page; "personalizado" libera nome e valor. */
+/**
+ * Os planos de sempre; "personalizado" libera nome e valor. O do Insanos MC
+ * é o de depois das primeiras mensalidades: nelas, a parte do rastreador
+ * incluso soma (R$ 39,90).
+ */
 export const PLAN_PRESETS = [
   { id: 'mensal', planName: 'Plano Mensal', priceCents: 6990 },
-  { id: 'insanos', planName: 'Especial Insanos MC', priceCents: 3990 },
+  { id: 'insanos', planName: 'Especial Insanos MC', priceCents: 2790 },
 ] as const;
 
 export interface SubscriptionDraft {

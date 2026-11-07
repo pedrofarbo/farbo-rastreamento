@@ -12,11 +12,9 @@ import (
 // CheckoutChoice é o que a pessoa escolhe na contratação rápida pela
 // landing.
 type CheckoutChoice struct {
-	// EquipmentMode: o rastreador comprado (sale, o padrão) ou em comodato.
+	// EquipmentMode: o rastreador incluso (sale, o padrão) ou em comodato.
 	EquipmentMode string
-	// Installments: o rastreador comprado parcelado sem juros (0 ou 1: à vista).
-	Installments int
-	// FarboInstall: o rastreador comprado instalado pelos instaladores da
+	// FarboInstall: o rastreador incluso instalado pelos instaladores da
 	// Farbo (no comodato, a instalação já é da Farbo).
 	FarboInstall bool
 	Vehicle      vehicles.Input
@@ -27,12 +25,13 @@ type CheckoutChoice struct {
 
 // CheckoutOrder monta o pedido da contratação rápida pela landing (a pessoa
 // física acabou de criar a conta e paga com Pix na hora): o plano do funil
-// no preço dele — ou, pelo link de um afiliado com tabela, no preço do tipo do
-// veículo —, sem prazo (o do Insanos MC, só a central define); o rastreador
-// comprado pelo preço do funil (à vista ou parcelado, com a instalação da
-// Farbo se ela quiser) ou em comodato, com as taxas e a garantia de troca. Pelo
-// link de um afiliado com a instalação dele, a instalação e a desinstalação
-// saem no preço dele (ou fora da plataforma, quando o representante recebe).
+// no preço dele, já com o rastreador incluso — ou, pelo link de um afiliado
+// com tabela, no preço do tipo do veículo mais a parte do rastreador nas
+// primeiras mensalidades —, sem prazo (o do Insanos MC, só a central define);
+// o rastreador incluso (com a instalação da Farbo se ela quiser) ou em
+// comodato, com as taxas e a garantia de troca. Pelo link de um afiliado com
+// a instalação dele, a instalação e a desinstalação saem no preço dele (ou
+// fora da plataforma, quando o representante recebe).
 func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, error) {
 	opts, err := s.Options(ctx)
 	if err != nil {
@@ -44,13 +43,14 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 	plan := billing.SubscriptionInput{PlanName: s.catalog.PlanName, PriceCents: opts.Checkout.PlanCents, DueDay: s.catalog.DefaultDueDay}
 	var install *InstallPrices
 	modes := ""
+	table := false
 	if in.Affiliate != nil {
-		table, err := s.AffiliatePrices(ctx, *in.Affiliate)
+		prices, err := s.AffiliatePrices(ctx, *in.Affiliate)
 		if err != nil {
 			return Order{}, err
 		}
-		if table != nil {
-			plan.PriceCents = table.For(in.Vehicle.Kind)
+		if prices != nil {
+			plan.PriceCents, table = prices.For(in.Vehicle.Kind), true
 		}
 		if install, err = s.AffiliateInstall(ctx, *in.Affiliate); err != nil {
 			return Order{}, err
@@ -59,18 +59,20 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 			return Order{}, err
 		}
 	}
-	// O rastreador que o link oferece: comprado, comodato ou os dois.
+	// O rastreador que o link oferece: incluso, comodato ou os dois.
 	mode, err := linkEquipment(modes, in.EquipmentMode)
 	if err != nil {
 		return Order{}, err
 	}
 	vehicle := in.Vehicle
 	vehicle.DeviceID, vehicle.OwnerID = nil, nil
-	order := Order{Vehicle: vehicle, Plan: plan, RequireAddress: true, Installments: in.Installments}
+	order := Order{Vehicle: vehicle, Plan: plan, RequireAddress: true}
 	switch mode {
 	case billing.EquipmentSale:
+		// O rastreador incluso: no plano do site, a parte dele já está no
+		// preço; pela tabela do afiliado, ela é somada nas primeiras.
 		order.Terms = Terms{EquipmentMode: billing.EquipmentSale}
-		order.EquipmentCents = opts.Checkout.EquipmentCents
+		order.Tracker = s.TrackerFor(opts, plan, table)
 		if in.FarboInstall {
 			if !opts.Install.Enabled && install == nil {
 				return Order{}, ValidationError{"a instalação pelos instaladores da Farbo não está disponível agora: instale por conta própria"}
@@ -79,10 +81,7 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 		}
 	case billing.EquipmentLoan:
 		if !opts.Loan.Enabled && modes != EquipmentLoanOnly {
-			return Order{}, ValidationError{"o comodato não está disponível agora: escolha comprar o rastreador"}
-		}
-		if in.Installments > 1 {
-			return Order{}, ValidationError{"no comodato o rastreador não é vendido: não há o que parcelar"}
+			return Order{}, ValidationError{"o comodato não está disponível agora: escolha o rastreador incluso"}
 		}
 		terms := Terms{EquipmentMode: billing.EquipmentLoan, InstallFeeCents: opts.Loan.InstallFeeCents,
 			UninstallFeeCents: opts.Loan.UninstallFeeCents}
@@ -92,7 +91,7 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 		}
 		order.Terms = terms
 	default:
-		return Order{}, ValidationError{"escolha o rastreador: comprado ou em comodato"}
+		return Order{}, ValidationError{"escolha o rastreador: incluso ou em comodato"}
 	}
 	install.applyInstall(&order)
 	return order, nil

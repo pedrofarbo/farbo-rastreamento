@@ -1,4 +1,4 @@
-import { installmentsOf, loanOnly, priceLabel, priceParts } from '@/config/landing';
+import { loanOnly, priceLabel, priceParts, trackerAdded } from '@/config/landing';
 import { kindPricesLabel, lowestPrice } from '@/services/kindPrices';
 import type { CheckoutOffer } from '@/types';
 
@@ -54,7 +54,7 @@ export interface FlyerOffer {
   monthlyCents: number;
   /** A linha embaixo do preço. */
   note: Segment[];
-  /** O rastreador: preço e parcelamento. */
+  /** O rastreador: incluso (com a parte dele nas primeiras, pela tabela) ou em comodato. */
   equipment: Segment[];
   /** O convite ao lado do QR. */
   cta: string;
@@ -74,14 +74,14 @@ const FONT = 'Inter, system-ui, -apple-system, "Segoe UI", sans-serif';
  * o plano normal.
  */
 export function flyerOffer(offer: CheckoutOffer): FlyerOffer {
-  const installments = (cents: number): Segment[] =>
-    offer.maxInstallments > 1 ? [{ text: ` ou ${installmentsOf(cents, offer.maxInstallments)} sem juros no Pix` }] : [];
+  const included: Segment[] = [{ text: 'Rastreador incluso', color: WHITE, weight: 800 }, { text: ', só o frete à parte' }];
   if (offer.enabled) {
     // Pelo link de um afiliado com tabela: a menor mensalidade e as três.
     const table = offer.planByKind;
     const monthlyCents = table ? lowestPrice(table) : offer.planCents;
     const regular = offer.planRegularCents > monthlyCents;
-    const equipmentRegular = offer.equipmentRegularCents > offer.equipmentCents;
+    // Pela tabela, a parte do rastreador incluso soma nas primeiras.
+    const added = trackerAdded(offer);
     return {
       tag: table ? 'A PARTIR DE' : regular ? 'PREÇO PROMOCIONAL' : 'PLANO MENSAL',
       monthlyCents,
@@ -91,15 +91,15 @@ export function flyerOffer(offer: CheckoutOffer): FlyerOffer {
             { text: `enquanto a assinatura durar${regular ? ' · o normal é ' : ''}` },
             ...(regular ? [{ text: priceLabel(offer.planRegularCents), strike: true }] : []),
           ],
-      // Pelo link só de comodato, o rastreador não é vendido.
+      // Pelo link só de comodato, o rastreador emprestado.
       equipment: loanOnly(offer)
-        ? [{ text: 'Rastreador em comodato, sem comprar', color: WHITE, weight: 800 }]
-        : [
-            { text: 'Rastreador ' },
-            ...(equipmentRegular ? [{ text: priceLabel(offer.equipmentRegularCents), strike: true }] : []),
-            { text: `${equipmentRegular ? ' ' : ''}${priceLabel(offer.equipmentCents)}`, color: WHITE, weight: 800 },
-            ...installments(offer.equipmentCents),
-          ],
+        ? [{ text: 'Rastreador em comodato', color: WHITE, weight: 800 }]
+        : added
+          ? [
+              { text: 'Rastreador incluso', color: WHITE, weight: 800 },
+              { text: ` (+ ${priceLabel(added.cents)}/mês nas ${added.months} primeiras)` },
+            ]
+          : included,
       cta: 'e contrate com Pix',
       fine: 'Contrate pelo site e pague com Pix, em quantos veículos quiser.',
     };
@@ -108,11 +108,7 @@ export function flyerOffer(offer: CheckoutOffer): FlyerOffer {
     tag: 'PLANO MENSAL',
     monthlyCents: offer.planRegularCents,
     note: [{ text: 'chip M2M, app e suporte inclusos' }],
-    equipment: [
-      { text: 'Rastreador ' },
-      { text: priceLabel(offer.equipmentRegularCents), color: WHITE, weight: 800 },
-      ...installments(offer.equipmentRegularCents),
-    ],
+    equipment: included,
     cta: 'e contrate o seu',
     fine: '',
   };

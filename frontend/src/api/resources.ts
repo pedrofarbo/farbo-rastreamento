@@ -131,6 +131,7 @@ import type {
   ShippingTopUpMethod,
   ShippingQuote,
   Subscription,
+  Tracker,
   Installer,
   PublicInstaller,
   PublicRepresentative,
@@ -1058,7 +1059,10 @@ export interface InvoiceInput {
   pixCode: string;
 }
 
-/** O saldo do rastreador parcelado no encerramento: cobrar numa fatura só ou dispensar. */
+/**
+ * O saldo do rastreador no encerramento (as parcelas do comprado ou a parte do
+ * incluso nas mensalidades que não vão sair): cobrar numa fatura só ou dispensar.
+ */
 export type EquipmentBalance = 'CHARGE' | 'WAIVE';
 
 /** Administração (perfil admin). */
@@ -1107,8 +1111,9 @@ export const customersApi = {
   updateSubscription: (id: string, input: { planName: string; priceCents: number }) =>
     api.patch<Subscription>(`/api/subscriptions/${id}`, input),
   /**
-   * Encerra a assinatura. Com o rastreador parcelado e parcelas por pagar, diz
-   * o que fazer com o saldo: CHARGE (uma fatura só) ou WAIVE (dispensar).
+   * Encerra a assinatura. Com saldo do rastreador (parcelas por pagar, ou a
+   * parte do incluso que falta), diz o que fazer com ele: CHARGE (uma fatura
+   * só) ou WAIVE (dispensar).
    */
   cancelSubscription: (id: string, equipmentBalance?: EquipmentBalance, waiveUninstall = false) =>
     api.post<Subscription & { balanceInvoice: Invoice | null; uninstallInvoice: Invoice | null }>(
@@ -1176,23 +1181,24 @@ export const customersApi = {
 
 export interface AdminTrackerOrder {
   vehicle: VehicleInput;
-  /** Zero não cobra (aparelho do cliente, cortesia, comodato). */
-  equipmentCents: number;
+  /**
+   * O rastreador incluso (fora do comodato): a parte dele nas primeiras
+   * mensalidades. Zero: o aparelho é do cliente. Ausente: a regra dos pedidos novos.
+   */
+  tracker?: Tracker;
   plan: SubscriptionInput;
   /** Aplica a promoção de pré-lançamento (o cliente precisa ter direito). */
   launchPromo?: boolean;
   /** O frete cobrado do cliente; 0 ou ausente: sem frete (entrega em mãos). */
   shippingServiceId?: number;
-  /** O equipamento parcelado sem juros (ausente ou 1: à vista). */
-  installments?: number;
-  /** O rastreador comprado instalado pelos instaladores da Farbo, no preço das opções do pedido. */
+  /** O rastreador incluso instalado pelos instaladores da Farbo, no preço das opções do pedido. */
   farboInstall?: boolean;
 }
 
 export interface FleetImportRequest {
   rows: FleetImportRow[];
-  /** O valor de cada aparelho; zero não cobra. */
-  equipmentCents: number;
+  /** O rastreador incluso de cada veículo; zero: os aparelhos são do cliente. Ausente: a regra dos pedidos novos. */
+  tracker?: Tracker;
   plan: SubscriptionInput;
   /** Só confere: nada é gravado. */
   dryRun?: boolean;
@@ -1629,7 +1635,7 @@ export const meApi = {
   saveAddress: (input: DeliveryAddress) => api.put<DeliveryAddress>('/api/me/address', input),
   /** Meus dados: nome, telefone e CPF/CNPJ (o e-mail é o login e não muda aqui). */
   updateProfile: (input: { name: string; phone: string; document: string }) => api.put<User>('/api/me/profile', input),
-  /** Novo veículo; equipamento e plano vêm do catálogo e da conta do cliente. */
+  /** Novo veículo; o plano e o rastreador incluso vêm do catálogo e da conta do cliente. */
   /** launchPromo: o cliente confirmou com os preços da promoção que o catálogo mostrou. */
   orderTracker: (input: {
     vehicle: VehicleInput;
@@ -1637,11 +1643,9 @@ export const meApi = {
     shippingServiceId?: number;
     /** Combinar a entrega com a central, em vez da transportadora. */
     arrangeDelivery?: boolean;
-    /** O rastreador parcelado sem juros (ausente ou 1: à vista). */
-    installments?: number;
-    /** Comprado ou em comodato (quando a central oferece). */
+    /** Incluso ou em comodato (quando a central oferece). */
     equipmentMode?: 'sale' | 'loan';
-    /** O rastreador comprado instalado pelos instaladores da Farbo (no comodato, ela já é da Farbo). */
+    /** O rastreador incluso instalado pelos instaladores da Farbo (no comodato, ela já é da Farbo). */
     farboInstall?: boolean;
   }) =>
     api.post<TrackerOrderResult>('/api/me/trackers', input),

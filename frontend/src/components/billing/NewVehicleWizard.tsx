@@ -8,7 +8,8 @@ import { AddressFields, EMPTY_ADDRESS, isAddressComplete } from '@/components/ad
 import { DeliveryBox } from '@/components/address/DeliveryBox';
 import { ARRANGE_DELIVERY, ShippingOptions, deliveryLabel, quoteName } from '@/components/billing/ShippingOptions';
 import { promoMonthlyFor } from '@/components/billing/MonthlyPrice';
-import { installmentChoices, splitInstallments } from '@/components/billing/installments';
+import { TrackerFields, trackerDraftFrom, trackerFromDraft, trackerMode } from '@/components/billing/TrackerFields';
+import type { TrackerDraft } from '@/components/billing/TrackerFields';
 import {
   DEFAULT_SUBSCRIPTION,
   PLAN_PRESETS,
@@ -20,7 +21,6 @@ import { ContractAcceptForm, contractKey } from '@/components/contract/ContractA
 import { InstallersModal } from '@/components/landing/InstallersModal';
 import { Button } from '@/components/ui/Button';
 import { DeviceSelectField, deviceOptionLabel } from '@/components/devices/DeviceSelectField';
-import { SelectField, TextField } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { EMPTY_VEHICLE, VehicleFields } from '@/components/vehicle/VehicleFields';
@@ -37,6 +37,7 @@ import type {
   EquipmentTerms,
   LoanOffer,
   Subscription,
+  Tracker,
   TrackerOrderResult,
   FleetSettings,
 } from '@/types';
@@ -63,7 +64,8 @@ export interface WizardAdmin {
 
 interface AdminDraft {
   deviceId: string;
-  equipment: string;
+  /** O rastreador incluso: a parte dele nas primeiras mensalidades (a Farbo não vende o rastreador). */
+  tracker: TrackerDraft;
   plan: SubscriptionDraft;
   /** Aplicar a promoção de pré-lançamento (o cliente tem direito). */
   promo: boolean;
@@ -94,11 +96,6 @@ export function addDays(iso: string, days: number): string {
   const date = new Date(y, m - 1, d + days);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
-/** Valor opcional: vazio é zero (não cobra). */
-function optionalMoney(text: string): number | null {
-  return text.trim() === '' ? 0 : parseMoney(text);
 }
 
 /**
@@ -136,12 +133,7 @@ function adminDraftFrom(
   accountDueDay: number | null = null,
 ): AdminDraft {
   const plan = suggestedPlan(c, subscription, account, accountDueDay);
-  return {
-    deviceId: '',
-    equipment: account?.equipmentMode === 'loan' ? '0,00' : centsToInput(c.equipmentPriceCents),
-    plan,
-    promo: false,
-  };
+  return { deviceId: '', tracker: trackerDraftFrom(c.tracker), plan, promo: false };
 }
 
 /** A API responde 409 com este código quando falta o endereço de entrega. */
@@ -194,15 +186,11 @@ export function NewVehicleWizard({
   // ARRANGE_DELIVERY: combinar a entrega. Nulo: ainda não escolhido (o mais
   // barato vem marcado quando a cotação chega).
   const [shippingId, setShippingId] = useState<number | null>(null);
-  // O rastreador em quantas vezes (1: à vista) e, parcelado, o "entendi" do
-  // cliente sobre manter a assinatura até a última parcela.
-  const [installments, setInstallments] = useState(1);
-  const [committed, setCommitted] = useState(false);
-  // O rastreador comprado ou em comodato (quando a central oferece).
+  // O rastreador incluso ou em comodato (quando a central oferece).
   const [mode, setMode] = useState<'sale' | 'loan'>('sale');
   // Como a pessoa física paga o pedido (a janela de pagamento abre nela).
   const [payment, setPayment] = useState<ChargeMethod>('PIX');
-  // O rastreador comprado: instalado pelos instaladores da Farbo (pago) ou
+  // O rastreador incluso: instalado pelos instaladores da Farbo (pago) ou
   // por conta própria.
   const [farboInstall, setFarboInstall] = useState(false);
 
@@ -220,9 +208,7 @@ export function NewVehicleWizard({
     mutationFn: () => customersApi.grantLaunchPromo(admin!.customerId),
     onSuccess: (next) => {
       queryClient.setQueryData(['customer', admin!.customerId, 'launch-promo'], next);
-      if (next.eligible) {
-        setAdminDraft((d) => (d ? { ...d, promo: true, equipment: centsToInput(next.offer.equipmentCents) } : d));
-      }
+      if (next.eligible) setAdminDraft((d) => (d ? { ...d, promo: true } : d));
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -241,8 +227,6 @@ export function NewVehicleWizard({
     setAdminDraft(null);
     setError('');
     setShippingId(null);
-    setInstallments(1);
-    setCommitted(false);
     setMode('sale');
     setPayment('PIX');
     setFarboInstall(false);
@@ -267,9 +251,7 @@ export function NewVehicleWizard({
     if (!open) promoSeeded.current = false;
     else if (adminDraft && promoStatus.data && !promoSeeded.current) {
       promoSeeded.current = true;
-      if (promoStatus.data.eligible) {
-        setAdminDraft({ ...adminDraft, promo: true, equipment: centsToInput(promoStatus.data.offer.equipmentCents) });
-      }
+      if (promoStatus.data.eligible) setAdminDraft({ ...adminDraft, promo: true });
     }
   }, [open, adminDraft, promoStatus.data]);
 
@@ -293,7 +275,6 @@ export function NewVehicleWizard({
           vehicle,
           launchPromo: Boolean(customerPromo),
           ...(arranged ? { arrangeDelivery: true } : freight ? { shippingServiceId: freight.serviceId } : {}),
-          ...(parcels ? { installments: parcels.length } : {}),
           ...(loanOffer ? { equipmentMode: mode } : {}),
           ...(farbo ? { farboInstall: true } : {}),
         });
@@ -301,13 +282,13 @@ export function NewVehicleWizard({
       const d = adminDraft as AdminDraft;
       const plan = subscriptionFromDraft(d.plan);
       if (typeof plan === 'string') throw new Error(plan);
+      if (typeof adminTracker === 'string') throw new Error(adminTracker);
       return customersApi.orderTracker(admin.customerId, {
         vehicle: { ...vehicle, deviceId: d.deviceId || null },
-        equipmentCents: loan ? 0 : (optionalMoney(d.equipment) ?? 0),
+        tracker: loan ? { cents: 0, months: 0, added: false } : (adminTracker ?? undefined),
         plan,
         launchPromo: d.promo,
         shippingServiceId: freight?.serviceId ?? 0,
-        ...(parcels ? { installments: parcels.length } : {}),
         ...(farbo ? { farboInstall: true } : {}),
       });
     },
@@ -327,7 +308,7 @@ export function NewVehicleWizard({
         queryClient.invalidateQueries({ queryKey: ['catalog'] });
         if (admin) {
           queryClient.invalidateQueries({ queryKey: ['customer', admin.customerId, 'launch-promo'] });
-          setAdminDraft((d) => (d && c ? { ...d, promo: false, equipment: centsToInput(c.equipmentPriceCents) } : d));
+          setAdminDraft((d) => (d ? { ...d, promo: false } : d));
         }
       }
       if (isAddressRequired(err)) {
@@ -342,7 +323,7 @@ export function NewVehicleWizard({
 
   const loading = !c || (!isAdmin && account.isLoading) || (isAdmin && !adminDraft);
   // O rastreador do cliente: o do plano definido pela central; sem ele, o que
-  // ele escolhe — comprado, ou em comodato quando a central oferece.
+  // ele escolhe — incluso, ou em comodato quando a central oferece.
   const loanOffer: LoanOffer | null = !isAdmin && c && !c.planTerms ? (c.loan ?? null) : null;
   // Pelo link de um afiliado só de comodato: o comodato, sem a escolha.
   const onlyLoan = loanOffer !== null && c?.equipmentModes === 'loan';
@@ -361,12 +342,12 @@ export function NewVehicleWizard({
   // recebe direto (os preços aparecem, mas não entram na cobrança).
   const direct = !isAdmin && Boolean(c?.installDirect);
   const installFee = loan && !direct ? (terms?.installFeeCents ?? 0) : 0;
-  // A instalação pelos instaladores da Farbo no rastreador comprado (no
+  // A instalação pelos instaladores da Farbo no rastreador incluso (no
   // comodato, ela já é da Farbo, com a taxa dele).
   const installService = c?.install ?? null;
   const farbo = !loan && farboInstall && installService !== null;
   const farboCents = farbo && !direct ? installService.priceCents : 0;
-  // A promoção do cliente vem do catálogo (só com o rastreador comprado); a
+  // A promoção do cliente vem do catálogo (só com o rastreador incluso); a
   // da central, da opção marcada.
   const customerPromo = !isAdmin && !loan ? (c?.launchPromo ?? null) : null;
   const adminPromo = isAdmin && adminDraft?.promo && promoStatus.data?.eligible ? promoStatus.data.offer : null;
@@ -375,13 +356,6 @@ export function NewVehicleWizard({
   const promoMonthly = adminPromo && adminDraft ? promoMonthlyFor(adminPromo, adminDraft.plan.planName) : promo?.monthlyCents;
   // O cliente sem endereço salvo cai direto no formulário.
   const editingAddress = !isAdmin && (addressDraft !== null || !address);
-  const equipmentCents = loan
-    ? 0
-    : isAdmin
-      ? adminDraft
-        ? optionalMoney(adminDraft.equipment)
-        : null
-      : (customerPromo?.equipmentCents ?? c?.equipmentPriceCents ?? 0);
   const monthly = isAdmin
     ? adminDraft
       ? { name: adminDraft.plan.planName, cents: parseMoney(adminDraft.plan.price), dueDay: adminDraft.plan.dueDay }
@@ -395,6 +369,14 @@ export function NewVehicleWizard({
         }
       : null;
   const installedDevice = isAdmin && Boolean(adminDraft?.deviceId);
+  // O rastreador incluso (a Farbo não vende o rastreador): o do catálogo do
+  // cliente; o da central, como ela definiu (pela regra, a parte é somada
+  // abaixo do preço do site). No comodato, nenhum.
+  const sitePlanCents = c?.sitePlanCents ?? 0;
+  const adminMode = isAdmin && adminDraft ? trackerMode(adminDraft.tracker, monthly?.cents ?? null, sitePlanCents) : null;
+  const adminTracker = isAdmin && adminDraft && adminMode ? trackerFromDraft(adminDraft.tracker, adminMode) : null;
+  const tracker = loan ? null : isAdmin ? (adminTracker && typeof adminTracker !== 'string' ? adminTracker : null) : (c?.tracker ?? null);
+  const trackerAdd = tracker && tracker.added && tracker.cents > 0 && tracker.months > 0 ? tracker : null;
 
   // O frete: as formas de entrega até o endereço salvo, na última etapa.
   const ships = !installedDevice && Boolean(address);
@@ -418,9 +400,6 @@ export function NewVehicleWizard({
   const arranged = ships && shippingId === ARRANGE_DELIVERY && shippingQuote.data?.arrange === true;
   // O cliente só confirma com a entrega escolhida (quando o frete é cotado).
   const needsShipping = !isAdmin && ships && shippingQuote.data?.enabled === true;
-  // Parcelado: o equipamento vai nas mensalidades (a 1ª parcela na 1ª).
-  const choices = installmentChoices(equipmentCents ?? 0, c?.equipmentMaxInstallments ?? 1);
-  const parcels = installments > 1 && choices.length >= installments ? splitInstallments(equipmentCents ?? 0, installments) : null;
   // A pessoa física paga no ato (a 1ª mensalidade começa hoje); a empresa
   // não paga nada na hora: tudo entra na próxima fatura do mês da conta,
   // com o proporcional dos dias até ela.
@@ -439,10 +418,10 @@ export function NewVehicleWizard({
       : `vence em ${formatDateOnly(chargeDate)}`
     : `na fatura de ${formatDateOnly(chargeDate)}`;
   const monthlyFirst = promoMonthly ?? monthly?.cents ?? 0;
+  // O proporcional é do plano (a parte do rastreador vai só nas mensalidades).
   const prorata = payNow ? { days: 0, cents: 0 } : prorataUntil(monthlyFirst, today, chargeDate);
-  const firstMonthly = monthlyFirst + (parcels?.[0] ?? 0);
-  const invoiceTotal =
-    prorata.cents + firstMonthly + (parcels ? 0 : (equipmentCents ?? 0)) + installFee + farboCents + (freight?.cents ?? 0);
+  const firstMonthly = monthlyFirst + (trackerAdd?.cents ?? 0);
+  const invoiceTotal = prorata.cents + firstMonthly + installFee + farboCents + (freight?.cents ?? 0);
 
   const goTo = (next: number) => {
     setError('');
@@ -452,9 +431,7 @@ export function NewVehicleWizard({
   const next = () => {
     if (step === 0) return goTo(1);
     if (step === 1) {
-      if (isAdmin && equipmentCents === null) {
-        return setError('Valor do equipamento inválido. Use, por exemplo, 150,00 (ou 0 para não cobrar).');
-      }
+      if (isAdmin && !loan && typeof adminTracker === 'string') return setError(adminTracker);
       if (editingAddress) {
         setError('');
         return saveAddress.mutate(addressDraft ?? EMPTY_ADDRESS);
@@ -470,8 +447,7 @@ export function NewVehicleWizard({
       ? vehicle.name.trim() !== ''
       : step === 1
         ? !editingAddress || isAddressComplete(addressDraft ?? EMPTY_ADDRESS)
-        : (!needsShipping || ((freight !== null || arranged) && !shippingQuote.isFetching)) &&
-          (isAdmin || !parcels || committed);
+        : !needsShipping || ((freight !== null || arranged) && !shippingQuote.isFetching);
 
   const primaryLabel =
     step === 0
@@ -559,21 +535,12 @@ export function NewVehicleWizard({
                     <input
                       type="checkbox"
                       checked={adminDraft.promo}
-                      onChange={(e) =>
-                        setAdminDraft({
-                          ...adminDraft,
-                          promo: e.target.checked,
-                          equipment: centsToInput(
-                            e.target.checked ? promoStatus.data!.offer.equipmentCents : c.equipmentPriceCents,
-                          ),
-                        })
-                      }
+                      onChange={(e) => setAdminDraft({ ...adminDraft, promo: e.target.checked })}
                     />
                     <span>
                       <strong>Aplicar a promoção de pré-lançamento</strong>
                       <br />
-                      Rastreador por {formatMoney(promoStatus.data.offer.equipmentCents)} e mensalidade de{' '}
-                      {formatMoney(promoStatus.data.offer.monthlyCents)} (
+                      Mensalidade de {formatMoney(promoStatus.data.offer.monthlyCents)} (
                       {formatMoney(promoStatus.data.offer.insanosMonthlyCents)} no plano{' '}
                       {promoStatus.data.offer.insanosPlanName}) nos {promoStatus.data.offer.months} primeiros meses
                       (depois, o plano escolhido).{' '}
@@ -598,19 +565,12 @@ export function NewVehicleWizard({
                 {loan ? (
                   <LoanNote terms={terms!} payNow={payNow} direct={direct} />
                 ) : (
-                  <>
-                    <TextField
-                      label={`${c.equipmentName} (R$)`}
-                      inputMode="decimal"
-                      hint={`${adminDraft.promo ? 'Preço da promoção de pré-lançamento.' : '0 se o cliente já tem o aparelho.'} ${payNow ? 'Pessoa física: vence com a 1ª mensalidade' : 'Empresa: entra na fatura'} de ${formatDateOnly(chargeDate)}.`}
-                      disabled={adminDraft.promo}
-                      value={adminDraft.equipment}
-                      onChange={(e) => setAdminDraft({ ...adminDraft, equipment: e.target.value })}
-                    />
-                    {choices.length > 1 && (
-                      <InstallmentsField choices={choices} value={installments} onChange={setInstallments} staff payNow={payNow} />
-                    )}
-                  </>
+                  <TrackerFields
+                    draft={adminDraft.tracker}
+                    onChange={(next) => setAdminDraft({ ...adminDraft, tracker: next })}
+                    planCents={monthly?.cents ?? null}
+                    sitePlanCents={sitePlanCents}
+                  />
                 )}
                 {!installedDevice &&
                   (address ? (
@@ -663,11 +623,7 @@ export function NewVehicleWizard({
                 {loanOffer && !onlyLoan && (
                   <EquipmentChoice
                     mode={mode}
-                    onChange={(next) => {
-                      setMode(next);
-                      setInstallments(1);
-                      setCommitted(false);
-                    }}
+                    onChange={setMode}
                     offer={loanOffer}
                     catalog={c}
                     direct={direct}
@@ -675,29 +631,15 @@ export function NewVehicleWizard({
                 )}
                 {customerPromo && (
                   <div className={styles.promoBanner}>
-                    <strong>Promoção de pré-lançamento</strong> — você está na lista de lançamento: rastreador por{' '}
-                    {formatMoney(customerPromo.equipmentCents)} e mensalidade de {formatMoney(customerPromo.monthlyCents)}{' '}
-                    nos {customerPromo.months} primeiros meses.
+                    <strong>Promoção de pré-lançamento</strong> — você está na lista de lançamento: mensalidade de{' '}
+                    {formatMoney(customerPromo.monthlyCents)} nos {customerPromo.months} primeiros meses.
                   </div>
                 )}
                 {loan ? (
                   <LoanNote terms={terms!} payNow={payNow} direct={direct} />
                 ) : (
                   <>
-                    <div className={styles.orderSummary}>
-                      <div className={`${styles.orderLine} ${styles.orderTotal}`}>
-                        <span>
-                          {c.equipmentName} ({when})
-                        </span>
-                        <span>
-                          {customerPromo && <s className={styles.muted}>{formatMoney(c.equipmentPriceCents)}</s>}{' '}
-                          {formatMoney(customerPromo?.equipmentCents ?? c.equipmentPriceCents)}
-                        </span>
-                      </div>
-                    </div>
-                    {choices.length > 1 && (
-                      <InstallmentsField choices={choices} value={installments} onChange={setInstallments} payNow={payNow} />
-                    )}
+                    <IncludedNote equipmentName={c.equipmentName} tracker={tracker} />
                     {installService ? (
                       <InstallChoice
                         farbo={farboInstall}
@@ -777,7 +719,7 @@ export function NewVehicleWizard({
                   )}
                   {firstMonthly > 0 && (
                     <div className={styles.orderLine}>
-                      <span>1ª mensalidade{parcels ? ', com a 1ª parcela' : ''}</span>
+                      <span>1ª mensalidade</span>
                       <span>{formatMoney(firstMonthly)}</span>
                     </div>
                   )}
@@ -796,14 +738,8 @@ export function NewVehicleWizard({
                     )
                   ) : (
                     <div className={styles.orderLine}>
-                      <span>
-                        {parcels
-                          ? `Equipamento: ${formatMoney(equipmentCents)} em ${parcels.length}x sem juros`
-                          : 'Equipamento'}
-                      </span>
-                      <span>
-                        {parcels ? 'nas mensalidades' : equipmentCents ? formatMoney(equipmentCents) : 'sem cobrança'}
-                      </span>
+                      <span>{tracker && tracker.cents > 0 ? 'Rastreador incluso (fica com o cliente)' : 'Rastreador do cliente'}</span>
+                      <span>sem cobrança</span>
                     </div>
                   )}
                   {freight && (
@@ -853,33 +789,35 @@ export function NewVehicleWizard({
                             </span>
                           </>
                         )}
-                        {parcels && (
+                        {trackerAdd && monthly.cents !== null && (
                           <>
                             <br />
-                            <span className={styles.muted}>{parcelsNote(parcels)}</span>
+                            <span className={styles.muted}>
+                              Com o rastreador incluso: {formatMoney(monthlyFirst + trackerAdd.cents)}/mês nas{' '}
+                              {trackerAdd.months} primeiras mensalidades; depois, {formatMoney(monthlyFirst)}/mês.
+                            </span>
                           </>
                         )}
                       </span>
                       <span>
                         {promoMonthly !== undefined
-                          ? `${formatMoney(promoMonthly)}/mês`
+                          ? `${formatMoney(promoMonthly + (trackerAdd?.cents ?? 0))}/mês`
                           : monthly.cents !== null
-                            ? `${formatMoney(monthly.cents)}/mês`
+                            ? `${formatMoney(monthly.cents + (trackerAdd?.cents ?? 0))}/mês`
                             : '—'}
                       </span>
                     </div>
                   )}
                 </div>
+                {tracker && tracker.cents > 0 && tracker.months > 0 && (
+                  <p className={styles.muted}>
+                    {isAdmin ? 'O rastreador incluso fica com o cliente.' : 'O rastreador incluso fica com você.'} Se a
+                    assinatura for encerrada antes da {tracker.months}ª mensalidade, a parte do rastreador que falta (
+                    {formatMoney(tracker.cents)} por mensalidade) vence de uma vez (contrato, cláusula 7).
+                  </p>
+                )}
                 {!isAdmin && payNow && invoiceTotal > 0 && account.data?.onlinePayment && (
                   <PaymentChoice value={payment} onChange={setPayment} card={Boolean(card.data?.enabled)} />
-                )}
-                {parcels && (
-                  <Commitment
-                    installments={parcels.length}
-                    staff={isAdmin}
-                    checked={committed}
-                    onChange={setCommitted}
-                  />
                 )}
               </>
             )}
@@ -907,80 +845,19 @@ export function NewVehicleWizard({
 }
 
 /**
- * As parcelas na assinatura: "+ R$ 15,00 do rastreador em cada uma das 10
- * primeiras mensalidades." (com a 1ª diferente, ela à parte).
+ * O rastreador incluso para o cliente: fica com ele, sem preço à parte (só o
+ * frete); quando a parte dele soma à mensalidade, em quantas.
  */
-function parcelsNote(parcels: number[]): string {
-  const [first, rest] = parcels;
-  if (first === rest) {
-    return `+ ${formatMoney(rest)} do rastreador em cada uma das ${parcels.length} primeiras mensalidades.`;
-  }
-  return `+ ${formatMoney(first)} do rastreador na 1ª mensalidade e ${formatMoney(rest)} em cada uma das ${parcels.length - 1} seguintes.`;
-}
-
-/** A escolha de como pagar o rastreador: à vista ou parcelado sem juros. */
-function InstallmentsField({
-  choices,
-  value,
-  onChange,
-  staff = false,
-  payNow = false,
-}: {
-  choices: { value: number; label: string }[];
-  value: number;
-  onChange: (value: number) => void;
-  staff?: boolean;
-  /** A 1ª mensalidade é paga no pedido (pessoa física). */
-  payNow?: boolean;
-}) {
+function IncludedNote({ equipmentName, tracker }: { equipmentName: string; tracker: Tracker | null }) {
+  const added = tracker && tracker.added && tracker.cents > 0 && tracker.months > 0;
   return (
-    <SelectField
-      label={staff ? 'Pagamento do equipamento' : 'Como pagar o rastreador'}
-      hint={
-        value > 1
-          ? `As ${value} parcelas vêm somadas às mensalidades: a 1ª junto com a 1ª mensalidade, ${payNow ? 'paga no pedido' : 'na próxima fatura'}.`
-          : `À vista, ou parcelado em até ${choices.length}x sem juros nas mensalidades.`
-      }
-      value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
-    >
-      {choices.map((choice) => (
-        <option key={choice.value} value={choice.value}>
-          {choice.label}
-        </option>
-      ))}
-    </SelectField>
-  );
-}
-
-/**
- * Parcelado, a assinatura fica ativa até a última parcela: o cliente marca
- * que entendeu antes de confirmar; a central vê o aviso para combinar com ele.
- */
-function Commitment({
-  installments,
-  staff,
-  checked,
-  onChange,
-}: {
-  installments: number;
-  staff: boolean;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  const rule = `a assinatura deste veículo fica ativa até a mensalidade com a última parcela (a ${installments}ª). Se for encerrada antes, as parcelas que faltam vencem de uma vez, numa fatura só (contrato, cláusula 7).`;
-  if (staff) {
-    return <p className={styles.muted}>Parcelado: {rule} Combine isso com o cliente.</p>;
-  }
-  return (
-    <label className={styles.promoOption}>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <div className={styles.installNote}>
       <span>
-        <strong>Entendi: mantenho a assinatura até a última parcela.</strong>
-        <br />
-        Parcelando o rastreador, {rule}
+        <strong>Rastreador incluso:</strong> o {equipmentName} fica com você, sem pagar o rastreador à parte — só o frete,
+        quando houver.
+        {added && ` Nas ${tracker.months} primeiras mensalidades, + ${formatMoney(tracker.cents)}.`}
       </span>
-    </label>
+    </div>
   );
 }
 
@@ -1006,8 +883,8 @@ function LoanNote({ terms, payNow, direct = false }: { terms: EquipmentTerms; pa
 }
 
 /**
- * Comprar ou comodato (quando a central oferece o comodato e não há plano
- * definido para o cliente): o preço do rastreador e a mensalidade de cada um.
+ * Incluso ou comodato (quando a central oferece o comodato e não há plano
+ * definido para o cliente): a mensalidade de cada um.
  */
 function EquipmentChoice({
   mode,
@@ -1026,6 +903,8 @@ function EquipmentChoice({
   // A garantia de troca do rastreador: só a pessoa física (que paga no ato).
   const guarantee = catalog.payNow ? offer.surchargeCents : 0;
   const loanMonthly = catalog.planPriceCents + guarantee;
+  const t = catalog.tracker;
+  const includedAdd = t && t.added && t.cents > 0 && t.months > 0 ? t : null;
   const fees = [
     offer.installFeeCents > 0 ? `instalação ${formatMoney(offer.installFeeCents)}` : 'instalação sem custo',
     offer.uninstallFeeCents > 0 ? `desinstalação ${formatMoney(offer.uninstallFeeCents)} ao encerrar` : '',
@@ -1037,12 +916,12 @@ function EquipmentChoice({
       <label className={mode === 'sale' ? styles.paymentOn : undefined}>
         <input type="radio" name="equipment-mode" checked={mode === 'sale'} onChange={() => onChange('sale')} />
         <span>
-          <strong>Comprar o rastreador</strong>
+          <strong>Rastreador incluso</strong>
           <span className={styles.muted}>
             {' '}
-            · {formatMoney(catalog.launchPromo?.equipmentCents ?? catalog.equipmentPriceCents)}
-            {catalog.equipmentMaxInstallments > 1 ? ` à vista ou em até ${catalog.equipmentMaxInstallments}x sem juros` : ''}; ele é
-            seu. Mensalidade de {formatMoney(catalog.launchPromo?.monthlyCents ?? catalog.planPriceCents)}.
+            · fica com você, sem pagar o rastreador à parte. Mensalidade de{' '}
+            {formatMoney(catalog.launchPromo?.monthlyCents ?? catalog.planPriceCents)}
+            {includedAdd ? ` (+ ${formatMoney(includedAdd.cents)} nas ${includedAdd.months} primeiras)` : ''}.
           </span>
         </span>
       </label>
@@ -1052,7 +931,7 @@ function EquipmentChoice({
           <strong>Comodato (rastreador emprestado)</strong>
           <span className={styles.muted}>
             {' '}
-            · sem pagar o rastreador; ele volta na desinstalação. Mensalidade de {formatMoney(loanMonthly)}
+            · o rastreador emprestado; ele volta na desinstalação. Mensalidade de {formatMoney(loanMonthly)}
             {guarantee > 0 ? `, com ${formatMoney(guarantee)} de garantia de troca do rastreador` : ''}; {fees.join(', ')}.
           </span>
         </span>
@@ -1062,7 +941,7 @@ function EquipmentChoice({
 }
 
 /**
- * Quem instala o rastreador comprado: o cliente, por conta própria (com o
+ * Quem instala o rastreador incluso: o cliente, por conta própria (com o
  * instalador dele, pago direto), ou os instaladores da Farbo, pelo preço das
  * opções do pedido (a central agenda o dia).
  */

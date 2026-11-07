@@ -16,10 +16,10 @@ import (
 )
 
 // A contratação rápida pela landing: a oferta com os preços do funil (um
-// plano só: o do Insanos MC é com a central); a pessoa física cria a conta,
-// aceita o contrato e contrata de uma vez, pagando no ato — o rastreador
-// comprado (com a instalação da Farbo, se quiser) ou o comodato com a
-// garantia de troca —; a empresa, o e-mail que já tem conta, o plano do
+// plano só, com o rastreador incluso: o do Insanos MC é com a central); a
+// pessoa física cria a conta, aceita o contrato e contrata de uma vez,
+// pagando no ato — o rastreador incluso, sem fatura de equipamento (com a
+// instalação da Farbo, se quiser), ou o comodato com a garantia de troca —; a empresa, o e-mail que já tem conta, o plano do
 // Insanos e o funil fechado são recusados; o próximo veículo parte do plano
 // sem a garantia. Precisa de FARBO_TEST_DATABASE_URL.
 func TestCheckoutFunnel(t *testing.T) {
@@ -43,14 +43,13 @@ func TestCheckoutFunnel(t *testing.T) {
 	bs.SetClock(func() time.Time { return time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC) })
 
 	var offer struct {
-		Enabled        bool `json:"enabled"`
-		PlanCents      int  `json:"planCents"`
-		EquipmentCents int  `json:"equipmentCents"`
-		// Os preços normais, que as páginas mostram riscados.
-		PlanRegularCents      int    `json:"planRegularCents"`
-		EquipmentRegularCents int    `json:"equipmentRegularCents"`
-		ContractVersion       string `json:"contractVersion"`
-		Loan                  *struct {
+		Enabled   bool `json:"enabled"`
+		PlanCents int  `json:"planCents"`
+		// O preço normal, que as páginas mostram riscado.
+		PlanRegularCents int            `json:"planRegularCents"`
+		Tracker          orders.Tracker `json:"tracker"`
+		ContractVersion  string         `json:"contractVersion"`
+		Loan             *struct {
 			SurchargeCents, InstallFeeCents, UninstallFeeCents int
 		} `json:"loan"`
 		Install *struct {
@@ -59,12 +58,17 @@ func TestCheckoutFunnel(t *testing.T) {
 	}
 	raw := env.must("", http.MethodGet, "/api/public/checkout", nil, http.StatusOK)
 	_ = json.Unmarshal(raw, &offer)
-	if !offer.Enabled || offer.PlanCents != 3490 || offer.EquipmentCents != 12000 ||
+	if !offer.Enabled || offer.PlanCents != 6990 || offer.Tracker != (orders.Tracker{Cents: 1200, Months: 10}) ||
 		offer.ContractVersion != contract.Version || offer.Loan == nil || offer.Loan.SurchargeCents != 300 ||
 		offer.Loan.InstallFeeCents != 15000 || offer.Loan.UninstallFeeCents != 8500 || offer.Install == nil ||
-		offer.Install.PriceCents != 15000 || offer.PlanRegularCents != catalogPrices.PlanPriceCents || offer.PlanRegularCents == 0 ||
-		offer.EquipmentRegularCents != catalogPrices.EquipmentPriceCents || offer.EquipmentRegularCents == 0 {
+		offer.Install.PriceCents != 15000 || offer.PlanRegularCents != catalogPrices.PlanPriceCents || offer.PlanRegularCents == 0 {
 		t.Fatalf("oferta = %+v (comodato %+v)", offer, offer.Loan)
+	}
+	// O rastreador não tem preço: a oferta não fala em vender nem parcelar.
+	for _, gone := range []string{"equipmentCents", "maxInstallments", "equipmentRegularCents"} {
+		if strings.Contains(string(raw), gone) {
+			t.Errorf("oferta com %q: %s", gone, raw)
+		}
 	}
 	// O preço do Insanos MC não sai na oferta pública.
 	if strings.Contains(strings.ToLower(string(raw)), "insanos") {
@@ -105,14 +109,17 @@ func TestCheckoutFunnel(t *testing.T) {
 		t.Fatalf("contas criadas nas recusas = %d", users)
 	}
 
-	// Comprado à vista, com a instalação da Farbo: tudo hoje, no preço do funil.
+	// O rastreador incluso, com a instalação da Farbo: tudo hoje, no preço do
+	// funil, sem fatura de equipamento; a parte do rastreador já está nos
+	// R$ 69,90 (vale para o encerramento antes da 10ª).
 	var r result
 	_ = json.Unmarshal(env.must("", http.MethodPost, "/api/public/checkout",
 		body("lia@site.test", "529.982.247-25", map[string]any{"farboInstall": true}), http.StatusCreated), &r)
-	if !r.PayNow || r.Subscription.PlanName != "Plano Mensal" || r.Subscription.PriceCents != 3490 ||
-		r.SetupInvoice == nil || r.SetupInvoice.AmountCents != 12000 || r.SetupInvoice.DueDate.String() != "2026-10-13" ||
+	if !r.PayNow || r.Subscription.PlanName != "Plano Mensal" || r.Subscription.PriceCents != 6990 || r.SetupInvoice != nil ||
+		r.Subscription.EquipmentMode != billing.EquipmentSale || r.Subscription.TrackerCents != 1200 ||
+		r.Subscription.TrackerMonths != 10 || r.Subscription.TrackerAdded ||
 		r.InstallInvoice == nil || r.InstallInvoice.AmountCents != 15000 ||
-		r.FirstInvoice == nil || r.FirstInvoice.AmountCents != 3490 || r.FirstInvoice.DueDate.String() != "2026-10-13" ||
+		r.FirstInvoice == nil || r.FirstInvoice.AmountCents != 6990 || r.FirstInvoice.DueDate.String() != "2026-10-13" ||
 		r.Tokens == nil || r.Tokens.AccessToken == "" {
 		t.Fatalf("contratação = %+v", r)
 	}
@@ -148,8 +155,8 @@ func TestCheckoutFunnel(t *testing.T) {
 		t.Fatalf("conta criada no Insanos pelo site = %d", users)
 	}
 
-	// Comodato: sem o rastreador, a instalação e a mensalidade com a garantia
-	// de troca (R$ 34,90 + R$ 3,00).
+	// Comodato: sem o rastreador incluso, a instalação e a mensalidade com a
+	// garantia de troca (R$ 69,90 + R$ 3,00).
 	env.must("", http.MethodPost, "/api/public/checkout",
 		body("rui@site.test", "390.533.447-05", map[string]any{"equipmentMode": "loan", "installments": 3}),
 		http.StatusBadRequest)
@@ -157,9 +164,9 @@ func TestCheckoutFunnel(t *testing.T) {
 		body("rui@site.test", "390.533.447-05", map[string]any{"equipmentMode": "loan", "event": "Encontro Insanos MC"}),
 		http.StatusCreated), &r)
 	if r.SetupInvoice != nil || r.InstallInvoice == nil || r.InstallInvoice.AmountCents != 15000 ||
-		r.FirstInvoice == nil || r.FirstInvoice.AmountCents != 3490+300 ||
+		r.FirstInvoice == nil || r.FirstInvoice.AmountCents != 6990+300 ||
 		r.Subscription.PlanName != "Plano Mensal"+orders.GuaranteeName || r.Subscription.UninstallFeeCents != 8500 ||
-		r.Subscription.EquipmentMode != billing.EquipmentLoan {
+		r.Subscription.EquipmentMode != billing.EquipmentLoan || r.Subscription.TrackerCents != 0 {
 		t.Fatalf("comodato = %+v", r)
 	}
 	var guarantee int
@@ -179,7 +186,7 @@ func TestCheckoutFunnel(t *testing.T) {
 		PlanPriceCents int    `json:"planPriceCents"`
 	}
 	_ = json.Unmarshal(env.must(r.Tokens.AccessToken, http.MethodGet, "/api/catalog", nil, http.StatusOK), &catalog)
-	if catalog.PlanName != "Plano Mensal" || catalog.PlanPriceCents != 3490 {
+	if catalog.PlanName != "Plano Mensal" || catalog.PlanPriceCents != 6990 {
 		t.Errorf("plano do próximo veículo = %+v", catalog)
 	}
 	// A central põe o Rui no plano do Insanos: o próximo veículo dele sai no
@@ -188,19 +195,27 @@ func TestCheckoutFunnel(t *testing.T) {
 		ID string `json:"id"`
 	}
 	_ = env.db.QueryRow(ctx, `SELECT id FROM users WHERE email = 'rui@site.test'`).Scan(&rui.ID)
+	// No Insanos, R$ 27,90 e, nas 10 primeiras, a parte do rastreador
+	// somada (R$ 39,90).
 	env.must(env.login(auth.RoleAdmin+"@leads.test"), http.MethodPut, "/api/customers/"+rui.ID+"/plan",
-		map[string]any{"planName": "Especial Insanos MC", "priceCents": 3990, "dueDay": 10}, http.StatusOK)
-	_ = json.Unmarshal(env.must(r.Tokens.AccessToken, http.MethodGet, "/api/catalog", nil, http.StatusOK), &catalog)
-	if catalog.PlanName != "Especial Insanos MC" || catalog.PlanPriceCents != 3990 {
-		t.Errorf("plano do próximo veículo, no Insanos pela central = %+v", catalog)
+		map[string]any{"planName": "Especial Insanos MC", "priceCents": 2790, "dueDay": 10}, http.StatusOK)
+	var insanos struct {
+		PlanName       string         `json:"planName"`
+		PlanPriceCents int            `json:"planPriceCents"`
+		Tracker        orders.Tracker `json:"tracker"`
+	}
+	_ = json.Unmarshal(env.must(r.Tokens.AccessToken, http.MethodGet, "/api/catalog", nil, http.StatusOK), &insanos)
+	if insanos.PlanName != "Especial Insanos MC" || insanos.PlanPriceCents != 2790 ||
+		insanos.Tracker != (orders.Tracker{Cents: 1200, Months: 10, Added: true}) {
+		t.Errorf("plano do próximo veículo, no Insanos pela central = %+v", insanos)
 	}
 
 	// No app, a pessoa física paga o mesmo que no site: a central muda o
-	// preço do site e o próximo veículo da Lia acompanha (o rastreador também).
+	// preço do site e o próximo veículo da Lia acompanha.
 	type prices struct {
-		PlanName            string `json:"planName"`
-		PlanPriceCents      int    `json:"planPriceCents"`
-		EquipmentPriceCents int    `json:"equipmentPriceCents"`
+		PlanName       string         `json:"planName"`
+		PlanPriceCents int            `json:"planPriceCents"`
+		Tracker        orders.Tracker `json:"tracker"`
 	}
 	pricesOf := func(token string) prices {
 		t.Helper()
@@ -208,10 +223,10 @@ func TestCheckoutFunnel(t *testing.T) {
 		_ = json.Unmarshal(env.must(token, http.MethodGet, "/api/catalog", nil, http.StatusOK), &p)
 		return p
 	}
-	if _, err := env.db.Exec(ctx, `UPDATE order_settings SET checkout_plan_cents = 2990, checkout_equipment_cents = 9900`); err != nil {
+	if _, err := env.db.Exec(ctx, `UPDATE order_settings SET checkout_plan_cents = 2990`); err != nil {
 		t.Fatal(err)
 	}
-	if p := pricesOf(lia); p.PlanName != "Plano Mensal" || p.PlanPriceCents != 2990 || p.EquipmentPriceCents != 9900 {
+	if p := pricesOf(lia); p.PlanName != "Plano Mensal" || p.PlanPriceCents != 2990 || p.Tracker.Added {
 		t.Errorf("app da pessoa física = %+v", p)
 	}
 	// A empresa (CNPJ) segue no catálogo.
@@ -220,13 +235,12 @@ func TestCheckoutFunnel(t *testing.T) {
 		"name": "Frota Ltda", "email": "frota@site.test", "phone": "(11) 94444-0000", "document": "11.222.333/0001-81",
 		"password": userPassword,
 	}, http.StatusCreated)
-	if p := pricesOf(env.login("frota@site.test")); p.PlanPriceCents != catalogPrices.PlanPriceCents ||
-		p.EquipmentPriceCents != catalogPrices.EquipmentPriceCents {
+	if p := pricesOf(env.login("frota@site.test")); p.PlanPriceCents != catalogPrices.PlanPriceCents || p.Tracker.Cents != 1200 {
 		t.Errorf("app da empresa = %+v", p)
 	}
 
 	// Com o funil fechado pela central, não contrata; no app, a pessoa física
-	// fica com o plano que já tem e o rastreador do catálogo.
+	// fica com o plano que já tem.
 	if _, err := env.db.Exec(ctx, `UPDATE order_settings SET checkout_enabled = FALSE`); err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +248,7 @@ func TestCheckoutFunnel(t *testing.T) {
 		!strings.Contains(string(out), "fechada") {
 		t.Fatalf("funil fechado = %d %s", status, out)
 	}
-	if p := pricesOf(lia); p.PlanPriceCents != 3490 || p.EquipmentPriceCents != catalogPrices.EquipmentPriceCents {
+	if p := pricesOf(lia); p.PlanPriceCents != 6990 || p.Tracker.Added {
 		t.Errorf("app com o funil fechado = %+v", p)
 	}
 }

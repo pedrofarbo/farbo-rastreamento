@@ -62,8 +62,8 @@ describe('landing com a contratação pelo site', () => {
     const text = host.textContent ?? '';
     expect(host.querySelector('h1')?.textContent).toBe('Bloqueie seu veículo pelo celular.');
     for (const part of ['bloqueio e desbloqueio remoto do motor', 'melhor preço do mercado', '50% OFF', 'De R$ 69,90',
-      'R$34,90/mês', 'rastreador R$ 120 ou 10x de R$ 12,00 sem juros, com o relé de bloqueio', 'Relé de bloqueio incluso',
-      'Ou em comodato: sem comprar o rastreador, instalado pelos nossos técnicos por R$ 150 (+ R$ 3/mês).',
+      'R$34,90/mês', 'rastreador incluso: você só paga o frete, com o relé de bloqueio', 'Relé de bloqueio incluso',
+      'Ou em comodato: o rastreador emprestado, instalado pelos nossos técnicos por R$ 150 (+ R$ 3/mês).',
       'Homologado pela Anatel', 'O relé vem no kit', 'o bloqueio é feito com o veículo parado']) {
       expect(text).toContain(part);
     }
@@ -95,10 +95,13 @@ describe('landing com a contratação pelo site', () => {
   it('os planos mostram o preço do site, sem prazo, e levam à contratação', async () => {
     const host = await render(<PricingSection onOpenModal={() => {}} />);
     const text = host.textContent ?? '';
-    for (const part of ['Contrate pelo site', 'R$ 34,90/mês e R$ 120 no rastreador', 'PREÇO PROMOCIONAL', 'De R$ 69,90', 'De R$ 150',
-      'enquanto a assinatura durar', 'à vista, ou 10x de R$ 12,00']) {
+    for (const part of ['Contrate pelo site', 'R$ 34,90/mês com o rastreador incluso: você só paga o frete', 'PREÇO PROMOCIONAL',
+      'De R$ 69,90', 'enquanto a assinatura durar', 'Rastreador incluso, que fica com você',
+      'Inclusona mensalidade: ele fica com vocêvocê só paga o frete']) {
       expect(text).toContain(part);
     }
+    // A Farbo não vende o rastreador: nada de preço, à vista ou parcelas dele.
+    expect(text).not.toMatch(/De R\$ 150|à vista|parcel|sem comprar|comprad/);
     // Um plano só: o do Insanos MC é com a central.
     expect(text).not.toContain('Insanos');
     // Sem o prazo nem o limite da promoção de pré-lançamento.
@@ -110,16 +113,16 @@ describe('landing com a contratação pelo site', () => {
     expect(text).toContain('Bloqueio remoto (relé incluso)');
     expect(text).not.toContain('(opcional)');
     expect(text).toContain(
-      'Ou em comodato, sem comprar: instalação R$ 150 pelos nossos instaladores e + R$ 3/mês de garantia de troca do rastreador (desinstalação R$ 85 ao encerrar).',
+      'Ou em comodato (emprestado): instalação R$ 150 pelos nossos instaladores e + R$ 3/mês de garantia de troca do rastreador (desinstalação R$ 85 ao encerrar).',
     );
   });
 
   it('outros valores na central: a página acompanha, sem nada escrito no código', async () => {
-    offer = offerWith({ planCents: 2990, equipmentCents: 9900, maxInstallments: 1, loan: null, install: null });
+    offer = offerWith({ planCents: 2990, loan: null, install: null });
     const host = await render(<PricingSection onOpenModal={() => {}} />);
     const text = host.textContent ?? '';
-    expect(text).toContain('R$ 29,90/mês e R$ 99 no rastreador. Pague com Pix');
-    expect(text).toContain('à vista, no Pix');
+    expect(text).toContain('R$ 29,90/mês com o rastreador incluso: você só paga o frete. Pague com Pix');
+    expect(text).not.toMatch(/à vista|parcel|compr/);
     expect(text).not.toContain('comodato');
     expect(text).toContain('Instale com o instalador da sua preferência.');
   });
@@ -133,21 +136,29 @@ describe('landing com a contratação pelo site', () => {
   });
 
   it('pelo link de um afiliado com tabela: a partir da menor, com a moto, o carro e o caminhão', async () => {
-    offer = offerWith({ planByKind: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 } });
+    // Pela tabela, a parte do rastreador incluso soma nas primeiras (+ R$ 12 nas 10 primeiras).
+    offer = offerWith({
+      planByKind: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 },
+      tracker: { cents: 1200, months: 10, added: true },
+    });
     // O espaço sem quebra (cada tipo inteiro na linha) vira espaço comum para comparar.
     const plain = (host: HTMLElement) => (host.textContent ?? '').replace(/\u00a0/g, ' ');
     const pricing = plain(await render(<PricingSection onOpenModal={() => {}} />));
     for (const part of ['PREÇO DE INDICAÇÃO', 'a partir de', 'R$39,90/mês por veículo', 'Moto R$ 39,90 · Carro R$ 49,90 · Caminhão R$ 59,90',
-      'A partir de R$ 39,90/mês e R$ 120 no rastreador']) {
+      'A partir de R$ 39,90/mês com o rastreador incluso (+ R$ 12/mês nas 10 primeiras mensalidades): você só paga o frete',
+      '+ R$ 12/mês nas 10 primeiras mensalidades · só o frete à parte']) {
       expect(pricing).toContain(part);
     }
     const hero = plain(await render(<HeroSection onOpenModal={() => {}} />));
     expect(hero).toContain('a partir deR$39,90/mês');
-    expect(hero).toContain('Moto R$ 39,90 · Carro R$ 49,90 · Caminhão R$ 59,90 · enquanto a assinatura durar');
+    expect(hero).toContain(
+      'Moto R$ 39,90 · Carro R$ 49,90 · Caminhão R$ 59,90 · enquanto a assinatura durar · rastreador incluso (+ R$ 12/mês nas 10 primeiras mensalidades): você só paga o frete',
+    );
     expect(hero).not.toContain('OFF');
     const section = plain(await render(<CheckoutSection onOpenModal={() => {}} />));
     expect(section).toContain('Mensalidade, a partir de');
     expect(section).toContain('R$ 69,90 R$ 39,90');
+    expect(section).toContain('+ R$ 12/mês nas 10 primeiras mensalidades');
   });
 
   it('pelo link de um representante: a instalação e o comodato com ele, pagos direto', async () => {
@@ -159,22 +170,22 @@ describe('landing com a contratação pelo site', () => {
     const pricing = (await render(<PricingSection onOpenModal={() => {}} />)).textContent ?? '';
     expect(pricing).toContain('Instale com o seu instalador ou com o representante, por R$ 120, pago direto a ele.');
     expect(pricing).toContain(
-      'Ou em comodato, sem comprar: instalação R$ 120 pelo representante, paga direto a ele, e + R$ 3/mês de garantia de troca do rastreador (desinstalação R$ 80 ao encerrar).',
+      'Ou em comodato (emprestado): instalação R$ 120 pelo representante, paga direto a ele, e + R$ 3/mês de garantia de troca do rastreador (desinstalação R$ 80 ao encerrar).',
     );
     const hero = (await render(<HeroSection onOpenModal={() => {}} />)).textContent ?? '';
-    expect(hero).toContain('Ou em comodato: sem comprar o rastreador, instalado pelo representante por R$ 120, pago direto a ele (+ R$ 3/mês).');
+    expect(hero).toContain('Ou em comodato: o rastreador emprestado, instalado pelo representante por R$ 120, pago direto a ele (+ R$ 3/mês).');
   });
 
   it('pelo link só de comodato: o comodato no lugar do preço do rastreador', async () => {
     offer = offerWith({ equipmentModes: 'loan' });
     const pricing = (await render(<PricingSection onOpenModal={() => {}} />)).textContent ?? '';
-    expect(pricing).toContain('R$ 34,90/mês, com o rastreador em comodato: sem comprar. Pague com Pix.');
-    expect(pricing).toContain('Em comodatosem comprar o rastreador');
+    expect(pricing).toContain('R$ 34,90/mês, com o rastreador em comodato. Pague com Pix.');
+    expect(pricing).toContain('Em comodatoo rastreador emprestado');
     expect(pricing).toContain('Comodato: instalação R$ 150 pelos nossos instaladores');
     expect(pricing).not.toContain('Instale com o seu instalador');
     const hero = (await render(<HeroSection onOpenModal={() => {}} />)).textContent ?? '';
     expect(hero).toContain('rastreador em comodato, com o relé de bloqueio');
-    expect(hero).toContain('Em comodato: sem comprar o rastreador');
+    expect(hero).toContain('Em comodato: o rastreador emprestado');
     expect(hero).not.toContain('Ou em comodato');
   });
 
@@ -190,7 +201,7 @@ describe('landing com a contratação pelo site', () => {
     const host = await render(<CheckoutSection onOpenModal={(plan) => opened.push(plan)} />);
     expect(host.querySelector('section#contratar')).not.toBeNull();
     expect(links(host, 'Contratar agora')[0]?.getAttribute('href')).toBe(CHECKOUT_PATH);
-    expect(host.textContent).toContain('R$ 150 R$ 120');
+    expect(host.textContent).toContain('Rastreadorinclusofica com você · só o frete à parte');
     expect(host.textContent).toContain('R$ 69,90 R$ 34,90');
     expect(host.textContent).toContain('Em comodato: instalação R$ 150 pelos nossos instaladores');
     const contact = Array.from(host.querySelectorAll('button')).find((b) => b.textContent === 'Prefiro que a Farbo fale comigo');

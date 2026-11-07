@@ -404,11 +404,11 @@ export function AffiliateModal({
             label="Mensalidade pelo link"
             value={draft.planByKind ? 'kind' : 'normal'}
             onChange={(e) => set('planByKind', e.target.value === 'kind')}
-            hint={
+            hint={`${
               affiliate
                 ? 'Vale para os veículos que ainda vão ser pedidos; as assinaturas que já existem ficam no preço delas.'
                 : 'Quem contrata pelo link paga essa mensalidade, também nos próximos veículos (pelo app).'
-            }
+            }${draft.planByKind ? ' Com o rastreador incluso, a parte dele soma nas primeiras mensalidades (Opções do pedido); depois, volta esta.' : ''}`}
           >
             <option value="normal">O preço normal do site</option>
             <option value="kind">Por tipo de veículo</option>
@@ -476,8 +476,8 @@ export function AffiliateModal({
             onChange={(e) => set('equipmentModes', e.target.value as EquipmentModes)}
             hint="O que quem contrata pelo link pode escolher, também nos veículos que pedir depois pelo app."
           >
-            <option value="">Comprado e comodato</option>
-            <option value="sale">Só comprado</option>
+            <option value="">Incluso e comodato</option>
+            <option value="sale">Só incluso (fica com o cliente)</option>
             <option value="loan">Só comodato</option>
           </SelectField>
           <TextField label="E-mail" type="email" value={draft.email} maxLength={254} onChange={(e) => set('email', e.target.value)} />

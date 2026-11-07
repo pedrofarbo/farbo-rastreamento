@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 
-import { CHECKOUT_PATH, installmentsPhrase, loanOnly, priceLabel } from '@/config/landing';
+import { CHECKOUT_PATH, loanOnly, priceLabel, trackerAdded } from '@/config/landing';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { kindPricesLabel, lowestPrice } from '@/services/kindPrices';
 
@@ -9,9 +9,9 @@ import { loanTerms } from './PricingSection';
 import styles from './CheckoutSection.module.css';
 
 const STEPS = [
-  { title: 'Escolha o plano e o rastreador', text: 'Comprado (à vista ou parcelado) ou em comodato.' },
+  { title: 'Escolha o rastreador', text: 'Incluso na mensalidade, ele fica com você. Ou em comodato.' },
   { title: 'Informe o veículo e o endereço', text: 'A sua conta no app é criada na hora.' },
-  { title: 'Pague com Pix', text: 'A 1ª mensalidade, o rastreador e o frete, de uma vez.' },
+  { title: 'Pague com Pix', text: 'A 1ª mensalidade e o frete, de uma vez.' },
   { title: 'Receba e instale', text: 'Com o seu instalador ou com os nossos, no dia que você escolher.' },
 ];
 
@@ -29,7 +29,7 @@ export const CheckoutSection: React.FC<CheckoutSectionProps> = ({ onOpenModal })
   // Pelo link de um afiliado com tabela: a mensalidade por tipo de veículo.
   const table = offer?.planByKind ?? null;
   const monthly = offer && (table ? lowestPrice(table) : offer.planCents);
-  const installments = offer ? installmentsPhrase(offer.equipmentCents, offer.maxInstallments) : '';
+  const added = trackerAdded(offer);
   return (
     <section className={styles.section} id="contratar" aria-labelledby="contratar-titulo">
       <div className={styles.container}>
@@ -53,11 +53,8 @@ export const CheckoutSection: React.FC<CheckoutSectionProps> = ({ onOpenModal })
                     <strong className={styles.offerPrice}>em comodato</strong>
                   ) : (
                     <>
-                      <span>
-                        <Regular cents={offer?.equipmentRegularCents} than={offer?.equipmentCents} />
-                        <strong className={styles.offerPrice}>{offer ? priceLabel(offer.equipmentCents) : 'R$ —'}</strong>
-                      </span>
-                      {installments && <span className={styles.offerInstallments}>ou {installments}</span>}
+                      <strong className={styles.offerPrice}>incluso</strong>
+                      <span className={styles.offerInstallments}>fica com você · só o frete à parte</span>
                     </>
                   )}
                 </div>
@@ -68,11 +65,16 @@ export const CheckoutSection: React.FC<CheckoutSectionProps> = ({ onOpenModal })
                     <strong className={styles.offerPrice}>{monthly !== undefined ? priceLabel(monthly) : 'R$ —'}</strong>
                   </span>
                   {table && <span className={styles.offerInstallments}>{kindPricesLabel(table, priceLabel)}</span>}
+                  {added && !loanOnly(offer) && (
+                    <span className={styles.offerInstallments}>
+                      + {priceLabel(added.cents)}/mês nas {added.months} primeiras mensalidades
+                    </span>
+                  )}
                 </div>
               </div>
               {offer?.loan && (
                 <p className={styles.offerNote}>
-                  {loanOnly(offer) ? 'Sem comprar o rastreador' : 'Prefere não comprar o rastreador? Em comodato'}:{' '}
+                  {loanOnly(offer) ? 'O rastreador emprestado' : 'Prefere o rastreador emprestado? Em comodato'}:{' '}
                   {loanTerms(offer.loan, offer.installDirect)}.
                 </p>
               )}

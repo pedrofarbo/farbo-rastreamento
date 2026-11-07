@@ -23,39 +23,39 @@ import (
 )
 
 // A contratação rápida pela landing (/api/public/checkout): a pessoa física
-// escolhe o plano e o rastreador, informa o veículo, os dados e o endereço,
+// escolhe o rastreador (incluso ou em comodato), informa o veículo, os dados e o endereço,
 // aceita o contrato e paga com Pix na hora — a conta, o endereço, o aceite e
 // o pedido saem de uma vez, e a página de pagamento do pedido abre em
 // seguida, já com a sessão do app.
 
 // checkoutView é o que o funil oferece.
 type checkoutView struct {
-	Enabled        bool   `json:"enabled"`
-	PlanName       string `json:"planName"`
-	PlanCents      int    `json:"planCents"`
-	EquipmentName  string `json:"equipmentName"`
-	EquipmentCents int    `json:"equipmentCents"`
-	// Os preços normais (do catálogo), que as páginas mostram riscados ao
-	// lado dos do site — e cobrados com a contratação pelo site fechada.
-	PlanRegularCents      int `json:"planRegularCents"`
-	EquipmentRegularCents int `json:"equipmentRegularCents"`
+	Enabled bool `json:"enabled"`
+	// PlanCents é a mensalidade do site, com o rastreador incluso.
+	PlanName      string `json:"planName"`
+	PlanCents     int    `json:"planCents"`
+	EquipmentName string `json:"equipmentName"`
+	// O preço normal do plano (do catálogo), que as páginas mostram riscado
+	// ao lado do do site — e cobrado com a contratação pelo site fechada.
+	PlanRegularCents int `json:"planRegularCents"`
 	// PlanByKind: pelo link de um afiliado com tabela (?ref=), a mensalidade
 	// por tipo de veículo, no lugar de PlanCents (nula: sem tabela).
 	PlanByKind *vehicles.KindPrices `json:"planByKind"`
-	// MaxInstallments: em até quantas vezes sem juros o rastreador comprado
-	// pode ser parcelado (1: só à vista).
-	MaxInstallments int `json:"maxInstallments"`
-	DueDay          int `json:"dueDay"`
-	// Loan: o comodato (nulo: só comprado); Install: a instalação pelos
-	// instaladores da Farbo no rastreador comprado (nula: só por conta própria).
+	// Tracker: o rastreador incluso — a parte dele nas primeiras
+	// mensalidades, somada à mensalidade pela tabela do afiliado (Added) ou já
+	// dentro do preço do site; encerrada antes, o que falta vence de uma vez.
+	Tracker orders.Tracker `json:"tracker"`
+	DueDay  int            `json:"dueDay"`
+	// Loan: o comodato (nulo: só o incluso); Install: a instalação pelos
+	// instaladores da Farbo no rastreador incluso (nula: só por conta própria).
 	Loan    *orders.LoanOffer      `json:"loan"`
 	Install *orders.InstallService `json:"install"`
 	// InstallDirect: pelo link de um representante, ele instala, desinstala e
 	// recebe direto do cliente — os preços de Install e Loan (as taxas) ficam
 	// fora do Pix.
 	InstallDirect bool `json:"installDirect"`
-	// EquipmentModes: o rastreador que o link oferece — vazio, comprado e
-	// comodato; sale, só comprado (Loan nulo); loan, só comodato.
+	// EquipmentModes: o rastreador que o link oferece — vazio, incluso e
+	// comodato; sale, só o incluso (Loan nulo); loan, só comodato.
 	EquipmentModes string `json:"equipmentModes"`
 	// HandDelivery: o representante do link entrega em mãos, com os kits
 	// dele, sem frete (vazio: a entrega de sempre).
@@ -74,9 +74,8 @@ func (s *Server) handleCheckoutOffer(w http.ResponseWriter, r *http.Request) {
 	c := s.Orders.Catalog()
 	view := checkoutView{
 		Enabled: opts.Checkout.Enabled, PlanName: c.PlanName, PlanCents: opts.Checkout.PlanCents,
-		EquipmentName: c.EquipmentName, EquipmentCents: opts.Checkout.EquipmentCents,
-		PlanRegularCents: c.PlanPriceCents, EquipmentRegularCents: c.EquipmentPriceCents,
-		MaxInstallments: c.EquipmentMaxInstallments, DueDay: c.DefaultDueDay,
+		EquipmentName: c.EquipmentName, PlanRegularCents: c.PlanPriceCents, DueDay: c.DefaultDueDay,
+		Tracker:         orders.Tracker{Cents: opts.Tracker.Cents, Months: opts.Tracker.Months},
 		ShippingEnabled: s.Fulfillment != nil && s.Fulfillment.ShippingEnabled(),
 	}
 	if opts.Loan.Enabled {
@@ -93,6 +92,8 @@ func (s *Server) handleCheckoutOffer(w http.ResponseWriter, r *http.Request) {
 			handleStoreError(w, err, "contratação indisponível")
 			return
 		}
+		// Pela tabela do afiliado, a parte do rastreador soma nas primeiras.
+		view.Tracker.Added = view.PlanByKind != nil
 		install, err := s.Orders.AffiliateInstall(r.Context(), *affiliate)
 		if err != nil {
 			handleStoreError(w, err, "contratação indisponível")
@@ -179,14 +180,16 @@ func (s *Server) linkHandDelivery(r *http.Request, code string) (string, error) 
 type checkoutRequest struct {
 	// Insanos: o plano do Insanos MC, das telas antigas. Agora só a central
 	// define esse plano (no cliente): marcado, a contratação é recusada.
-	Insanos       bool           `json:"insanos"`
-	EquipmentMode string         `json:"equipmentMode"`
-	Installments  int            `json:"installments"`
-	FarboInstall  bool           `json:"farboInstall"`
-	Vehicle       vehicles.Input `json:"vehicle"`
-	Name          string         `json:"name"`
-	Email         string         `json:"email"`
-	Phone         string         `json:"phone"`
+	Insanos       bool   `json:"insanos"`
+	EquipmentMode string `json:"equipmentMode"`
+	// Installments: o parcelamento do rastreador comprado, das telas antigas.
+	// O rastreador vem incluso: mais de uma vez, a contratação é recusada.
+	Installments int            `json:"installments"`
+	FarboInstall bool           `json:"farboInstall"`
+	Vehicle      vehicles.Input `json:"vehicle"`
+	Name         string         `json:"name"`
+	Email        string         `json:"email"`
+	Phone        string         `json:"phone"`
 	// Document: o CPF (a contratação pelo site é de pessoa física).
 	Document string            `json:"document"`
 	Password string            `json:"password"`
@@ -230,6 +233,9 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	case req.Insanos:
 		writeError(w, http.StatusBadRequest, "o plano do Insanos MC é feito só pela central: fale com a gente pelo WhatsApp")
 		return
+	case req.Installments > 1:
+		writeError(w, http.StatusBadRequest, "o rastreador vem incluso na mensalidade: não há o que parcelar. Atualize a página")
+		return
 	case !req.Accept:
 		writeError(w, http.StatusBadRequest, "leia e aceite o contrato para contratar")
 		return
@@ -254,7 +260,7 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	// O pedido e a entrega conferidos antes de criar a conta: um erro aqui
 	// não deixa conta pela metade.
 	order, err := s.Orders.CheckoutOrder(ctx, orders.CheckoutChoice{
-		EquipmentMode: req.EquipmentMode, Installments: req.Installments, FarboInstall: req.FarboInstall, Vehicle: req.Vehicle,
+		EquipmentMode: req.EquipmentMode, FarboInstall: req.FarboInstall, Vehicle: req.Vehicle,
 		Affiliate: s.referralFor(r, req.Ref),
 	})
 	if err != nil {

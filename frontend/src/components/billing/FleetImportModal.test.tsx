@@ -13,8 +13,8 @@ let refuse = true;
 vi.mock('@/api/resources', () => ({
   catalogApi: {
     get: async () => ({
-      planName: 'Plano Mensal', planPriceCents: 6990, defaultDueDay: 10, equipmentName: 'Rastreador J16',
-      equipmentPriceCents: 15000, setupDueDays: 3, equipmentMaxInstallments: 10, launchPromo: null,
+      planName: 'Plano Mensal', planPriceCents: 6990, defaultDueDay: 10, equipmentName: 'Rastreador J16', setupDueDays: 3,
+      tracker: { cents: 1200, months: 10, added: false }, sitePlanCents: 6990, launchPromo: null,
     }),
   },
   customersApi: {
@@ -28,8 +28,7 @@ vi.mock('@/api/resources', () => ({
         });
       }
       return {
-        vehicles: input.rows.length, installed: 1, newGroups: ['Norte'], equipmentCents: input.equipmentCents * input.rows.length,
-        setupInvoice: null, dryRun: Boolean(input.dryRun),
+        vehicles: input.rows.length, installed: 1, newGroups: ['Norte'], dryRun: Boolean(input.dryRun),
       } satisfies FleetImportResult;
     },
   },
@@ -112,13 +111,14 @@ describe('a frota por planilha', () => {
     expect(text()).toContain('Norte');
     await act(async () => button('Continuar').click());
     expect(text()).toContain('todo dia 15');
-    expect(text()).toContain('2 × R$');
+    expect(text()).toContain('Rastreador incluso, já no preço da mensalidade');
     await act(async () => button('Importar 2 veículos').click());
     await flush();
 
     const final = calls[calls.length - 1];
     expect(final.dryRun).toBe(false);
-    expect(final.equipmentCents).toBe(15000);
+    // O plano no preço do site: a parte do rastreador incluso já está dentro.
+    expect(final.tracker).toEqual({ cents: 1200, months: 10, added: false });
     expect(final.plan.dueDay).toBe(15);
     expect(final.rows).toEqual([
       { vehicle: { name: 'Van 01', plate: 'ABC1D23' }, group: 'Zona Sul', imei: '869247061900001' },

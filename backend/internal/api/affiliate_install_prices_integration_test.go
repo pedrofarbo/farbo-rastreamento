@@ -120,14 +120,14 @@ func TestAffiliateInstallPrices(t *testing.T) {
 	if loan.InstallInvoice != nil || loan.Subscription.UninstallFeeCents != 0 || !farboInstall(loan.Subscription.ID.String()) {
 		t.Errorf("comodato pelo representante = %+v (instalação %+v)", loan.Subscription, loan.InstallInvoice)
 	}
-	// A garantia de troca dele na mensalidade: R$ 34,90 + R$ 5,00.
-	if loan.Subscription.PriceCents != 3490+500 || loan.Subscription.PlanName != "Plano Mensal"+orders.GuaranteeName {
+	// A garantia de troca dele na mensalidade: R$ 69,90 + R$ 5,00.
+	if loan.Subscription.PriceCents != 6990+500 || loan.Subscription.PlanName != "Plano Mensal"+orders.GuaranteeName {
 		t.Errorf("mensalidade do comodato pelo representante = %+v", loan.Subscription)
 	}
-	// O rastreador comprado com a instalação dele: sem a fatura da instalação.
+	// O rastreador incluso com a instalação dele: sem a fatura da instalação.
 	sale := contractWith("rui-rep", "ana@rep.test", "390.533.447-05", map[string]any{"farboInstall": true})
 	if sale.InstallInvoice != nil || !farboInstall(sale.Subscription.ID.String()) {
-		t.Errorf("comprado pelo representante = %+v", sale.InstallInvoice)
+		t.Errorf("incluso pelo representante = %+v", sale.InstallInvoice)
 	}
 	// Com preços próprios, a Farbo cobra os dele.
 	custom := contractWith("loja", "bia@loja.test", "111.444.777-35", map[string]any{"equipmentMode": "loan"})
@@ -135,12 +135,12 @@ func TestAffiliateInstallPrices(t *testing.T) {
 		t.Errorf("comodato pela loja = %+v (instalação %+v)", custom.Subscription, custom.InstallInvoice)
 	}
 	// Sem garantia própria, a da Farbo.
-	if custom.Subscription.PriceCents != 3490+300 {
+	if custom.Subscription.PriceCents != 6990+300 {
 		t.Errorf("mensalidade do comodato pela loja = %d", custom.Subscription.PriceCents)
 	}
 
 	// No app, a cliente do representante segue com ele: o catálogo mostra
-	// os preços dele, e o rastreador comprado com a instalação sai sem ela.
+	// os preços dele, e o rastreador incluso com a instalação sai sem ela.
 	var catalog struct {
 		Install *struct {
 			PriceCents int `json:"priceCents"`
@@ -166,7 +166,7 @@ func TestAffiliateInstallPrices(t *testing.T) {
 	_ = json.Unmarshal(env.must(token, http.MethodPost, "/api/me/trackers", map[string]any{
 		"vehicle": map[string]any{"name": "Moto da Ana", "plate": "ANA2B22"}, "equipmentMode": "loan",
 	}, http.StatusCreated), &placed)
-	if placed.InstallInvoice != nil || placed.Subscription.UninstallFeeCents != 0 || placed.Subscription.PriceCents != 3490+500 {
+	if placed.InstallInvoice != nil || placed.Subscription.UninstallFeeCents != 0 || placed.Subscription.PriceCents != 6990+500 {
 		t.Errorf("comodato pelo app = %+v (instalação %+v)", placed.Subscription, placed.InstallInvoice)
 	}
 

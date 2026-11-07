@@ -20,8 +20,9 @@ import (
 // A frota por planilha, pela central: a conferência aponta cada linha com
 // problema (nome, placa repetida ou já cadastrada, rastreador em outro
 // veículo ou fora do cadastro) sem gravar nada; a planilha certa cria os
-// veículos, as assinaturas no mesmo vencimento, os grupos que faltam, o
-// envio dos que ainda não têm rastreador e uma fatura só do equipamento.
+// veículos, as assinaturas no mesmo vencimento (com o rastreador incluso:
+// a parte dele nas primeiras mensalidades, sem fatura de equipamento), os
+// grupos que faltam e o envio dos que ainda não têm rastreador.
 // Precisa de FARBO_TEST_DATABASE_URL.
 func TestFleetImport(t *testing.T) {
 	env, _ := newLeadsEnv(t)
@@ -49,7 +50,8 @@ func TestFleetImport(t *testing.T) {
 	path := "/api/customers/" + frota.ID.String() + "/trackers/import"
 	plan := map[string]any{"planName": "Plano Frota", "priceCents": 4990, "dueDay": 10}
 	body := func(rows []map[string]any, dryRun bool) map[string]any {
-		return map[string]any{"rows": rows, "equipmentCents": 29900, "plan": plan, "dryRun": dryRun}
+		return map[string]any{"rows": rows, "tracker": map[string]any{"cents": 1200, "months": 10, "added": true},
+			"plan": plan, "dryRun": dryRun}
 	}
 	row := func(name, plate, group, imei string) map[string]any {
 		return map[string]any{"vehicle": map[string]any{"name": name, "plate": plate}, "group": group, "imei": imei}
@@ -100,7 +102,7 @@ func TestFleetImport(t *testing.T) {
 	var preview orders.ImportResult
 	_ = json.Unmarshal(env.must(admin, http.MethodPost, path, body(good, true), http.StatusOK), &preview)
 	if !preview.DryRun || preview.Vehicles != 3 || preview.Installed != 1 || len(preview.NewGroups) != 1 ||
-		preview.NewGroups[0] != "Norte" || preview.EquipmentCents != 3*29900 || owned() != 0 {
+		preview.NewGroups[0] != "Norte" || owned() != 0 {
 		t.Fatalf("conferência = %+v", preview)
 	}
 
@@ -108,9 +110,17 @@ func TestFleetImport(t *testing.T) {
 	env.must(customer, http.MethodPost, path, body(good, false), http.StatusForbidden)
 	var done orders.ImportResult
 	_ = json.Unmarshal(env.must(admin, http.MethodPost, path, body(good, false), http.StatusCreated), &done)
-	if done.DryRun || done.Vehicles != 3 || done.SetupInvoice == nil || done.SetupInvoice.AmountCents != 3*29900 ||
-		!strings.Contains(done.SetupInvoice.Description, "× 3") {
+	if done.DryRun || done.Vehicles != 3 {
 		t.Fatalf("importação = %+v", done)
+	}
+	// O rastreador incluso: + R$ 12 nas 10 primeiras de cada veículo.
+	var included, firstCents int
+	_ = env.db.QueryRow(ctx, `SELECT count(*) FROM subscriptions WHERE customer_id = $1 AND tracker_cents = 1200
+		AND tracker_months = 10 AND tracker_added AND tracker_until > next_due_date`, frota.ID).Scan(&included)
+	_ = env.db.QueryRow(ctx, `SELECT min(amount_cents) FROM invoices WHERE customer_id = $1 AND subscription_id IS NOT NULL`,
+		frota.ID).Scan(&firstCents)
+	if included != 3 || firstCents != 4990+1200 {
+		t.Errorf("rastreador incluso = %d assinaturas, 1ª mensalidade %d", included, firstCents)
 	}
 
 	type created struct {
@@ -142,12 +152,12 @@ func TestFleetImport(t *testing.T) {
 		got[2].group != "Norte" || got[2].dueDay != got[0].dueDay {
 		t.Errorf("veículos = %+v", got)
 	}
-	// Na fatura do mês da conta: o equipamento numa linha e o proporcional
-	// dos dias até o vencimento noutra.
+	// Na fatura do mês da conta: só o proporcional dos dias até o vencimento
+	// (sem linha de equipamento: o rastreador não é vendido).
 	var setupInvoices, audits int
 	_ = env.db.QueryRow(ctx, `SELECT count(*) FROM invoices WHERE customer_id = $1 AND subscription_id IS NULL`, frota.ID).Scan(&setupInvoices)
 	_ = env.db.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE action = 'FLEET_IMPORTED'`).Scan(&audits)
-	if setupInvoices != 2 || audits != 1 || done.ProrataInvoice == nil || done.ProrataInvoice.DueDate != done.SetupInvoice.DueDate ||
+	if setupInvoices != 1 || audits != 1 || done.ProrataInvoice == nil || done.ProrataInvoice.DueDate != done.ChargeDate ||
 		!strings.Contains(done.ProrataInvoice.Description, "× 3") {
 		t.Errorf("linhas avulsas = %d, auditoria = %d, proporcional = %+v", setupInvoices, audits, done.ProrataInvoice)
 	}

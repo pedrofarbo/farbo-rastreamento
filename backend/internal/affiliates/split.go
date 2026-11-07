@@ -109,8 +109,9 @@ func (s *Service) PlanSplit(ctx context.Context, chargeID, customerID uuid.UUID,
 
 // splitItems são as comissões das faturas da cobrança (as de veículo, a
 // partir do mês da indicação), pela regra do afiliado: uma por veículo e
-// mês; no percentual, sobre a mensalidade sem a parcela do rastreador e
-// líquida dos impostos (taxBps). As que já existem (o mês já rendeu) ficam
+// mês; no percentual, sobre a mensalidade sem a parcela do rastreador
+// comprado nem a parte do incluso somada ao plano, e líquida dos impostos
+// (taxBps). As que já existem (o mês já rendeu) ficam
 // de fora.
 func (s *Service) splitItems(ctx context.Context, affiliateID uuid.UUID, invoices []*billing.Invoice, kind string,
 	fixedCents, bps, taxBps int, since time.Time) ([]payments.SplitItem, error) {
@@ -122,9 +123,14 @@ func (s *Service) splitItems(ctx context.Context, affiliateID uuid.UUID, invoice
 	for _, inv := range invoices {
 		ids = append(ids, inv.ID)
 	}
+	// A parcela do rastreador comprado e a parte do incluso somada ao plano
+	// (nas primeiras mensalidades) ficam fora do percentual.
 	installments := map[uuid.UUID]int{}
 	rows, err := s.db.Query(ctx, `
-		SELECT invoice_id, sum(amount_cents)::int FROM equipment_installments WHERE invoice_id = ANY($1) GROUP BY 1`, ids)
+		SELECT i.id, (COALESCE((SELECT sum(e.amount_cents) FROM equipment_installments e WHERE e.invoice_id = i.id), 0)
+			+ COALESCE((SELECT s.tracker_cents FROM subscriptions s WHERE s.id = i.subscription_id AND s.tracker_added
+				AND i.due_date < s.tracker_until), 0))::int
+		FROM invoices i WHERE i.id = ANY($1)`, ids)
 	if err != nil {
 		return nil, database.MapError(err)
 	}

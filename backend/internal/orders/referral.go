@@ -57,7 +57,7 @@ const (
 	InstallDirect = "direct"
 )
 
-// InstallPrices é a instalação (a do rastreador comprado e a do comodato) e
+// InstallPrices é a instalação (a do rastreador incluso e a do comodato) e
 // a desinstalação do comodato pelo link de um afiliado, com a garantia de
 // troca do comodato dele (nil: a da Farbo).
 type InstallPrices struct {
@@ -129,7 +129,7 @@ func (s *Service) installPrices(ctx context.Context, query string, id uuid.UUID)
 }
 
 // WithInstall aplica a instalação do afiliado às opções do pedido mostradas
-// (a do rastreador comprado, as taxas e a garantia de troca do comodato): o
+// (a do rastreador incluso, as taxas e a garantia de troca do comodato): o
 // preço dele, também com a instalação da Farbo desligada.
 func (p *InstallPrices) WithInstall(install *InstallService, loan *LoanOffer) {
 	if p == nil {
@@ -141,7 +141,7 @@ func (p *InstallPrices) WithInstall(install *InstallService, loan *LoanOffer) {
 }
 
 // applyInstall põe no pedido o que a Farbo cobra da instalação do afiliado:
-// a do rastreador comprado (com a instalação contratada) e as taxas do
+// a do rastreador incluso (com a instalação contratada) e as taxas do
 // comodato.
 func (p *InstallPrices) applyInstall(o *Order) {
 	if p == nil {
@@ -157,9 +157,9 @@ func (p *InstallPrices) applyInstall(o *Order) {
 	}
 }
 
-// O rastreador pelo link do afiliado (vazio: comprado e comodato).
+// O rastreador pelo link do afiliado (vazio: incluso e comodato).
 const (
-	// EquipmentSaleOnly: só o rastreador comprado.
+	// EquipmentSaleOnly: só o rastreador incluso (fica com o cliente).
 	EquipmentSaleOnly = "sale"
 	// EquipmentLoanOnly: só o comodato.
 	EquipmentLoanOnly = "loan"
@@ -192,7 +192,7 @@ func (s *Service) equipmentModes(ctx context.Context, query string, id uuid.UUID
 }
 
 // linkEquipment é o rastreador do pedido pelo que o afiliado oferece: sem
-// escolha, o único que ele oferece (ou o comprado); fora do que ele oferece,
+// escolha, o único que ele oferece (ou o incluso); fora do que ele oferece,
 // recusado.
 func linkEquipment(modes, mode string) (string, error) {
 	switch {
@@ -203,13 +203,13 @@ func linkEquipment(modes, mode string) (string, error) {
 	case modes == EquipmentLoanOnly && mode == billing.EquipmentSale:
 		return "", ValidationError{"por este link, o rastreador é só em comodato"}
 	case modes == EquipmentSaleOnly && mode == billing.EquipmentLoan:
-		return "", ValidationError{"por este link, o rastreador é só comprado"}
+		return "", ValidationError{"por este link, o rastreador é só o incluso, que fica com você"}
 	}
 	return mode, nil
 }
 
 // WithEquipment aplica o rastreador do afiliado ao comodato mostrado: só
-// comprado, sem o comodato (nil); só comodato, o comodato ligado (também com
+// incluso, sem o comodato (nil); só comodato, o comodato ligado (também com
 // o da Farbo desligado).
 func WithEquipment(modes string, loan *LoanOffer) *LoanOffer {
 	switch modes {

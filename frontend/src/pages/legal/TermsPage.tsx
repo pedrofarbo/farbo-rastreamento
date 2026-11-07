@@ -90,8 +90,8 @@ const SECTIONS: LegalSection[] = [
         <li>A conta é pessoal e só pode ser criada por maiores de 18 anos.</li>
         <li>O Cliente deve informar dados verdadeiros e mantê-los atualizados, inclusive o endereço de entrega.</li>
         <li>
-          O CPF (ou o CNPJ, para empresa) é obrigatório: é com ele que emitimos as notas fiscais, a NF-e do
-          rastreador e a NFS-e das mensalidades. Ele é pedido no primeiro acesso, junto com o aceite do
+          O CPF (ou o CNPJ, para empresa) é obrigatório: é com ele que emitimos a nota fiscal de serviço (NFS-e) das
+          mensalidades. Ele é pedido no primeiro acesso, junto com o aceite do
           contrato.
         </li>
         <li>
@@ -108,8 +108,8 @@ const SECTIONS: LegalSection[] = [
       <>
         <p>
           A contratação é feita pela plataforma, em <strong>Novo veículo</strong>: o Cliente informa o veículo
-          e, no mesmo pedido, compra o rastreador (pagamento único) e inicia a assinatura. Cada assinatura cobre
-          um veículo. Os preços são os da tabela vigente, mostrados no site e no próprio pedido antes da
+          e, no mesmo pedido, recebe o rastreador e inicia a assinatura. A Farbo não vende o rastreador: ele vai
+          incluso no serviço e fica com o Cliente, ou é emprestado em comodato. Cada assinatura cobre um veículo. Os preços são os da tabela vigente, mostrados no site e no próprio pedido antes da
           confirmação.
         </p>
         {/* Sem valores aqui: os preços são os mostrados no site e no pedido,
@@ -117,14 +117,15 @@ const SECTIONS: LegalSection[] = [
         <h3>Contratação pelo site</h3>
         <p>
           A pessoa física também pode contratar pelo site, em <Link to={CHECKOUT_PATH}>Contratar</Link>: escolhe o
-          plano e o rastreador, informa o veículo, os dados e o endereço, aceita o contrato e paga com Pix, na hora, a
-          1ª mensalidade, o frete e o rastreador (ou a instalação, no comodato). A conta na plataforma é criada no
+          rastreador (incluso ou em comodato), informa o veículo, os dados e o endereço, aceita o contrato e paga com
+          Pix, na hora, a 1ª mensalidade, o frete e a instalação, quando houver. A conta na plataforma é criada no
           mesmo pedido.
         </p>
         <p>
           Valem os preços mostrados na página de contratação e no resumo do pedido, antes do pagamento. O preço da
           mensalidade contratada pelo site vale enquanto a assinatura durar, com o reajuste anual descrito abaixo. O
-          rastreador comprado pode ser pago à vista ou parcelado sem juros nas mensalidades, e a instalação pelos
+          rastreador incluso não é cobrado à parte: a parte dele está nas primeiras mensalidades — no plano do site,
+          dentro do preço; em alguns planos, somada a ele nesse período, como o pedido mostra. A instalação pelos
           instaladores da Farbo é opcional. Os integrantes do Insanos MC têm a mensalidade do plano deles.
         </p>
         <p>
@@ -149,10 +150,9 @@ const SECTIONS: LegalSection[] = [
           antecedência. Nenhuma delas altera as condições promocionais já contratadas durante o seu prazo.
         </p>
         <p>
-          A <strong>1ª mensalidade vence no dia da contratação</strong> e é paga junto com o pedido; as seguintes vencem
-          todo mês no dia de vencimento da conta, a 2ª pelo menos um mês depois da 1ª. O rastreador pode ser pago à
-          vista ou <strong>parcelado sem juros, por Pix</strong>: no pedido, paga-se o frete e a 1ª mensalidade, e as
-          parcelas vêm somadas às mensalidades, uma por mês, a 1ª junto com a 1ª mensalidade.
+          A <strong>1ª mensalidade vence no dia da contratação</strong> e é paga junto com o pedido, com o frete; as
+          seguintes vencem todo mês no dia de vencimento da conta, a 2ª pelo menos um mês depois da 1ª. As notas
+          fiscais são de serviço (NFS-e), pelo valor de cada fatura do serviço.
         </p>
         <p>
           Cada assinatura tem <strong>permanência mínima de 3 meses</strong>. Para cada rastreador, mantemos um
@@ -210,7 +210,7 @@ const SECTIONS: LegalSection[] = [
     title: 'Direito de arrependimento',
     body: (
       <p>
-        Como a compra é feita pela internet, o Cliente pode desistir em até 7 dias a contar do recebimento do
+        Como a contratação é feita pela internet, o Cliente pode desistir em até 7 dias a contar do recebimento do
         rastreador, como garante o artigo 49 do Código de Defesa do Consumidor. Basta nos avisar pelos canais
         de contato. Devolvemos os valores pagos e combinamos a devolução do equipamento.
       </p>
@@ -341,12 +341,16 @@ const SECTIONS: LegalSection[] = [
             até 7 dias e a falha nossa na prestação do serviço). Depois dos 3 meses, não há multa.
           </li>
           <li>
-            Com o rastreador parcelado, a assinatura fica ativa até a mensalidade com a última parcela. Cancelando antes,
-            as parcelas restantes vencem de uma vez, numa fatura só: não é multa, é o preço do rastreador, que já é do
-            Cliente. Na desistência em até 7 dias, com o rastreador devolvido, elas não são cobradas.
+            Com o rastreador incluso, cancelando antes da última das mensalidades com a parte dele, a parte que falta
+            vence de uma vez, numa fatura só: não é multa, é o custo do rastreador, que já é do Cliente. Na desistência
+            em até 7 dias, com o rastreador devolvido, ela não é cobrada. Quem parcelou um rastreador comprado antes
+            segue com as parcelas até a última; cancelando antes, as restantes vencem de uma vez.
           </li>
           <li>Faturas já vencidas continuam devidas.</li>
-          <li>O rastreador comprado é do Cliente, mesmo depois do cancelamento. A linha do chip M2M é desativada.</li>
+          <li>
+            O rastreador incluso (e o comprado antes) é do Cliente, mesmo depois do cancelamento. A linha do chip M2M é
+            desativada.
+          </li>
           <li>
             Depois do cancelamento, os dados seguem o que diz a{' '}
             <Link to={PRIVACY_PATH}>Política de Privacidade</Link>.

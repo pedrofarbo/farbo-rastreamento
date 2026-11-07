@@ -401,10 +401,10 @@ func TestLaunchPromoEndToEnd(t *testing.T) {
 
 	orderPlan := func(customer, plate string, plan map[string]any, promo bool, want int) []byte {
 		return env.must(admin, http.MethodPost, "/api/customers/"+ids[customer]+"/trackers", map[string]any{
-			"vehicle":        map[string]any{"name": "Moto " + plate, "plate": plate},
-			"equipmentCents": 15000,
-			"plan":           plan,
-			"launchPromo":    promo,
+			"vehicle":     map[string]any{"name": "Moto " + plate, "plate": plate},
+			"tracker":     map[string]any{"cents": 0, "months": 0},
+			"plan":        plan,
+			"launchPromo": promo,
 		}, want)
 	}
 	monthlyPlan := map[string]any{"planName": "Plano Mensal", "priceCents": 6990, "dueDay": 10}
@@ -442,7 +442,8 @@ func TestLaunchPromoEndToEnd(t *testing.T) {
 	}
 	_ = json.Unmarshal(order("ana@lista.test", "PRO1A11", true, http.StatusCreated), &result)
 	sub := result.Subscription
-	if result.SetupInvoice == nil || result.SetupInvoice.AmountCents != 12000 {
+	// O rastreador não é vendido: nada de fatura de equipamento.
+	if result.SetupInvoice != nil {
 		t.Fatalf("fatura do equipamento = %+v", result.SetupInvoice)
 	}
 	first, _ := time.Parse(time.DateOnly, sub.NextDueDate)
@@ -484,13 +485,12 @@ func TestLaunchPromoEndToEnd(t *testing.T) {
 
 	// Segundo veículo da Ana: a promoção vale para todos os veículos dela.
 	_ = json.Unmarshal(order("ana@lista.test", "PRO2B22", true, http.StatusCreated), &result)
-	if result.SetupInvoice == nil || result.SetupInvoice.AmountCents != 12000 || result.Subscription.PromoPriceCents == nil ||
-		*result.Subscription.PromoPriceCents != 3490 {
+	if result.SetupInvoice != nil || result.Subscription.PromoPriceCents == nil || *result.Subscription.PromoPriceCents != 3490 {
 		t.Errorf("segundo veículo com a promoção = %+v", result)
 	}
 	// Sem pedir a promoção, o preço normal.
 	_ = json.Unmarshal(order("ana@lista.test", "PRO3C33", false, http.StatusCreated), &result)
-	if result.SetupInvoice.AmountCents != 15000 || result.Subscription.PromoPriceCents != nil {
+	if result.SetupInvoice != nil || result.Subscription.PromoPriceCents != nil {
 		t.Errorf("veículo sem a promoção = %+v", result)
 	}
 
@@ -498,7 +498,7 @@ func TestLaunchPromoEndToEnd(t *testing.T) {
 	// depois dos 12 meses vale o preço especial deles.
 	_ = json.Unmarshal(orderPlan("bia@lista.test", "INS1B11", insanosPlan, true, http.StatusCreated), &result)
 	if s := result.Subscription; s.PriceCents != 3990 || s.PromoPriceCents == nil || *s.PromoPriceCents != 2790 ||
-		result.SetupInvoice == nil || result.SetupInvoice.AmountCents != 12000 {
+		result.SetupInvoice != nil {
 		t.Fatalf("Insanos com promoção = %+v / %+v", s, result.SetupInvoice)
 	}
 

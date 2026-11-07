@@ -31,26 +31,29 @@ describe('flyer do afiliado', () => {
     expect(site.tag).toBe('PREÇO PROMOCIONAL');
     expect(site.monthlyCents).toBe(3490);
     expect(site.note.map((s) => s.text).join('')).toBe('enquanto a assinatura durar · o normal é R$ 69,90');
-    expect(site.equipment.map((s) => s.text).join('')).toBe('Rastreador R$ 150 R$ 120 ou 10x de R$ 12,00 sem juros no Pix');
+    // O rastreador vem incluso: nada de preço nem de parcelas.
+    expect(site.equipment.map((s) => s.text).join('')).toBe('Rastreador incluso, só o frete à parte');
     expect(site.fine).not.toMatch(/primeiros|meses/);
     // Outros valores na central: o flyer acompanha.
-    const other = flyerOffer(offerWith({ planCents: 2990, equipmentCents: 15000, maxInstallments: 1 }));
+    const other = flyerOffer(offerWith({ planCents: 2990 }));
     expect(other.monthlyCents).toBe(2990);
-    expect(other.equipment.map((s) => s.text).join('')).toBe('Rastreador R$ 150');
     // Pelo link de um afiliado com tabela: a partir da menor, com as três.
     const table = flyerOffer(offerWith({ planByKind: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 } }));
     expect(table.tag).toBe('A PARTIR DE');
     expect(table.monthlyCents).toBe(3990);
     expect(table.note.map((s) => s.text).join('').replace(/\u00a0/g, ' ')).toBe('Moto R$ 39,90 · Carro R$ 49,90 · Caminhão R$ 59,90');
-    // Pelo link só de comodato: o rastreador não é vendido.
-    expect(flyerOffer(offerWith({ equipmentModes: 'loan' })).equipment.map((s) => s.text).join('')).toBe(
-      'Rastreador em comodato, sem comprar',
+    // Pela tabela, a parte do rastreador incluso soma nas primeiras.
+    const added = flyerOffer(
+      offerWith({ planByKind: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 }, tracker: { cents: 1200, months: 10, added: true } }),
     );
+    expect(added.equipment.map((s) => s.text).join('')).toBe('Rastreador incluso (+ R$ 12/mês nas 10 primeiras)');
+    // Pelo link só de comodato: o rastreador emprestado.
+    expect(flyerOffer(offerWith({ equipmentModes: 'loan' })).equipment.map((s) => s.text).join('')).toBe('Rastreador em comodato');
     // No preço normal (R$ 69,90 no site): sem "promocional".
     expect(flyerOffer(offerWith({ planCents: 6990 })).tag).toBe('PLANO MENSAL');
     const closed = flyerOffer(offerWith({ enabled: false }));
     expect(closed.monthlyCents).toBe(6990);
-    expect(closed.equipment.map((s) => s.text).join('')).toBe('Rastreador R$ 150 ou 10x de R$ 15,00 sem juros no Pix');
+    expect(closed.equipment.map((s) => s.text).join('')).toBe('Rastreador incluso, só o frete à parte');
   });
 
   it('o nome do arquivo', () => {

@@ -29,18 +29,20 @@ type catalogView struct {
 	PlanPriceCents int    `json:"planPriceCents"`
 	// PlanByKind: a mensalidade por tipo de veículo, da tabela do afiliado
 	// que indicou o cliente (nula: PlanPriceCents vale para todos).
-	PlanByKind          *vehicles.KindPrices `json:"planByKind,omitempty"`
-	DefaultDueDay       int                  `json:"defaultDueDay"`
-	EquipmentName       string               `json:"equipmentName"`
-	EquipmentPriceCents int                  `json:"equipmentPriceCents"`
-	SetupDueDays        int                  `json:"setupDueDays"`
-	// EquipmentMaxInstallments: em até quantas vezes sem juros o rastreador
-	// pode ser parcelado (1: só à vista).
-	EquipmentMaxInstallments int `json:"equipmentMaxInstallments"`
+	PlanByKind    *vehicles.KindPrices `json:"planByKind,omitempty"`
+	DefaultDueDay int                  `json:"defaultDueDay"`
+	EquipmentName string               `json:"equipmentName"`
+	SetupDueDays  int                  `json:"setupDueDays"`
+	// Tracker: o rastreador incluso do plano mostrado — a parte dele nas
+	// primeiras mensalidades, somada (Added) ou já dentro do preço. Para a
+	// central, a regra dos pedidos novos, e SitePlanCents: abaixo dele, a
+	// parte é somada.
+	Tracker       orders.Tracker `json:"tracker"`
+	SitePlanCents int            `json:"sitePlanCents"`
 	// LaunchPromo: o cliente pode contratar com a promoção de
 	// pré-lançamento (nulo: não pode, ou não é cliente).
 	LaunchPromo *orders.PromoOffer `json:"launchPromo"`
-	// Para o cliente: o rastreador dele (venda ou comodato) e as taxas, e o
+	// Para o cliente: o rastreador dele (incluso ou comodato) e as taxas, e o
 	// vencimento da cobrança de um veículo contratado hoje.
 	EquipmentMode     string        `json:"equipmentMode,omitempty"`
 	InstallFeeCents   int           `json:"installFeeCents,omitempty"`
@@ -48,32 +50,32 @@ type catalogView struct {
 	ChargeDate        *billing.Date `json:"chargeDate,omitempty"`
 	// PlanTerms: o rastreador vem do plano definido pela central (sem
 	// escolha); sem ele, Loan é o comodato que o cliente pode escolher (nulo:
-	// só comprado).
+	// só o incluso).
 	PlanTerms bool              `json:"planTerms,omitempty"`
 	Loan      *orders.LoanOffer `json:"loan,omitempty"`
 	// Install: a instalação pelos instaladores da Farbo no rastreador
-	// comprado (o preço; desligada, o cliente instala por conta própria).
+	// incluso (o preço; desligada, o cliente instala por conta própria).
 	Install *orders.InstallService `json:"install,omitempty"`
 	// InstallDirect: o cliente veio pelo link de um representante, que
 	// instala, desinstala e recebe direto dele (os preços ficam fora das
 	// faturas).
 	InstallDirect bool `json:"installDirect,omitempty"`
 	// EquipmentModes: o rastreador que o afiliado que indicou o cliente
-	// oferece — vazio, os dois; sale, só comprado; loan, só comodato.
+	// oferece — vazio, os dois; sale, só o incluso; loan, só comodato.
 	EquipmentModes string `json:"equipmentModes,omitempty"`
-	// PayNow: a pessoa física paga no ato (a 1ª mensalidade, o frete e o
-	// rastreador ou a instalação); a empresa, na próxima fatura do mês.
+	// PayNow: a pessoa física paga no ato (a 1ª mensalidade, o frete e a
+	// instalação); a empresa, na próxima fatura do mês.
 	PayNow bool `json:"payNow,omitempty"`
 }
 
 // handleCatalog devolve os preços de um rastreador novo. Para o cliente, o
-// plano e o rastreador mostrados são os que ele pagaria (CustomerPrices).
+// plano e o rastreador incluso mostrados são os que ele pagaria
+// (CustomerPrices).
 func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	c := s.Orders.Catalog()
 	view := catalogView{
 		PlanName: c.PlanName, PlanPriceCents: c.PlanPriceCents, DefaultDueDay: c.DefaultDueDay,
-		EquipmentName: c.EquipmentName, EquipmentPriceCents: c.EquipmentPriceCents, SetupDueDays: c.SetupDueDays,
-		EquipmentMaxInstallments: c.EquipmentMaxInstallments,
+		EquipmentName: c.EquipmentName, SetupDueDays: c.SetupDueDays,
 	}
 	opts, err := s.Orders.Options(r.Context())
 	if err != nil {
@@ -81,11 +83,13 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view.Install = &opts.Install
+	view.SitePlanCents = s.Orders.SitePlanCents(opts)
+	view.Tracker = s.Orders.TrackerFor(opts, billing.SubscriptionInput{PriceCents: c.PlanPriceCents}, false)
 	if customerID, isCustomer := customerOf(r); isCustomer {
 		// Os preços dele: a pessoa física paga no app o mesmo que no site.
-		if plan, equipment, err := s.Orders.CustomerPrices(r.Context(), customerID, vehicles.KindCar); err == nil {
+		if plan, tracker, err := s.Orders.CustomerPrices(r.Context(), customerID, vehicles.KindCar); err == nil {
 			view.PlanName, view.PlanPriceCents, view.DefaultDueDay = plan.PlanName, plan.PriceCents, plan.DueDay
-			view.EquipmentPriceCents = equipment
+			view.Tracker = tracker
 		}
 		if table, err := s.Orders.CustomerKindPrices(r.Context(), customerID); err == nil {
 			view.PlanByKind = table
@@ -154,19 +158,19 @@ func writeOrderError(w http.ResponseWriter, r *http.Request, err error, notFound
 }
 
 // adminTrackerOrderRequest é o fluxo Novo veículo pela central: 1. veículo
-// (pode já vir com o aparelho, se instalado na hora), 2. rastreador (valor do
-// equipamento e vencimento; a entrega vai para o endereço do cliente) e
-// 3. assinatura.
+// (pode já vir com o aparelho, se instalado na hora), 2. rastreador (incluso,
+// com a parte dele nas primeiras mensalidades, ou em comodato; a entrega vai
+// para o endereço do cliente) e 3. assinatura.
 type adminTrackerOrderRequest struct {
 	Vehicle vehicles.Input `json:"vehicle"`
-	// Valor do equipamento; zero não cobra. A instalação, fora do comodato, é
-	// paga direto ao prestador e não entra aqui.
-	EquipmentCents int `json:"equipmentCents"`
+	// Tracker: o rastreador incluso (fora do comodato); nulo, a regra dos
+	// pedidos novos para o plano (TrackerFor). Zero: o aparelho do cliente.
+	Tracker *orders.Tracker `json:"tracker"`
 	// SetupDueDate não vale mais: tudo entra na próxima fatura do mês da
 	// conta (aceito para as telas antigas).
 	SetupDueDate *billing.Date             `json:"setupDueDate"`
 	Plan         billing.SubscriptionInput `json:"plan"`
-	// Terms: venda ou comodato e as taxas; vazio, os do plano do cliente.
+	// Terms: incluso ou comodato e as taxas; vazio, os do plano do cliente.
 	Terms *orders.Terms `json:"terms"`
 	// LaunchPromo aplica a promoção de pré-lançamento (o cliente precisa ter
 	// direito; ver /customers/{id}/launch-promo).
@@ -174,9 +178,7 @@ type adminTrackerOrderRequest struct {
 	// ShippingServiceID: o frete cobrado do cliente (zero: sem frete —
 	// entregue em mãos, instalado na base).
 	ShippingServiceID int `json:"shippingServiceId"`
-	// Installments: o equipamento parcelado sem juros (0 ou 1: à vista).
-	Installments int `json:"installments"`
-	// FarboInstall: o rastreador comprado instalado pelos instaladores da
+	// FarboInstall: o rastreador incluso instalado pelos instaladores da
 	// Farbo, pelo preço das opções do pedido (no comodato, já é da Farbo).
 	FarboInstall bool `json:"farboInstall"`
 }
@@ -219,8 +221,17 @@ func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request)
 		terms = &t
 	}
 	order := orders.Order{
-		Vehicle: req.Vehicle, EquipmentCents: req.EquipmentCents, Terms: *terms, Plan: req.Plan,
-		LaunchPromo: req.LaunchPromo, Shipping: shipping, Installments: req.Installments,
+		Vehicle: req.Vehicle, Terms: *terms, Plan: req.Plan, LaunchPromo: req.LaunchPromo, Shipping: shipping,
+	}
+	if req.Tracker != nil {
+		order.Tracker = *req.Tracker
+	} else {
+		opts, err := s.Orders.Options(r.Context())
+		if err != nil {
+			handleStoreError(w, err, "opções do pedido não encontradas")
+			return
+		}
+		order.Tracker = s.Orders.TrackerFor(opts, req.Plan, false)
 	}
 	if req.FarboInstall {
 		if err := s.Orders.WithFarboInstall(r.Context(), &order); err != nil {
@@ -238,11 +249,12 @@ func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request)
 }
 
 // adminFleetImportRequest é a frota de uma vez pela central: as linhas da
-// planilha e, para todas, o valor do equipamento (numa fatura só) e o plano.
-// DryRun só confere.
+// planilha e, para todas, o rastreador incluso e o plano. DryRun só confere.
 type adminFleetImportRequest struct {
-	Rows           []orders.ImportRow `json:"rows"`
-	EquipmentCents int                `json:"equipmentCents"`
+	Rows []orders.ImportRow `json:"rows"`
+	// Tracker: o rastreador incluso de cada veículo; nulo, a regra dos
+	// pedidos novos para o plano. Zero: os aparelhos são do cliente.
+	Tracker *orders.Tracker `json:"tracker"`
 	// SetupDueDate não vale mais: tudo entra na próxima fatura do mês da
 	// conta (aceito para as telas antigas).
 	SetupDueDate *billing.Date             `json:"setupDueDate"`
@@ -268,9 +280,18 @@ func (s *Server) handleAdminImportFleet(w http.ResponseWriter, r *http.Request) 
 		handleStoreError(w, err, "cliente não encontrado")
 		return
 	}
-	result, err := s.Orders.ImportFleet(r.Context(), customerID, orders.Import{
-		Rows: req.Rows, EquipmentCents: req.EquipmentCents, Terms: terms, Plan: req.Plan, DryRun: req.DryRun,
-	})
+	in := orders.Import{Rows: req.Rows, Terms: terms, Plan: req.Plan, DryRun: req.DryRun}
+	if req.Tracker != nil {
+		in.Tracker = *req.Tracker
+	} else {
+		opts, err := s.Orders.Options(r.Context())
+		if err != nil {
+			handleStoreError(w, err, "opções do pedido não encontradas")
+			return
+		}
+		in.Tracker = s.Orders.TrackerFor(opts, req.Plan, false)
+	}
+	result, err := s.Orders.ImportFleet(r.Context(), customerID, in)
 	var problems orders.ImportProblems
 	if errors.As(err, &problems) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
@@ -291,15 +312,13 @@ func (s *Server) handleAdminImportFleet(w http.ResponseWriter, r *http.Request) 
 		"customerId": customerID.String(), "vehicles": result.Vehicles, "installed": result.Installed,
 		"newGroups": result.NewGroups, "plan": req.Plan.PlanName, "priceCents": req.Plan.PriceCents,
 	}
-	if result.SetupInvoice != nil {
-		meta["setupInvoiceId"], meta["setupCents"] = result.SetupInvoice.ID, result.SetupInvoice.AmountCents
-	}
+	meta["trackerCents"], meta["trackerMonths"], meta["trackerAdded"] = in.Tracker.Cents, in.Tracker.Months, in.Tracker.Added
 	s.recordAudit(r, audit.ActionFleetImported, nil, nil, meta)
 	writeJSON(w, http.StatusCreated, result)
 }
 
 // customerTrackerOrderRequest é o fluxo Novo veículo pelo cliente: ele informa
-// só o veículo; equipamento e plano vêm do catálogo e da conta dele.
+// só o veículo; o plano e o rastreador incluso vêm do catálogo e da conta dele.
 type customerTrackerOrderRequest struct {
 	Vehicle vehicles.Input `json:"vehicle"`
 	// LaunchPromo: o painel mostrou os preços da promoção (catálogo) e o
@@ -311,14 +330,14 @@ type customerTrackerOrderRequest struct {
 	// ArrangeDelivery: em vez da transportadora, combinar a entrega com a
 	// central (só nas cidades de SHIPPING_ARRANGE_CITIES).
 	ArrangeDelivery bool `json:"arrangeDelivery"`
-	// Installments: o rastreador parcelado sem juros (0 ou 1: à vista); o
-	// cliente aceita ficar com a assinatura ativa até a última parcela.
+	// Installments: o parcelamento do rastreador comprado, das telas antigas.
+	// O rastreador vem incluso: mais de uma vez, o pedido é recusado.
 	Installments int `json:"installments"`
-	// EquipmentMode: o rastreador comprado (sale, o padrão) ou em comodato
+	// EquipmentMode: o rastreador incluso (sale, o padrão) ou em comodato
 	// (loan, quando a central oferece); com o plano definido pela central,
 	// vale o dele.
 	EquipmentMode string `json:"equipmentMode"`
-	// FarboInstall: o rastreador comprado instalado pelos instaladores da
+	// FarboInstall: o rastreador incluso instalado pelos instaladores da
 	// Farbo (a taxa vem junto com a 1ª mensalidade); sem isso, o cliente
 	// instala por conta própria. No comodato, a instalação é sempre da Farbo.
 	FarboInstall bool `json:"farboInstall"`
@@ -353,14 +372,17 @@ func (s *Server) handleMyOrderTracker(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.Installments > 1 {
+		writeError(w, http.StatusBadRequest, "o rastreador vem incluso na mensalidade: não há o que parcelar. Atualize a página")
+		return
+	}
 	order, err := s.Orders.CustomerOrder(r.Context(), customerID, req.Vehicle, req.LaunchPromo, req.EquipmentMode, req.FarboInstall)
 	if err != nil {
 		writeOrderError(w, r, err, "cliente não encontrado")
 		return
 	}
-	order.Installments = req.Installments
 	// O frete: com o Melhor Envios ligado e o endereço salvo, o cliente
-	// escolhe a entrega e paga junto com o equipamento — ou, perto da base,
+	// escolhe a entrega e paga junto com a 1ª mensalidade — ou, perto da base,
 	// combina a entrega com a central, sem frete. O cliente do representante
 	// que entrega em mãos não paga frete.
 	handBy, err := s.Orders.CustomerHandDelivery(r.Context(), customerID)
@@ -530,6 +552,9 @@ func (s *Server) orderPlaced(r *http.Request, customerID string, result *orders.
 	}
 	if result.Subscription.PromoPriceCents != nil {
 		meta["launchPromo"] = true
+	}
+	if sub := result.Subscription; sub.TrackerCents > 0 {
+		meta["trackerCents"], meta["trackerMonths"], meta["trackerAdded"] = sub.TrackerCents, sub.TrackerMonths, sub.TrackerAdded
 	}
 	if n := result.Subscription.Installments; n > 0 {
 		meta["installments"], meta["commitmentUntil"] = n, result.Subscription.CommitmentUntil
@@ -749,7 +774,7 @@ func (s *Server) handleSetOrderOptions(w http.ResponseWriter, r *http.Request) {
 		"loanInstallFeeCents": opts.Loan.InstallFeeCents, "loanUninstallFeeCents": opts.Loan.UninstallFeeCents,
 		"installEnabled": opts.Install.Enabled, "installCents": opts.Install.PriceCents,
 		"checkoutEnabled": opts.Checkout.Enabled, "checkoutPlanCents": opts.Checkout.PlanCents,
-		"checkoutInsanosCents": opts.Checkout.InsanosCents, "checkoutEquipmentCents": opts.Checkout.EquipmentCents}
+		"checkoutInsanosCents": opts.Checkout.InsanosCents, "trackerCents": opts.Tracker.Cents, "trackerMonths": opts.Tracker.Months}
 	s.recordBillingAudit(r, audit.ActionOrderOptionsChanged, meta)
 	writeJSON(w, http.StatusOK, opts)
 }

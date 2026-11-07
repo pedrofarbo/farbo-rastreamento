@@ -167,8 +167,9 @@ describe('a contratação pelo site', () => {
     await click(button('Pagar R$ 210,80 com Pix'));
 
     expect(placed[0]).not.toHaveProperty('insanos');
+    expect(placed[0]).not.toHaveProperty('installments');
     expect(placed[0]).toMatchObject({
-      equipmentMode: 'loan', installments: 1, farboInstall: false,
+      equipmentMode: 'loan', farboInstall: false,
       vehicle: { kind: 'MOTORCYCLE', name: 'Honda CG 160', brand: 'Honda', model: 'CG 160', plate: 'ABC1D23' },
       name: 'Lia Souza', email: 'lia@exemplo.com.br', document: '52998224725', password: 'senha-forte',
       address: expect.objectContaining({ zipCode: '13010000', city: 'Campinas', state: 'SP' }),
@@ -178,29 +179,40 @@ describe('a contratação pelo site', () => {
     expect(text()).toContain('Pix /pagar/tok123?todas=1&novo=1');
   });
 
-  it('comprado em 10x com a instalação da Farbo', async () => {
+  it('o rastreador incluso com a instalação da Farbo: sem preço do rastreador nem parcelas', async () => {
     await render();
-    type(document.querySelector('select') as unknown as HTMLSelectElement, '10');
+    expect(radio('Rastreador incluso').checked).toBe(true);
+    expect(text()).toContain('Ele fica com você, e você só paga o frete.');
+    expect(text()).toContain('Se encerrar antes da 10ª mensalidade, a parte do rastreador que falta (R$ 12,00 por mensalidade) vence de uma vez.');
+    expect(text()).not.toMatch(/Comprar|à vista|parcel/);
+    expect(document.querySelector('select')).toBeNull();
     await click(radio('Com os instaladores da Farbo'));
-    // 34,90 + 12,00 da 1ª parcela + 150,00 da instalação.
-    expect(text()).toContain('Hoje, no PixR$ 196,90 + frete');
+    // 34,90 + 150,00 da instalação.
+    expect(text()).toContain('Hoje, no PixR$ 184,90 + frete');
     await fillUntilPayment();
-    expect(text()).toContain('Rastreador, 1ª de 10 parcelas');
+    expect(text()).toContain('Rastreador (fica com você)incluso');
+    expect(text()).toContain('O rastreador incluso fica com você. Se a assinatura for encerrada antes da 10ª mensalidade');
     await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
     await click(button('Pagar'));
-    expect(placed[0]).toMatchObject({ equipmentMode: 'sale', installments: 10, farboInstall: true });
+    expect(placed[0]).toMatchObject({ equipmentMode: 'sale', farboInstall: true });
+    expect(placed[0]).not.toHaveProperty('installments');
   });
 
   it('pelo link de um afiliado com tabela: o tipo do veículo dá a mensalidade', async () => {
     saveReferral('lia');
-    offer = offerWith({ planByKind: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 } });
+    // Pela tabela, a parte do rastreador incluso soma nas 10 primeiras.
+    offer = offerWith({
+      planByKind: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 },
+      tracker: { cents: 1200, months: 10, added: true },
+    });
     await render();
     expect(offerRefs).toContain('lia');
-    expect(text()).toContain('Plano Mensal · MotoR$ 39,90/mês');
+    expect(text()).toContain('Plano Mensal · MotoR$ 39,90/mês+ R$ 12,00/mês nas 10 primeiras mensalidades, com o rastreador incluso.');
     expect(text()).toContain('Plano Mensal · CarroR$ 49,90/mês');
-    expect(text()).toContain('MensalidadeR$ 39,90/mês');
+    expect(text()).toContain('Rastreador incluso+R$ 12,00/mês nas 10 primeiras');
+    expect(text()).toContain('Mensalidade, nas 10 primeirasR$ 51,90/mêsDepoisR$ 39,90/mês');
     await click(radio('Plano Mensal · Caminhão'));
-    expect(text()).toContain('MensalidadeR$ 59,90/mês');
+    expect(text()).toContain('Mensalidade, nas 10 primeirasR$ 71,90/mêsDepoisR$ 59,90/mês');
     // Na etapa do veículo, o tipo é o do plano: sem trocar por moto ou carro ali.
     await click(button('Continuar'));
     expect(text()).toContain('Caminhão, o tipo do plano escolhido.');
@@ -209,7 +221,8 @@ describe('a contratação pelo site', () => {
     await click(button('Mudar o plano'));
     expect(radio('Plano Mensal · Caminhão').checked).toBe(true);
     await fillUntilPayment();
-    expect(text()).toContain('1ª mensalidade · Plano Mensal · CaminhãoR$ 59,90');
+    expect(text()).toContain('1ª mensalidade · Plano Mensal · CaminhãoR$ 71,90');
+    expect(text()).toContain('Depois, mais 9 mensalidades de R$ 71,90 e, a partir da 11ª, R$ 59,90/mês, no dia 10');
     await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
     await click(button('Pagar'));
     expect(placed[0]).toMatchObject({ vehicle: expect.objectContaining({ kind: 'TRUCK' }), ref: 'lia' });
@@ -228,8 +241,8 @@ describe('a contratação pelo site', () => {
     expect(text()).toContain('desinstalação de R$ 80,00 ao encerrar, também direto a ele');
     await click(radio('Com o representante'));
     expect(text()).toContain('Pago direto a ele na instalação, fora do Pix.');
-    // Hoje, só a 1ª mensalidade e o rastreador.
-    expect(text()).toContain('Hoje, no PixR$ 154,90 + frete');
+    // Hoje, só a 1ª mensalidade (o rastreador vem incluso).
+    expect(text()).toContain('Hoje, no PixR$ 34,90 + frete');
     await fillUntilPayment();
     expect(text()).not.toContain('Instalação pelos instaladores da Farbo');
     expect(text()).toContain('A instalação (R$ 120,00) é paga direto ao representante, no dia, fora do Pix.');
@@ -243,7 +256,7 @@ describe('a contratação pelo site', () => {
     offer = offerWith({ handDelivery: 'Rui Representante' });
     shippingView = { enabled: true, zipCode: '13010000', problem: '', arrange: true, quotes: [], handBy: 'Rui Representante' };
     await render();
-    expect(text()).toContain('Hoje, no PixR$ 154,90');
+    expect(text()).toContain('Hoje, no PixR$ 34,90');
     expect(text()).not.toContain('+ frete');
     await fillUntilPayment();
     expect(shippingRefs).toContain('rui');
@@ -251,21 +264,21 @@ describe('a contratação pelo site', () => {
     expect(text()).toContain('sem frete');
     expect(text()).not.toContain('Frete');
     await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
-    await click(button('Pagar R$ 154,90 com Pix'));
+    await click(button('Pagar R$ 34,90 com Pix'));
     expect(placed[0]).toMatchObject({ arrangeDelivery: true, ref: 'rui' });
     localStorage.clear();
   });
 
-  it('pelo link só de comodato: sem a compra, o comodato já marcado', async () => {
+  it('pelo link só de comodato: sem o incluso, o comodato já marcado', async () => {
     offer = offerWith({ equipmentModes: 'loan' });
     await render();
-    expect(text()).not.toContain('Comprar o rastreador');
+    expect(text()).not.toContain('Rastreador incluso');
     expect(radio('Comodato (emprestado)').checked).toBe(true);
     expect(text()).toContain('MensalidadeR$ 37,90/mês');
     await fillUntilPayment();
     await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
     await click(button('Pagar'));
-    expect(placed[0]).toMatchObject({ equipmentMode: 'loan', installments: 1, farboInstall: false });
+    expect(placed[0]).toMatchObject({ equipmentMode: 'loan', farboInstall: false });
   });
 
   it('comodato sem garantia de troca (a do afiliado em zero): sem taxa mensal', async () => {

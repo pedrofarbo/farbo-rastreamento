@@ -226,7 +226,8 @@ func (s *Service) ChangeAccountDueDay(ctx context.Context, customerID uuid.UUID,
 // changeDueDay muda o dia de vencimento de uma assinatura: as mensalidades
 // em aberto que ainda não venceram vão para o dia novo no mesmo mês (se ele
 // ainda não passou), e as próximas já saem nele. As vencidas ficam como
-// estão. O fim da promoção e da permanência acompanham o dia novo.
+// estão. O fim da promoção, da permanência e do rastreador incluso
+// acompanham o dia novo.
 func changeDueDay(ctx context.Context, tx pgx.Tx, sub *Subscription, day int, today Date) (*Subscription, error) {
 	if sub.DueDay == day {
 		return sub, nil
@@ -304,10 +305,16 @@ func changeDueDay(ctx context.Context, tx pgx.Tx, sub *Subscription, day int, to
 			commitment = &end.Time
 		}
 	}
+	// O rastreador incluso: a parte dele que ainda não saiu, nas próximas.
+	tracker, err := shiftTracker(ctx, tx, sub, next, day)
+	if err != nil {
+		return nil, err
+	}
 	return scanSubscription(tx.QueryRow(ctx, `
-		UPDATE subscriptions SET due_day = $2, next_due_date = $3, promo_until = $4, commitment_until = $5, updated_at = NOW()
+		UPDATE subscriptions SET due_day = $2, next_due_date = $3, promo_until = $4, commitment_until = $5,
+			tracker_until = $6, updated_at = NOW()
 		WHERE id = $1 RETURNING `+subscriptionColumns,
-		sub.ID, day, next.Time, shift(sub.PromoUntil), commitment))
+		sub.ID, day, next.Time, shift(sub.PromoUntil), commitment, tracker))
 }
 
 // moneyText: 15000 → "R$ 150,00".

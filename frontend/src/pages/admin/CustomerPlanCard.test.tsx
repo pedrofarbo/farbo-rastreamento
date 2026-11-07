@@ -61,16 +61,16 @@ describe('o plano do cliente na ficha', () => {
     await act(async () => button('Salvar')!.click());
     await flush();
     expect(calls).toEqual([
-      ['definir', 'c1', { planName: 'Especial Insanos MC', priceCents: 3990, dueDay: 10, equipmentMode: 'sale', installFeeCents: 0, uninstallFeeCents: 0 }],
+      ['definir', 'c1', { planName: 'Especial Insanos MC', priceCents: 2790, dueDay: 10, equipmentMode: 'sale', installFeeCents: 0, uninstallFeeCents: 0 }],
     ]);
   });
 
   it('com plano: mostra, troca e volta ao padrão', async () => {
     await render({
-      planName: 'Especial Insanos MC', priceCents: 3990, dueDay: 15, updatedAt: '2026-10-09T12:00:00Z',
+      planName: 'Especial Insanos MC', priceCents: 2790, dueDay: 15, updatedAt: '2026-10-09T12:00:00Z',
       equipmentMode: 'loan', installFeeCents: 8000, uninstallFeeCents: 5000,
     });
-    expect(text()).toContain('Especial Insanos MC: R$ 39,90/mês, vencimento todo dia 15. Rastreador em comodato (instalação R$ 80,00, desinstalação R$ 50,00).');
+    expect(text()).toContain('Especial Insanos MC: R$ 27,90/mês, vencimento todo dia 15. Rastreador em comodato (instalação R$ 80,00, desinstalação R$ 50,00).');
     await act(async () => button('Trocar o plano')!.click());
     const select = Array.from(document.querySelectorAll('select')).find((s) => s.closest('div')?.textContent?.includes('Plano')) as HTMLSelectElement;
     expect(select.value).toBe('insanos');

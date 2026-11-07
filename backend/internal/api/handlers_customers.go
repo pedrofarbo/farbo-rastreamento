@@ -470,9 +470,10 @@ func (s *Server) handleUpdateSubscription(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, sub)
 }
 
-// cancelSubscriptionRequest: com o rastreador parcelado e parcelas por pagar,
-// o que fazer com o saldo — CHARGE (uma fatura só) ou WAIVE (dispensar:
-// arrependimento, pedido desfeito). O corpo é opcional sem parcelas.
+// cancelSubscriptionRequest: com saldo do rastreador — as parcelas por pagar
+// do comprado, ou a parte do incluso nas mensalidades que não vão sair —, o
+// que fazer com ele: CHARGE (uma fatura só) ou WAIVE (dispensar:
+// arrependimento, pedido desfeito). O corpo é opcional sem saldo.
 type cancelSubscriptionRequest struct {
 	EquipmentBalance string `json:"equipmentBalance"`
 	// WaiveUninstall dispensa a taxa de desinstalação do comodato.
@@ -503,7 +504,7 @@ func (s *Server) handleCancelSubscription(w http.ResponseWriter, r *http.Request
 	}
 	sub, balance := canceled.Subscription, canceled.Balance
 	details := map[string]any{"customerId": sub.CustomerID, "subscriptionId": sub.ID}
-	if sub.Installments > 0 {
+	if sub.Installments > 0 || sub.TrackerCents > 0 {
 		details["equipmentBalance"] = req.EquipmentBalance
 		if balance != nil {
 			details["balanceInvoice"], details["balanceCents"] = balance.ID, balance.AmountCents

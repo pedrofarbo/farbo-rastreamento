@@ -175,12 +175,16 @@ export function CustomerPlanCard({
               }
             />
             <p className={pageStyles.description} style={{ margin: 0 }}>
+              Com o rastreador incluso, abaixo do preço do site (como o Especial Insanos MC), a parte do rastreador soma
+              nas primeiras mensalidades dos veículos novos (Opções do pedido); depois, vale esta.
+            </p>
+            <p className={pageStyles.description} style={{ margin: 0 }}>
               Na promoção de pré-lançamento, o plano Especial Insanos MC tem a mensalidade promocional dos Insanos.
             </p>
             <div className={org.choices} role="radiogroup" aria-label="Rastreador">
               <label className={`${org.choice} ${terms.mode === 'sale' ? org.choiceActive : ''}`}>
                 <input type="radio" name="plan-equipment" checked={terms.mode === 'sale'} onChange={() => setTerms({ ...terms, mode: 'sale' })} />
-                Rastreador vendido
+                Rastreador incluso (fica com o cliente)
               </label>
               <label className={`${org.choice} ${terms.mode === 'loan' ? org.choiceActive : ''}`}>
                 <input type="radio" name="plan-equipment" checked={terms.mode === 'loan'} onChange={() => setTerms({ ...terms, mode: 'loan' })} />

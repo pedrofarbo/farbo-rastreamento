@@ -464,7 +464,6 @@ func run() error {
 	// termo do associado (o uso do app e o rastreador em comodato).
 	contractParams := contract.Params{
 		Company: cfg.Company, SuspendAfterDays: cfg.Billing.SuspendAfterDays, HistoryOptions: retention.Options,
-		MaxInstallments: cfg.Catalog.EquipmentMaxInstallments,
 	}
 	contractDoc, err := contract.Render(contractParams)
 	if err != nil {

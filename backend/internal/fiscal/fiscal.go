@@ -1,6 +1,7 @@
 // Package fiscal emite a nota fiscal de serviço (NFS-e) das faturas pagas,
-// pela Notaas: a mensalidade (sem a parcela do rastreador, que é produto), o
-// proporcional, a instalação e a desinstalação, e a fatura do mês da
+// pela Notaas, pelo valor cheio: a mensalidade (a Farbo não vende o
+// rastreador; o incluso é parte do serviço), o proporcional, a instalação e
+// a desinstalação, o saldo do rastreador incluso e a fatura do mês da
 // organização. A nota sai sozinha depois do pagamento, vai por e-mail ao
 // cliente e aparece na ficha; estornada a fatura, a nota é cancelada. A
 // Notaas cobra por nota: a rotina não reenvia o que ela recusou.
@@ -18,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/mail"
@@ -182,11 +184,14 @@ func (s *Service) Touch(ctx context.Context, providerID string) error {
 	return database.MapError(err)
 }
 
-// eligible são as faturas que dão NFS-e: a mensalidade, o proporcional, a
-// instalação, a desinstalação e a fatura do mês da organização (o frete, o
-// rastreador vendido e as avulsas da central, não).
+// eligible são as faturas que dão NFS-e: a mensalidade (com a parte do
+// rastreador incluso), o proporcional, a instalação, a desinstalação, o saldo
+// do rastreador incluso no encerramento antecipado e a fatura do mês da
+// organização (o frete, o rastreador vendido antes e as avulsas da central,
+// não).
 const eligible = `(i.subscription_id IS NOT NULL OR i.description LIKE '% — proporcional de %'
 	OR i.description LIKE 'Instalação do rastreador%' OR i.description LIKE 'Desinstalação do rastreador%'
+	OR i.description LIKE '` + billing.TrackerBalancePrefix + `%'
 	OR EXISTS (SELECT 1 FROM organization_invoices oi WHERE oi.invoice_id = i.id))`
 
 // Work é a rotina (a cada minuto): marca desde quando vale, enfileira as
@@ -217,19 +222,17 @@ func (s *Service) start(ctx context.Context) (time.Time, error) {
 	return since, database.MapError(err)
 }
 
-// enqueue cria a nota das faturas pagas desde o início, pelo valor do
-// serviço (a parcela do rastreador fica fora).
+// enqueue cria a nota das faturas pagas desde o início, pelo valor cheio
+// delas: a Farbo só emite nota de serviço, e a mensalidade inteira é serviço
+// (com a parte do rastreador incluso e, nas antigas, a parcela do comprado).
 func (s *Service) enqueue(ctx context.Context, since time.Time) error {
 	tag, err := s.db.Exec(ctx, `
 		INSERT INTO fiscal_documents (invoice_id, customer_id, amount_cents, next_try_at)
-		SELECT id, customer_id, service, $2 FROM (
-			SELECT i.id, i.customer_id, i.amount_cents - COALESCE((SELECT sum(e.amount_cents) FROM equipment_installments e
-				WHERE e.invoice_id = i.id), 0) AS service
-			FROM invoices i
-			WHERE i.status = 'PAID' AND i.paid_at >= $1 AND `+eligible+`
-				AND NOT EXISTS (SELECT 1 FROM fiscal_documents f WHERE f.invoice_id = i.id)
-			ORDER BY i.paid_at LIMIT 200) x
-		WHERE service > 0
+		SELECT i.id, i.customer_id, i.amount_cents, $2
+		FROM invoices i
+		WHERE i.status = 'PAID' AND i.paid_at >= $1 AND i.amount_cents > 0 AND `+eligible+`
+			AND NOT EXISTS (SELECT 1 FROM fiscal_documents f WHERE f.invoice_id = i.id)
+		ORDER BY i.paid_at LIMIT 200
 		ON CONFLICT (invoice_id) DO NOTHING`, since, s.now())
 	if err != nil {
 		return database.MapError(err)

@@ -41,7 +41,7 @@ func TestAccountDueDay(t *testing.T) {
 			Subscription billing.Subscription `json:"subscription"`
 		}
 		_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/customers/"+frota.ID+"/trackers", map[string]any{
-			"vehicle": map[string]any{"name": "Van " + plate, "plate": plate}, "equipmentCents": 0,
+			"vehicle": map[string]any{"name": "Van " + plate, "plate": plate}, "tracker": map[string]any{"cents": 0, "months": 0},
 			"plan": map[string]any{"planName": "Plano Frota", "priceCents": 4990, "dueDay": dueDay},
 		}, http.StatusCreated), &out)
 		return out.Subscription

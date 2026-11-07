@@ -78,8 +78,10 @@ func TestAffiliatePercentCommission(t *testing.T) {
 		}
 		return id
 	}
-	// O carro: a mensalidade (R$ 69,90) com a parcela do rastreador (R$ 20)
-	// na mesma fatura; a moto, só a mensalidade com o desconto de indicação.
+	// O carro: a mensalidade (R$ 69,90) com a parcela de um rastreador
+	// comprado antes (R$ 20) na mesma fatura; a moto, a mensalidade com o
+	// desconto de indicação (R$ 39,90) mais a parte do rastreador incluso
+	// (R$ 12, nas primeiras). Nenhuma das duas partes rende comissão.
 	car, bike := subscription(), subscription()
 	carInvoice := paidInvoice(car, 6990+2000)
 	if _, err := db.Exec(ctx, `
@@ -87,7 +89,11 @@ func TestAffiliatePercentCommission(t *testing.T) {
 		car, carInvoice); err != nil {
 		t.Fatal(err)
 	}
-	paidInvoice(bike, 3990)
+	if _, err := db.Exec(ctx, `UPDATE subscriptions SET tracker_cents = 1200, tracker_months = 10, tracker_until = $2,
+		tracker_added = TRUE WHERE id = $1`, bike, due.AddDate(0, 10, 0)); err != nil {
+		t.Fatal(err)
+	}
+	paidInvoice(bike, 3990+1200)
 
 	var list []*affiliates.Affiliate
 	call(http.MethodGet, "/api/affiliates", nil, http.StatusOK, &list)
@@ -97,7 +103,8 @@ func TestAffiliatePercentCommission(t *testing.T) {
 			got = a
 		}
 	}
-	// 12,5% de 69,90 = 8,74 (a parcela fica fora); 12,5% de 39,90 = 4,99.
+	// 12,5% de 69,90 = 8,74 (a parcela fica fora); 12,5% de 39,90 = 4,99 (a
+	// parte do rastreador incluso fica fora).
 	if got == nil || got.PendingCents != 874+499 {
 		t.Fatalf("comissões da lia = %+v", got)
 	}

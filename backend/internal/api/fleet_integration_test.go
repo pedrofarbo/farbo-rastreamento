@@ -60,7 +60,7 @@ func TestFleetGroupsAndCustomFields(t *testing.T) {
 			Vehicle vehicles.Vehicle `json:"vehicle"`
 		}
 		_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/customers/"+frota.ID.String()+"/trackers", map[string]any{
-			"vehicle": v, "equipmentCents": 0, "plan": map[string]any{"planName": "Plano Frota", "priceCents": 4990, "dueDay": 10},
+			"vehicle": v, "tracker": map[string]any{"cents": 0, "months": 0}, "plan": map[string]any{"planName": "Plano Frota", "priceCents": 4990, "dueDay": 10},
 		}, http.StatusCreated), &out)
 		return out.Vehicle
 	}

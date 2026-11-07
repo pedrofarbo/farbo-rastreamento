@@ -86,6 +86,14 @@ func TestOrganizationPanel(t *testing.T) {
 	}
 	central := env.tokenFor("admin@org.test")
 
+	// A Farbo não vende mais o rastreador: a organização nova é só em comodato.
+	if out := env.must(central, http.MethodPost, "/api/organizations", map[string]any{
+		"kind": "association", "name": "Associação Venda", "email": "venda@motoclube.test", "priceCents": 5000, "dueDay": 10,
+		"equipmentMode": "sale", "equipmentCents": 15000,
+	}, http.StatusBadRequest); !strings.Contains(string(out), "não vende mais o rastreador") {
+		t.Errorf("organização nova com a venda = %s", out)
+	}
+
 	// A central cadastra a associação com o primeiro Administrador.
 	var created struct {
 		Organization struct {
@@ -104,6 +112,17 @@ func TestOrganizationPanel(t *testing.T) {
 	if orgID == uuid.Nil || created.AdminError != "" {
 		t.Fatalf("cadastro = %+v", created)
 	}
+	// Nem passar para a venda depois; a que já tinha a venda continua com ela.
+	org := map[string]any{"kind": "association", "name": "Associação Motoclube", "document": "11.222.333/0001-81",
+		"email": "contato@motoclube.test", "phone": "11999990000", "priceCents": 5000, "dueDay": 10,
+		"equipmentMode": "sale", "equipmentCents": 15000}
+	env.must(central, http.MethodPatch, "/api/organizations/"+orgID.String()+"/", org, http.StatusBadRequest)
+	if _, err := env.db.Exec(context.Background(), `UPDATE organizations SET equipment_mode = 'sale' WHERE id = $1`, orgID); err != nil {
+		t.Fatal(err)
+	}
+	env.must(central, http.MethodPatch, "/api/organizations/"+orgID.String()+"/", org, http.StatusOK)
+	org["equipmentMode"], org["equipmentCents"], org["installFeeCents"], org["uninstallFeeCents"] = "loan", 0, 8000, 3000
+	env.must(central, http.MethodPatch, "/api/organizations/"+orgID.String()+"/", org, http.StatusOK)
 	// O e-mail de cobrança pode ser o do login do Administrador.
 	invite := notifier.token("contato@motoclube.test")
 	if invite == "" || notifier.invited["contato@motoclube.test"].OrgName != "Associação Motoclube" {

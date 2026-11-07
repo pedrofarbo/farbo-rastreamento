@@ -1,31 +1,29 @@
 /**
  * A conta da contratação pelo site: a mensalidade (o plano; no comodato, mais
- * a garantia de troca do rastreador) e o que se
- * paga agora com Pix — a 1ª mensalidade (com a 1ª parcela, se o rastreador
- * for parcelado), o rastreador à vista ou a instalação, e o frete.
+ * a garantia de troca do rastreador; com o rastreador incluso pela tabela do
+ * afiliado, mais a parte dele nas primeiras) e o que se paga agora com Pix —
+ * a 1ª mensalidade, a instalação e o frete. O rastreador não tem preço: a
+ * Farbo não o vende.
  */
-import { splitInstallments } from '@/components/billing/installments';
+import { includedMonthly } from '@/config/landing';
 import { kindPrice } from '@/services/kindPrices';
 import type { CheckoutOffer, VehicleKind } from '@/types';
 
 export interface CheckoutChoice {
+  /** O rastreador incluso (sale) ou em comodato (loan). */
   equipmentMode: 'sale' | 'loan';
-  /** O rastreador comprado em quantas vezes (1: à vista). */
-  installments: number;
-  /** O rastreador comprado instalado pelos instaladores da Farbo. */
+  /** O rastreador incluso instalado pelos instaladores da Farbo. */
   farboInstall: boolean;
 }
 
 export interface CheckoutTotals {
-  /** A mensalidade do plano (com a garantia de troca, no comodato). */
+  /** A mensalidade do plano, depois das primeiras (com a garantia de troca, no comodato). */
   monthlyCents: number;
   guaranteeCents: number;
-  /** As parcelas do rastreador (vazio: à vista ou comodato). */
-  parcels: number[];
-  /** A 1ª mensalidade, com a 1ª parcela. */
+  /** A 1ª mensalidade: com a parte do rastreador incluso, quando ela é somada. */
   firstMonthlyCents: number;
-  /** O rastreador à vista (zero parcelado ou no comodato). */
-  equipmentNowCents: number;
+  /** Em quantas das primeiras mensalidades vai a parte do rastreador somada (0: nenhuma). */
+  trackerMonths: number;
   /** A instalação: a do comodato ou a dos instaladores da Farbo. */
   installNowCents: number;
   freightCents: number;
@@ -38,12 +36,8 @@ export function checkoutTotals(offer: CheckoutOffer, choice: CheckoutChoice, fre
   const loan = choice.equipmentMode === 'loan' && offer.loan !== null;
   const guaranteeCents = loan ? (offer.loan?.surchargeCents ?? 0) : 0;
   const monthlyCents = (offer.planByKind ? kindPrice(offer.planByKind, kind) : offer.planCents) + guaranteeCents;
-  const parcels =
-    !loan && choice.installments > 1 && choice.installments <= offer.maxInstallments
-      ? splitInstallments(offer.equipmentCents, choice.installments)
-      : [];
-  const firstMonthlyCents = monthlyCents + (parcels[0] ?? 0);
-  const equipmentNowCents = loan || parcels.length > 0 ? 0 : offer.equipmentCents;
+  // O comodato não tem a parte do rastreador: ele volta à Farbo.
+  const included = includedMonthly(monthlyCents, loan ? undefined : offer.tracker);
   // Pelo link de um representante, a instalação é paga direto a ele: fora do Pix.
   const installNowCents = offer.installDirect
     ? 0
@@ -55,12 +49,11 @@ export function checkoutTotals(offer: CheckoutOffer, choice: CheckoutChoice, fre
   return {
     monthlyCents,
     guaranteeCents,
-    parcels,
-    firstMonthlyCents,
-    equipmentNowCents,
+    firstMonthlyCents: included.first,
+    trackerMonths: included.months,
     installNowCents,
     freightCents,
-    totalNowCents: firstMonthlyCents + equipmentNowCents + installNowCents + freightCents,
+    totalNowCents: included.first + installNowCents + freightCents,
   };
 }
 

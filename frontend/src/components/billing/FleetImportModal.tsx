@@ -8,13 +8,14 @@ import { nextChargeDate, suggestedPlan } from '@/components/billing/NewVehicleWi
 import type { WizardAdmin } from '@/components/billing/NewVehicleWizard';
 import { SubscriptionFields, subscriptionFromDraft } from '@/components/billing/SubscriptionFields';
 import type { SubscriptionDraft } from '@/components/billing/SubscriptionFields';
+import { TrackerFields, trackerDraftFrom, trackerFromDraft, trackerMode } from '@/components/billing/TrackerFields';
+import type { TrackerDraft } from '@/components/billing/TrackerFields';
 import { Button } from '@/components/ui/Button';
-import { TextField } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { MAX_IMPORT_ROWS, parseFleetSheet, templateCsv } from '@/services/fleetImport';
 import type { ParsedSheet, SheetProblem } from '@/services/fleetImport';
-import { centsToInput, formatDateOnly, formatMoney, parseMoney, todayISO } from '@/services/format';
+import { formatDateOnly, formatMoney, parseMoney, todayISO } from '@/services/format';
 import type { FleetImportResult, FleetSettings, ImportProblem } from '@/types';
 
 import pageStyles from '@/pages/Page.module.css';
@@ -70,17 +71,20 @@ export function FleetImportModal({
   const [sheet, setSheet] = useState<ParsedSheet | null>(null);
   const [check, setCheck] = useState<FleetImportResult | null>(null);
   const [problems, setProblems] = useState<SheetProblem[]>([]);
-  const [equipment, setEquipment] = useState<string | null>(null);
+  // O rastreador incluso de cada veículo (nulo: a regra dos pedidos novos).
+  const [trackerDraft, setTrackerDraft] = useState<TrackerDraft | null>(null);
   const [plan, setPlan] = useState<SubscriptionDraft | null>(null);
   const [error, setError] = useState('');
 
   const c = catalog.data;
   const planDraft =
     plan ?? (c ? suggestedPlan(c, admin.currentPlan, admin.accountPlan ?? null, admin.accountDueDay ?? null) : null);
-  // No comodato (o plano do cliente), não há equipamento a cobrar.
+  // No comodato (o plano do cliente), não há rastreador incluso.
   const loan = admin.accountPlan?.equipmentMode === 'loan';
-  const equipmentText = loan ? '0' : (equipment ?? (c ? centsToInput(c.equipmentPriceCents) : ''));
-  const equipmentCents = equipmentText.trim() === '' ? 0 : parseMoney(equipmentText);
+  const tracker = trackerDraft ?? (c ? trackerDraftFrom(c.tracker) : null);
+  const planCents = planDraft ? parseMoney(planDraft.price) : null;
+  const mode = tracker && c ? trackerMode(tracker, planCents, c.sitePlanCents) : 'none';
+  const included = loan || !tracker ? null : trackerFromDraft(tracker, mode);
   // Tudo entra na próxima fatura do mês da conta.
   const chargeDate = nextChargeDate(planDraft?.dueDay ?? c?.defaultDueDay ?? 10, todayISO());
 
@@ -88,8 +92,13 @@ export function FleetImportModal({
   const request = (dryRun: boolean): FleetImportRequest => {
     const subscription = planDraft ? subscriptionFromDraft(planDraft) : 'Carregando o plano.';
     if (typeof subscription === 'string') throw new Error(subscription);
-    if (equipmentCents === null) throw new Error('Valor do equipamento inválido. Use, por exemplo, 150,00 (ou 0 para não cobrar).');
-    return { rows: sheet?.rows ?? [], equipmentCents, plan: subscription, dryRun };
+    if (typeof included === 'string') throw new Error(included);
+    return {
+      rows: sheet?.rows ?? [],
+      tracker: included ?? { cents: 0, months: 0, added: false },
+      plan: subscription,
+      dryRun,
+    };
   };
 
   // O problema do servidor vem pela posição do veículo; a tela mostra a linha da planilha.
@@ -141,7 +150,7 @@ export function FleetImportModal({
     setSheet(null);
     setCheck(null);
     setProblems([]);
-    setEquipment(null);
+    setTrackerDraft(null);
     setPlan(null);
     setError('');
     if (fileRef.current) fileRef.current.value = '';
@@ -382,20 +391,15 @@ export function FleetImportModal({
             <>
               {loan ? (
                 <p className={pageStyles.note}>
-                  Rastreadores em comodato (o plano do cliente): sem equipamento a cobrar
+                  Rastreadores em comodato (o plano do cliente): sem rastreador incluso
                   {admin.accountPlan!.installFeeCents > 0
                     ? `; a instalação (${formatMoney(admin.accountPlan!.installFeeCents)} cada) entra na fatura`
                     : ''}
                   .
                 </p>
               ) : (
-                <TextField
-                  label="Equipamento (cada)"
-                  hint={`Zero não cobra. Os aparelhos entram numa linha da fatura de ${formatDateOnly(chargeDate)}.`}
-                  inputMode="decimal"
-                  value={equipmentText}
-                  onChange={(e) => setEquipment(e.target.value)}
-                />
+                tracker &&
+                c && <TrackerFields draft={tracker} onChange={setTrackerDraft} planCents={planCents} sitePlanCents={c.sitePlanCents} />
               )}
               <SubscriptionFields draft={planDraft} onChange={setPlan} lockedDueDay={admin.accountDueDay ?? null} />
               <div className={styles.orderSummary}>
@@ -405,10 +409,13 @@ export function FleetImportModal({
                 </div>
                 <div className={styles.orderLine}>
                   <span>
-                    Equipamento{equipmentCents ? ` (${count} × ${formatMoney(equipmentCents)})` : ''}
-                    {equipmentCents ? `, na fatura de ${formatDateOnly(chargeDate)}` : ''}
+                    {included && typeof included !== 'string' && included.cents > 0
+                      ? included.added
+                        ? `Rastreador incluso: + ${formatMoney(included.cents)} nas ${included.months} primeiras mensalidades de cada veículo`
+                        : 'Rastreador incluso, já no preço da mensalidade'
+                      : 'Rastreador'}
                   </span>
-                  <span>{equipmentCents ? formatMoney(equipmentCents * count) : 'sem cobrança'}</span>
+                  <span>sem cobrança</span>
                 </div>
                 <div className={styles.orderLine}>
                   <span>

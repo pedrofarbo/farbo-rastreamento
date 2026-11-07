@@ -7,10 +7,9 @@ import { ApiError } from '@/api/client';
 import { checkoutApi } from '@/api/resources';
 import { AddressFields, EMPTY_ADDRESS, isAddressComplete } from '@/components/address/AddressFields';
 import { ARRANGE_DELIVERY, ShippingOptions } from '@/components/billing/ShippingOptions';
-import { installmentChoices } from '@/components/billing/installments';
-import { SelectField, TextField } from '@/components/ui/Field';
+import { TextField } from '@/components/ui/Field';
 import { CONTRACT_PATH } from '@/config/legal';
-import { CHECKOUT_ANCHOR } from '@/config/landing';
+import { CHECKOUT_ANCHOR, trackerAdded } from '@/config/landing';
 import { track, trackPageview } from '@/services/analytics';
 import { checkoutTotals, payDestination, vehicleName } from '@/services/checkout';
 import type { CheckoutChoice } from '@/services/checkout';
@@ -44,8 +43,9 @@ interface Person {
 
 /**
  * A contratação rápida pela landing (/contratar): a pessoa física escolhe o
- * plano e o rastreador (comprado ou em comodato), informa o veículo, os dados
- * e o endereço, escolhe a entrega e paga com Pix na hora. A conta nasce
+ * plano e o rastreador (incluso na mensalidade, que fica com ela, ou em
+ * comodato), informa o veículo, os dados e o endereço, escolhe a entrega e
+ * paga com Pix na hora. A Farbo não vende o rastreador. A conta nasce
  * pronta: o Pix do pedido abre em seguida, já com a sessão do app.
  */
 export function CheckoutPage() {
@@ -59,11 +59,7 @@ export function CheckoutPage() {
   const ref = event ? '' : currentReferral();
   const { query: offer } = useCheckoutOffer(ref);
   const [step, setStep] = useState(0);
-  const [choice, setChoice] = useState<CheckoutChoice>({
-    equipmentMode: 'sale',
-    installments: 1,
-    farboInstall: false,
-  });
+  const [choice, setChoice] = useState<CheckoutChoice>({ equipmentMode: 'sale', farboInstall: false });
   const [kind, setKind] = useState<VehicleKind>('MOTORCYCLE');
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
@@ -100,7 +96,7 @@ export function CheckoutPage() {
   // Pelo link de um afiliado só de comodato, o comodato já vem marcado.
   useEffect(() => {
     if (o?.equipmentModes === 'loan' && choice.equipmentMode !== 'loan') {
-      setChoice((c) => ({ ...c, equipmentMode: 'loan', installments: 1, farboInstall: false }));
+      setChoice((c) => ({ ...c, equipmentMode: 'loan', farboInstall: false }));
     }
   }, [o?.equipmentModes, choice.equipmentMode]);
   // A entrega volta a zero quando o CEP muda (as opções são outras).
@@ -159,6 +155,8 @@ export function CheckoutPage() {
   const totals = checkoutTotals(o, choice, freightCents, kind);
   const table = o.planByKind;
   const loan = choice.equipmentMode === 'loan' && o.loan !== null;
+  // Pela tabela do afiliado, a parte do rastreador incluso soma nas primeiras.
+  const added = trackerAdded(o);
   const cpf = taxIdDigits(person.document);
   const personProblem =
     person.name.trim() === ''
@@ -188,7 +186,6 @@ export function CheckoutPage() {
     try {
       const result = await checkoutApi.place({
         equipmentMode: loan ? 'loan' : 'sale',
-        installments: loan ? 1 : choice.installments,
         farboInstall: !loan && choice.farboInstall,
         vehicle: { kind, name: vehicleName(kind, brand, model), brand: brand.trim(), model: model.trim(), plate: plate.trim() },
         name: person.name.trim(),
@@ -206,7 +203,7 @@ export function CheckoutPage() {
         event: event || undefined,
         website,
       });
-      track('checkout_submit', loan ? 'comodato' : 'compra');
+      track('checkout_submit', loan ? 'comodato' : 'incluso');
       if (result.tokens) {
         try {
           completeLogin(result.tokens, email);
@@ -234,7 +231,9 @@ export function CheckoutPage() {
       )}
       <section className={pre.intro}>
         <h1 className={pre.title}>Contrate em poucos minutos</h1>
-        <p className={pre.lead}>Escolha o plano, informe o veículo e pague com Pix. O rastreador vai para o seu endereço.</p>
+        <p className={pre.lead}>
+          Escolha o plano, informe o veículo e pague com Pix. O rastreador vem incluso e vai para o seu endereço.
+        </p>
       </section>
 
       <ol className={styles.steps} aria-label="Etapas">
@@ -263,7 +262,9 @@ export function CheckoutPage() {
                     name="plan"
                     title={`${o.planName} · ${KIND_NAMES[k]}`}
                     price={`${formatMoney(kindPrice(table, k))}/mês`}
-                  />
+                  >
+                    {added && !loan && `+ ${formatMoney(added.cents)}/mês nas ${added.months} primeiras mensalidades, com o rastreador incluso.`}
+                  </Option>
                 ))
               ) : (
                 <Option checked onChange={() => undefined} name="plan" title={o.planName} price={`${formatMoney(o.planCents)}/mês`}>
@@ -273,7 +274,9 @@ export function CheckoutPage() {
             </fieldset>
             <p className={styles.note}>
               {table && 'Rastreamento em tempo real, app, alertas, histórico de rotas e bloqueio pelo celular. '}O preço da
-              mensalidade vale enquanto a assinatura durar (só o reajuste anual do contrato).
+              mensalidade vale enquanto a assinatura durar (só o reajuste anual do contrato)
+              {!loan && (added ? ', e a parte do rastreador incluso sai nas primeiras.' : ', com o rastreador incluso.')}
+              {loan && '.'}
             </p>
 
             <fieldset className={styles.options}>
@@ -283,24 +286,28 @@ export function CheckoutPage() {
                   checked={!loan}
                   onChange={() => setChoice({ ...choice, equipmentMode: 'sale' })}
                   name="equipment"
-                  title="Comprar o rastreador"
-                  price={formatMoney(o.equipmentCents)}
+                  title="Rastreador incluso"
+                  price={added ? `+${formatMoney(added.cents)}/mês nas ${added.months} primeiras` : 'na mensalidade'}
                 >
-                  Ele é seu.{' '}
-                  {o.maxInstallments > 1
-                    ? `À vista ou em até ${o.maxInstallments}x sem juros, somadas às mensalidades.`
-                    : 'Pago à vista, no Pix.'}
+                  Ele fica com você, e você só paga o frete.
+                  {o.tracker.cents > 0 && o.tracker.months > 0 && (
+                    <>
+                      {' '}
+                      Se encerrar antes da {o.tracker.months}ª mensalidade, a parte do rastreador que falta (
+                      {formatMoney(o.tracker.cents)} por mensalidade) vence de uma vez.
+                    </>
+                  )}
                 </Option>
               )}
               {o.loan && (
                 <Option
                   checked={loan}
-                  onChange={() => setChoice({ ...choice, equipmentMode: 'loan', installments: 1, farboInstall: false })}
+                  onChange={() => setChoice({ ...choice, equipmentMode: 'loan', farboInstall: false })}
                   name="equipment"
                   title="Comodato (emprestado)"
                   price={o.loan.surchargeCents > 0 ? `+${formatMoney(o.loan.surchargeCents)}/mês` : 'sem taxa mensal'}
                 >
-                  Sem pagar o rastreador: ele volta quando você encerrar.{' '}
+                  O rastreador emprestado: ele volta quando você encerrar.{' '}
                   {o.installDirect
                     ? o.loan.installFeeCents > 0
                       ? `Instalação pelo representante por ${formatMoney(o.loan.installFeeCents)}, paga direto a ele`
@@ -313,22 +320,6 @@ export function CheckoutPage() {
                 </Option>
               )}
             </fieldset>
-
-            {!loan && o.maxInstallments > 1 && (
-              <div className={styles.panel}>
-                <SelectField
-                  label="Pagamento do rastreador"
-                  value={choice.installments}
-                  onChange={(e) => setChoice({ ...choice, installments: Number(e.target.value) })}
-                >
-                  {installmentChoices(o.equipmentCents, o.maxInstallments).map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </SelectField>
-              </div>
-            )}
 
             {!loan && (
               <fieldset className={styles.options}>
@@ -630,9 +621,15 @@ function Total({ totals, shippingPending }: { totals: ReturnType<typeof checkout
   return (
     <div className={styles.summary}>
       <div className={styles.line}>
-        <span>Mensalidade</span>
-        <span className={styles.monthly}>{formatMoney(totals.monthlyCents)}/mês</span>
+        <span>{totals.trackerMonths > 0 ? `Mensalidade, nas ${totals.trackerMonths} primeiras` : 'Mensalidade'}</span>
+        <span className={styles.monthly}>{formatMoney(totals.firstMonthlyCents)}/mês</span>
       </div>
+      {totals.trackerMonths > 0 && (
+        <div className={styles.line}>
+          <span>Depois</span>
+          <span className={styles.monthly}>{formatMoney(totals.monthlyCents)}/mês</span>
+        </div>
+      )}
       <div className={`${styles.line} ${styles.total}`}>
         <span>Hoje, no Pix</span>
         <span>
@@ -670,24 +667,18 @@ function Summary({
         ? (offer.install?.priceCents ?? 0)
         : 0
     : 0;
-  const parcels = totals.parcels.length;
+  const tracker = offer.tracker;
   return (
     <div className={styles.summary} aria-label="Resumo do pedido">
       <p className={styles.legend}>Resumo · {vehicle}</p>
       <div className={styles.line}>
         <span>1ª mensalidade · {plan}</span>
-        <span>{formatMoney(totals.monthlyCents)}</span>
+        <span>{formatMoney(totals.firstMonthlyCents)}</span>
       </div>
-      {parcels > 0 && (
+      {!loan && (
         <div className={styles.line}>
-          <span>Rastreador, 1ª de {parcels} parcelas</span>
-          <span>{formatMoney(totals.parcels[0])}</span>
-        </div>
-      )}
-      {totals.equipmentNowCents > 0 && (
-        <div className={styles.line}>
-          <span>Rastreador, à vista</span>
-          <span>{formatMoney(totals.equipmentNowCents)}</span>
+          <span>Rastreador (fica com você)</span>
+          <span>incluso</span>
         </div>
       )}
       {totals.installNowCents > 0 && (
@@ -707,8 +698,18 @@ function Summary({
         <span>{freightPending ? '—' : formatMoney(totals.totalNowCents)}</span>
       </div>
       <p className={styles.note}>
-        Depois, <span className={styles.monthly}>{formatMoney(totals.monthlyCents)}/mês</span> no dia {offer.dueDay}
-        {parcels > 1 && `, com as outras ${parcels - 1} parcelas do rastreador somadas às próximas mensalidades`}
+        {totals.trackerMonths > 1 ? (
+          <>
+            Depois, mais {totals.trackerMonths - 1} mensalidades de{' '}
+            <span className={styles.monthly}>{formatMoney(totals.firstMonthlyCents)}</span> e, a partir da{' '}
+            {totals.trackerMonths + 1}ª, <span className={styles.monthly}>{formatMoney(totals.monthlyCents)}/mês</span>, no
+            dia {offer.dueDay}
+          </>
+        ) : (
+          <>
+            Depois, <span className={styles.monthly}>{formatMoney(totals.monthlyCents)}/mês</span> no dia {offer.dueDay}
+          </>
+        )}
         {loan && totals.guaranteeCents > 0 && `; ${formatMoney(totals.guaranteeCents)} dela é a garantia de troca do rastreador`}
         {loan &&
           offer.loan &&
@@ -716,6 +717,12 @@ function Summary({
           `. Ao encerrar, a desinstalação custa ${formatMoney(offer.loan.uninstallFeeCents)}${offer.installDirect ? ', paga direto ao representante' : ''}`}
         .
       </p>
+      {!loan && tracker.cents > 0 && tracker.months > 0 && (
+        <p className={styles.note}>
+          O rastreador incluso fica com você. Se a assinatura for encerrada antes da {tracker.months}ª mensalidade, a parte
+          dele que falta ({formatMoney(tracker.cents)} por mensalidade) vence de uma vez.
+        </p>
+      )}
       {directInstall > 0 && (
         <p className={styles.note}>
           A instalação ({formatMoney(directInstall)}) é paga direto ao representante, no dia, fora do Pix.

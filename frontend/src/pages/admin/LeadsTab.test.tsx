@@ -84,7 +84,7 @@ describe('pré-clientes', () => {
       [
         hello,
         'Recebemos o seu pré-cadastro no nosso site. Vi que você tem interesse no preço especial do Insanos MC para 2 motos, com instalação em Campinas - SP.',
-        'Como você está na nossa lista de lançamento, tem direito à promoção de pré-lançamento: cada rastreador sai por R$ 120,00, com mensalidade de R$ 27,90 nos 12 primeiros meses, enquanto houver vagas.',
+        'Como você está na nossa lista de lançamento, tem direito à promoção de pré-lançamento: a mensalidade sai por R$ 27,90 nos 12 primeiros meses, com o rastreador incluso, enquanto houver vagas.',
         close,
       ].join('\n\n'),
     );
@@ -93,7 +93,7 @@ describe('pré-clientes', () => {
       [
         hello,
         'Você deixou seu contato no nosso site.',
-        'Como você está na nossa lista de lançamento, tem direito à promoção de pré-lançamento: cada rastreador sai por R$ 120,00, com mensalidade de R$ 34,90 nos 12 primeiros meses, enquanto houver vagas.',
+        'Como você está na nossa lista de lançamento, tem direito à promoção de pré-lançamento: a mensalidade sai por R$ 34,90 nos 12 primeiros meses, com o rastreador incluso, enquanto houver vagas.',
         close,
       ].join('\n\n'),
     );
@@ -147,7 +147,8 @@ describe('pré-clientes', () => {
     const url = new URL(whats[0].href);
     expect(url.origin + url.pathname).toBe('https://wa.me/5511988887777');
     expect(url.searchParams.get('text')).toContain('Olá, Ana! Tudo bem? Aqui é Pedro, da Farbo Rastreadores.');
-    expect(url.searchParams.get('text')).toContain('R$ 120,00');
+    expect(url.searchParams.get('text')).toContain('com o rastreador incluso');
+    expect(url.searchParams.get('text')).not.toContain('R$ 120,00');
     expect(whats[0].target).toBe('_blank');
     const select = (label: string) => host.querySelector(`select[aria-label="${label}"]`) as HTMLSelectElement;
     const choose = async (label: string, value: string) =>

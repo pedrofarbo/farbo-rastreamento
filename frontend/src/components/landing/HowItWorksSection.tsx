@@ -31,7 +31,7 @@ const SITE_STEPS: Step[] = [
     art: 'pedido',
     title: 'Contrate pelo site',
     description:
-      'Em poucos minutos: escolha o plano e o rastreador — comprado, à vista ou parcelado sem juros, ou em comodato, sem comprar —, informe o veículo e o endereço e pague com Pix a 1ª mensalidade, o rastreador e o frete.',
+      'Em poucos minutos: escolha o rastreador — incluso na mensalidade, que fica com você, ou em comodato —, informe o veículo e o endereço e pague com Pix a 1ª mensalidade e o frete.',
   },
   {
     actor: 'voce',

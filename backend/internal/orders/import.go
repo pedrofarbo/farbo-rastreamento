@@ -31,14 +31,15 @@ type ImportRow struct {
 }
 
 // Import é a frota de uma vez, pela central: as linhas da planilha e, para
-// todas, o mesmo plano e o mesmo valor de equipamento. Tudo entra na próxima
-// fatura do mês da conta: o equipamento somado numa linha (ou a instalação,
-// no comodato) e o proporcional dos dias até o vencimento.
+// todas, o mesmo plano e o mesmo rastreador incluso. Tudo entra na próxima
+// fatura do mês da conta: a instalação, no comodato, e o proporcional dos
+// dias até o vencimento.
 type Import struct {
 	Rows []ImportRow
-	// EquipmentCents é o valor de cada aparelho; zero não cobra.
-	EquipmentCents int
-	// Terms: venda ou comodato e as taxas (os do plano do cliente).
+	// Tracker: o rastreador incluso de cada veículo (a parte dele nas
+	// primeiras mensalidades); zero, o aparelho do cliente.
+	Tracker Tracker
+	// Terms: incluso ou comodato e as taxas (os do plano do cliente).
 	Terms Terms
 	Plan  billing.SubscriptionInput
 	// DryRun só confere a planilha: nada é gravado.
@@ -70,9 +71,6 @@ type ImportResult struct {
 	Installed int `json:"installed"`
 	// NewGroups são os grupos que a planilha criou na conta.
 	NewGroups []string `json:"newGroups"`
-	// EquipmentCents é o total da linha do equipamento.
-	EquipmentCents int              `json:"equipmentCents"`
-	SetupInvoice   *billing.Invoice `json:"setupInvoice"`
 	// InstallInvoice (comodato) e ProrataInvoice: as outras linhas da fatura.
 	InstallInvoice *billing.Invoice `json:"installInvoice"`
 	ProrataInvoice *billing.Invoice `json:"prorataInvoice"`
@@ -89,12 +87,11 @@ type importPlan struct {
 }
 
 // ImportFleet cadastra a frota da planilha numa transação só: cada linha
-// vira um veículo com a assinatura dele, e o equipamento de todas, uma
-// fatura. Qualquer linha com problema recusa tudo (ImportProblems), com o
+// vira um veículo com a assinatura dele. Qualquer linha com problema recusa tudo (ImportProblems), com o
 // motivo de cada uma.
 func (s *Service) ImportFleet(ctx context.Context, customerID uuid.UUID, in Import) (*ImportResult, error) {
-	if in.EquipmentCents < 0 {
-		return nil, ValidationError{"o valor do equipamento não pode ser negativo"}
+	if err := in.Tracker.check(); err != nil {
+		return nil, err
 	}
 	template, err := s.billing.NewSubscription(customerID, in.Plan)
 	if err != nil {
@@ -105,7 +102,7 @@ func (s *Service) ImportFleet(ctx context.Context, customerID uuid.UUID, in Impo
 	}
 	loan := in.Terms.EquipmentMode == billing.EquipmentLoan
 	if loan {
-		in.EquipmentCents = 0
+		in.Tracker = Tracker{}
 		template.EquipmentMode, template.UninstallFeeCents = billing.EquipmentLoan, in.Terms.UninstallFeeCents
 	}
 	plan, err := s.checkImport(ctx, customerID, in.Rows)
@@ -113,8 +110,7 @@ func (s *Service) ImportFleet(ctx context.Context, customerID uuid.UUID, in Impo
 		return nil, err
 	}
 
-	result := &ImportResult{Vehicles: len(in.Rows), NewGroups: plan.newGroups, DryRun: in.DryRun,
-		EquipmentCents: in.EquipmentCents * len(in.Rows)}
+	result := &ImportResult{Vehicles: len(in.Rows), NewGroups: plan.newGroups, DryRun: in.DryRun}
 	for _, d := range plan.devices {
 		if d != nil {
 			result.Installed++
@@ -124,20 +120,9 @@ func (s *Service) ImportFleet(ctx context.Context, customerID uuid.UUID, in Impo
 		return result, nil
 	}
 
-	// O vencimento sai na transação; aqui só a validação dos valores.
+	// O vencimento sai na transação.
 	today := s.billing.Today()
 	due := today
-	var setup *billing.Invoice
-	if result.EquipmentCents > 0 {
-		setup, err = s.billing.NewInvoice(customerID, billing.InvoiceInput{
-			Description: fmt.Sprintf("%s × %d", s.catalog.EquipmentName, len(in.Rows)),
-			AmountCents: result.EquipmentCents,
-			DueDate:     due,
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		if err := lockCustomer(ctx, tx, customerID); err != nil {
@@ -159,9 +144,8 @@ func (s *Service) ImportFleet(ctx context.Context, customerID uuid.UUID, in Impo
 			due = template.NextDueDate
 		}
 		result.ChargeDate = due
-		if setup != nil {
-			setup.DueDate = due
-		}
+		// O rastreador incluso: a parte dele nas primeiras mensalidades.
+		template.IncludeTracker(in.Tracker.Cents, in.Tracker.Months, in.Tracker.Added)
 		for _, name := range plan.newGroups {
 			var id uuid.UUID
 			if err := tx.QueryRow(ctx, `INSERT INTO vehicle_groups (owner_id, name) VALUES ($1, $2) RETURNING id`,
@@ -203,11 +187,6 @@ func (s *Service) ImportFleet(ctx context.Context, customerID uuid.UUID, in Impo
 				}
 			}
 		}
-		if setup != nil {
-			if result.SetupInvoice, err = billing.InsertInvoice(ctx, tx, setup); err != nil {
-				return err
-			}
-		}
 		n := len(in.Rows)
 		if loan && in.Terms.InstallFeeCents > 0 {
 			if result.InstallInvoice, err = billing.InsertInvoice(ctx, tx, &billing.Invoice{
@@ -236,14 +215,14 @@ func (s *Service) ImportFleet(ctx context.Context, customerID uuid.UUID, in Impo
 		}
 		return nil, database.MapError(err)
 	}
-	for _, inv := range []*billing.Invoice{result.SetupInvoice, result.InstallInvoice, result.ProrataInvoice} {
+	for _, inv := range []*billing.Invoice{result.InstallInvoice, result.ProrataInvoice} {
 		if inv != nil {
 			s.billing.Decorate(inv)
 		}
 	}
 	s.billing.GenerateInvoices(ctx)
 	s.log.Info("frota importada", "customer", customerID, "vehicles", result.Vehicles, "installed", result.Installed,
-		"new_groups", len(result.NewGroups), "equipment_cents", result.EquipmentCents)
+		"new_groups", len(result.NewGroups), "tracker_cents", in.Tracker.Cents, "tracker_added", in.Tracker.Added)
 	return result, nil
 }
 

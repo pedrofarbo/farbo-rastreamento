@@ -152,15 +152,15 @@ func TestOrderShippingEndToEnd(t *testing.T) {
 		http.StatusBadRequest); !strings.Contains(out["error"].(string), "não vale para Rio de Janeiro/RJ") {
 		t.Errorf("combinar fora de SP = %+v", out)
 	}
-	// Escolheu o PAC: o frete entra na fatura do equipamento (com o preço do
-	// servidor; o rastreador no preço do site, o da pessoa física).
+	// Escolheu o PAC: o frete é a fatura do pedido (com o preço do servidor;
+	// o rastreador vem incluso, sem preço).
 	// (A tela não manda preço: um campo a mais é recusado.)
 	order(token, "/api/me/trackers", map[string]any{"vehicle": vehicle("FRT1A11"), "shippingServiceId": 1, "shippingCents": 1},
 		http.StatusBadRequest)
 	res := order(token, "/api/me/trackers", map[string]any{"vehicle": vehicle("FRT1A11"), "shippingServiceId": 1}, http.StatusCreated)
 	setup, _ := res["setupInvoice"].(map[string]any)
 	shipping, _ := res["shipping"].(map[string]any)
-	if setup["amountCents"] != float64(12000+2240) || !strings.Contains(setup["description"].(string), "frete Correios PAC (R$ 22,40)") ||
+	if setup["amountCents"] != float64(2240) || setup["description"] != "Frete do rastreador: Correios PAC" ||
 		shipping["name"] != "Correios PAC" || shipping["priceCents"] != float64(2240) {
 		t.Fatalf("pedido = %+v", res)
 	}
@@ -207,8 +207,8 @@ func TestOrderShippingEndToEnd(t *testing.T) {
 	res = order(sp, "/api/me/trackers", map[string]any{"vehicle": vehicle("FRT6F66"), "arrangeDelivery": true}, http.StatusCreated)
 	setup, _ = res["setupInvoice"].(map[string]any)
 	shipping, _ = res["shipping"].(map[string]any)
-	if setup["amountCents"] != float64(12000) || strings.Contains(setup["description"].(string), "frete") ||
-		shipping["arranged"] != true || shipping["name"] != fulfillment.ArrangedService || shipping["priceCents"] != float64(0) {
+	// Combinada: sem frete, nada a cobrar no pedido (o rastreador vem incluso).
+	if setup != nil || shipping["arranged"] != true || shipping["name"] != fulfillment.ArrangedService || shipping["priceCents"] != float64(0) {
 		t.Fatalf("pedido combinado = %+v", res)
 	}
 	if fake.count() != calls {
@@ -237,29 +237,23 @@ func TestOrderShippingEndToEnd(t *testing.T) {
 	}
 	plan := map[string]any{"planName": "Plano Mensal", "priceCents": 6990, "dueDay": 10}
 	res = order(admin, "/api/customers/"+customer.ID.String()+"/trackers",
-		map[string]any{"vehicle": vehicle("FRT2B22"), "equipmentCents": 15000, "plan": plan, "shippingServiceId": 2}, http.StatusCreated)
-	if setup, _ := res["setupInvoice"].(map[string]any); setup["amountCents"] != float64(15000+3990) {
+		map[string]any{"vehicle": vehicle("FRT2B22"), "plan": plan, "shippingServiceId": 2}, http.StatusCreated)
+	if setup, _ := res["setupInvoice"].(map[string]any); setup == nil || setup["amountCents"] != float64(3990) ||
+		setup["description"] != "Frete do rastreador: Correios SEDEX" {
 		t.Errorf("central com SEDEX = %+v", res)
 	}
 	res = order(admin, "/api/customers/"+customer.ID.String()+"/trackers",
-		map[string]any{"vehicle": vehicle("FRT3C33"), "equipmentCents": 15000, "plan": plan}, http.StatusCreated)
-	if setup, _ := res["setupInvoice"].(map[string]any); setup["amountCents"] != float64(15000) || res["shipping"] != nil {
+		map[string]any{"vehicle": vehicle("FRT3C33"), "plan": plan}, http.StatusCreated)
+	if res["setupInvoice"] != nil || res["shipping"] != nil {
 		t.Errorf("central sem frete = %+v", res)
 	}
-	// Equipamento sem cobrança, com frete: a fatura é só do frete.
+	// O aparelho do cliente (sem rastreador incluso), com frete: a fatura é
+	// só do frete, como sempre.
 	res = order(admin, "/api/customers/"+customer.ID.String()+"/trackers",
-		map[string]any{"vehicle": vehicle("FRT4D44"), "equipmentCents": 0, "plan": plan, "shippingServiceId": 1}, http.StatusCreated)
+		map[string]any{"vehicle": vehicle("FRT4D44"), "tracker": map[string]any{"cents": 0, "months": 0}, "plan": plan,
+			"shippingServiceId": 1}, http.StatusCreated)
 	if setup, _ := res["setupInvoice"].(map[string]any); setup == nil || setup["amountCents"] != float64(2240) ||
 		!strings.HasPrefix(setup["description"].(string), "Frete do rastreador") {
 		t.Errorf("só o frete = %+v", res)
-	}
-	// Rastreador parcelado, com frete: no pedido, só o frete; o rastreador
-	// vem nas mensalidades.
-	res = order(admin, "/api/customers/"+customer.ID.String()+"/trackers",
-		map[string]any{"vehicle": vehicle("FRT5E55"), "equipmentCents": 15000, "installments": 10, "plan": plan, "shippingServiceId": 1},
-		http.StatusCreated)
-	if setup, _ := res["setupInvoice"].(map[string]any); setup == nil || setup["amountCents"] != float64(2240) ||
-		setup["description"] != "Frete do rastreador: Correios PAC · rastreador de R$ 150,00 em 10x sem juros, nas mensalidades" {
-		t.Errorf("parcelado com frete = %+v", res)
 	}
 }

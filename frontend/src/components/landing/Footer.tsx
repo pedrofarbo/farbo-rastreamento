@@ -99,7 +99,7 @@ export const Footer: React.FC = () => {
                   </a>
                 </span>
               </li>
-              {/* CDC, art. 49: a compra fora da loja tem 7 dias para desistir. */}
+              {/* CDC, art. 49: a contratação fora da loja tem 7 dias para desistir. */}
               <li>
                 <Link to={CONTRACT_PATH}>Arrependimento em 7 dias</Link>
                 <span className={styles.note}>Após receber o rastreador (CDC, art. 49)</span>

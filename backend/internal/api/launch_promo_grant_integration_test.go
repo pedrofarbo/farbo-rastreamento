@@ -60,7 +60,7 @@ func TestLaunchPromoGrant(t *testing.T) {
 
 	// O cliente vê a promoção no catálogo e a central contrata com ela.
 	_ = json.Unmarshal(env.must(caioToken, http.MethodGet, "/api/catalog", nil, http.StatusOK), &catalog)
-	if catalog.LaunchPromo == nil || catalog.LaunchPromo.EquipmentCents != 12000 {
+	if catalog.LaunchPromo == nil || catalog.LaunchPromo.MonthlyCents != 3490 {
 		t.Fatalf("catálogo liberado = %+v", catalog.LaunchPromo)
 	}
 	var result struct {
@@ -72,10 +72,11 @@ func TestLaunchPromoGrant(t *testing.T) {
 		} `json:"setupInvoice"`
 	}
 	_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/customers/"+caio.ID.String()+"/trackers", map[string]any{
-		"vehicle": map[string]any{"name": "Moto do Caio", "plate": "LIB1A11"}, "equipmentCents": 15000,
+		"vehicle": map[string]any{"name": "Moto do Caio", "plate": "LIB1A11"}, "tracker": map[string]any{"cents": 0, "months": 0},
 		"plan": map[string]any{"planName": "Plano Mensal", "priceCents": 6990, "dueDay": 10}, "launchPromo": true,
 	}, http.StatusCreated), &result)
-	if result.SetupInvoice == nil || result.SetupInvoice.AmountCents != 12000 || result.Subscription.PromoPriceCents == nil ||
+	// O rastreador não é vendido: nada de fatura de equipamento.
+	if result.SetupInvoice != nil || result.Subscription.PromoPriceCents == nil ||
 		*result.Subscription.PromoPriceCents != 3490 {
 		t.Fatalf("pedido com a promoção = %+v", result)
 	}

@@ -87,8 +87,8 @@ func (m *recordingFiscalMailer) FiscalIssued(_ context.Context, d mail.FiscalDoc
 }
 
 // A NFS-e das faturas pagas, pela Notaas: só as pagas depois de ligar; a
-// mensalidade (sem a parcela do rastreador), não o rastreador vendido nem o
-// frete; o tomador com o CPF e o endereço; a nota emitida vai por e-mail
+// mensalidade pelo valor cheio (com a parcela de um rastreador comprado
+// antes), não o rastreador vendido nem o frete; o tomador com o CPF e o endereço; a nota emitida vai por e-mail
 // uma vez e aparece na ficha e no app (o PDF só do dono); sem CPF, a nota
 // fica recusada até a central emitir de novo; sem créditos na Notaas, a
 // fila espera (um aviso à central, uma nota tentando a cada 15 minutos) e
@@ -165,7 +165,8 @@ func TestFiscalDocuments(t *testing.T) {
 	}
 
 	ana := checkout("Ana Souza", "ana@fiscal.test", "529.982.247-25")
-	// A mensalidade traz R$ 10,00 da parcela do rastreador: a nota é só do serviço.
+	// A mensalidade traz R$ 10,00 da parcela de um rastreador comprado antes:
+	// a nota sai pelo valor cheio do mês.
 	var monthly uuid.UUID
 	var monthlyCents int
 	if err := env.db.QueryRow(ctx, `SELECT id, amount_cents FROM invoices WHERE subscription_id = $1`, ana.Subscription.ID).
@@ -179,6 +180,7 @@ func TestFiscalDocuments(t *testing.T) {
 		VALUES ($1, 1, 1000, $2)`, ana.Subscription.ID, monthly); err != nil {
 		t.Fatal(err)
 	}
+	monthlyCents += 1000
 	work() // marca o início
 	pay(ana.Tokens.User.ID)
 	work()
