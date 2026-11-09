@@ -19,7 +19,7 @@ import { usePagedList } from '@/hooks/usePagination';
 import { formatDateTime } from '@/services/format';
 import { matchesSearch } from '@/services/search';
 import { trackingUrl } from '@/services/fulfillment';
-import type { Affiliate, KitDevice, KitShipment, KitStatus } from '@/types';
+import type { Affiliate, KitChip, KitDevice, KitShipment, KitStatus } from '@/types';
 
 import styles from '../../Page.module.css';
 import company from '../company/Company.module.css';
@@ -58,12 +58,22 @@ export function kitTotals(list: KitShipment[]) {
 /** Onde a busca procura o rastreador do kit: o IMEI, o chip e o veículo em que foi instalado. */
 const kitDeviceFields = (d: KitDevice) => [d.imei, d.iccid, d.vehicleName, d.plate, d.customerName];
 
-/** A remessa na busca: o representante, o rastreio, a observação ou um dos rastreadores. */
+/** A remessa na busca: o representante, o rastreio, a observação, um dos rastreadores ou um dos chips avulsos. */
 export function shipmentMatches(k: KitShipment, term: string): boolean {
   return (
     matchesSearch(term, [k.affiliateName, k.trackingCode, k.carrier, k.notes, k.requestNote]) ||
-    k.devices.some((d) => matchesSearch(term, kitDeviceFields(d)))
+    k.devices.some((d) => matchesSearch(term, kitDeviceFields(d))) ||
+    (k.chips ?? []).some((c) => matchesSearch(term, [c.iccid, c.deviceImei]))
   );
+}
+
+/** "2 rastreadores e 1 chip": o que vai na remessa. */
+export function kitItemsLabel(devices: number, chips: number): string {
+  const parts = [
+    devices > 0 ? `${devices} ${devices === 1 ? 'rastreador' : 'rastreadores'}` : '',
+    chips > 0 ? `${chips} ${chips === 1 ? 'chip' : 'chips'}` : '',
+  ].filter(Boolean);
+  return parts.join(' e ');
 }
 
 /** "enviada em 03/11/2026 14:00": quando a remessa chegou à situação de agora. */
@@ -124,7 +134,7 @@ export function KitShipmentsCard({ affiliates }: { affiliates: Affiliate[] }) {
     <Card
       flush
       title="Kits dos representantes"
-      subtitle="Os rastreadores (com o chip) que vão para os representantes que entregam em mãos e instalam. Eles acompanham pela página e confirmam quando recebem; instalar baixa o estoque sozinho."
+      subtitle="Os rastreadores (com o chip, ou com o chip avulso para encaixar na ativação) que vão para os representantes que entregam em mãos e instalam. Eles acompanham pela página e confirmam quando recebem; instalar e ativar baixam o estoque sozinhos."
       actions={
         <Button size="small" variant="primary" onClick={() => setPicking('new')}>
           Enviar kits
@@ -215,9 +225,9 @@ export function KitShipmentsCard({ affiliates }: { affiliates: Affiliate[] }) {
                           <div className={company.muted}>{statusWhen(k)}</div>
                         </td>
                         <td data-label="Rastreadores">
-                          {k.devices.length === 0 ? (
+                          {k.devices.length === 0 && (k.chips ?? []).length === 0 ? (
                             <span className={company.muted}>{k.status === 'requested' ? 'a separar' : '—'}</span>
-                          ) : (
+                          ) : k.devices.length === 0 ? null : (
                             <details
                               className={local.kitDevices}
                               open={Boolean(term) && k.devices.some((d) => matchesSearch(term, kitDeviceFields(d)))}
@@ -242,6 +252,12 @@ export function KitShipmentsCard({ affiliates }: { affiliates: Affiliate[] }) {
                                 ))}
                               </ul>
                             </details>
+                          )}
+                          {(k.chips ?? []).length > 0 && (
+                            <KitChipList
+                              chips={k.chips ?? []}
+                              open={Boolean(term) && (k.chips ?? []).some((c) => matchesSearch(term, [c.iccid, c.deviceImei]))}
+                            />
                           )}
                         </td>
                         <td data-label="Envio">
@@ -338,10 +354,34 @@ export function KitShipmentsCard({ affiliates }: { affiliates: Affiliate[] }) {
   );
 }
 
+/** Os chips avulsos da remessa: o ICCID, a operadora e, já usado, o rastreador em que foi. */
+function KitChipList({ chips, open }: { chips: KitChip[]; open: boolean }) {
+  const used = chips.filter((c) => c.used).length;
+  return (
+    <details className={local.kitDevices} open={open}>
+      <summary>
+        {chips.length} {chips.length === 1 ? 'chip avulso' : 'chips avulsos'}
+        {used > 0 && ` · ${used} ${used === 1 ? 'usado' : 'usados'}`}
+      </summary>
+      <ul>
+        {chips.map((c) => (
+          <li key={c.id}>
+            <span className={local.mono}>{c.iccid}</span>
+            {c.carrier && <div className={company.muted}>{c.carrier}</div>}
+            {c.used && <div className={company.muted}>no rastreador {c.deviceImei}</div>}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 /**
- * Os rastreadores do kit: o representante (na remessa nova) e os rastreadores
- * livres — sem veículo e fora de outra remessa —, com a busca pelo IMEI ou
- * pelo chip. Atendendo um pedido, o representante e a quantidade vêm dele.
+ * O que vai no kit: o representante (na remessa nova), os rastreadores livres
+ * — sem veículo e fora de outra remessa — e os chips avulsos livres (para os
+ * rastreadores que vão sem chip: o instalador encaixa na ativação), com a
+ * busca pelo IMEI ou pelo chip. Atendendo um pedido, o representante e a
+ * quantidade vêm dele.
  */
 function KitDevicesModal({
   request,
@@ -355,6 +395,7 @@ function KitDevicesModal({
   onSaved: (k: KitShipment) => void;
 }) {
   const devices = useQuery({ queryKey: [...kitsKey, 'available'], queryFn: kitShipmentsApi.availableDevices });
+  const freeChips = useQuery({ queryKey: [...kitsKey, 'available-chips'], queryFn: kitShipmentsApi.availableChips });
   // Os que entregam em mãos primeiro: são os que recebem kits.
   const options = useMemo(
     () =>
@@ -366,25 +407,34 @@ function KitDevicesModal({
   const [affiliateId, setAffiliateId] = useState('');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [chipSearch, setChipSearch] = useState('');
+  const [chipsChosen, setChipsChosen] = useState<Set<string>>(new Set());
   const [notes, setNotes] = useState(request?.notes ?? '');
 
   const all = devices.data ?? [];
   const term = search.replace(/\s/g, '');
   const shown = term ? all.filter((d) => d.imei.includes(term) || d.iccid.includes(term)) : all;
-  const toggle = (id: string) =>
-    setSelected((s) => {
-      const next = new Set(s);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const flip = (set: Set<string>, id: string) => {
+    const next = new Set(set);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  };
+  const toggle = (id: string) => setSelected((s) => flip(s, id));
+  const chips = freeChips.data ?? [];
+  const chipTerm = chipSearch.replace(/\s/g, '');
+  const shownChips = chipTerm ? chips.filter((c) => c.iccid.includes(chipTerm)) : chips;
+  // Os rastreadores marcados que vão sem chip: cada um pede um chip avulso.
+  const withoutChip = all.filter((d) => selected.has(d.id) && !d.iccid).length;
+  const missingChips = Math.max(0, withoutChip - chipsChosen.size);
 
   const save = useMutation({
     mutationFn: () => {
       const deviceIds = [...selected];
+      const chipIds = [...chipsChosen];
       return request
-        ? kitShipmentsApi.prepare(request.id, { deviceIds, notes: notes.trim() })
-        : kitShipmentsApi.create({ affiliateId, deviceIds, notes: notes.trim() });
+        ? kitShipmentsApi.prepare(request.id, { deviceIds, chipIds, notes: notes.trim() })
+        : kitShipmentsApi.create({ affiliateId, deviceIds, chipIds, notes: notes.trim() });
     },
     onSuccess: onSaved,
   });
@@ -404,10 +454,10 @@ function KitDevicesModal({
           <Button
             variant="primary"
             loading={save.isPending}
-            disabled={selected.size === 0 || (!request && !affiliateId)}
+            disabled={(selected.size === 0 && chipsChosen.size === 0) || (!request && !affiliateId)}
             onClick={() => save.mutate()}
           >
-            Separar {selected.size} {selected.size === 1 ? 'rastreador' : 'rastreadores'}
+            Separar {kitItemsLabel(selected.size, chipsChosen.size) || 'o kit'}
           </Button>
         </>
       }
@@ -475,6 +525,75 @@ function KitDevicesModal({
             )}
           </>
         )}
+        <div className={local.kitChips}>
+          <strong>Chips avulsos</strong>
+          <span className={company.muted}>
+            Para os rastreadores que vão sem chip: o instalador do representante encaixa o chip na hora de ativar.
+          </span>
+          {withoutChip > 0 && (
+            <span className={missingChips > 0 ? company.danger : company.muted}>
+              {withoutChip === 1 ? '1 rastreador marcado vai sem chip' : `${withoutChip} rastreadores marcados vão sem chip`}
+              {missingChips > 0
+                ? `: marque ${missingChips === 1 ? 'mais 1 chip' : `mais ${missingChips} chips`}.`
+                : ': os chips marcados vão junto.'}
+            </span>
+          )}
+          {freeChips.isLoading ? (
+            <Spinner label="Carregando os chips livres" />
+          ) : freeChips.isError ? (
+            <p className={company.danger}>{(freeChips.error as Error).message}</p>
+          ) : chips.length === 0 ? (
+            <p className={company.muted}>Nenhum chip livre: cadastre os chips em Chips (os que estão num rastreador ou em outra remessa não entram).</p>
+          ) : (
+            <>
+              <TextField
+                label="Buscar chip"
+                inputMode="numeric"
+                placeholder="Números do ICCID"
+                value={chipSearch}
+                onChange={(e) => setChipSearch(e.target.value)}
+              />
+              <span className={local.linkButtons}>
+                <span className={company.muted}>
+                  {chipsChosen.size} de {chips.length} livres selecionados
+                </span>
+                {missingChips > 0 && shownChips.some((c) => !chipsChosen.has(c.id)) && (
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    onClick={() =>
+                      setChipsChosen((set) => {
+                        const next = new Set(set);
+                        for (const c of shownChips) {
+                          if (next.size >= withoutChip) break;
+                          next.add(c.id);
+                        }
+                        return next;
+                      })
+                    }
+                  >
+                    Marcar {Math.min(missingChips, shownChips.filter((c) => !chipsChosen.has(c.id)).length)} da lista
+                  </Button>
+                )}
+              </span>
+              {shownChips.length === 0 ? (
+                <p className={company.muted}>Nenhum chip livre com “{chipSearch}”.</p>
+              ) : (
+                <ul className={local.deviceList} aria-label="Chips livres">
+                  {shownChips.map((c) => (
+                    <li key={c.id}>
+                      <label className={company.check}>
+                        <input type="checkbox" checked={chipsChosen.has(c.id)} onChange={() => setChipsChosen((set) => flip(set, c.id))} />
+                        <span className={local.mono}>{c.iccid}</span>
+                        {c.carrier && <span className={company.muted}>{c.carrier}</span>}
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </div>
         <TextField
           label="Observação (opcional)"
           maxLength={1000}

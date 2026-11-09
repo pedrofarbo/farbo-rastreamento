@@ -327,3 +327,168 @@ func TestInstallerActivation(t *testing.T) {
 		t.Errorf("chips da avulsa depois da ativação = %+v", own.Chips)
 	}
 }
+
+// O representante cujo rastreador do kit veio sem chip (ou com o chip
+// separado): o instalador encaixa o chip na hora e acha pelo ICCID inteiro
+// impresso nele — a lista do link do representante não tem os chips da
+// central. O chip de outro rastreador não serve, o não cadastrado nem
+// aparece, e o número pela metade não procura. Com o chip achado, a ativação
+// sai. Precisa de FARBO_TEST_DATABASE_URL.
+func TestRepresentativeActivationWithChipInHand(t *testing.T) {
+	sms := &fakeProvider{statuses: map[string]string{}, reasons: map[string]string{}}
+	env := newCredEnvWith(t, credEnvOptions{installs: true, sms: sms})
+	ctx := context.Background()
+	if _, err := env.auth.CreateUser(ctx, "op@chip.test", "Operadora", auth.RoleOperator, userPassword); err != nil {
+		t.Fatal(err)
+	}
+	customer, err := env.auth.CreateUser(ctx, "dono@chip.test", "Dona Ana", auth.RoleCustomer, userPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	car, err := env.vehicles.Create(ctx, vehicles.Input{Name: "Onix da Ana", Plate: "CHP1A11", OwnerID: &customer.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kitDev, err := env.devices.Create(ctx, devices.Input{IMEIConfirmed: true, IMEI: "869247061250111", Protocol: "gt06"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := env.devices.Create(ctx, devices.Input{IMEIConfirmed: true, IMEI: "869247061250228", Protocol: "gt06"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rep uuid.UUID
+	if err := env.db.QueryRow(ctx, `
+		WITH a AS (INSERT INTO affiliates (name, code, report_token, commission_cents) VALUES ('Rep', 'rep-chip', 'tok-chip', 600)
+			RETURNING id),
+		k AS (INSERT INTO kit_shipments (affiliate_id, status) SELECT id, 'delivered' FROM a RETURNING id),
+		d AS (INSERT INTO kit_shipment_devices (shipment_id, device_id) SELECT id, $1 FROM k)
+		SELECT id FROM a`, kitDev.ID).Scan(&rep); err != nil {
+		t.Fatal(err)
+	}
+	chip := func(iccid, phone string) uuid.UUID {
+		t.Helper()
+		c, err := env.devices.CreateChip(ctx, devices.ChipInput{ICCID: iccid, PhoneNumber: phone, Carrier: "Claro", APN: "claro.com.br",
+			APNUser: "claro", APNPassword: "claro"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.ID
+	}
+	inHand, busy := chip("89551012345678901308", "11992220001"), chip("89551012345678901316", "11992220002")
+	if _, err := env.devices.AttachChip(ctx, other.ID, busy); err != nil {
+		t.Fatal(err)
+	}
+	// Os chips avulsos dos kits: o do kit que ele recebeu (na lista dele), o
+	// do kit ainda a caminho (ainda não) e o do kit de outro representante.
+	inKit, onTheWay, othersKit := chip("89551012345678901332", "11992220003"), chip("89551012345678901340", "11992220004"),
+		chip("89551012345678901357", "11992220005")
+	if _, err := env.db.Exec(ctx, `
+		WITH mine AS (SELECT id FROM kit_shipments WHERE affiliate_id = $1),
+		shipped AS (INSERT INTO kit_shipments (affiliate_id, status) VALUES ($1, 'shipped') RETURNING id),
+		other AS (INSERT INTO affiliates (name, code, report_token, commission_cents) VALUES ('Outro', 'outro-chip', 'tok-outro', 600)
+			RETURNING id),
+		otherKit AS (INSERT INTO kit_shipments (affiliate_id, status) SELECT id, 'delivered' FROM other RETURNING id)
+		INSERT INTO kit_shipment_chips (shipment_id, chip_id)
+		SELECT id, $2::uuid FROM mine UNION ALL SELECT id, $3::uuid FROM shipped UNION ALL SELECT id, $4::uuid FROM otherKit`,
+		rep, inKit, onTheWay, othersKit); err != nil {
+		t.Fatal(err)
+	}
+
+	// O agendamento do representante (o link dele abre sem senha).
+	var appt struct {
+		ID  uuid.UUID `json:"id"`
+		URL string    `json:"url"`
+	}
+	_ = json.Unmarshal(env.must(env.tokenFor("op@chip.test"), http.MethodPost, "/api/installations", map[string]any{
+		"vehicleId": car.ID, "installerName": "Rep", "scheduledFor": time.Now().Add(time.Hour), "address": "Rua B, 2",
+	}, http.StatusCreated), &appt)
+	if _, err := env.db.Exec(ctx, `UPDATE installation_appointments SET affiliate_id = $2, access_pin = NULL WHERE id = $1`,
+		appt.ID, rep); err != nil {
+		t.Fatal(err)
+	}
+	link := "/api/public/install/" + strings.TrimPrefix(appt.URL, "https://painel.farbo.test/instalador/")
+
+	var stock struct {
+		Devices []struct {
+			ID     uuid.UUID  `json:"id"`
+			ChipID *uuid.UUID `json:"chipId"`
+		} `json:"devices"`
+		Chips []struct {
+			ID uuid.UUID `json:"id"`
+		} `json:"chips"`
+	}
+	_ = json.Unmarshal(env.must("", http.MethodGet, link+"/stock", nil, http.StatusOK), &stock)
+	if len(stock.Devices) != 1 || stock.Devices[0].ID != kitDev.ID || stock.Devices[0].ChipID != nil ||
+		len(stock.Chips) != 1 || stock.Chips[0].ID != inKit {
+		t.Fatalf("estoque do representante = %+v", stock)
+	}
+	// O chip do kit de outro representante: não acha. O do kit dele a caminho, sim
+	// (já está na mão dele, mesmo sem o "recebi").
+	if out := env.must("", http.MethodGet, link+"/chip?iccid=89551012345678901357", nil, http.StatusConflict); !strings.Contains(string(out), "kit de um representante") {
+		t.Errorf("chip do kit de outro: %s", out)
+	}
+	env.must("", http.MethodGet, link+"/chip?iccid=89551012345678901340", nil, http.StatusOK)
+
+	// Pelo ICCID inteiro: o chip livre aparece; o de outro rastreador, o não
+	// cadastrado e o número pela metade, não.
+	var found struct {
+		ID      uuid.UUID `json:"id"`
+		ICCID   string    `json:"iccid"`
+		Carrier string    `json:"carrier"`
+	}
+	_ = json.Unmarshal(env.must("", http.MethodGet, link+"/chip?iccid=8955+1012+3456+7890+1308", nil, http.StatusOK), &found)
+	if found.ID != inHand || found.ICCID != "89551012345678901308" || found.Carrier != "Claro" {
+		t.Errorf("chip achado = %+v", found)
+	}
+	if out := env.must("", http.MethodGet, link+"/chip?iccid=89551012345678901316", nil, http.StatusConflict); !strings.Contains(string(out), other.IMEI) {
+		t.Errorf("chip de outro rastreador: %s", out)
+	}
+	if out := env.must("", http.MethodGet, link+"/chip?iccid=89551012345678901324", nil, http.StatusNotFound); !strings.Contains(string(out), "não está cadastrado") {
+		t.Errorf("chip não cadastrado: %s", out)
+	}
+	env.must("", http.MethodGet, link+"/chip?iccid=1308", nil, http.StatusBadRequest)
+
+	// Com o chip achado, a ativação sai e o chip vai para o rastreador do kit.
+	var act struct {
+		Activation *struct {
+			IMEI  string `json:"imei"`
+			ICCID string `json:"iccid"`
+		} `json:"activation"`
+	}
+	_ = json.Unmarshal(env.must("", http.MethodPost, link+"/activate", map[string]any{"deviceId": kitDev.ID, "chipId": inHand},
+		http.StatusCreated), &act)
+	if act.Activation == nil || act.Activation.IMEI != kitDev.IMEI || act.Activation.ICCID != "89551012345678901308" {
+		t.Fatalf("ativação = %+v", act)
+	}
+	if got, err := env.devices.Get(ctx, kitDev.ID); err != nil || got.ICCID != "89551012345678901308" {
+		t.Fatalf("rastreador do kit depois do chip = %+v (%v)", got, err)
+	}
+	if len(sms.bodies()) == 0 {
+		t.Fatal("nenhum SMS saiu")
+	}
+	// Já no rastreador, o chip não aparece mais pela busca.
+	env.must("", http.MethodGet, link+"/chip?iccid=89551012345678901308", nil, http.StatusConflict)
+
+	// No link da central, os chips dos kits não entram na lista nem na busca.
+	bike, err := env.vehicles.Create(ctx, vehicles.Input{Name: "Moto da Ana", Plate: "CHP2B22", OwnerID: &customer.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var central struct {
+		URL string `json:"url"`
+		Pin string `json:"pin"`
+	}
+	_ = json.Unmarshal(env.must(env.tokenFor("op@chip.test"), http.MethodPost, "/api/installations", map[string]any{
+		"vehicleId": bike.ID, "installerName": "Zé", "scheduledFor": time.Now().Add(time.Hour), "address": "Rua C, 3",
+	}, http.StatusCreated), &central)
+	centralLink := "/api/public/install/" + strings.TrimPrefix(central.URL, "https://painel.farbo.test/instalador/")
+	env.withPin(centralLink, central.Pin)
+	_ = json.Unmarshal(env.must("", http.MethodGet, centralLink+"/stock", nil, http.StatusOK), &stock)
+	for _, c := range stock.Chips {
+		if c.ID == inKit || c.ID == onTheWay || c.ID == othersKit {
+			t.Errorf("chip de kit na lista da central: %v", c.ID)
+		}
+	}
+	env.must("", http.MethodGet, centralLink+"/chip?iccid=89551012345678901332", nil, http.StatusConflict)
+}

@@ -117,6 +117,22 @@ export function PartnerPage() {
             )}
           </section>
 
+          <Link to={`/parceiro/${token}/tutorial`} className={styles.tutorial}>
+            <span className={styles.tutorialIcon} aria-hidden>
+              ?
+            </span>
+            <span className={styles.tutorialText}>
+              <strong>Como usar a sua página</strong>
+              <span>
+                O passo a passo para divulgar, {report.manageInstalls || report.kits ? 'instalar, ' : ''}acompanhar e
+                receber.
+              </span>
+            </span>
+            <span className={styles.tutorialArrow} aria-hidden>
+              ›
+            </span>
+          </Link>
+
           <section className={styles.linkCard} aria-label="Seu link de indicação">
             <span className={styles.label}>Seu link de indicação</span>
             <code className={styles.link}>

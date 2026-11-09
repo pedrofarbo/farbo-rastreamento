@@ -104,10 +104,35 @@ func (s *Service) InstallStock(ctx context.Context, appointmentID uuid.UUID) ([]
 		return nil, nil, database.MapError(err)
 	}
 	if affiliate != nil {
-		return devices, []StockChip{}, nil
+		chips, err := s.kitChips(ctx, *affiliate)
+		return devices, chips, err
 	}
 	chips, err := s.FreeChips(ctx)
 	return devices, chips, err
+}
+
+// kitChips são os chips avulsos dos kits que o representante já recebeu,
+// ainda fora de rastreador (os da central não são dele).
+func (s *Service) kitChips(ctx context.Context, affiliateID uuid.UUID) ([]StockChip, error) {
+	return s.chips(ctx, `
+		SELECT c.id, c.iccid, c.carrier FROM chips c
+		JOIN kit_shipment_chips kc ON kc.chip_id = c.id JOIN kit_shipments k ON k.id = kc.shipment_id
+		WHERE k.affiliate_id = $1 AND k.status = 'delivered' AND NOT EXISTS (SELECT 1 FROM devices d WHERE d.iccid = c.iccid)
+		ORDER BY c.iccid LIMIT `+strconv.Itoa(maxStock), affiliateID)
+}
+
+// ChipKitOwner é o representante em cujo kit o chip foi (nulo: em nenhum).
+func (s *Service) ChipKitOwner(ctx context.Context, chipID uuid.UUID) (*uuid.UUID, error) {
+	var owner uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT k.affiliate_id FROM kit_shipment_chips kc JOIN kit_shipments k ON k.id = kc.shipment_id
+		WHERE kc.chip_id = $1`, chipID).Scan(&owner)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	return &owner, nil
 }
 
 // affiliateOf é o representante que agendou (nulo: a central).
@@ -117,12 +142,19 @@ func (s *Service) affiliateOf(ctx context.Context, appointmentID uuid.UUID) (*uu
 	return affiliate, database.MapError(err)
 }
 
-// FreeChips são os chips do estoque que não estão em nenhum rastreador.
+// FreeChips são os chips do estoque da central: fora de rastreador e dos kits
+// dos representantes (esses estão com eles).
 func (s *Service) FreeChips(ctx context.Context) ([]StockChip, error) {
-	rows, err := s.db.Query(ctx, `
+	return s.chips(ctx, `
 		SELECT c.id, c.iccid, c.carrier FROM chips c
 		WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.iccid = c.iccid)
+			AND NOT EXISTS (SELECT 1 FROM kit_shipment_chips kc WHERE kc.chip_id = c.id)
 		ORDER BY c.created_at DESC LIMIT `+strconv.Itoa(maxStock))
+}
+
+// chips lê uma lista de chips (id, iccid, operadora).
+func (s *Service) chips(ctx context.Context, query string, args ...any) ([]StockChip, error) {
+	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, database.MapError(err)
 	}

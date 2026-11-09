@@ -39,11 +39,18 @@ const api = vi.hoisted(() => ({
   activation: null as unknown,
   calls: [] as unknown[][],
   check: null as unknown,
+  stock: null as unknown,
+  chip: null as unknown,
 }));
 vi.mock('@/api/resources', () => ({
   installLinkApi: {
     view: async () => api.view,
-    stock: async () => STOCK,
+    stock: async () => api.stock ?? STOCK,
+    chip: async (token: string, iccid: string) => {
+      api.calls.push(['chip', token, iccid]);
+      if (api.chip instanceof Error) throw api.chip;
+      return api.chip;
+    },
     activation: async () => {
       api.calls.push(['activation']);
       return api.activation;
@@ -98,6 +105,8 @@ afterEach(() => {
   clearInstallPin('tok123');
   api.calls = [];
   api.check = null;
+  api.stock = null;
+  api.chip = null;
 });
 
 describe('o link do instalador: a ativação antes de instalar', () => {
@@ -139,6 +148,40 @@ describe('o link do instalador: a ativação antes de instalar', () => {
     await act(async () => button('Testar o sinal')!.click());
     expect(api.calls).toContainEqual(['check', 'tok123', '869247061240112']);
     expect(text()).toContain('Pode concluir.');
+  });
+
+  it('o chip encaixado na hora, fora da lista (a do representante): aparece pelo ICCID inteiro e ativa com ele', async () => {
+    api.view = view();
+    api.stock = { devices: [{ id: 'd-kit', imei: '869247061250111', model: 'J16', iccid: '', chipId: null, activated: false }], chips: [] };
+    api.activation = { enabled: true, left: 3, activation: null };
+    api.chip = { id: 'c-mao', iccid: '89551012345678901308', carrier: 'Claro' };
+    await render();
+    await act(async () => button('869247061250111')!.click());
+    expect(text()).toContain('Digite o ICCID inteiro, impresso no chip que você encaixou no rastreador.');
+    expect(button('Ativar o rastreador')!.disabled).toBe(true);
+    // Pela metade, não procura.
+    await type(input('ICCID do chip'), '895510123456789013');
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(api.calls.some((c) => c[0] === 'chip')).toBe(false);
+    await type(input('ICCID do chip'), '89551012345678901308');
+    await vi.waitFor(() => expect(text()).toContain('Chip escolhido: 89551012345678901308 · Claro'));
+    expect(api.calls).toContainEqual(['chip', 'tok123', '89551012345678901308']);
+    await act(async () => button('Ativar o rastreador')!.click());
+    expect(api.calls).toContainEqual(['activate', 'tok123', 'd-kit', 'c-mao']);
+  });
+
+  it('o chip encaixado que não está cadastrado: diz o motivo e não ativa', async () => {
+    api.view = view();
+    api.activation = { enabled: true, left: 3, activation: null };
+    api.chip = new ApiError(404, 'Este chip não está cadastrado na Farbo. Confira os números do ICCID ou fale com a Farbo.');
+    await render();
+    await act(async () => button('869247061240112')!.click());
+    // Com a lista da central: os números que não batem com ela dizem como achar o de fora.
+    await type(input('ICCID do chip'), '777');
+    expect(text()).toContain('Chip fora da lista? Digite o ICCID inteiro impresso nele.');
+    await type(input('ICCID do chip'), '89551012345678901324');
+    await vi.waitFor(() => expect(text()).toContain('Este chip não está cadastrado na Farbo'));
+    expect(button('Ativar o rastreador')!.disabled).toBe(true);
   });
 
   it('o rastreador já ativado vai direto para o teste, sem chip nem ativação', async () => {

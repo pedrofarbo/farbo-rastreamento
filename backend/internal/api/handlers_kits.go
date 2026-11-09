@@ -45,10 +45,20 @@ func (s *Server) handleKitDevices(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
+// handleKitChips: os chips que podem ir avulsos num kit.
+func (s *Server) handleKitChips(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Kits.AvailableChips(r.Context())
+	if !writeKitError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
 // kitInput é a remessa montada na central (ou o pedido atendido).
 type kitInput struct {
 	AffiliateID uuid.UUID   `json:"affiliateId"`
 	DeviceIDs   []uuid.UUID `json:"deviceIds"`
+	ChipIDs     []uuid.UUID `json:"chipIds"`
 	Notes       string      `json:"notes"`
 }
 
@@ -57,11 +67,12 @@ func (s *Server) handleCreateKitShipment(w http.ResponseWriter, r *http.Request)
 	if !decodeOr400(w, r, &in) {
 		return
 	}
-	k, err := s.Kits.Create(r.Context(), personOf(r), in.AffiliateID, in.DeviceIDs, in.Notes)
+	k, err := s.Kits.Create(r.Context(), personOf(r), in.AffiliateID, in.DeviceIDs, in.ChipIDs, in.Notes)
 	if !writeKitError(w, err) {
 		return
 	}
-	s.auditAffiliate(r, "kits-create", map[string]any{"affiliateId": k.AffiliateID, "shipmentId": k.ID, "devices": len(k.Devices)})
+	s.auditAffiliate(r, "kits-create", map[string]any{"affiliateId": k.AffiliateID, "shipmentId": k.ID, "devices": len(k.Devices),
+		"chips": len(k.Chips)})
 	writeJSON(w, http.StatusCreated, k)
 }
 
@@ -74,11 +85,12 @@ func (s *Server) handlePrepareKitShipment(w http.ResponseWriter, r *http.Request
 	if !decodeOr400(w, r, &in) {
 		return
 	}
-	k, err := s.Kits.Prepare(r.Context(), id, in.DeviceIDs, in.Notes)
+	k, err := s.Kits.Prepare(r.Context(), id, in.DeviceIDs, in.ChipIDs, in.Notes)
 	if !writeKitError(w, err) {
 		return
 	}
-	s.auditAffiliate(r, "kits-prepare", map[string]any{"affiliateId": k.AffiliateID, "shipmentId": k.ID, "devices": len(k.Devices)})
+	s.auditAffiliate(r, "kits-prepare", map[string]any{"affiliateId": k.AffiliateID, "shipmentId": k.ID, "devices": len(k.Devices),
+		"chips": len(k.Chips)})
 	writeJSON(w, http.StatusOK, k)
 }
 

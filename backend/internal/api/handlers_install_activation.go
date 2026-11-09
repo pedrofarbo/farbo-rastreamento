@@ -112,10 +112,11 @@ func (s *Server) activationOf(r *http.Request, a appointments.Activation) (activ
 // mesmo rastreador e do mesmo chip continua (recusa começar outra); a de
 // outro rastreador ou chip é interrompida. reserve conta a ativação (e
 // reserva o rastreador) antes dos SMS; release a devolve se eles nem saíram;
-// record guarda a sessão no link.
-// ownChipOnly: o representante ativa com o chip que veio no rastreador do kit.
+// record guarda a sessão no link. O chip é o que já está no rastreador ou
+// um livre do estoque: o da lista do link ou o que o instalador encaixou na
+// hora e achou pelo ICCID inteiro (chipByICCID).
 func (s *Server) startActivation(r *http.Request, dev *devices.Device, chipID uuid.UUID, act appointments.Activation,
-	ownChipOnly bool, reserve, release func() error, record func(uuid.UUID) error, meta map[string]any) error {
+	reserve, release func() error, record func(uuid.UUID) error, meta map[string]any) error {
 	ctx := r.Context()
 	if s.SMSSetup == nil || !s.SMSSetup.Enabled() {
 		return activationError{http.StatusServiceUnavailable, "A ativação por SMS não está disponível agora: fale com a Farbo."}
@@ -137,9 +138,6 @@ func (s *Server) startActivation(r *http.Request, dev *devices.Device, chipID uu
 	}
 	if chip.Device != nil && chip.Device.ID != dev.ID {
 		return activationError{http.StatusConflict, fmt.Sprintf("Este chip já está no rastreador %s. Escolha outro.", chip.Device.IMEI)}
-	}
-	if ownChipOnly && chip.Device == nil {
-		return activationError{http.StatusBadRequest, "Use o chip que veio no rastreador do kit (se ele não tiver, fale com a Farbo)."}
 	}
 	if current != nil {
 		previous, err := s.SMSSetup.Session(ctx, *current)
@@ -207,6 +205,64 @@ func (s *Server) installForActivation(w http.ResponseWriter, r *http.Request) (*
 	return a, true
 }
 
+// chipByICCID: o chip pelo ICCID inteiro impresso nele, para o instalador
+// que encaixa na hora um chip fora da lista do link (a do representante só
+// tem o chip que veio no rastreador; a da central pode não mostrar todos).
+// Só o número inteiro acha; o chip que já está num rastreador não serve, nem
+// o do kit de um representante fora do link dele (affiliate: o do link; nulo,
+// a central).
+func (s *Server) chipByICCID(w http.ResponseWriter, r *http.Request, affiliate *uuid.UUID) {
+	iccid, err := devices.NormalizeICCID(r.URL.Query().Get("iccid"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if iccid == "" {
+		writeError(w, http.StatusBadRequest, "Digite todos os números do ICCID impresso no chip.")
+		return
+	}
+	ctx := r.Context()
+	found, err := s.Appointments.ChipByICCID(ctx, iccid)
+	if !writeAppointmentError(w, err, "chip não encontrado") {
+		return
+	}
+	if found == nil {
+		writeError(w, http.StatusNotFound, "Este chip não está cadastrado na Farbo. Confira os números do ICCID ou fale com a Farbo.")
+		return
+	}
+	chip, err := s.Devices.Chip(ctx, found.ID)
+	if !writeAppointmentError(w, err, "chip não encontrado") {
+		return
+	}
+	if chip.Device != nil {
+		writeError(w, http.StatusConflict, fmt.Sprintf("Este chip já está no rastreador %s. Use outro chip ou fale com a Farbo.", chip.Device.IMEI))
+		return
+	}
+	owner, err := s.Appointments.ChipKitOwner(ctx, found.ID)
+	if !writeAppointmentError(w, err, "chip não encontrado") {
+		return
+	}
+	if owner != nil && (affiliate == nil || *owner != *affiliate) {
+		writeError(w, http.StatusConflict, "Este chip foi enviado no kit de um representante. Use outro chip ou fale com a Farbo.")
+		return
+	}
+	writeJSON(w, http.StatusOK, found)
+}
+
+// handlePublicInstallChip: o chip encaixado na hora, pelo ICCID inteiro.
+func (s *Server) handlePublicInstallChip(w http.ResponseWriter, r *http.Request) {
+	if a, ok := s.installForActivation(w, r); ok {
+		s.chipByICCID(w, r, a.AffiliateID)
+	}
+}
+
+// handlePublicStandaloneChip é o handlePublicInstallChip da instalação avulsa.
+func (s *Server) handlePublicStandaloneChip(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.standaloneForActivation(w, r); ok {
+		s.chipByICCID(w, r, nil)
+	}
+}
+
 // handlePublicInstallStock: os rastreadores livres (ativados ou não) e os
 // chips livres, para o instalador escolher.
 func (s *Server) handlePublicInstallStock(w http.ResponseWriter, r *http.Request) {
@@ -269,7 +325,7 @@ func (s *Server) handlePublicInstallActivate(w http.ResponseWriter, r *http.Requ
 	if !writeAppointmentError(w, err, "link não encontrado") {
 		return
 	}
-	err = s.startActivation(r, dev, req.ChipID, act, a.AffiliateID != nil,
+	err = s.startActivation(r, dev, req.ChipID, act,
 		func() error { return s.Appointments.ReserveActivation(ctx, a.ID, dev.ID) },
 		func() error { return s.Appointments.ReleaseActivation(ctx, a.ID) },
 		func(session uuid.UUID) error { return s.Appointments.RecordActivation(ctx, a.ID, session) },
@@ -364,7 +420,7 @@ func (s *Server) handlePublicStandaloneActivate(w http.ResponseWriter, r *http.R
 	if !writeAppointmentError(w, err, "link não encontrado") {
 		return
 	}
-	err = s.startActivation(r, dev, req.ChipID, act, false,
+	err = s.startActivation(r, dev, req.ChipID, act,
 		func() error { return s.Appointments.ReserveStandaloneActivation(ctx, l.ID) },
 		func() error { return s.Appointments.ReleaseStandaloneActivation(ctx, l.ID) },
 		func(session uuid.UUID) error { return s.Appointments.RecordStandaloneActivation(ctx, l.ID, session) },

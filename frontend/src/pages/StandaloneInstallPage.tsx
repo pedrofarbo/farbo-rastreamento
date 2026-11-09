@@ -166,6 +166,7 @@ export function StandaloneInstallPage() {
                 fixedImei={view.imei}
                 api={{
                   stock: () => guard(installerLinkPublicApi.stock(token)),
+                  chip: (iccid) => guard(installerLinkPublicApi.chip(token, iccid)),
                   activation: () => guard(installerLinkPublicApi.activation(token)),
                   activate: (_device, chipId) => guard(installerLinkPublicApi.activate(token, chipId)),
                 }}

@@ -55,6 +55,18 @@ afterEach(() => {
 });
 
 describe('PartnerPage', () => {
+  it('leva ao tutorial, com o que vale para ele', async () => {
+    respond = async () => ({
+      name: 'João Motoca', handle: 'joao.moto', code: 'joao-moto', active: true, commissionType: 'fixed', commissionCents: 600, commissionBps: 0,
+      signups: 0, customers: 0, activeCustomers: 0, activeVehicles: 0, toReceiveCents: 0, paidCents: 0, months: [],
+    });
+    const host = await render();
+    const link = Array.from(host.querySelectorAll('a')).find((a) => a.textContent?.includes('Como usar a sua página'))!;
+    expect(link.getAttribute('href')).toBe('/parceiro/segredo-do-joao-0123456789/tutorial');
+    // Quem só indica: sem a parte de instalar.
+    expect(link.textContent).toContain('divulgar, acompanhar e receber');
+  });
+
   it('mostra o link e os números, mês a mês', async () => {
     respond = async (token) => {
       expect(token).toBe('segredo-do-joao-0123456789');

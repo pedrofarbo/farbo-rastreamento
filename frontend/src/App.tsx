@@ -36,6 +36,7 @@ const ReferralSignupPage = page(() => import('@/pages/ReferralSignupPage'), 'Ref
 const TeamPage = page(() => import('@/pages/customer/TeamPage'), 'TeamPage');
 const PartnerPage = page(() => import('@/pages/PartnerPage'), 'PartnerPage');
 const PartnerFlyerPage = page(() => import('@/pages/PartnerFlyerPage'), 'PartnerFlyerPage');
+const PartnerTutorialPage = page(() => import('@/pages/PartnerTutorialPage'), 'PartnerTutorialPage');
 const PublicTheftPage = page(() => import('@/pages/PublicTheftPage'), 'PublicTheftPage');
 const PublicLivePage = page(() => import('@/pages/PublicLivePage'), 'PublicLivePage');
 const PublicRoutePage = page(() => import('@/pages/PublicRoutePage'), 'PublicRoutePage');
@@ -120,6 +121,7 @@ export function App() {
                 <Route path="/indicacao/:codigo" element={<ReferralSignupPage />} />
                 <Route path="/parceiro/:token" element={<PartnerPage />} />
                 <Route path="/parceiro/:token/flyer" element={<PartnerFlyerPage />} />
+                <Route path="/parceiro/:token/tutorial" element={<PartnerTutorialPage />} />
                 {/* Modo roubo: a posição ao vivo pelo link (sem login), para a polícia. */}
                 <Route path="/localizar/:token" element={<PublicTheftPage />} />
                 {/* A localização ao vivo por um tempo, pelo link que o cliente mandou (sem login). */}

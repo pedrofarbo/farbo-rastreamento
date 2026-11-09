@@ -4,7 +4,7 @@ import type { FormEvent } from 'react';
 import { publicApi } from '@/api/resources';
 import { trackingUrl } from '@/services/fulfillment';
 import { matchesSearch } from '@/services/search';
-import type { KitDevice, KitShipment, KitStatus, PartnerKits } from '@/types';
+import type { KitChip, KitDevice, KitShipment, KitStatus, PartnerKits } from '@/types';
 
 import { whenLabel } from './InstallationsSection';
 import styles from '../Partner.module.css';
@@ -23,9 +23,9 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 /**
  * Os kits de instalação do representante, na página dele: o estoque (os
  * rastreadores que chegaram e ainda não foram instalados — instalar baixa
- * sozinho), as remessas com o código de rastreio, o "recebi" quando chegam e
- * o pedido de mais kits à Farbo. Com a senha na página, os instalados mostram
- * o cliente.
+ * sozinho — e os chips avulsos, que a ativação encaixa e baixa), as remessas
+ * com o código de rastreio, o "recebi" quando chegam e o pedido de mais kits
+ * à Farbo. Com a senha na página, os instalados mostram o cliente.
  */
 export function KitsSection({ token }: { token: string }) {
   const [kits, setKits] = useState<PartnerKits | null>(null);
@@ -108,6 +108,16 @@ export function KitsSection({ token }: { token: string }) {
               <StockList devices={kits.stock} />
             </details>
           )}
+          {(kits.chips ?? []).length > 0 && (
+            <details className={styles.kitDetails}>
+              <summary>Chips avulsos no estoque ({(kits.chips ?? []).length})</summary>
+              <p className={styles.muted}>
+                Para os rastreadores que vieram sem chip: na ativação, encaixe o chip e escolha-o na lista do link do
+                instalador.
+              </p>
+              <ChipList chips={kits.chips ?? []} />
+            </details>
+          )}
 
           {open.length > 0 && (
             <div className={styles.installGroup}>
@@ -136,7 +146,7 @@ export function KitsSection({ token }: { token: string }) {
                     ) : (
                       <>
                         <span>
-                          {plural(k.devices.length, 'rastreador', 'rastreadores')}
+                          {itemsLabel(k)}
                           {k.status === 'preparing' ? ' separados: a Farbo vai despachar' : ` · enviada em ${whenLabel(k.shippedAt ?? k.createdAt)}`}
                         </span>
                         {k.status === 'shipped' && <Tracking shipment={k} />}
@@ -145,6 +155,12 @@ export function KitsSection({ token }: { token: string }) {
                           <details className={styles.kitDetails}>
                             <summary>Ver os rastreadores</summary>
                             <DeviceList devices={k.devices} />
+                          </details>
+                        )}
+                        {(k.chips ?? []).length > 0 && (
+                          <details className={styles.kitDetails}>
+                            <summary>Ver os chips avulsos</summary>
+                            <ChipList chips={k.chips ?? []} />
                           </details>
                         )}
                         {k.status === 'shipped' && (
@@ -185,7 +201,7 @@ export function KitsSection({ token }: { token: string }) {
                     <ShipmentHead shipment={k} />
                     <span className={styles.muted}>
                       {k.status === 'delivered'
-                        ? `${plural(k.devices.length, 'rastreador', 'rastreadores')} · recebida em ${whenLabel(k.deliveredAt ?? k.createdAt)}`
+                        ? `${itemsLabel(k)} · recebida em ${whenLabel(k.deliveredAt ?? k.createdAt)}`
                         : `${k.requestedQuantity != null ? `pedido de ${plural(k.requestedQuantity, 'kit', 'kits')} · ` : ''}cancelada em ${whenLabel(k.canceledAt ?? k.createdAt)}`}
                     </span>
                     {k.devices.length > 0 && (
@@ -194,6 +210,15 @@ export function KitsSection({ token }: { token: string }) {
                           {plural(k.devices.filter((d) => d.installed).length, 'instalado', 'instalados')} de {k.devices.length}
                         </summary>
                         <DeviceList devices={k.devices} />
+                      </details>
+                    )}
+                    {(k.chips ?? []).length > 0 && (
+                      <details className={styles.kitDetails}>
+                        <summary>
+                          {plural((k.chips ?? []).filter((c) => c.used).length, 'chip usado', 'chips usados')} de{' '}
+                          {(k.chips ?? []).length}
+                        </summary>
+                        <ChipList chips={k.chips ?? []} />
                       </details>
                     )}
                   </li>
@@ -248,6 +273,28 @@ function DeviceList({ devices }: { devices: KitDevice[] }) {
               {d.customerName && ` · ${d.customerName}`}
             </span>
           )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** "3 rastreadores e 2 chips avulsos": o que veio na remessa. */
+function itemsLabel(k: KitShipment): string {
+  const chips = (k.chips ?? []).length;
+  const devices = plural(k.devices.length, 'rastreador', 'rastreadores');
+  return chips > 0 ? `${devices} e ${plural(chips, 'chip avulso', 'chips avulsos')}` : devices;
+}
+
+/** Os chips avulsos: o ICCID, a operadora e, já encaixado, o rastreador. */
+function ChipList({ chips }: { chips: KitChip[] }) {
+  return (
+    <ul className={styles.kitDevices}>
+      {chips.map((c) => (
+        <li key={c.id}>
+          <span className={styles.kitImei}>{c.iccid}</span>
+          {c.carrier && <span className={styles.muted}>{c.carrier}</span>}
+          {c.used && <span className={styles.muted}>no rastreador {c.deviceImei}</span>}
         </li>
       ))}
     </ul>

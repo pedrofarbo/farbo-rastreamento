@@ -52,6 +52,28 @@ afterEach(() => {
 });
 
 describe('os kits na página do representante', () => {
+  it('os chips avulsos: no estoque (os que ainda não foram para um rastreador) e na remessa', async () => {
+    state.kits = {
+      stock: [free('869247061900103')],
+      chips: [{ id: 'c2', iccid: '89551012345678900002', carrier: 'Claro', used: false }],
+      installed: 0,
+      shipments: [
+        shipment({
+          status: 'delivered', deliveredAt: '2026-11-04T10:00:00Z', devices: [free('869247061900103')],
+          chips: [
+            { id: 'c1', iccid: '89551012345678900001', carrier: 'Vivo', used: true, deviceImei: '869247061900103' },
+            { id: 'c2', iccid: '89551012345678900002', carrier: 'Claro', used: false },
+          ],
+        }),
+      ],
+    };
+    await render();
+    expect(text()).toContain('Chips avulsos no estoque (1)');
+    expect(text()).toContain('89551012345678900002');
+    expect(text()).toContain('1 rastreador e 2 chips avulsos · recebida em');
+    expect(text()).toContain('no rastreador 869247061900103');
+  });
+
   it('o estoque, a remessa a caminho com o rastreio e o recebi', async () => {
     state.kits = {
       stock: [free('869247061900103')],

@@ -1,9 +1,11 @@
 // Package kits são os kits de instalação dos representantes: a central manda
-// rastreadores (já com o chip) para o representante que entrega em mãos e
-// instala, e acompanha cada remessa — preparando, enviada (a transportadora e
-// o código de rastreio), entregue ou cancelada. O representante pede kits e
-// acompanha as remessas pela página dele; o estoque dele são os rastreadores
-// das remessas ainda sem veículo (instalar baixa sozinho).
+// rastreadores (com o chip, ou com o chip avulso para encaixar na ativação)
+// para o representante que entrega em mãos e instala, e acompanha cada
+// remessa — preparando, enviada (a transportadora e o código de rastreio),
+// entregue ou cancelada. O representante pede kits e acompanha as remessas
+// pela página dele; o estoque dele são os rastreadores das remessas ainda sem
+// veículo e os chips avulsos ainda fora de rastreador (instalar e ativar
+// baixam sozinhos).
 package kits
 
 import (
@@ -54,6 +56,17 @@ type Device struct {
 	CustomerName string    `json:"customerName,omitempty"`
 }
 
+// Chip é um chip avulso do kit (o rastreador sem chip leva o dele à parte):
+// já num rastreador (a ativação encaixou), sai do estoque.
+type Chip struct {
+	ID      uuid.UUID `json:"id"`
+	ICCID   string    `json:"iccid"`
+	Carrier string    `json:"carrier"`
+	// Used: já está num rastreador (o IMEI dele).
+	Used       bool   `json:"used"`
+	DeviceIMEI string `json:"deviceImei,omitempty"`
+}
+
 // Shipment é uma remessa de kits para um representante.
 type Shipment struct {
 	ID            uuid.UUID `json:"id"`
@@ -71,6 +84,7 @@ type Shipment struct {
 	CanceledAt        *time.Time `json:"canceledAt"`
 	CreatedAt         time.Time  `json:"createdAt"`
 	Devices           []Device   `json:"devices"`
+	Chips             []Chip     `json:"chips"`
 }
 
 type Service struct {
@@ -100,7 +114,7 @@ func (s *Service) list(ctx context.Context, withCustomers bool, where string, ar
 			rows.Close()
 			return nil, database.MapError(err)
 		}
-		k.Devices = []Device{}
+		k.Devices, k.Chips = []Device{}, []Chip{}
 		index[k.ID] = len(out)
 		out = append(out, k)
 	}
@@ -136,7 +150,27 @@ func (s *Service) list(ctx context.Context, withCustomers bool, where string, ar
 		}
 		out[index[shipment]].Devices = append(out[index[shipment]].Devices, d)
 	}
-	return out, database.MapError(drows.Err())
+	if err := drows.Err(); err != nil {
+		return nil, database.MapError(err)
+	}
+	drows.Close()
+	crows, err := s.db.Query(ctx, `
+		SELECT kc.shipment_id, c.id, c.iccid, c.carrier, d.id IS NOT NULL, COALESCE(d.imei, '')
+		FROM kit_shipment_chips kc JOIN chips c ON c.id = kc.chip_id LEFT JOIN devices d ON d.iccid = c.iccid
+		WHERE kc.shipment_id = ANY($1) ORDER BY c.iccid`, ids)
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	defer crows.Close()
+	for crows.Next() {
+		var shipment uuid.UUID
+		var c Chip
+		if err := crows.Scan(&shipment, &c.ID, &c.ICCID, &c.Carrier, &c.Used, &c.DeviceIMEI); err != nil {
+			return nil, database.MapError(err)
+		}
+		out[index[shipment]].Chips = append(out[index[shipment]].Chips, c)
+	}
+	return out, database.MapError(crows.Err())
 }
 
 func (s *Service) get(ctx context.Context, id uuid.UUID) (*Shipment, error) {
@@ -181,12 +215,74 @@ func (s *Service) Available(ctx context.Context) ([]Device, error) {
 	return out, database.MapError(rows.Err())
 }
 
+// AvailableChips são os chips que podem ir avulsos num kit: fora de
+// rastreador e de qualquer remessa.
+func (s *Service) AvailableChips(ctx context.Context) ([]Chip, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT c.id, c.iccid, c.carrier FROM chips c
+		WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.iccid = c.iccid)
+			AND NOT EXISTS (SELECT 1 FROM kit_shipment_chips kc WHERE kc.chip_id = c.id)
+		ORDER BY c.iccid LIMIT 2000`)
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	defer rows.Close()
+	out := []Chip{}
+	for rows.Next() {
+		var c Chip
+		if err := rows.Scan(&c.ID, &c.ICCID, &c.Carrier); err != nil {
+			return nil, database.MapError(err)
+		}
+		out = append(out, c)
+	}
+	return out, database.MapError(rows.Err())
+}
+
+// putItems põe na remessa os rastreadores e os chips avulsos (ao menos um).
+func putItems(ctx context.Context, tx pgx.Tx, shipment uuid.UUID, deviceIDs, chipIDs []uuid.UUID) error {
+	if len(deviceIDs) == 0 && len(chipIDs) == 0 {
+		return invalid("escolha os rastreadores (ou os chips) do kit")
+	}
+	if err := putDevices(ctx, tx, shipment, deviceIDs); err != nil {
+		return err
+	}
+	return putChips(ctx, tx, shipment, chipIDs)
+}
+
+// putChips põe os chips avulsos na remessa, conferindo que cada um está livre
+// (fora de rastreador e de outra remessa).
+func putChips(ctx context.Context, tx pgx.Tx, shipment uuid.UUID, chipIDs []uuid.UUID) error {
+	seen := map[uuid.UUID]bool{}
+	for _, id := range chipIDs {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		var iccid string
+		var busy bool
+		err := tx.QueryRow(ctx, `
+			SELECT c.iccid, EXISTS (SELECT 1 FROM devices d WHERE d.iccid = c.iccid)
+				OR EXISTS (SELECT 1 FROM kit_shipment_chips kc WHERE kc.chip_id = c.id)
+			FROM chips c WHERE c.id = $1 FOR UPDATE`, id).Scan(&iccid, &busy)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return invalid("chip não encontrado")
+		}
+		if err != nil {
+			return database.MapError(err)
+		}
+		if busy {
+			return invalid("o chip %s já está num rastreador ou em outra remessa", iccid)
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO kit_shipment_chips (shipment_id, chip_id) VALUES ($1, $2)`, shipment, id); err != nil {
+			return database.MapError(err)
+		}
+	}
+	return nil
+}
+
 // putDevices põe os rastreadores na remessa, conferindo que cada um está
 // livre (sem veículo e fora de outra remessa).
 func putDevices(ctx context.Context, tx pgx.Tx, shipment uuid.UUID, deviceIDs []uuid.UUID) error {
-	if len(deviceIDs) == 0 {
-		return invalid("escolha os rastreadores do kit")
-	}
 	seen := map[uuid.UUID]bool{}
 	for _, id := range deviceIDs {
 		if seen[id] {
@@ -223,8 +319,9 @@ func cleanText(text string, max int, what string) (string, error) {
 	return text, nil
 }
 
-// Create monta uma remessa na central: o representante e os rastreadores.
-func (s *Service) Create(ctx context.Context, by uuid.UUID, affiliateID uuid.UUID, deviceIDs []uuid.UUID, notes string) (*Shipment, error) {
+// Create monta uma remessa na central: o representante, os rastreadores e os
+// chips avulsos.
+func (s *Service) Create(ctx context.Context, by uuid.UUID, affiliateID uuid.UUID, deviceIDs, chipIDs []uuid.UUID, notes string) (*Shipment, error) {
 	notes, err := cleanText(notes, 1000, "a observação")
 	if err != nil {
 		return nil, err
@@ -245,7 +342,7 @@ func (s *Service) Create(ctx context.Context, by uuid.UUID, affiliateID uuid.UUI
 			VALUES ($1, 'preparing', $2, $3) RETURNING id`, affiliateID, notes, by).Scan(&id); err != nil {
 			return database.MapError(err)
 		}
-		return putDevices(ctx, tx, id, deviceIDs)
+		return putItems(ctx, tx, id, deviceIDs, chipIDs)
 	})
 	if err != nil {
 		return nil, err
@@ -269,8 +366,9 @@ func (s *Service) transition(ctx context.Context, id uuid.UUID, from []string, s
 	return nil
 }
 
-// Prepare atende o pedido do representante: os rastreadores da remessa.
-func (s *Service) Prepare(ctx context.Context, id uuid.UUID, deviceIDs []uuid.UUID, notes string) (*Shipment, error) {
+// Prepare atende o pedido do representante: os rastreadores e os chips
+// avulsos da remessa.
+func (s *Service) Prepare(ctx context.Context, id uuid.UUID, deviceIDs, chipIDs []uuid.UUID, notes string) (*Shipment, error) {
 	notes, err := cleanText(notes, 1000, "a observação")
 	if err != nil {
 		return nil, err
@@ -284,7 +382,7 @@ func (s *Service) Prepare(ctx context.Context, id uuid.UUID, deviceIDs []uuid.UU
 		if tag.RowsAffected() == 0 {
 			return invalid("só dá para preparar um pedido que ainda espera a central")
 		}
-		return putDevices(ctx, tx, id, deviceIDs)
+		return putItems(ctx, tx, id, deviceIDs, chipIDs)
 	})
 	if err != nil {
 		return nil, err
@@ -321,8 +419,8 @@ func (s *Service) Deliver(ctx context.Context, id uuid.UUID) (*Shipment, error) 
 	return s.get(ctx, id)
 }
 
-// Cancel cancela a remessa ainda não entregue: os rastreadores voltam a ficar
-// livres.
+// Cancel cancela a remessa ainda não entregue: os rastreadores e os chips
+// voltam a ficar livres.
 func (s *Service) Cancel(ctx context.Context, id uuid.UUID) (*Shipment, error) {
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `UPDATE kit_shipments SET status = 'canceled', canceled_at = NOW(), updated_at = NOW()
@@ -333,7 +431,10 @@ func (s *Service) Cancel(ctx context.Context, id uuid.UUID) (*Shipment, error) {
 		if tag.RowsAffected() == 0 {
 			return invalid("a remessa entregue (ou já cancelada) não pode ser cancelada")
 		}
-		_, err = tx.Exec(ctx, `DELETE FROM kit_shipment_devices WHERE shipment_id = $1`, id)
+		if _, err := tx.Exec(ctx, `DELETE FROM kit_shipment_devices WHERE shipment_id = $1`, id); err != nil {
+			return database.MapError(err)
+		}
+		_, err = tx.Exec(ctx, `DELETE FROM kit_shipment_chips WHERE shipment_id = $1`, id)
 		return database.MapError(err)
 	})
 	if err != nil {
@@ -343,9 +444,11 @@ func (s *Service) Cancel(ctx context.Context, id uuid.UUID) (*Shipment, error) {
 }
 
 // PartnerKits é o que o representante vê: o estoque (os rastreadores das
-// remessas ainda sem veículo), quantos já instalou e as remessas.
+// remessas ainda sem veículo e os chips avulsos ainda fora de rastreador),
+// quantos já instalou e as remessas.
 type PartnerKits struct {
 	Stock     []Device   `json:"stock"`
+	Chips     []Chip     `json:"chips"`
 	Installed int        `json:"installed"`
 	Shipments []Shipment `json:"shipments"`
 }
@@ -357,7 +460,7 @@ func (s *Service) ForPartner(ctx context.Context, affiliateID uuid.UUID, withCus
 	if err != nil {
 		return nil, err
 	}
-	out := &PartnerKits{Stock: []Device{}, Shipments: shipments}
+	out := &PartnerKits{Stock: []Device{}, Chips: []Chip{}, Shipments: shipments}
 	for _, k := range shipments {
 		// O estoque é o que já chegou (ou está a caminho e ele já recebeu).
 		if k.Status != StatusDelivered && k.Status != StatusShipped {
@@ -368,6 +471,13 @@ func (s *Service) ForPartner(ctx context.Context, affiliateID uuid.UUID, withCus
 				out.Installed++
 			} else if k.Status == StatusDelivered {
 				out.Stock = append(out.Stock, d)
+			}
+		}
+		if k.Status == StatusDelivered {
+			for _, c := range k.Chips {
+				if !c.Used {
+					out.Chips = append(out.Chips, c)
+				}
 			}
 		}
 	}

@@ -66,14 +66,49 @@ func TestKitShipments(t *testing.T) {
 	if a := available(); !a[d1] || !a[d2] || !a[d3] || a[inCar] {
 		t.Fatalf("livres = %v", a)
 	}
+	// Os chips avulsos: o rastreador sem chip leva o dele à parte. O que já
+	// está num rastreador não entra.
+	chip := func(iccid string) uuid.UUID {
+		t.Helper()
+		var id uuid.UUID
+		if err := env.db.QueryRow(ctx, `INSERT INTO chips (iccid, carrier) VALUES ($1, 'Vivo') RETURNING id`, iccid).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	c1, c2, c3 := chip("89551012345678900001"), chip("89551012345678900002"), chip("89551012345678900003")
+	inDevice := chip("8955869247061900101") // o ICCID do d1
+	availableChips := func() map[uuid.UUID]bool {
+		t.Helper()
+		var list []kits.Chip
+		_ = json.Unmarshal(env.must(op, http.MethodGet, "/api/kit-shipments/available-chips", nil, http.StatusOK), &list)
+		out := map[uuid.UUID]bool{}
+		for _, c := range list {
+			out[c.ID] = true
+		}
+		return out
+	}
+	if a := availableChips(); !a[c1] || !a[c2] || !a[c3] || a[inDevice] {
+		t.Fatalf("chips livres = %v", a)
+	}
 
 	// A central monta e envia.
 	var k kits.Shipment
 	_ = json.Unmarshal(env.must(op, http.MethodPost, "/api/kit-shipments", map[string]any{
-		"affiliateId": rui.ID, "deviceIds": []uuid.UUID{d1, d2}, "notes": "caixa azul",
+		"affiliateId": rui.ID, "deviceIds": []uuid.UUID{d1, d2}, "chipIds": []uuid.UUID{c1}, "notes": "caixa azul",
 	}, http.StatusCreated), &k)
-	if k.Status != kits.StatusPreparing || len(k.Devices) != 2 || k.AffiliateName != "Rui Representante" {
+	if k.Status != kits.StatusPreparing || len(k.Devices) != 2 || k.AffiliateName != "Rui Representante" ||
+		len(k.Chips) != 1 || k.Chips[0].ID != c1 || k.Chips[0].Carrier != "Vivo" || k.Chips[0].Used {
 		t.Fatalf("remessa = %+v", k)
+	}
+	// Vazia, com o chip de outra remessa ou com o chip de um rastreador: não.
+	env.must(op, http.MethodPost, "/api/kit-shipments", map[string]any{"affiliateId": ana.ID}, http.StatusBadRequest)
+	env.must(op, http.MethodPost, "/api/kit-shipments", map[string]any{"affiliateId": ana.ID, "chipIds": []uuid.UUID{c1}},
+		http.StatusBadRequest)
+	env.must(op, http.MethodPost, "/api/kit-shipments", map[string]any{"affiliateId": ana.ID, "chipIds": []uuid.UUID{inDevice}},
+		http.StatusBadRequest)
+	if a := availableChips(); a[c1] || !a[c2] {
+		t.Errorf("chips livres depois da remessa = %v", a)
 	}
 	env.must(op, http.MethodPost, "/api/kit-shipments", map[string]any{"affiliateId": ana.ID, "deviceIds": []uuid.UUID{d2}},
 		http.StatusBadRequest)
@@ -98,14 +133,23 @@ func TestKitShipments(t *testing.T) {
 		_ = json.Unmarshal(env.must("", http.MethodGet, page+"/kits", nil, http.StatusOK), &p)
 		return p
 	}
-	if p := partner(); len(p.Shipments) != 1 || p.Shipments[0].TrackingCode != "QB123456789BR" || len(p.Stock) != 0 {
+	if p := partner(); len(p.Shipments) != 1 || p.Shipments[0].TrackingCode != "QB123456789BR" || len(p.Stock) != 0 ||
+		len(p.Chips) != 0 || len(p.Shipments[0].Chips) != 1 {
 		t.Fatalf("página antes de receber = %+v", p)
 	}
 	// Outro afiliado não confirma a remessa do Rui.
 	env.must("", http.MethodPost, "/api/public/partner/"+ana.ReportToken+"/kits/"+k.ID.String()+"/received", nil, http.StatusNotFound)
 	env.must("", http.MethodPost, page+"/kits/"+k.ID.String()+"/received", nil, http.StatusOK)
-	if p := partner(); len(p.Stock) != 2 || p.Installed != 0 || p.Shipments[0].Status != kits.StatusDelivered {
+	if p := partner(); len(p.Stock) != 2 || p.Installed != 0 || p.Shipments[0].Status != kits.StatusDelivered ||
+		len(p.Chips) != 1 || p.Chips[0].ID != c1 {
 		t.Fatalf("página depois de receber = %+v", p)
+	}
+	// O chip avulso foi para o rastreador (a ativação encaixou): sai do estoque.
+	if _, err := env.db.Exec(ctx, `UPDATE devices SET iccid = '89551012345678900001' WHERE id = $1`, d2); err != nil {
+		t.Fatal(err)
+	}
+	if p := partner(); len(p.Chips) != 0 || !p.Shipments[0].Chips[0].Used || p.Shipments[0].Chips[0].DeviceIMEI != "869247061900102" {
+		t.Fatalf("chip usado = %+v", p)
 	}
 
 	// Ele instala um no carro de um cliente: o estoque baixa (o cliente só com senha).
@@ -139,12 +183,13 @@ func TestKitShipments(t *testing.T) {
 		t.Fatalf("pedidos na central = %+v", list)
 	}
 	_ = json.Unmarshal(env.must(op, http.MethodPost, "/api/kit-shipments/"+req.ID.String()+"/prepare",
-		map[string]any{"deviceIds": []uuid.UUID{d3}}, http.StatusOK), &req)
-	if req.Status != kits.StatusPreparing || len(req.Devices) != 1 {
+		map[string]any{"deviceIds": []uuid.UUID{d3}, "chipIds": []uuid.UUID{c2, c3}}, http.StatusOK), &req)
+	if req.Status != kits.StatusPreparing || len(req.Devices) != 1 || len(req.Chips) != 2 {
 		t.Fatalf("pedido preparado = %+v", req)
 	}
 	_ = json.Unmarshal(env.must(op, http.MethodPost, "/api/kit-shipments/"+req.ID.String()+"/cancel", nil, http.StatusOK), &req)
-	if req.Status != kits.StatusCanceled || len(req.Devices) != 0 || !available()[d3] {
+	if req.Status != kits.StatusCanceled || len(req.Devices) != 0 || len(req.Chips) != 0 || !available()[d3] ||
+		!availableChips()[c2] || !availableChips()[c3] {
 		t.Fatalf("cancelado = %+v (livre %v)", req, available()[d3])
 	}
 	// A entregue não se cancela.

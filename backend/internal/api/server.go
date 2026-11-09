@@ -401,6 +401,7 @@ func (s *Server) routes() chi.Router {
 				// A ativação do rastreador livre que nunca conectou: o
 				// rastreador e o chip do estoque e a configuração por SMS.
 				r.Get("/stock", s.handlePublicInstallStock)
+				r.Get("/chip", s.handlePublicInstallChip)
 				r.Get("/activation", s.handlePublicInstallActivation)
 				r.Post("/activate", s.handlePublicInstallActivate)
 			})
@@ -411,6 +412,7 @@ func (s *Server) routes() chi.Router {
 				r.Post("/check", s.handlePublicStandaloneCheck)
 				r.Post("/complete", s.handlePublicStandaloneComplete)
 				r.Get("/stock", s.handlePublicStandaloneStock)
+				r.Get("/chip", s.handlePublicStandaloneChip)
 				r.Get("/activation", s.handlePublicStandaloneActivation)
 				r.Post("/activate", s.handlePublicStandaloneActivate)
 			})
@@ -1179,6 +1181,7 @@ func (s *Server) routes() chi.Router {
 						r.Use(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator))
 						r.Get("/", s.handleKitShipments)
 						r.Get("/available-devices", s.handleKitDevices)
+						r.Get("/available-chips", s.handleKitChips)
 						r.Post("/", s.handleCreateKitShipment)
 						r.Post("/{id}/prepare", s.handlePrepareKitShipment)
 						r.Post("/{id}/ship", s.handleShipKitShipment)

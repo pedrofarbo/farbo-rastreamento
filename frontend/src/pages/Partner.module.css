@@ -535,3 +535,53 @@
   font-family: var(--font-mono, monospace);
   color: #ffffff;
 }
+
+/* A entrada do tutorial, logo abaixo da saudação. */
+.tutorial {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(13, 19, 14, 0.85);
+  color: #ffffff;
+  text-decoration: none;
+}
+
+.tutorial:hover {
+  border-color: rgba(59, 229, 88, 0.45);
+}
+
+.tutorialIcon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  background: rgba(59, 229, 88, 0.16);
+  color: var(--color-neon-green);
+  font-size: 1.125rem;
+  font-weight: 800;
+}
+
+.tutorialText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.tutorialText span {
+  color: #94a3b8;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.tutorialArrow {
+  color: var(--color-neon-green);
+  font-size: 1.5rem;
+  font-weight: 700;
+}

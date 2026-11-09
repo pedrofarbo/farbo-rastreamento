@@ -56,6 +56,7 @@ import type {
   AffiliateSettings,
   CustomerReferral,
   FiscalDocument,
+  KitChip,
   KitDevice,
   KitShipment,
   PartnerCustomer,
@@ -134,6 +135,7 @@ import type {
   Subscription,
   InstallActivationView,
   InstallStock,
+  InstallStockChip,
   Tracker,
   Installer,
   PublicInstaller,
@@ -728,6 +730,12 @@ export const installLinkApi = {
   /** Os rastreadores e os chips livres (veículo ainda sem rastreador). */
   stock: (token: string) =>
     request<InstallStock>(`/api/public/install/${encodeURIComponent(token)}/stock`, { anonymous: true, headers: installPinHeaders(token) }),
+  /** O chip encaixado na hora, fora da lista: pelo ICCID inteiro impresso nele. */
+  chip: (token: string, iccid: string) =>
+    request<InstallStockChip>(`/api/public/install/${encodeURIComponent(token)}/chip?iccid=${encodeURIComponent(iccid)}`, {
+      anonymous: true,
+      headers: installPinHeaders(token),
+    }),
   activation: (token: string) =>
     request<InstallActivationView>(`/api/public/install/${encodeURIComponent(token)}/activation`, { anonymous: true, headers: installPinHeaders(token) }),
   /** Põe o chip no rastreador (livre e nunca conectado) e manda a configuração por SMS. */
@@ -766,6 +774,12 @@ export const installerLinkPublicApi = {
   /** Os chips livres (o rastreador é o do link). */
   stock: (token: string) =>
     request<InstallStock>(`/api/public/installer-links/${encodeURIComponent(token)}/stock`, { anonymous: true, headers: installPinHeaders(token) }),
+  /** O chip encaixado na hora, fora da lista: pelo ICCID inteiro impresso nele. */
+  chip: (token: string, iccid: string) =>
+    request<InstallStockChip>(`/api/public/installer-links/${encodeURIComponent(token)}/chip?iccid=${encodeURIComponent(iccid)}`, {
+      anonymous: true,
+      headers: installPinHeaders(token),
+    }),
   activation: (token: string) =>
     request<InstallActivationView>(`/api/public/installer-links/${encodeURIComponent(token)}/activation`, { anonymous: true, headers: installPinHeaders(token) }),
   /** Põe o chip no rastreador do link e manda a configuração por SMS. */
@@ -1538,9 +1552,13 @@ export const kitShipmentsApi = {
   list: () => api.get<KitShipment[]>('/api/kit-shipments'),
   /** Os rastreadores que podem ir num kit: sem veículo e fora de outra remessa. */
   availableDevices: () => api.get<KitDevice[]>('/api/kit-shipments/available-devices'),
-  create: (input: { affiliateId: string; deviceIds: string[]; notes: string }) => api.post<KitShipment>('/api/kit-shipments', input),
-  /** Atende o pedido do representante com os rastreadores. */
-  prepare: (id: string, input: { deviceIds: string[]; notes: string }) => api.post<KitShipment>(`/api/kit-shipments/${id}/prepare`, input),
+  /** Os chips que podem ir avulsos num kit: fora de rastreador e de outra remessa. */
+  availableChips: () => api.get<KitChip[]>('/api/kit-shipments/available-chips'),
+  create: (input: { affiliateId: string; deviceIds: string[]; chipIds: string[]; notes: string }) =>
+    api.post<KitShipment>('/api/kit-shipments', input),
+  /** Atende o pedido do representante com os rastreadores e os chips avulsos. */
+  prepare: (id: string, input: { deviceIds: string[]; chipIds: string[]; notes: string }) =>
+    api.post<KitShipment>(`/api/kit-shipments/${id}/prepare`, input),
   ship: (id: string, input: { carrier: string; trackingCode: string }) => api.post<KitShipment>(`/api/kit-shipments/${id}/ship`, input),
   deliver: (id: string) => api.post<KitShipment>(`/api/kit-shipments/${id}/deliver`),
   cancel: (id: string) => api.post<KitShipment>(`/api/kit-shipments/${id}/cancel`),

@@ -3018,6 +3018,16 @@ export interface KitDevice {
   customerName?: string;
 }
 
+/** Um chip avulso de kit (o rastreador sem chip leva o dele à parte): já num rastreador, sai do estoque. */
+export interface KitChip {
+  id: string;
+  iccid: string;
+  carrier: string;
+  /** Já está num rastreador (a ativação encaixou): o IMEI dele. */
+  used: boolean;
+  deviceImei?: string;
+}
+
 /** Uma remessa de kits de instalação para um representante. */
 export interface KitShipment {
   id: string;
@@ -3035,11 +3045,15 @@ export interface KitShipment {
   canceledAt: string | null;
   createdAt: string;
   devices: KitDevice[];
+  /** Os chips avulsos (para encaixar na ativação). */
+  chips?: KitChip[];
 }
 
 /** Os kits do representante, na página dele: o estoque, os instalados e as remessas. */
 export interface PartnerKits {
   stock: KitDevice[];
+  /** Os chips avulsos que chegaram e ainda não foram para um rastreador. */
+  chips?: KitChip[];
   installed: number;
   shipments: KitShipment[];
 }

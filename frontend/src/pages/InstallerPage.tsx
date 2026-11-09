@@ -227,6 +227,7 @@ export function InstallerPage() {
                 <InstallActivation
                   api={{
                     stock: () => guard(installLinkApi.stock(token)),
+                    chip: (iccid) => guard(installLinkApi.chip(token, iccid)),
                     activation: () => guard(installLinkApi.activation(token)),
                     activate: (deviceId, chipId) => guard(installLinkApi.activate(token, deviceId ?? '', chipId)),
                   }}

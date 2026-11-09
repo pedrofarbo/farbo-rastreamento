@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import type { InstallActivation as Activation, InstallActivationView, InstallStock, InstallStockDevice } from '@/types';
+import type { InstallActivation as Activation, InstallActivationView, InstallStock, InstallStockChip, InstallStockDevice } from '@/types';
 
 import base from './PreLaunch.module.css';
 import styles from './PublicTheft.module.css';
@@ -10,6 +10,10 @@ import local from './InstallerPage.module.css';
 const SHOWN = 6;
 /** De quanto em quanto tempo a tela acompanha a ativação em andamento. */
 const POLL_MS = 5000;
+/** O ICCID tem 19 ou 20 números: a partir daí, o chip fora da lista é procurado. */
+const ICCID_MIN = 19;
+/** A espera depois do último número digitado antes de procurar (o 20º pode vir). */
+const LOOKUP_MS = 500;
 
 const onlyDigits = (text: string) => text.replace(/\D/g, '');
 
@@ -46,7 +50,9 @@ const live = (a: Activation | null | undefined) => a?.status === 'SENDING' || a?
  * agendamento, ele escolhe o rastreador entre os livres (pelo IMEI da
  * etiqueta); o que nunca conectou pede o chip (pelo ICCID impresso nele) e a
  * ativação, que vai por SMS e é acompanhada até o rastreador conectar. Na
- * instalação avulsa, o rastreador é o do link (fixedImei). Quando o rastreador
+ * instalação avulsa, o rastreador é o do link (fixedImei). O chip encaixado
+ * na hora, fora da lista (a do representante só tem o que veio no
+ * rastreador), aparece pelo ICCID inteiro (api.chip). Quando o rastreador
  * fica pronto para o teste do sinal, avisa com o IMEI (onReady).
  */
 export function InstallActivation({
@@ -61,6 +67,8 @@ export function InstallActivation({
     activation: () => Promise<InstallActivationView>;
     /** deviceId nulo: o rastreador do link. */
     activate: (deviceId: string | null, chipId: string) => Promise<InstallActivationView>;
+    /** O chip livre pelo ICCID inteiro (o encaixado na hora, fora da lista). */
+    chip?: (iccid: string) => Promise<InstallStockChip>;
   };
   disabled?: boolean;
   onReady: (imei: string | null) => void;
@@ -74,6 +82,9 @@ export function InstallActivation({
   const [chipId, setChipId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // O chip fora da lista, achado pelo ICCID inteiro, e a busca dele.
+  const [extraChip, setExtraChip] = useState<InstallStockChip | null>(null);
+  const [lookup, setLookup] = useState<{ busy: boolean; error: string } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -132,13 +143,42 @@ export function InstallActivation({
   const deviceDigits = onlyDigits(deviceSearch);
   const deviceMatches = deviceDigits ? devices.filter((d) => d.imei.includes(deviceDigits)) : devices;
   const chipDigits = onlyDigits(chipSearch);
-  // O chip que já está no rastreador escolhido vem primeiro (ativar com ele mesmo).
+  // O chip que já está no rastreador escolhido vem primeiro (ativar com ele
+  // mesmo); o achado pelo ICCID inteiro, logo depois.
   const chips = useMemo(() => {
     const free = stock?.chips ?? [];
     const own = device?.chipId ? [{ id: device.chipId, iccid: device.iccid, carrier: 'já está neste rastreador' }] : [];
-    return [...own, ...free.filter((c) => c.id !== device?.chipId)];
-  }, [stock, device]);
+    const extra = extraChip && extraChip.id !== device?.chipId && !free.some((c) => c.id === extraChip.id) ? [extraChip] : [];
+    return [...own, ...extra, ...free.filter((c) => c.id !== device?.chipId)];
+  }, [stock, device, extraChip]);
   const chipMatches = chipDigits ? chips.filter((c) => c.iccid.includes(chipDigits)) : chips;
+  const chosenChip = chips.find((c) => c.id === chipId);
+
+  // O ICCID inteiro que não está na lista: procura o chip (o encaixado na hora).
+  useEffect(() => {
+    if (!api.chip || chipId || chipDigits.length < ICCID_MIN || chips.some((c) => c.iccid === chipDigits)) {
+      setLookup(null);
+      return;
+    }
+    let alive = true;
+    setLookup({ busy: true, error: '' });
+    const timer = window.setTimeout(() => {
+      api.chip!(chipDigits)
+        .then((c) => {
+          if (!alive) return;
+          setExtraChip(c);
+          setChipId(c.id);
+          setLookup(null);
+        })
+        .catch((err) => alive && setLookup({ busy: false, error: err instanceof Error ? err.message : 'Não deu para procurar o chip agora.' }));
+    }, LOOKUP_MS);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+    // Só quando o número digitado muda.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chipDigits]);
 
   const activate = async () => {
     if (!chipId || busy) return;
@@ -258,8 +298,12 @@ export function InstallActivation({
         <div className={local.substep}>
           <h3 className={local.substepTitle}>Chip e ativação</h3>
           <p className={styles.muted}>
-            Coloque o chip no rastreador e ligue o rastreador (no veículo ou numa bateria). Escolha o chip pelo ICCID
-            impresso nele (os últimos números bastam) e ative: a configuração vai por SMS para o chip.
+            Coloque o chip no rastreador (com ele desligado) e ligue o rastreador (no veículo ou numa bateria). Escolha o
+            chip pelo ICCID impresso nele e ative: a configuração vai por SMS para o chip.
+            {api.chip &&
+              (stock.chips.length === 0 && !device?.chipId
+                ? ' Digite todos os números do ICCID.'
+                : ' Os últimos números acham os chips da lista; um chip fora dela aparece com o ICCID inteiro.')}
           </p>
           {!view.enabled ? (
             <p className={`${local.check} ${local.wait}`}>A ativação por SMS não está disponível agora: fale com a Farbo.</p>
@@ -303,13 +347,33 @@ export function InstallActivation({
                       </span>
                     </button>
                   ))}
-                  {chipMatches.length === 0 && (
-                    <p className={styles.muted}>Nenhum chip livre com esse ICCID. Confira os números ou fale com a Farbo.</p>
+                  {lookup?.busy ? (
+                    <p className={styles.muted} role="status">
+                      Procurando o chip…
+                    </p>
+                  ) : lookup?.error ? (
+                    <p className={base.error}>{lookup.error}</p>
+                  ) : (
+                    chipMatches.length === 0 && (
+                      <p className={styles.muted}>
+                        {!api.chip
+                          ? 'Nenhum chip livre com esse ICCID. Confira os números ou fale com a Farbo.'
+                          : chips.length === 0
+                            ? 'Digite o ICCID inteiro, impresso no chip que você encaixou no rastreador.'
+                            : 'Nenhum chip da lista com esses números. Chip fora da lista? Digite o ICCID inteiro impresso nele.'}
+                      </p>
+                    )
                   )}
                   {chipMatches.length > SHOWN && (
                     <p className={styles.muted}>Mais {chipMatches.length - SHOWN}: digite mais números do ICCID.</p>
                   )}
                 </div>
+              )}
+              {chosenChip && !live(mine) && mine?.status !== 'DONE' && (
+                <p className={styles.muted}>
+                  Chip escolhido: <span className={local.mono}>{chosenChip.iccid}</span>
+                  {chosenChip.carrier ? ` · ${chosenChip.carrier}` : ''}
+                </p>
               )}
               <button
                 type="button"
