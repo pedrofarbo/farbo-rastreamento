@@ -236,3 +236,21 @@ func (s *Service) stockChip(ctx context.Context, d *Device) error {
 		d.ICCID, d.PhoneNumber, d.APN, d.APNUser, d.APNPassword)
 	return database.MapError(err)
 }
+
+// AttachChip põe o chip do estoque no rastreador (a linha, o ICCID e o APN
+// vêm dele), sem mexer no resto do cadastro: é o que o instalador escolhe na
+// ativação pelo link. O chip precisa estar livre (ou já ser deste rastreador).
+func (s *Service) AttachChip(ctx context.Context, deviceID, chipID uuid.UUID) (*Device, error) {
+	d, err := s.repo.GetByID(ctx, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	// O cadastro como está (as senhas e os textos de comando vazios/nulos
+	// ficam como estão); só o chip muda.
+	in := Input{
+		IMEI: d.IMEI, IMEIConfirmed: true, Model: d.Model, Manufacturer: d.Manufacturer, Protocol: d.Protocol,
+		Firmware: d.Firmware, ServerHost: d.ServerHost, ServerPort: d.ServerPort, ReportIntervalSeconds: d.ReportIntervalSeconds,
+		HeartbeatIntervalSeconds: d.HeartbeatIntervalSeconds, Notes: d.Notes, ChipID: &chipID,
+	}
+	return s.Update(ctx, deviceID, in)
+}

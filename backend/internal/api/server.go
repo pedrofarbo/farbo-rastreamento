@@ -218,7 +218,7 @@ func (s *Server) routes() chi.Router {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   s.Config.HTTP.CORSOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", stepUpHeader, partnerSessionHeader},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", stepUpHeader, partnerSessionHeader, installPinHeader},
 		AllowCredentials: false,
 		MaxAge:           300,
 	}))
@@ -398,6 +398,11 @@ func (s *Server) routes() chi.Router {
 				r.Put("/photos/{slot}", s.handlePublicInstallPhoto)
 				r.Get("/photos/{slot}", s.handlePublicInstallPhotoFile)
 				r.Post("/complete", s.handlePublicInstallComplete)
+				// A ativação do rastreador livre que nunca conectou: o
+				// rastreador e o chip do estoque e a configuração por SMS.
+				r.Get("/stock", s.handlePublicInstallStock)
+				r.Get("/activation", s.handlePublicInstallActivation)
+				r.Post("/activate", s.handlePublicInstallActivate)
 			})
 			// O link da instalação avulsa: o teste do sinal e a conclusão.
 			r.Route("/public/installer-links/{token}", func(r chi.Router) {
@@ -405,6 +410,9 @@ func (s *Server) routes() chi.Router {
 				r.Get("/", s.handlePublicStandalone)
 				r.Post("/check", s.handlePublicStandaloneCheck)
 				r.Post("/complete", s.handlePublicStandaloneComplete)
+				r.Get("/stock", s.handlePublicStandaloneStock)
+				r.Get("/activation", s.handlePublicStandaloneActivation)
+				r.Post("/activate", s.handlePublicStandaloneActivate)
 			})
 		}
 		// A localização ao vivo por um tempo, pelo link que o cliente mandou.
@@ -1142,6 +1150,8 @@ func (s *Server) routes() chi.Router {
 						r.Post("/", s.handleCreateInstallation)
 						r.Patch("/{id}", s.handleRescheduleInstallation)
 						r.Post("/{id}/close", s.handleCloseInstallation)
+						// Outra senha para o link do instalador.
+						r.Post("/{id}/pin", s.handleRenewInstallationPin)
 						r.Get("/{id}/photos/{slot}", s.handleInstallationPhoto)
 					})
 					// A instalação avulsa: o link do rastreador escolhido.
@@ -1150,6 +1160,7 @@ func (s *Server) routes() chi.Router {
 						r.Get("/", s.handleStandaloneInstalls)
 						r.Post("/", s.handleCreateStandaloneInstall)
 						r.Post("/{id}/close", s.handleCloseStandaloneInstall)
+						r.Post("/{id}/pin", s.handleRenewStandalonePin)
 					})
 				}
 

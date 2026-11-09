@@ -139,6 +139,38 @@ func TestPartnerManagesInstalls(t *testing.T) {
 	if q := queueNow(); len(q.AwaitingInstall) != 0 || len(q.Appointments) != 1 || q.Appointments[0].URL == "" {
 		t.Fatalf("fila depois de agendar = %+v", q)
 	}
+	// O link do representante abre sem senha, e o estoque dele é o kit que
+	// já chegou (com o chip): nem o da central, nem o kit ainda a caminho.
+	if a.Pin != "" {
+		t.Errorf("senha no link do representante = %q", a.Pin)
+	}
+	link := "/api/public/install/" + a.URL[strings.LastIndex(a.URL, "/")+1:]
+	env.must("", http.MethodGet, link, nil, http.StatusOK)
+	var kitDev uuid.UUID
+	if err := env.db.QueryRow(ctx, `INSERT INTO devices (imei) VALUES ('869247061901111') RETURNING id`).Scan(&kitDev); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.db.Exec(ctx, `INSERT INTO devices (imei) VALUES ('869247061902222'), ('869247061903333')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.db.Exec(ctx, `
+		WITH delivered AS (INSERT INTO kit_shipments (affiliate_id, status) VALUES ($1, 'delivered') RETURNING id),
+		shipped AS (INSERT INTO kit_shipments (affiliate_id, status) VALUES ($1, 'shipped') RETURNING id)
+		INSERT INTO kit_shipment_devices (shipment_id, device_id)
+		SELECT id, $2 FROM delivered UNION ALL SELECT id, (SELECT id FROM devices WHERE imei = '869247061903333') FROM shipped`,
+		rui.ID, kitDev); err != nil {
+		t.Fatal(err)
+	}
+	var stock struct {
+		Devices []struct {
+			IMEI string `json:"imei"`
+		} `json:"devices"`
+		Chips []json.RawMessage `json:"chips"`
+	}
+	_ = json.Unmarshal(env.must("", http.MethodGet, link+"/stock", nil, http.StatusOK), &stock)
+	if len(stock.Devices) != 1 || stock.Devices[0].IMEI != "869247061901111" || len(stock.Chips) != 0 {
+		t.Errorf("estoque do representante = %+v", stock)
+	}
 	// Veículo de quem ele não indicou: não.
 	call(http.MethodPost, "/installations", map[string]any{"kind": "install", "vehicleId": biaCar, "scheduledFor": when},
 		http.StatusNotFound)

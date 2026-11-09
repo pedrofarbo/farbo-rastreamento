@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +33,11 @@ func (e *credEnv) upload(token, method, path string, data []byte, fields map[str
 	req, _ := http.NewRequest(method, e.srv.URL+path, &body)
 	req.Header.Set("Content-Type", form.FormDataContentType())
 	req.Header.Set("Authorization", "Bearer "+token)
+	for prefix, pin := range e.pins {
+		if strings.HasPrefix(path, prefix) {
+			req.Header.Set(installPinHeader, pin)
+		}
+	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		e.t.Fatal(err)

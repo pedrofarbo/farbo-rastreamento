@@ -1,3 +1,4 @@
+import { storedInstallPin } from '@/services/installPin';
 import { storedPartnerSession } from '@/services/partnerSession';
 import type { AssociateImportRow } from '@/services/associateImport';
 import type { FleetImportRow } from '@/services/fleetImport';
@@ -131,6 +132,8 @@ import type {
   ShippingTopUpMethod,
   ShippingQuote,
   Subscription,
+  InstallActivationView,
+  InstallStock,
   Tracker,
   Installer,
   PublicInstaller,
@@ -668,19 +671,33 @@ export const installationsApi = {
   /** Cancela ou marca que o cliente não estava. */
   close: (id: string, status: 'canceled' | 'no_show') =>
     api.post<InstallationAppointment>(`/api/installations/${id}/close`, { status }),
+  /** Outra senha para o link do instalador (a antiga para de valer e destrava o link). */
+  renewPin: (id: string) => api.post<InstallationAppointment>(`/api/installations/${id}/pin`),
   photoUrl: (id: string, slot: InstallationSlot) => `/api/installations/${id}/photos/${slot}`,
 };
 
-/** O link do instalador (sem login). */
+/** A senha do link do instalador, guardada no aparelho (vai em toda chamada ao link). */
+const installPinHeaders = (token: string): Record<string, string> => {
+  const pin = storedInstallPin(token);
+  return pin ? { 'X-Install-Pin': pin } : {};
+};
+
+/** O link do instalador (sem login; com a senha, quando a central passou uma). */
 export const installLinkApi = {
-  view: (token: string) => request<PublicInstallView>(`/api/public/install/${encodeURIComponent(token)}`, { anonymous: true }),
+  view: (token: string) =>
+    request<PublicInstallView>(`/api/public/install/${encodeURIComponent(token)}`, { anonymous: true, headers: installPinHeaders(token) }),
   arrive: (token: string) =>
-    request<PublicInstallView>(`/api/public/install/${encodeURIComponent(token)}/arrive`, { method: 'POST', anonymous: true }),
+    request<PublicInstallView>(`/api/public/install/${encodeURIComponent(token)}/arrive`, {
+      method: 'POST',
+      anonymous: true,
+      headers: installPinHeaders(token),
+    }),
   check: (token: string, imei: string) =>
     request<InstallCheck>(`/api/public/install/${encodeURIComponent(token)}/check`, {
       method: 'POST',
       body: { imei },
       anonymous: true,
+      headers: installPinHeaders(token),
     }),
   savePhoto: (token: string, slot: InstallationSlot, file: Blob) => {
     const form = new FormData();
@@ -689,15 +706,37 @@ export const installLinkApi = {
       method: 'PUT',
       body: form,
       anonymous: true,
+      headers: installPinHeaders(token),
     });
   },
-  photoUrl: (token: string, slot: InstallationSlot, version = '') =>
-    apiUrl(`/api/public/install/${encodeURIComponent(token)}/photos/${slot}${version ? `?v=${version}` : ''}`),
+  /** A foto numa <img> (sem cabeçalho): a senha vai no endereço. */
+  photoUrl: (token: string, slot: InstallationSlot, version = '') => {
+    const query = new URLSearchParams();
+    if (version) query.set('v', version);
+    const pin = storedInstallPin(token);
+    if (pin) query.set('pin', pin);
+    const qs = query.toString();
+    return apiUrl(`/api/public/install/${encodeURIComponent(token)}/photos/${slot}${qs ? `?${qs}` : ''}`);
+  },
   complete: (token: string, imei: string, note: string) =>
     request<PublicInstallView>(`/api/public/install/${encodeURIComponent(token)}/complete`, {
       method: 'POST',
       body: { imei, note },
       anonymous: true,
+      headers: installPinHeaders(token),
+    }),
+  /** Os rastreadores e os chips livres (veículo ainda sem rastreador). */
+  stock: (token: string) =>
+    request<InstallStock>(`/api/public/install/${encodeURIComponent(token)}/stock`, { anonymous: true, headers: installPinHeaders(token) }),
+  activation: (token: string) =>
+    request<InstallActivationView>(`/api/public/install/${encodeURIComponent(token)}/activation`, { anonymous: true, headers: installPinHeaders(token) }),
+  /** Põe o chip no rastreador (livre e nunca conectado) e manda a configuração por SMS. */
+  activate: (token: string, deviceId: string, chipId: string) =>
+    request<InstallActivationView>(`/api/public/install/${encodeURIComponent(token)}/activate`, {
+      method: 'POST',
+      body: { deviceId, chipId },
+      anonymous: true,
+      headers: installPinHeaders(token),
     }),
 };
 
@@ -707,19 +746,35 @@ export const installerLinksApi = {
   create: (input: InstallerLinkInput) => api.post<InstallerLink>('/api/installer-links', input),
   /** Encerra o link: o instalador não abre mais. */
   close: (id: string) => api.post<InstallerLink>(`/api/installer-links/${id}/close`),
+  /** Outra senha para o link (a antiga para de valer e destrava o link). */
+  renewPin: (id: string) => api.post<InstallerLink>(`/api/installer-links/${id}/pin`),
 };
 
 /** O link da instalação avulsa (sem login): o teste do sinal e a conclusão. */
 export const installerLinkPublicApi = {
   view: (token: string) =>
-    request<PublicInstallerLinkView>(`/api/public/installer-links/${encodeURIComponent(token)}`, { anonymous: true }),
+    request<PublicInstallerLinkView>(`/api/public/installer-links/${encodeURIComponent(token)}`, { anonymous: true, headers: installPinHeaders(token) }),
   check: (token: string) =>
-    request<InstallCheck>(`/api/public/installer-links/${encodeURIComponent(token)}/check`, { method: 'POST', anonymous: true }),
+    request<InstallCheck>(`/api/public/installer-links/${encodeURIComponent(token)}/check`, { method: 'POST', anonymous: true, headers: installPinHeaders(token) }),
   complete: (token: string, note: string) =>
     request<PublicInstallerLinkView>(`/api/public/installer-links/${encodeURIComponent(token)}/complete`, {
       method: 'POST',
       body: { note },
       anonymous: true,
+      headers: installPinHeaders(token),
+    }),
+  /** Os chips livres (o rastreador é o do link). */
+  stock: (token: string) =>
+    request<InstallStock>(`/api/public/installer-links/${encodeURIComponent(token)}/stock`, { anonymous: true, headers: installPinHeaders(token) }),
+  activation: (token: string) =>
+    request<InstallActivationView>(`/api/public/installer-links/${encodeURIComponent(token)}/activation`, { anonymous: true, headers: installPinHeaders(token) }),
+  /** Põe o chip no rastreador do link e manda a configuração por SMS. */
+  activate: (token: string, chipId: string) =>
+    request<InstallActivationView>(`/api/public/installer-links/${encodeURIComponent(token)}/activate`, {
+      method: 'POST',
+      body: { chipId },
+      anonymous: true,
+      headers: installPinHeaders(token),
     }),
 };
 

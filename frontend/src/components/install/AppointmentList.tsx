@@ -15,12 +15,15 @@ import styles from './Appointments.module.css';
 export function AppointmentList({
   list,
   actions,
+  footer,
   photoUrl,
   showCustomer = true,
   empty = 'Nenhuma instalação agendada no período.',
 }: {
   list: InstallationAppointment[];
   actions?: (a: InstallationAppointment) => ReactNode;
+  /** Uma linha embaixo, na largura do agendamento (ex.: a senha do link). */
+  footer?: (a: InstallationAppointment) => ReactNode;
   /** As fotos (com o login); sem isto, não mostra. */
   photoUrl?: (id: string, slot: InstallationSlot) => string;
   showCustomer?: boolean;
@@ -34,6 +37,7 @@ export function AppointmentList({
           <h3 className={styles.day}>{dayLabel(day)}</h3>
           {items.map((a) => {
             const st = statusOf(a);
+            const extra = footer?.(a);
             return (
               <article key={a.id} className={styles.item}>
                 <span className={styles.hour}>{hourLabel(a.scheduledFor)}</span>
@@ -76,6 +80,7 @@ export function AppointmentList({
                   )}
                 </div>
                 {actions && <div className={styles.actions}>{actions(a)}</div>}
+                {extra && <div className={styles.footer}>{extra}</div>}
               </article>
             );
           })}

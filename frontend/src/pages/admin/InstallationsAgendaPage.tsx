@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { installationsApi, installersApi } from '@/api/resources';
 import { AppointmentList } from '@/components/install/AppointmentList';
+import { LinkPin } from '@/components/install/LinkPin';
 import styles from '@/components/install/Appointments.module.css';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -38,8 +39,7 @@ function addDays(day: string, n: number): string {
 }
 
 /** O link do instalador no WhatsApp: com o número dele (da lista de prestadores) ou para escolher a conversa. */
-function installerWhatsapp(a: InstallationAppointment, installers: Installer[]): string {
-  const text = installerMessage(a);
+function installerWhatsapp(a: InstallationAppointment, installers: Installer[], text = installerMessage(a)): string {
   const phone = installers.find((i) => i.id === a.installerId)?.whatsapp ?? '';
   return phone ? whatsappLink(phone, text) : `https://wa.me/?text=${encodeURIComponent(text)}`;
 }
@@ -312,6 +312,17 @@ export function InstallationsAgendaPage() {
                   </>
                 ) : null
               }
+              footer={(a) =>
+                // O link do representante abre sem senha.
+                isOpen(a) && a.pin ? (
+                  <LinkPin
+                    pin={a.pin}
+                    whatsappFor={(message) => installerWhatsapp(a, installers.data ?? [], message)}
+                    renew={() => installationsApi.renewPin(a.id)}
+                    onRenewed={() => void queryClient.invalidateQueries({ queryKey: key })}
+                  />
+                ) : null
+              }
             />
           )}
         </Card>
@@ -394,6 +405,7 @@ function ScheduleModal({
           <p className={pageStyles.description}>
             {saved.vehicleName}, {formatDateTime(saved.scheduledFor).slice(0, 17)}. Pelo link, o instalador segue o passo a
             passo no celular, sem login. O link vale até 1 dia depois de concluído.
+            {saved.pin && ' Para abrir, ele digita a senha: mande em outra mensagem (o link repassado sozinho não abre).'}
           </p>
           <div className={styles.link}>
             <span className={styles.url}>{saved.url}</span>
@@ -410,6 +422,19 @@ function ScheduleModal({
               </Button>
             </div>
           </div>
+          {saved.pin && (
+            <div className={styles.link}>
+              <LinkPin
+                pin={saved.pin}
+                whatsappFor={(message) => installerWhatsapp(saved, installers, message)}
+                renew={() => installationsApi.renewPin(saved.id)}
+                onRenewed={(a) => {
+                  setSaved(a);
+                  void queryClient.invalidateQueries({ queryKey: key });
+                }}
+              />
+            </div>
+          )}
         </div>
       </Modal>
     );

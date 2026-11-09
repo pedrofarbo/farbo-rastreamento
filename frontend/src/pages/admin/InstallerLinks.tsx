@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { devicesApi, installerLinksApi } from '@/api/resources';
 import styles from '@/components/install/Appointments.module.css';
 import { DeviceSelectField } from '@/components/devices/DeviceSelectField';
+import { LinkPin } from '@/components/install/LinkPin';
 import { Badge } from '@/components/ui/Badge';
 import type { BadgeTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -32,8 +33,7 @@ import pageStyles from '../Page.module.css';
 export const installerLinksKey = ['installer-links'] as const;
 
 /** O link no WhatsApp: com o número do prestador (da lista) ou para escolher a conversa. */
-function linkWhatsapp(l: InstallerLink, installers: Installer[]): string {
-  const text = installerLinkMessage(l);
+function linkWhatsapp(l: InstallerLink, installers: Installer[], text = installerLinkMessage(l)): string {
   const phone = installers.find((i) => i.id === l.installerId)?.whatsapp ?? '';
   return phone ? whatsappLink(phone, text) : `https://wa.me/?text=${encodeURIComponent(text)}`;
 }
@@ -154,6 +154,15 @@ export function InstallerLinksCard({ installers }: { installers: Installer[] }) 
                             >
                               Encerrar
                             </Button>
+                            {l.pin && (
+                              <LinkPin
+                                pin={l.pin}
+                                whatsappFor={(message) => linkWhatsapp(l, installers, message)}
+                                renew={() => installerLinksApi.renewPin(l.id)}
+                                onRenewed={() => void queryClient.invalidateQueries({ queryKey: installerLinksKey })}
+                                compact
+                              />
+                            )}
                           </div>
                         )}
                       </td>
@@ -231,6 +240,7 @@ export function InstallerLinkModal({
           <p className={pageStyles.description}>
             Rastreador {saved.imei}. Pelo link, o instalador testa o sinal e conclui, no celular e sem login. O link expira
             quando ele concluir ou quando você encerrar em “Instalações avulsas”.
+            {saved.pin && ' Para abrir, ele digita a senha: mande em outra mensagem (o link repassado sozinho não abre).'}
           </p>
           <div className={styles.link}>
             <span className={styles.url}>{saved.url}</span>
@@ -249,6 +259,19 @@ export function InstallerLinkModal({
               </Button>
             </div>
           </div>
+          {saved.pin && (
+            <div className={styles.link}>
+              <LinkPin
+                pin={saved.pin}
+                whatsappFor={(message) => linkWhatsapp(saved, installers, message)}
+                renew={() => installerLinksApi.renewPin(saved.id)}
+                onRenewed={(l) => {
+                  setSaved(l);
+                  void queryClient.invalidateQueries({ queryKey: installerLinksKey });
+                }}
+              />
+            </div>
+          )}
         </div>
       </Modal>
     );

@@ -84,7 +84,7 @@ func (s *Service) PartnerQueue(ctx context.Context, affiliateID uuid.UUID) (*Par
 		return nil, err
 	}
 	for _, a := range out.Appointments {
-		a.URL = s.PublicURL(a.ID)
+		a.URL, a.Pin = s.PublicURL(a.ID), ""
 	}
 	return out, nil
 }
@@ -140,8 +140,9 @@ func (s *Service) PartnerSchedule(ctx context.Context, affiliateID uuid.UUID, in
 	if address == "" {
 		return nil, invalid("o cliente ainda não tem endereço: combine com ele e peça à Farbo para cadastrar")
 	}
-	return s.create(ctx, nil, Input{Kind: in.Kind, VehicleID: in.VehicleID, InstallerName: installer, ScheduledFor: in.ScheduledFor,
-		Address: address, Notes: in.Notes})
+	a, err := s.create(ctx, nil, Input{Kind: in.Kind, VehicleID: in.VehicleID, InstallerName: installer, ScheduledFor: in.ScheduledFor,
+		Address: address, Notes: in.Notes, AffiliateID: &affiliateID})
+	return forPartner(a), err
 }
 
 // partnerAppointment é o agendamento de um cliente do representante.
@@ -165,8 +166,9 @@ func (s *Service) PartnerReschedule(ctx context.Context, affiliateID, id uuid.UU
 	if err != nil {
 		return nil, err
 	}
-	return s.Reschedule(ctx, id, Input{Kind: a.Kind, VehicleID: a.VehicleID, InstallerID: a.InstallerID,
+	out, err := s.Reschedule(ctx, id, Input{Kind: a.Kind, VehicleID: a.VehicleID, InstallerID: a.InstallerID,
 		InstallerName: a.InstallerName, ScheduledFor: in.ScheduledFor, DurationMin: a.DurationMin, Address: a.Address, Notes: in.Notes})
+	return forPartner(out), err
 }
 
 // PartnerCancel cancela pelo representante (o link do instalador para).
@@ -174,5 +176,15 @@ func (s *Service) PartnerCancel(ctx context.Context, affiliateID, id uuid.UUID) 
 	if _, err := s.partnerAppointment(ctx, affiliateID, id); err != nil {
 		return nil, err
 	}
-	return s.Close(ctx, id, StatusCanceled)
+	out, err := s.Close(ctx, id, StatusCanceled)
+	return forPartner(out), err
+}
+
+// forPartner tira a senha do link (só a central a vê): o agendamento de um
+// cliente indicado pode ter sido feito pela central.
+func forPartner(a *Appointment) *Appointment {
+	if a != nil {
+		a.Pin = ""
+	}
+	return a
 }

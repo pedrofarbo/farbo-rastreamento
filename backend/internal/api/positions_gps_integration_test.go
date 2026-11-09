@@ -89,6 +89,7 @@ func TestPositionsWithoutGPSFix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	env.withPin("/api/public/installer-links/"+strings.TrimPrefix(link.URL, "https://painel.farbo.test/instalador/avulsa/"), link.Pin)
 	check := func() (ready, fix bool, message string) {
 		var c struct {
 			Ready   bool   `json:"ready"`

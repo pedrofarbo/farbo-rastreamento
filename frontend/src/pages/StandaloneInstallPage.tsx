@@ -4,9 +4,13 @@ import { useParams } from 'react-router-dom';
 import { ApiError } from '@/api/client';
 import { installerLinkPublicApi } from '@/api/resources';
 import { formatDateTime } from '@/services/format';
+import { clearInstallPin, pinProblem, saveInstallPin } from '@/services/installPin';
+import type { PinProblem } from '@/services/installPin';
 import type { InstallCheck, PublicInstallerLinkView } from '@/types';
 
+import { InstallActivation } from './InstallActivation';
 import { Shell } from './InstallerPage';
+import { InstallPinGate } from './InstallPinGate';
 import base from './PreLaunch.module.css';
 import { useNoIndex } from './PublicLocation';
 import styles from './PublicTheft.module.css';
@@ -18,7 +22,8 @@ const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 /**
  * O link da instalação avulsa (/instalador/avulsa/<link secreto>): sem
  * agendamento nem veículo, a central escolheu o rastreador. O instalador
- * confere o IMEI, testa o sinal ao vivo e conclui; o link expira na
+ * confere o IMEI — se o rastreador nunca conectou, escolhe o chip e ativa
+ * por SMS antes —, testa o sinal ao vivo e conclui; o link expira na
  * conclusão (ou quando a central encerra).
  */
 export function StandaloneInstallPage() {
@@ -31,15 +36,42 @@ export function StandaloneInstallPage() {
   const [busy, setBusy] = useState('');
   const [check, setCheck] = useState<InstallCheck | null>(null);
   const [note, setNote] = useState('');
+  // Com a ativação: o rastreador ficou pronto para o teste (conectou).
+  const [activated, setActivated] = useState(false);
+  // O link da central pede a senha que ela passou junto.
+  const [pinGate, setPinGate] = useState<PinProblem | null>(null);
 
-  useEffect(() => {
+  /** A senha errada (ou o link travado) não fica guardada: mandar de novo contaria outra tentativa. */
+  const askPin = (problem: PinProblem) => {
+    if (problem !== 'required') clearInstallPin(token);
+    setPinGate(problem);
+  };
+  /** As chamadas da ativação (que mostram o erro na própria tela) também voltam à senha. */
+  const guard = <T,>(call: Promise<T>) =>
+    call.catch((err: unknown) => {
+      const problem = pinProblem(err);
+      if (problem) askPin(problem);
+      throw err;
+    });
+
+  const load = () =>
     installerLinkPublicApi
       .view(token)
-      .then(setView)
+      .then((v) => {
+        setPinGate(null);
+        setView(v);
+      })
       .catch((err) => {
-        if (err instanceof ApiError && (err.status === 410 || err.status === 404)) setEnded(err.message);
+        const problem = pinProblem(err);
+        if (problem) askPin(problem);
+        else if (err instanceof ApiError && (err.status === 410 || err.status === 404)) setEnded(err.message);
         else setError('Sem conexão agora. Recarregue a página.');
       });
+
+  useEffect(() => {
+    void load();
+    // Uma vez por link.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   const run = async (label: string, action: () => Promise<void>) => {
@@ -48,7 +80,9 @@ export function StandaloneInstallPage() {
     try {
       await action();
     } catch (err) {
-      if (err instanceof ApiError && err.status === 410) setEnded(err.message);
+      const problem = pinProblem(err);
+      if (problem) askPin(problem);
+      else if (err instanceof ApiError && err.status === 410) setEnded(err.message);
       else setError(err instanceof Error ? err.message : 'Não deu certo. Tente de novo.');
     } finally {
       setBusy('');
@@ -65,6 +99,22 @@ export function StandaloneInstallPage() {
       </Shell>
     );
   }
+  if (pinGate) {
+    return (
+      <Shell>
+        <InstallPinGate
+          problem={pinGate}
+          busy={busy === 'pin'}
+          onSubmit={(pin) =>
+            void run('pin', async () => {
+              saveInstallPin(token, pin);
+              await load();
+            })
+          }
+        />
+      </Shell>
+    );
+  }
   if (!view) {
     return (
       <Shell>
@@ -77,6 +127,10 @@ export function StandaloneInstallPage() {
 
   const done = view.status === 'done';
   const vehicle = [view.vehicleName, view.plate].filter(Boolean).join(' · ');
+  // Fora de veículo e nunca conectou: o chip e a ativação antes do teste.
+  const activation = view.needsActivation;
+  const canTest = !activation || activated;
+  const n = (step: number) => (activation ? step + 1 : step);
 
   return (
     <Shell label="Instalação">
@@ -100,18 +154,40 @@ export function StandaloneInstallPage() {
         </section>
       ) : (
         <>
+          {activation && (
+            <section className={`${styles.card} ${activated ? local.done : ''}`}>
+              <h2 className={local.step}>
+                <span className={local.number}>1</span> Ativar
+              </h2>
+              <p className={styles.text}>
+                Este rastreador ainda não foi ativado. Confira se o IMEI da etiqueta é este: <strong>{view.imei}</strong>.
+              </p>
+              <InstallActivation
+                fixedImei={view.imei}
+                api={{
+                  stock: () => guard(installerLinkPublicApi.stock(token)),
+                  activation: () => guard(installerLinkPublicApi.activation(token)),
+                  activate: (_device, chipId) => guard(installerLinkPublicApi.activate(token, chipId)),
+                }}
+                disabled={busy !== ''}
+                onReady={(ready) => setActivated(Boolean(ready))}
+              />
+            </section>
+          )}
           <section className={`${styles.card} ${check?.ready ? local.done : ''}`}>
             <h2 className={local.step}>
-              <span className={local.number}>1</span> Testar
+              <span className={local.number}>{n(1)}</span> Testar
             </h2>
             <p className={styles.text}>
               Instale e ligue o rastreador. Confira se o IMEI da etiqueta é este: <strong>{view.imei}</strong>.
             </p>
-            <p className={styles.muted}>Se o IMEI for outro, fale com a Farbo antes de seguir.</p>
+            <p className={styles.muted}>
+              {canTest ? 'Se o IMEI for outro, fale com a Farbo antes de seguir.' : 'Ative o rastreador antes de testar.'}
+            </p>
             <button
               type="button"
               className={`${base.secondary} ${local.action}`}
-              disabled={busy !== ''}
+              disabled={busy !== '' || !canTest}
               onClick={() => void run('check', async () => setCheck(await installerLinkPublicApi.check(token)))}
             >
               {busy === 'check' ? 'Testando…' : check ? 'Testar de novo' : 'Testar o sinal'}
@@ -125,7 +201,7 @@ export function StandaloneInstallPage() {
 
           <section className={styles.card}>
             <h2 className={local.step}>
-              <span className={local.number}>2</span> Concluir
+              <span className={local.number}>{n(2)}</span> Concluir
             </h2>
             <textarea
               className={local.textarea}

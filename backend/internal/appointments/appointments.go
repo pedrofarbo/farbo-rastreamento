@@ -90,13 +90,23 @@ type Appointment struct {
 	ArrivedAt        *time.Time `json:"arrivedAt"`
 	DeviceID         *uuid.UUID `json:"deviceId"`
 	// IMEI: o instalado (instalação concluída) ou o que está no veículo (desinstalação).
-	IMEI          string     `json:"imei"`
+	IMEI string `json:"imei"`
+	// VehicleIMEI: o rastreador que já está no veículo (na instalação, o que a
+	// central configurou e ligou antes; vazio se nenhum).
+	VehicleIMEI   string     `json:"vehicleImei"`
 	CompletedAt   *time.Time `json:"completedAt"`
 	InstallerNote string     `json:"installerNote"`
 	Photos        []string   `json:"photos"`
 	CreatedAt     time.Time  `json:"createdAt"`
 	// URL: o link do instalador (só para a central).
 	URL string `json:"url,omitempty"`
+	// Pin: a senha do link, que a central passa ao instalador (só para a
+	// central; vazia: o link abre sem senha).
+	Pin string `json:"pin,omitempty"`
+	// AffiliateID: o representante que agendou pela página dele (nulo: a
+	// central).
+	AffiliateID *uuid.UUID `json:"-"`
+	accessPin   string
 }
 
 // Input é o agendamento pedido.
@@ -110,6 +120,9 @@ type Input struct {
 	DurationMin   int        `json:"durationMin"`
 	Address       string     `json:"address"`
 	Notes         string     `json:"notes"`
+	// AffiliateID: o representante agendando pela página dele (o link abre
+	// sem senha); nulo, a central (o link ganha a senha).
+	AffiliateID *uuid.UUID `json:"-"`
 }
 
 // Pusher avisa o cliente no app (push.Service).
@@ -179,10 +192,11 @@ const selectAppointment = `
 		concat_ws(' · ', NULLIF(v.brand, ''), NULLIF(v.model, ''), v.year::text, NULLIF(v.color, '')),
 		u.id, u.name, u.phone, COALESCE(o.name, ''), a.installer_id,
 		COALESCE(NULLIF(a.installer_name, ''), i.name, ''), a.scheduled_for, a.duration_min, a.address, a.notes, a.status,
-		a.arrived_at, a.device_id, COALESCE(d.imei, CASE WHEN a.kind = 'uninstall' THEN vd.imei END, ''), a.completed_at,
+		a.arrived_at, a.device_id, COALESCE(d.imei, CASE WHEN a.kind = 'uninstall' THEN vd.imei END, ''), COALESCE(vd.imei, ''),
+		a.completed_at,
 		a.installer_note,
 		COALESCE((SELECT array_agg(p.slot ORDER BY p.slot) FROM installation_photos p WHERE p.appointment_id = a.id), '{}'),
-		a.created_at
+		a.created_at, a.affiliate_id, COALESCE(a.access_pin, '')
 	FROM installation_appointments a
 	JOIN vehicles v ON v.id = a.vehicle_id
 	JOIN users u ON u.id = v.owner_id
@@ -195,8 +209,8 @@ func scan(row database.Scanner) (*Appointment, error) {
 	var a Appointment
 	if err := row.Scan(&a.ID, &a.Kind, &a.VehicleID, &a.VehicleName, &a.Plate, &a.VehicleDetails, &a.CustomerID, &a.CustomerName,
 		&a.CustomerPhone, &a.OrganizationName, &a.InstallerID, &a.InstallerName, &a.ScheduledFor, &a.DurationMin, &a.Address,
-		&a.Notes, &a.Status, &a.ArrivedAt, &a.DeviceID, &a.IMEI, &a.CompletedAt, &a.InstallerNote, &a.Photos,
-		&a.CreatedAt); err != nil {
+		&a.Notes, &a.Status, &a.ArrivedAt, &a.DeviceID, &a.IMEI, &a.VehicleIMEI, &a.CompletedAt, &a.InstallerNote, &a.Photos,
+		&a.CreatedAt, &a.AffiliateID, &a.accessPin); err != nil {
 		return nil, database.MapError(err)
 	}
 	return &a, nil
@@ -223,7 +237,7 @@ func (s *Service) list(ctx context.Context, where string, args ...any) ([]*Appoi
 func (s *Service) Between(ctx context.Context, from, to time.Time) ([]*Appointment, error) {
 	list, err := s.list(ctx, `a.scheduled_for >= $1 AND a.scheduled_for < $2`, from, to)
 	for _, a := range list {
-		a.URL = s.PublicURL(a.ID)
+		a.URL, a.Pin = s.PublicURL(a.ID), a.accessPin
 	}
 	return list, err
 }
@@ -238,13 +252,13 @@ func (s *Service) ForOrganization(ctx context.Context, orgID uuid.UUID, from, to
 	return s.list(ctx, `u.organization_id = $1 AND a.scheduled_for >= $2 AND a.scheduled_for < $3`, orgID, from, to)
 }
 
-// Get é o agendamento (com o link do instalador).
+// Get é o agendamento (com o link do instalador e a senha dele).
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Appointment, error) {
 	a, err := scan(s.db.QueryRow(ctx, selectAppointment+` WHERE a.id = $1`, id))
 	if err != nil {
 		return nil, err
 	}
-	a.URL = s.PublicURL(a.ID)
+	a.URL, a.Pin = s.PublicURL(a.ID), a.accessPin
 	return a, nil
 }
 
@@ -496,12 +510,21 @@ func (s *Service) create(ctx context.Context, by *uuid.UUID, in Input) (*Appoint
 	if owner == nil {
 		return nil, invalid("o veículo não é de nenhum cliente")
 	}
+	// O link da central ganha a senha; o do representante abre sem ela.
+	pin := ""
+	if in.AffiliateID == nil {
+		var err error
+		if pin, err = newPin(); err != nil {
+			return nil, err
+		}
+	}
 	var id uuid.UUID
 	err := s.db.QueryRow(ctx, `
 		INSERT INTO installation_appointments (kind, vehicle_id, installer_id, installer_name, scheduled_for, duration_min,
-			address, notes, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-		in.Kind, in.VehicleID, in.InstallerID, in.InstallerName, in.ScheduledFor, in.DurationMin, in.Address, in.Notes, by).Scan(&id)
+			address, notes, created_by, affiliate_id, access_pin)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, '')) RETURNING id`,
+		in.Kind, in.VehicleID, in.InstallerID, in.InstallerName, in.ScheduledFor, in.DurationMin, in.Address, in.Notes, by,
+		in.AffiliateID, pin).Scan(&id)
 	if errors.Is(database.MapError(err), database.ErrConflict) {
 		return nil, invalid("este veículo já tem um agendamento em aberto: remarque o que está aberto")
 	}

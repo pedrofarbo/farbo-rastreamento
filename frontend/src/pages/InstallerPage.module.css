@@ -143,3 +143,122 @@
   box-shadow: none;
   cursor: not-allowed;
 }
+
+/* A ativação antes de instalar: o rastreador e o chip do estoque, e o
+   andamento da configuração por SMS. */
+.activation {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 52px;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffffff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.optionOn {
+  border-color: rgba(59, 229, 88, 0.55);
+  background: rgba(59, 229, 88, 0.08);
+  cursor: default;
+}
+
+.optionMain {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+
+.tag {
+  flex-shrink: 0;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.tagOk {
+  background: rgba(59, 229, 88, 0.16);
+  color: #bbf7d0;
+}
+
+.tagWait {
+  background: rgba(250, 204, 21, 0.14);
+  color: #fef08a;
+}
+
+.link {
+  flex-shrink: 0;
+  padding: 0.4rem 0.2rem;
+  border: 0;
+  background: none;
+  color: var(--color-neon-green);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.substep {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.substepTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: #cbd5e1;
+  font-size: 0.875rem;
+}

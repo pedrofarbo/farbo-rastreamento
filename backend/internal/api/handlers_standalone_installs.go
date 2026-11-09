@@ -65,13 +65,22 @@ type standaloneView struct {
 	Notes         string     `json:"notes"`
 	Status        string     `json:"status"`
 	CompletedAt   *time.Time `json:"completedAt"`
+	// NeedsActivation: o rastreador está fora de veículo e nunca conectou —
+	// o instalador escolhe o chip e ativa antes de instalar.
+	NeedsActivation bool `json:"needsActivation"`
 }
 
-func toStandaloneView(l *appointments.Standalone) standaloneView {
-	return standaloneView{
+func (s *Server) toStandaloneView(r *http.Request, l *appointments.Standalone) standaloneView {
+	view := standaloneView{
 		IMEI: l.IMEI, DeviceModel: l.DeviceModel, VehicleName: l.VehicleName, Plate: l.Plate,
 		InstallerName: l.InstallerName, Notes: l.Notes, Status: l.Status, CompletedAt: l.CompletedAt,
 	}
+	if l.Status == appointments.StandaloneOpen && l.VehicleName == "" {
+		if dev, err := s.Devices.Get(r.Context(), l.DeviceID); err == nil {
+			view.NeedsActivation = !isActivated(dev)
+		}
+	}
+	return view
 }
 
 // standaloneFor é a instalação avulsa do link (o 410 já escrito se não vale).
@@ -82,12 +91,32 @@ func (s *Server) standaloneFor(w http.ResponseWriter, r *http.Request) (*appoint
 	if !writeAppointmentError(w, err, "link não encontrado") {
 		return nil, false
 	}
+	if !pinAllowed(w, s.Appointments.CheckStandalonePin(r.Context(), l.ID, pinOf(r))) {
+		return nil, false
+	}
 	return l, true
+}
+
+// handleRenewStandalonePin: outra senha para o link da instalação avulsa.
+func (s *Server) handleRenewStandalonePin(w http.ResponseWriter, r *http.Request) {
+	id, err := urlUUID(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	l, err := s.Appointments.RenewStandalonePin(r.Context(), id)
+	if !writeAppointmentError(w, err, "link não encontrado") {
+		return
+	}
+	s.recordAudit(r, audit.ActionInstallationChanged, nil, &l.DeviceID, map[string]any{
+		"standaloneId": l.ID, "change": "standalone pin renewed",
+	})
+	writeJSON(w, http.StatusOK, l)
 }
 
 func (s *Server) handlePublicStandalone(w http.ResponseWriter, r *http.Request) {
 	if l, ok := s.standaloneFor(w, r); ok {
-		writeJSON(w, http.StatusOK, toStandaloneView(l))
+		writeJSON(w, http.StatusOK, s.toStandaloneView(r, l))
 	}
 }
 
@@ -143,5 +172,5 @@ func (s *Server) handlePublicStandaloneComplete(w http.ResponseWriter, r *http.R
 	s.recordAudit(r, audit.ActionInstallationChanged, nil, &done.DeviceID, map[string]any{
 		"standaloneId": done.ID, "change": "standalone installed", "imei": done.IMEI, "installer": done.InstallerName,
 	})
-	writeJSON(w, http.StatusOK, toStandaloneView(done))
+	writeJSON(w, http.StatusOK, s.toStandaloneView(r, done))
 }

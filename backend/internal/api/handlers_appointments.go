@@ -254,23 +254,64 @@ func (s *Server) handleOrgInstallations(w http.ResponseWriter, r *http.Request) 
 // nome e o telefone do cliente (para combinar) — nada de financeiro. Na
 // desinstalação, o IMEI é o do rastreador a retirar.
 type installView struct {
-	Kind           string     `json:"kind"`
-	VehicleName    string     `json:"vehicleName"`
-	Plate          string     `json:"plate"`
-	VehicleDetails string     `json:"vehicleDetails"`
-	CustomerName   string     `json:"customerName"`
-	CustomerPhone  string     `json:"customerPhone"`
-	InstallerName  string     `json:"installerName"`
-	ScheduledFor   time.Time  `json:"scheduledFor"`
-	Address        string     `json:"address"`
-	Notes          string     `json:"notes"`
-	Status         string     `json:"status"`
-	IMEI           string     `json:"imei"`
-	CompletedAt    *time.Time `json:"completedAt"`
-	Photos         []string   `json:"photos"`
+	Kind           string    `json:"kind"`
+	VehicleName    string    `json:"vehicleName"`
+	Plate          string    `json:"plate"`
+	VehicleDetails string    `json:"vehicleDetails"`
+	CustomerName   string    `json:"customerName"`
+	CustomerPhone  string    `json:"customerPhone"`
+	InstallerName  string    `json:"installerName"`
+	ScheduledFor   time.Time `json:"scheduledFor"`
+	Address        string    `json:"address"`
+	Notes          string    `json:"notes"`
+	Status         string    `json:"status"`
+	IMEI           string    `json:"imei"`
+	// VehicleIMEI: o rastreador que a central já ligou ao veículo (vazio: o
+	// instalador escolhe um livre e, se nunca conectou, ativa antes).
+	VehicleIMEI string     `json:"vehicleImei"`
+	CompletedAt *time.Time `json:"completedAt"`
+	Photos      []string   `json:"photos"`
 }
 
-// installFor é o agendamento do link (o 410 já escrito se não vale).
+// installPinHeader leva a senha do link do instalador (a foto, que abre numa
+// <img>, leva no ?pin=).
+const installPinHeader = "X-Install-Pin"
+
+// Os códigos da senha do link: a tela pede a senha (PIN_REQUIRED), avisa da
+// errada (PIN_WRONG) ou do link travado (PIN_LOCKED).
+const (
+	codePinRequired = "PIN_REQUIRED"
+	codePinWrong    = "PIN_WRONG"
+	codePinLocked   = "PIN_LOCKED"
+)
+
+// pinOf é a senha que o instalador mandou.
+func pinOf(r *http.Request) string {
+	if pin := strings.TrimSpace(r.Header.Get(installPinHeader)); pin != "" {
+		return pin
+	}
+	return strings.TrimSpace(r.URL.Query().Get("pin"))
+}
+
+// pinAllowed confere a senha do link (o 401 ou o 423 já escritos se não).
+func pinAllowed(w http.ResponseWriter, err error) bool {
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, appointments.ErrPinRequired):
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error(), "code": codePinRequired})
+	case errors.Is(err, appointments.ErrPinWrong):
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error(), "code": codePinWrong})
+	case errors.Is(err, appointments.ErrPinLocked):
+		writeJSON(w, http.StatusLocked, map[string]string{"error": err.Error(), "code": codePinLocked})
+	default:
+		handleStoreError(w, err, "link não encontrado")
+	}
+	return false
+}
+
+// installFor é o agendamento do link (o 410 já escrito se não vale), com a
+// senha conferida.
 func (s *Server) installFor(w http.ResponseWriter, r *http.Request) (*appointments.Appointment, bool) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Robots-Tag", "noindex, nofollow")
@@ -278,7 +319,26 @@ func (s *Server) installFor(w http.ResponseWriter, r *http.Request) (*appointmen
 	if !writeAppointmentError(w, err, "link não encontrado") {
 		return nil, false
 	}
+	if !pinAllowed(w, s.Appointments.CheckPin(r.Context(), a.ID, pinOf(r))) {
+		return nil, false
+	}
 	return a, true
+}
+
+// handleRenewInstallationPin: outra senha para o link do instalador (a antiga
+// para de valer e as tentativas erradas zeram).
+func (s *Server) handleRenewInstallationPin(w http.ResponseWriter, r *http.Request) {
+	id, err := urlUUID(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	a, err := s.Appointments.RenewPin(r.Context(), id)
+	if !writeAppointmentError(w, err, "instalação não encontrada") {
+		return
+	}
+	s.recordAudit(r, audit.ActionInstallationChanged, &a.VehicleID, nil, map[string]any{"appointmentId": a.ID, "change": "pin renewed"})
+	writeJSON(w, http.StatusOK, a)
 }
 
 func toInstallView(a *appointments.Appointment) installView {
@@ -286,7 +346,7 @@ func toInstallView(a *appointments.Appointment) installView {
 	return installView{
 		Kind: a.Kind, VehicleName: a.VehicleName, Plate: a.Plate, VehicleDetails: a.VehicleDetails, CustomerName: first,
 		CustomerPhone: a.CustomerPhone, InstallerName: a.InstallerName, ScheduledFor: a.ScheduledFor, Address: a.Address,
-		Notes: a.Notes, Status: a.Status, IMEI: a.IMEI, CompletedAt: a.CompletedAt, Photos: a.Photos,
+		Notes: a.Notes, Status: a.Status, IMEI: a.IMEI, VehicleIMEI: a.VehicleIMEI, CompletedAt: a.CompletedAt, Photos: a.Photos,
 	}
 }
 
@@ -346,6 +406,12 @@ func (s *Server) checkInstallDevice(r *http.Request, a *appointments.Appointment
 	if other, err := s.Vehicles.GetByDeviceID(r.Context(), dev.ID); err == nil && other != nil && other.ID != a.VehicleID {
 		out.OtherVehicle = true
 		out.Message = "Este rastreador já está ligado a outro veículo. Confira o IMEI."
+		return dev, out
+	}
+	// O rastreador ativado pelo link de outra instalação fica com ela.
+	if reserved, err := s.Appointments.ReservedElsewhere(r.Context(), a.ID, dev.ID); err == nil && reserved {
+		out.OtherVehicle = true
+		out.Message = "Este rastreador foi ativado para outra instalação. Confira o IMEI."
 		return dev, out
 	}
 	return dev, s.signalOf(r, dev)

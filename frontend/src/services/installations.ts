@@ -93,6 +93,7 @@ export function installerMessage(a: InstallationAppointment): string {
   if (a.url) {
     const steps = a.kind === 'uninstall' ? 'a foto do rastreador retirado' : 'o teste do rastreador e as fotos';
     lines.push('', `No local, siga o passo a passo (${steps}) por este link: ${a.url}`);
+    if (a.pin) lines.push('A senha para abrir o link vai em outra mensagem.');
   }
   return lines.join('\n');
 }
@@ -107,8 +108,16 @@ export function installerLinkMessage(l: InstallerLink): string {
   ];
   if (vehicle) lines.push(`🚗 ${vehicle}`);
   if (l.notes) lines.push(`📝 ${l.notes}`);
-  if (l.url) lines.push('', `Depois de instalar, teste o sinal e conclua por este link: ${l.url}`);
+  if (l.url) {
+    lines.push('', `Depois de instalar, teste o sinal e conclua por este link: ${l.url}`);
+    if (l.pin) lines.push('A senha para abrir o link vai em outra mensagem.');
+  }
   return lines.join('\n');
+}
+
+/** A senha do link, à parte da mensagem com o link (o link repassado sozinho não abre). */
+export function installerPinMessage(pin: string): string {
+  return `Senha para abrir o link da Farbo: ${pin}`;
 }
 
 /** "2026-10-24T14:30" (datetime-local) de um horário. */

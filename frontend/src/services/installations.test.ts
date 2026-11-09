@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { InstallationAppointment } from '@/types';
 
-import { dayKey, groupByDay, installerMessage, isOpen, statusOf } from './installations';
+import { dayKey, groupByDay, installerMessage, installerPinMessage, isOpen, statusOf } from './installations';
 
 const appt = (over: Partial<InstallationAppointment>): InstallationAppointment => ({
   id: crypto.randomUUID(),
@@ -59,6 +59,14 @@ describe('a agenda de instalação', () => {
     expect(text).toContain('📝 Portão azul');
     expect(text).toContain('https://farbo.test/instalador/abc');
     expect(text).toContain('Instalação Farbo agendada');
+  });
+
+  it('o link com senha: a mensagem avisa que a senha vai à parte, sem ela', () => {
+    const text = installerMessage(appt({ url: 'https://farbo.test/instalador/abc', pin: '246810' }));
+    expect(text).toContain('A senha para abrir o link vai em outra mensagem.');
+    expect(text).not.toContain('246810');
+    expect(installerMessage(appt({ url: 'https://farbo.test/instalador/abc' }))).not.toContain('senha');
+    expect(installerPinMessage('246810')).toBe('Senha para abrir o link da Farbo: 246810');
   });
 
   it('a desinstalação: o IMEI a retirar na mensagem e "Retirado" quando conclui', () => {

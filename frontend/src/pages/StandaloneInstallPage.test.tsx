@@ -5,16 +5,18 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '@/api/client';
+import { clearInstallPin, storedInstallPin } from '@/services/installPin';
 import type { InstallCheck, PublicInstallerLinkView } from '@/types';
 
 const view = (over: Partial<PublicInstallerLinkView> = {}): PublicInstallerLinkView => ({
   imei: '869247061230055', deviceModel: 'TK910', vehicleName: '', plate: '', installerName: 'Zé Instalador',
-  notes: 'Moto do João', status: 'open', completedAt: null, ...over,
+  notes: 'Moto do João', status: 'open', completedAt: null, needsActivation: false, ...over,
 });
 const api = vi.hoisted(() => ({
   view: null as unknown,
   checks: [] as unknown[],
   complete: null as unknown,
+  activation: null as unknown,
   calls: [] as unknown[][],
 }));
 // Cada resposta é um valor ou um erro (lançado).
@@ -26,7 +28,8 @@ vi.mock('@/api/resources', () => ({
   installerLinkPublicApi: {
     view: async (token: string) => {
       api.calls.push(['view', token]);
-      return answer(api.view);
+      // Um valor, um erro ou uma função do link (a senha guardada decide).
+      return answer(typeof api.view === 'function' ? (api.view as (t: string) => unknown)(token) : api.view);
     },
     check: async (token: string) => {
       api.calls.push(['check', token]);
@@ -35,6 +38,17 @@ vi.mock('@/api/resources', () => ({
     complete: async (token: string, note: string) => {
       api.calls.push(['complete', token, note]);
       return answer(api.complete);
+    },
+    stock: async () => ({ chips: [{ id: 'c-a', iccid: '89551012345678901233', carrier: 'Vivo' }] }),
+    activation: async () => api.activation,
+    activate: async (token: string, chipId: string) => {
+      api.calls.push(['activate', token, chipId]);
+      api.activation = {
+        enabled: true, left: 2,
+        activation: { imei: '869247061230055', iccid: '89551012345678901233', status: 'DONE', error: '', steps: [],
+          waitingSince: null, connectedAt: null, finishedAt: null },
+      };
+      return api.activation;
     },
   },
 }));
@@ -64,6 +78,7 @@ async function render() {
 
 afterEach(() => {
   document.body.innerHTML = '';
+  clearInstallPin('tok123');
   api.calls = [];
   api.checks = [];
 });
@@ -97,6 +112,60 @@ describe('o link da instalação avulsa', () => {
     expect(text()).toContain('Instalação concluída');
     expect(text()).toContain('Este link não vale mais.');
     expect(document.querySelectorAll('button')).toHaveLength(0);
+  });
+
+  it('rastreador nunca ativado: escolhe o chip, ativa e só então testa', async () => {
+    api.view = view({ needsActivation: true });
+    api.activation = { enabled: true, left: 3, activation: null };
+    api.checks = [signal];
+    await render();
+    expect(text()).toContain('Este rastreador ainda não foi ativado');
+    expect(text()).not.toContain('Escolha o rastreador que você vai instalar');
+    expect(button('Testar o sinal').disabled).toBe(true);
+    const chip = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('89551012345678901233'))!;
+    await act(async () => chip.click());
+    await act(async () => button('Ativar o rastreador').click());
+    expect(api.calls).toContainEqual(['activate', 'tok123', 'c-a']);
+    expect(text()).toContain('Rastreador ativado e conectado');
+    expect(button('Testar o sinal').disabled).toBe(false);
+    await act(async () => button('Testar o sinal').click());
+    expect(text()).toContain('Pode concluir.');
+  });
+
+  it('o link da central pede a senha: errada avisa e não fica guardada, a certa abre e fica', async () => {
+    api.view = (token: string) => {
+      const pin = storedInstallPin(token);
+      if (!pin) return new ApiError(401, 'digite a senha', { code: 'PIN_REQUIRED' });
+      if (pin !== '246810') return new ApiError(401, 'senha errada', { code: 'PIN_WRONG' });
+      return view();
+    };
+    await render();
+    expect(text()).toContain('Digite a senha');
+    expect(text()).not.toContain('Rastreador TK910');
+    expect(button('Abrir').disabled).toBe(true);
+    const pin = () => document.querySelector('input[inputmode="numeric"]') as HTMLInputElement;
+    const typePin = async (value: string) =>
+      act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(pin(), value);
+        pin().dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    // Só números, até 6.
+    await typePin('12a34567');
+    expect(pin().value).toBe('123456');
+    await act(async () => button('Abrir').click());
+    await vi.waitFor(() => expect(text()).toContain('Senha errada'));
+    expect(storedInstallPin('tok123')).toBe('');
+    await typePin('246810');
+    await act(async () => button('Abrir').click());
+    await vi.waitFor(() => expect(text()).toContain('Rastreador TK910'));
+    expect(storedInstallPin('tok123')).toBe('246810');
+    expect(text()).not.toContain('Digite a senha');
+  });
+
+  it('senha errada vezes demais: o link trava e pede uma senha nova à Farbo', async () => {
+    api.view = new ApiError(423, 'travado', { code: 'PIN_LOCKED' });
+    await render();
+    expect(text()).toContain('A senha foi digitada errada vezes demais. Peça uma senha nova à Farbo');
   });
 
   it('link concluído ou encerrado: diz o motivo', async () => {

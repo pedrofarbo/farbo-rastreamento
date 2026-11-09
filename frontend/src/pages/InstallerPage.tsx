@@ -7,9 +7,13 @@ import { installLinkApi } from '@/api/resources';
 import { whatsappLink } from '@/config/contact';
 import { formatDateTime } from '@/services/format';
 import { KIND_LABEL, dayKey, dayLabel, hourLabel, slotsOf } from '@/services/installations';
+import { clearInstallPin, pinProblem, saveInstallPin } from '@/services/installPin';
+import type { PinProblem } from '@/services/installPin';
 import { compressImage } from '@/services/photos';
 import type { InstallCheck, InstallationSlot, PublicInstallView } from '@/types';
 
+import { InstallActivation } from './InstallActivation';
+import { InstallPinGate } from './InstallPinGate';
 import base from './PreLaunch.module.css';
 import { useNoIndex } from './PublicLocation';
 import styles from './PublicTheft.module.css';
@@ -17,8 +21,11 @@ import local from './InstallerPage.module.css';
 
 /**
  * O link do instalador (/instalador/<link secreto>): o passo a passo no
- * celular, sem login. Na instalação: a chegada, o IMEI com o teste do sinal
- * ao vivo, as fotos e a conclusão, que liga o rastreador ao veículo. Na
+ * celular, sem login. Na instalação: a chegada, o rastreador — o que a
+ * central já ligou ao veículo ou um livre do estoque, escolhido pelo IMEI;
+ * o que nunca conectou ganha o chip escolhido e a ativação por SMS antes de
+ * instalar — com o teste do sinal ao vivo, as fotos e a conclusão, que liga o
+ * rastreador ao veículo. Na
  * desinstalação: a chegada, o IMEI a retirar, a foto do rastreador retirado
  * e a conclusão, que tira o rastreador do veículo. Só o primeiro nome e o
  * telefone do cliente, para combinar.
@@ -35,18 +42,41 @@ export function InstallerPage() {
   const [note, setNote] = useState('');
   // Muda a cada foto nova (o navegador não reaproveita a antiga).
   const [version, setVersion] = useState(() => String(Date.now()));
+  // O link da central pede a senha (o do representante abre sem).
+  const [pinGate, setPinGate] = useState<PinProblem | null>(null);
 
-  useEffect(() => {
+  /** A senha errada (ou o link travado) não fica guardada: mandar de novo contaria outra tentativa. */
+  const askPin = (problem: PinProblem) => {
+    if (problem !== 'required') clearInstallPin(token);
+    setPinGate(problem);
+  };
+  /** As chamadas da ativação (que mostram o erro na própria tela) também voltam à senha. */
+  const guard = <T,>(call: Promise<T>) =>
+    call.catch((err: unknown) => {
+      const problem = pinProblem(err);
+      if (problem) askPin(problem);
+      throw err;
+    });
+
+  const load = () =>
     installLinkApi
       .view(token)
       .then((v) => {
+        setPinGate(null);
         setView(v);
-        if (v.imei) setImei(v.imei);
+        if (v.imei || v.vehicleImei) setImei(v.imei || v.vehicleImei);
       })
       .catch((err) => {
-        if (err instanceof ApiError && (err.status === 410 || err.status === 404)) setEnded(true);
+        const problem = pinProblem(err);
+        if (problem) askPin(problem);
+        else if (err instanceof ApiError && (err.status === 410 || err.status === 404)) setEnded(true);
         else setError('Sem conexão agora. Recarregue a página.');
       });
+
+  useEffect(() => {
+    void load();
+    // Uma vez por link.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   const run = async (label: string, action: () => Promise<void>) => {
@@ -55,7 +85,9 @@ export function InstallerPage() {
     try {
       await action();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não deu certo. Tente de novo.');
+      const problem = pinProblem(err);
+      if (problem) askPin(problem);
+      else setError(err instanceof Error ? err.message : 'Não deu certo. Tente de novo.');
     } finally {
       setBusy('');
     }
@@ -68,6 +100,22 @@ export function InstallerPage() {
           <h1 className={styles.title}>Este link não está mais ativo</h1>
           <p className={styles.text}>O agendamento foi cancelado, remarcado com outro link ou concluído há mais de um dia. Fale com a Farbo.</p>
         </section>
+      </Shell>
+    );
+  }
+  if (pinGate) {
+    return (
+      <Shell>
+        <InstallPinGate
+          problem={pinGate}
+          busy={busy === 'pin'}
+          onSubmit={(pin) =>
+            void run('pin', async () => {
+              saveInstallPin(token, pin);
+              await load();
+            })
+          }
+        />
       </Shell>
     );
   }
@@ -89,7 +137,8 @@ export function InstallerPage() {
   const canComplete = !done && arrived && tested && hasTracker;
   const missing = [
     !arrived && 'registre a chegada',
-    !tested && 'teste o sinal',
+    !uninstall && !imei && 'escolha o rastreador (e ative, se precisar)',
+    !tested && imei !== '' && 'teste o sinal',
     !hasTracker && (uninstall ? 'tire a foto do rastreador retirado' : 'tire a foto do rastreador'),
   ].filter(Boolean);
   const maps = view.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(view.address)}` : '';
@@ -169,28 +218,40 @@ export function InstallerPage() {
               <h2 className={local.step}>
                 <span className={local.number}>2</span> Rastreador
               </h2>
-              <p className={styles.muted}>Instale e ligue o rastreador. Depois digite o IMEI da etiqueta (15 números) e teste o sinal.</p>
-              <label className={base.field}>
-                IMEI
-                <input
-                  inputMode="numeric"
-                  autoComplete="off"
-                  maxLength={20}
-                  value={imei}
-                  onChange={(e) => {
-                    setImei(e.target.value.replace(/\D/g, ''));
+              {view.vehicleImei ? (
+                <p className={styles.text}>
+                  Este veículo já tem o rastreador <strong>{view.vehicleImei}</strong>, configurado pela Farbo. Confira o IMEI
+                  na etiqueta, instale, ligue e teste o sinal.
+                </p>
+              ) : (
+                <InstallActivation
+                  api={{
+                    stock: () => guard(installLinkApi.stock(token)),
+                    activation: () => guard(installLinkApi.activation(token)),
+                    activate: (deviceId, chipId) => guard(installLinkApi.activate(token, deviceId ?? '', chipId)),
+                  }}
+                  disabled={busy !== ''}
+                  onReady={(ready) => {
+                    setImei(ready ?? '');
                     setCheck(null);
                   }}
                 />
-              </label>
-              <button
-                type="button"
-                className={`${base.secondary} ${local.action}`}
-                disabled={busy !== '' || imei.length < 14}
-                onClick={() => void run('check', async () => setCheck(await installLinkApi.check(token, imei)))}
-              >
-                {busy === 'check' ? 'Testando…' : check ? 'Testar de novo' : 'Testar o sinal'}
-              </button>
+              )}
+              {imei ? (
+                <>
+                  {!view.vehicleImei && (
+                    <p className={styles.muted}>Instale e ligue o rastreador {imei} no veículo. Depois teste o sinal.</p>
+                  )}
+                  <button
+                    type="button"
+                    className={`${base.secondary} ${local.action}`}
+                    disabled={busy !== ''}
+                    onClick={() => void run('check', async () => setCheck(await installLinkApi.check(token, imei)))}
+                  >
+                    {busy === 'check' ? 'Testando…' : check ? 'Testar de novo' : 'Testar o sinal'}
+                  </button>
+                </>
+              ) : null}
               {check && <p className={`${local.check} ${check.ready ? local.ok : local.wait}`}>{check.message}</p>}
             </section>
           )}

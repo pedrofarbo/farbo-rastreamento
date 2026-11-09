@@ -48,6 +48,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/reports"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/retention"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/shares"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/smssetup"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/stepup"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/tcp"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/telemetry"
@@ -214,9 +215,13 @@ type credEnv struct {
 	webhooks  *webhooks.Service
 	installs  *appointments.Service
 	routes    *busroutes.Service
+	sms       *smssetup.Service
 
 	fwdMu     sync.Mutex
 	forwarded [][]byte // o que iria para o Redis (outras instâncias)
+	// pins: a senha de cada link do instalador (pelo começo do caminho),
+	// mandada em toda chamada a ele.
+	pins map[string]string
 }
 
 func newCredEnv(t *testing.T) *credEnv {
@@ -256,6 +261,8 @@ type credEnvOptions struct {
 	integrations bool
 	// installs liga a agenda de instalação e o link do instalador.
 	installs bool
+	// sms liga a configuração por SMS (a ativação), com esta SMS Market.
+	sms smssetup.Sender
 }
 
 func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
@@ -350,6 +357,11 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 		env.installs = appointments.NewService(db, "https://painel.farbo.test", cfg.Auth.JWTSecret, log)
 		env.installs.SetSync()
 	}
+	if opts.sms != nil {
+		env.sms = smssetup.NewService(db, env.devices, opts.sms, nil, smssetup.Defaults{
+			ServerHost: "farborastreadores.com.br", ServerPort: 5000, ReportSeconds: 30, ParkedSeconds: 3600,
+		}, "SMS Market", log)
+	}
 	if opts.fleetOps != nil {
 		env.routes = busroutes.NewService(db, "https://painel.farbo.test", cfg.Auth.JWTSecret)
 	}
@@ -385,7 +397,7 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 		StepUp: stepUpSvc, Shares: sharesSvc, Theft: env.theft, Accounts: accountsSvc, Organizations: env.orgs,
 		Closing: closing.NewService(db), LiveLinks: env.liveLinks, Claims: env.claims, Inspections: env.inspects,
 		Fleet: env.fleetOps, APIKeys: env.apiKeys, Webhooks: env.webhooks, Appointments: env.installs, BusRoutes: env.routes,
-		Config: cfg, Log: log, Metrics: metrics, DB: db, Auth: authSvc,
+		SMSSetup: env.sms, Config: cfg, Log: log, Metrics: metrics, DB: db, Auth: authSvc,
 		Devices: env.devices, Vehicles: env.vehicles, Events: eventSvc, Commands: env.commands,
 		Audit: auditSvc, Billing: billingSvc,
 		Retention: retention.NewService(db, cfg.Tracking.HistoryRetentionDays, log),
@@ -421,6 +433,11 @@ func (e *credEnv) doWith(token, method, path string, body any, headers map[strin
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	for prefix, pin := range e.pins {
+		if strings.HasPrefix(path, prefix) && req.Header.Get(installPinHeader) == "" {
+			req.Header.Set(installPinHeader, pin)
+		}
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
@@ -937,4 +954,13 @@ func TestMigrationRedactsLegacyHistory(t *testing.T) {
 			t.Errorf("payload legado %d: %q (esperava %q)", i, payloads[i], want)
 		}
 	}
+}
+
+// withPin guarda a senha do link do instalador (o caminho da API dele): as
+// chamadas a ele passam a levar a senha.
+func (e *credEnv) withPin(path, pin string) {
+	if e.pins == nil {
+		e.pins = map[string]string{}
+	}
+	e.pins[path] = pin
 }

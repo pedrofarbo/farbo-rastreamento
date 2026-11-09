@@ -33,6 +33,10 @@ vi.mock('@/api/resources', () => ({
       data.calls.push(['close', id]);
       return { ...data.links[0], status: 'closed' };
     },
+    renewPin: async (id: string) => {
+      data.calls.push(['renewPin', id]);
+      return { ...data.links[0], pin: '975310' };
+    },
   },
 }));
 vi.mock('@/components/ui/Toast', () => ({ useToast: () => ({ notify: () => {} }) }));
@@ -103,6 +107,29 @@ describe('a instalação avulsa na tela de Prestadores', () => {
     expect(decodeURIComponent(wa)).toContain(URL_ABERTO);
     await act(async () => button('Encerrar').click());
     expect(data.calls).toContainEqual(['close', 'l1']);
+  });
+
+  it('o link com senha: a mensagem do link avisa, a senha vai à parte e dá para gerar outra', async () => {
+    data.links = [link({ pin: '246810' })];
+    await render(<InstallerLinksCard installers={installers} />);
+    expect(text()).toContain('Senha 246810');
+    const hrefs = Array.from(document.querySelectorAll('a[href^="https://wa.me/"]')).map((a) => decodeURIComponent(a.getAttribute('href')!));
+    // A mensagem do link não leva a senha; a da senha vai ao mesmo prestador.
+    expect(hrefs[0]).toContain(URL_ABERTO);
+    expect(hrefs[0]).toContain('A senha para abrir o link vai em outra mensagem.');
+    expect(hrefs[0]).not.toContain('246810');
+    expect(hrefs[1].startsWith('https://wa.me/5534999990000?text=')).toBe(true);
+    expect(hrefs[1]).toContain('Senha para abrir o link da Farbo: 246810');
+    expect(hrefs[1]).not.toContain(URL_ABERTO);
+    await act(async () => button('Outra senha').click());
+    expect(data.calls).toContainEqual(['renewPin', 'l1']);
+  });
+
+  it('o link sem senha (antigo): sem a senha nem o aviso', async () => {
+    data.links = [link()];
+    await render(<InstallerLinksCard installers={installers} />);
+    expect(text()).not.toContain('Senha');
+    expect(button('Outra senha')).toBeUndefined();
   });
 
   it('gera o link: busca o rastreador (ou lê a etiqueta), o prestador já escolhido e o link para mandar', async () => {

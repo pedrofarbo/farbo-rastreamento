@@ -48,6 +48,7 @@ func TestStandaloneInstall(t *testing.T) {
 		IMEI       string     `json:"imei"`
 		Status     string     `json:"status"`
 		URL        string     `json:"url"`
+		Pin        string     `json:"pin"`
 		CheckedAt  *time.Time `json:"checkedAt"`
 		CheckReady bool       `json:"checkReady"`
 	}
@@ -66,6 +67,19 @@ func TestStandaloneInstall(t *testing.T) {
 	// O instalador, pelo link.
 	token := strings.TrimPrefix(l.URL, "https://painel.farbo.test/instalador/avulsa/")
 	base := "/api/public/installer-links/" + token
+	// Com a senha que a central passa junto (sem ela, não abre); a central
+	// gera outra quando quiser.
+	if len(l.Pin) != 6 {
+		t.Fatalf("senha do link = %q", l.Pin)
+	}
+	if status, out := env.do("", http.MethodGet, base, nil); status != http.StatusUnauthorized || !strings.Contains(string(out), "PIN_REQUIRED") {
+		t.Fatalf("sem a senha = %d %s", status, out)
+	}
+	_ = json.Unmarshal(env.must(opTok, http.MethodPost, "/api/installer-links/"+l.ID.String()+"/pin", nil, http.StatusOK), &l)
+	if len(l.Pin) != 6 {
+		t.Fatalf("senha nova = %q", l.Pin)
+	}
+	env.withPin(base, l.Pin)
 	var view struct {
 		IMEI        string `json:"imei"`
 		DeviceModel string `json:"deviceModel"`
@@ -133,10 +147,11 @@ func TestStandaloneInstall(t *testing.T) {
 		"deviceId": other.ID, "installerName": "Zé Instalador",
 	}, http.StatusCreated), &second)
 	secondBase := "/api/public/installer-links/" + strings.TrimPrefix(second.URL, "https://painel.farbo.test/instalador/avulsa/")
+	env.withPin(secondBase, second.Pin)
 	env.must("", http.MethodGet, secondBase, nil, http.StatusOK)
 	var closed link
 	_ = json.Unmarshal(env.must(opTok, http.MethodPost, "/api/installer-links/"+second.ID.String()+"/close", nil, http.StatusOK), &closed)
-	if closed.Status != "closed" || closed.URL != "" {
+	if closed.Status != "closed" || closed.URL != "" || closed.Pin != "" {
 		t.Fatalf("encerrado = %+v", closed)
 	}
 	if out := env.must("", http.MethodGet, secondBase, nil, http.StatusGone); !strings.Contains(string(out), "encerrou") {

@@ -58,6 +58,10 @@ type Standalone struct {
 	CreatedAt     time.Time  `json:"createdAt"`
 	// URL: o link do instalador (só para a central, enquanto aberto).
 	URL string `json:"url,omitempty"`
+	// Pin: a senha do link, que a central passa ao instalador (só para a
+	// central, enquanto aberto; vazia: os links de antes dela abrem sem).
+	Pin       string `json:"pin,omitempty"`
+	accessPin string
 }
 
 // StandaloneInput é o link pedido pela central.
@@ -77,7 +81,7 @@ const selectStandalone = `
 	SELECT l.id, l.device_id, d.imei, concat_ws(' ', NULLIF(d.manufacturer, ''), NULLIF(d.model, '')),
 		COALESCE(v.name, ''), COALESCE(v.plate, ''), l.installer_id, COALESCE(NULLIF(l.installer_name, ''), i.name, ''),
 		l.notes, l.status, l.checked_at, l.check_ready, l.completed_at, l.installer_note, l.closed_at, l.created_by,
-		l.created_at
+		l.created_at, COALESCE(l.access_pin, '')
 	FROM standalone_installs l
 	JOIN devices d ON d.id = l.device_id
 	LEFT JOIN vehicles v ON v.device_id = l.device_id
@@ -87,7 +91,7 @@ func scanStandalone(row database.Scanner) (*Standalone, error) {
 	var l Standalone
 	if err := row.Scan(&l.ID, &l.DeviceID, &l.IMEI, &l.DeviceModel, &l.VehicleName, &l.Plate, &l.InstallerID,
 		&l.InstallerName, &l.Notes, &l.Status, &l.CheckedAt, &l.CheckReady, &l.CompletedAt, &l.InstallerNote,
-		&l.ClosedAt, &l.CreatedBy, &l.CreatedAt); err != nil {
+		&l.ClosedAt, &l.CreatedBy, &l.CreatedAt, &l.accessPin); err != nil {
 		return nil, database.MapError(err)
 	}
 	return &l, nil
@@ -96,7 +100,7 @@ func scanStandalone(row database.Scanner) (*Standalone, error) {
 // withURL põe o link nos abertos (o encerrado não vale mais).
 func (s *Service) withURL(l *Standalone) *Standalone {
 	if l.Status == StandaloneOpen {
-		l.URL = s.StandalonePublicURL(l.ID)
+		l.URL, l.Pin = s.StandalonePublicURL(l.ID), l.accessPin
 	}
 	return l
 }
@@ -150,11 +154,16 @@ func (s *Service) CreateStandalone(ctx context.Context, by uuid.UUID, in Standal
 	if !exists {
 		return nil, invalid("rastreador não encontrado")
 	}
+	// O link da central ganha a senha, que ela passa ao instalador.
+	pin, err := newPin()
+	if err != nil {
+		return nil, err
+	}
 	var id uuid.UUID
-	err := s.db.QueryRow(ctx, `
-		INSERT INTO standalone_installs (device_id, installer_id, installer_name, notes, created_by)
-		VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-		in.DeviceID, in.InstallerID, in.InstallerName, in.Notes, by).Scan(&id)
+	err = s.db.QueryRow(ctx, `
+		INSERT INTO standalone_installs (device_id, installer_id, installer_name, notes, created_by, access_pin)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		in.DeviceID, in.InstallerID, in.InstallerName, in.Notes, by, pin).Scan(&id)
 	if errors.Is(database.MapError(err), database.ErrConflict) {
 		return nil, invalid("este rastreador já tem um link de instalação aberto: encerre aquele antes de gerar outro")
 	}

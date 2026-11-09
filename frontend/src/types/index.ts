@@ -3399,6 +3399,8 @@ export interface InstallationAppointment {
   createdAt: string;
   /** O link do instalador (só para a central). */
   url?: string;
+  /** A senha que abre o link (a central passa junto; o link do representante não tem). */
+  pin?: string;
 }
 
 export interface InstallationInput {
@@ -3498,8 +3500,59 @@ export interface PublicInstallView {
   notes: string;
   status: InstallationStatus;
   imei: string;
+  /**
+   * O rastreador que a central já ligou ao veículo (vazio: o instalador
+   * escolhe um livre e, se ele nunca conectou, ativa antes de instalar).
+   */
+  vehicleImei: string;
   completedAt: string | null;
   photos: InstallationSlot[];
+}
+
+/** Um rastreador livre para o instalador escolher (ativado: já conectou alguma vez). */
+export interface InstallStockDevice {
+  id: string;
+  imei: string;
+  model: string;
+  /** O chip que já está nele (vazio: nenhum) e o id dele no estoque (nulo: fora do estoque). */
+  iccid: string;
+  chipId: string | null;
+  activated: boolean;
+}
+
+/** Um chip livre do estoque: o ICCID impresso nele e a operadora. */
+export interface InstallStockChip {
+  id: string;
+  iccid: string;
+  carrier: string;
+}
+
+/** O estoque do link do instalador (na instalação avulsa, só os chips). */
+export interface InstallStock {
+  devices?: InstallStockDevice[];
+  chips: InstallStockChip[];
+}
+
+/** A situação da ativação por SMS: mandando, esperando conectar, conectou, falhou, sem conexão a tempo, interrompida. */
+export type InstallActivationStatus = 'SENDING' | 'WAITING' | 'DONE' | 'FAILED' | 'TIMEOUT' | 'CANCELED';
+
+/** A ativação pelo link do instalador: o rastreador, o chip e os passos da configuração por SMS. */
+export interface InstallActivation {
+  imei: string;
+  iccid: string;
+  status: InstallActivationStatus;
+  error: string;
+  steps: { label: string; status: string }[];
+  waitingSince: string | null;
+  connectedAt: string | null;
+  finishedAt: string | null;
+}
+
+/** A ativação do link (nula: nenhuma ainda), quantas ele ainda pode fazer e se a ativação por SMS está ligada. */
+export interface InstallActivationView {
+  enabled: boolean;
+  left: number;
+  activation: InstallActivation | null;
 }
 
 /** O teste do rastreador pelo IMEI. */
@@ -3539,6 +3592,8 @@ export interface InstallerLink {
   createdAt: string;
   /** O link do instalador (só enquanto aberto). */
   url?: string;
+  /** A senha que abre o link (a central passa junto). */
+  pin?: string;
 }
 
 export interface InstallerLinkInput {
@@ -3558,6 +3613,8 @@ export interface PublicInstallerLinkView {
   notes: string;
   status: InstallerLinkStatus;
   completedAt: string | null;
+  /** O rastreador está fora de veículo e nunca conectou: escolher o chip e ativar antes de instalar. */
+  needsActivation: boolean;
 }
 
 // ---------------------------------------------------------------------------

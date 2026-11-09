@@ -117,12 +117,18 @@
   color: var(--text-primary);
 }
 
+/* Embaixo do agendamento, na coluna do texto. */
+.footer {
+  grid-column: 2 / -1;
+}
+
 @media (max-width: 640px) {
   .item {
     grid-template-columns: 52px minmax(0, 1fr);
   }
 
-  .actions {
+  .actions,
+  .footer {
     grid-column: 1 / -1;
     justify-content: flex-start;
   }
@@ -149,4 +155,36 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1, 4px);
+}
+
+/* A senha do link do instalador (central). */
+.pin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Na tabela: uma linha só, à direita, embaixo das ações (no celular, à esquerda como elas). */
+.pinCompact {
+  flex-basis: 100%;
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .pinCompact {
+    justify-content: flex-start;
+  }
+}
+
+.pinValue {
+  font-size: var(--text-sm);
+  color: var(--text-secondary, var(--text-muted));
+}
+
+.pinValue strong {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-base, 1rem);
+  letter-spacing: 0.12em;
+  color: var(--text-primary);
 }

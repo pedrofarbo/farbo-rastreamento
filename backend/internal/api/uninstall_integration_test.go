@@ -161,6 +161,7 @@ func TestUninstallAgenda(t *testing.T) {
 		Kind string    `json:"kind"`
 		IMEI string    `json:"imei"`
 		URL  string    `json:"url"`
+		Pin  string    `json:"pin"`
 	}
 	_ = json.Unmarshal(env.must(central, http.MethodPost, "/api/installations", map[string]any{
 		"kind": "uninstall", "vehicleId": gol, "installerName": "Zé", "scheduledFor": when, "address": "Rua A, 1",
@@ -190,6 +191,7 @@ func TestUninstallAgenda(t *testing.T) {
 
 	// O instalador, pelo link: sem teste do sinal; sem a foto, não conclui.
 	base := "/api/public/install/" + strings.TrimPrefix(appt.URL, "https://painel.farbo.test/instalador/")
+	env.withPin(base, appt.Pin)
 	var view struct {
 		Kind   string `json:"kind"`
 		IMEI   string `json:"imei"`
@@ -246,11 +248,13 @@ func TestUninstallAgenda(t *testing.T) {
 	}
 	var unoAppt struct {
 		URL string `json:"url"`
+		Pin string `json:"pin"`
 	}
 	_ = json.Unmarshal(env.must(central, http.MethodPost, "/api/installations", map[string]any{
 		"kind": "uninstall", "vehicleId": uno, "installerName": "Zé", "scheduledFor": when, "address": "Rua B, 2",
 	}, http.StatusCreated), &unoAppt)
 	unoBase := "/api/public/install/" + strings.TrimPrefix(unoAppt.URL, "https://painel.farbo.test/instalador/")
+	env.withPin(unoBase, unoAppt.Pin)
 	if status, out := env.upload("", http.MethodPut, unoBase+"/photos/tracker", jpegBytes, nil); status != http.StatusNoContent {
 		t.Fatalf("foto: %d %s", status, out)
 	}

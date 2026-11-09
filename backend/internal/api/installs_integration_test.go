@@ -74,6 +74,7 @@ func TestInstallationAgenda(t *testing.T) {
 	var appt struct {
 		ID     uuid.UUID `json:"id"`
 		URL    string    `json:"url"`
+		Pin    string    `json:"pin"`
 		Status string    `json:"status"`
 	}
 	_ = json.Unmarshal(env.must(op, http.MethodPost, "/api/installations", map[string]any{
@@ -94,9 +95,56 @@ func TestInstallationAgenda(t *testing.T) {
 		t.Fatalf("instalações do cliente = %+v", mine)
 	}
 
-	// O instalador, pelo link.
+	// O instalador, pelo link — com a senha que a central passa junto: sem
+	// ela (ou errada), a tela não abre; errada 10 vezes, o link trava até a
+	// central gerar outra.
 	token := strings.TrimPrefix(appt.URL, "https://painel.farbo.test/instalador/")
 	base := "/api/public/install/" + token
+	if len(appt.Pin) != 6 {
+		t.Fatalf("senha do link = %q", appt.Pin)
+	}
+	if status, out := env.do("", http.MethodGet, base, nil); status != http.StatusUnauthorized || !strings.Contains(string(out), "PIN_REQUIRED") {
+		t.Fatalf("sem a senha = %d %s", status, out)
+	}
+	wrong := "000000"
+	if appt.Pin == wrong {
+		wrong = "111111"
+	}
+	if status, out := env.doWith("", http.MethodGet, base, nil, map[string]string{installPinHeader: wrong}); status != http.StatusUnauthorized ||
+		!strings.Contains(string(out), "PIN_WRONG") {
+		t.Fatalf("senha errada = %d %s", status, out)
+	}
+	for i := 1; i < 9; i++ {
+		env.doWith("", http.MethodGet, base, nil, map[string]string{installPinHeader: wrong})
+	}
+	if status, out := env.doWith("", http.MethodGet, base, nil, map[string]string{installPinHeader: wrong}); status != http.StatusLocked ||
+		!strings.Contains(string(out), "PIN_LOCKED") {
+		t.Fatalf("errada 10 vezes = %d %s", status, out)
+	}
+	if status, _ := env.doWith("", http.MethodGet, base, nil, map[string]string{installPinHeader: appt.Pin}); status != http.StatusLocked {
+		t.Fatalf("travado, a certa ainda abre: %d", status)
+	}
+	// A central gera outra: a antiga para de valer.
+	old := appt.Pin
+	_ = json.Unmarshal(env.must(op, http.MethodPost, "/api/installations/"+appt.ID.String()+"/pin", nil, http.StatusOK), &appt)
+	if len(appt.Pin) != 6 {
+		t.Fatalf("senha nova = %q", appt.Pin)
+	}
+	if status, _ := env.doWith("", http.MethodGet, base, nil, map[string]string{installPinHeader: appt.Pin}); status != http.StatusOK {
+		t.Fatalf("a senha nova não abre: %d", status)
+	}
+	if old != appt.Pin {
+		if status, _ := env.doWith("", http.MethodGet, base, nil, map[string]string{installPinHeader: old}); status != http.StatusUnauthorized {
+			t.Fatalf("a senha antiga ainda abre: %d", status)
+		}
+	}
+	env.must(tok, http.MethodPost, "/api/installations/"+appt.ID.String()+"/pin", nil, http.StatusForbidden)
+	// O cliente não vê a senha.
+	if raw := string(env.must(tok, http.MethodGet, "/api/me/installations", nil, http.StatusOK)); strings.Contains(raw, `"pin"`) {
+		t.Errorf("o cliente vê a senha do link: %s", raw)
+	}
+	// A foto (numa <img>) leva a senha no endereço.
+	env.withPin(base, appt.Pin)
 	var view struct {
 		VehicleName  string `json:"vehicleName"`
 		CustomerName string `json:"customerName"`
@@ -157,4 +205,12 @@ func TestInstallationAgenda(t *testing.T) {
 		t.Fatalf("foto depois de concluir: %d", status)
 	}
 	env.must(op, http.MethodGet, "/api/installations/"+appt.ID.String()+"/photos/tracker", nil, http.StatusOK)
+	// A foto pelo link (numa <img>, sem cabeçalho): a senha vai no endereço.
+	photo := env.srv.URL + base + "/photos/tracker"
+	if res, err := http.Get(photo); err != nil || res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("foto sem a senha = %v %v", res, err)
+	}
+	if res, err := http.Get(photo + "?pin=" + appt.Pin); err != nil || res.StatusCode != http.StatusOK {
+		t.Fatalf("foto com a senha = %v %v", res, err)
+	}
 }
