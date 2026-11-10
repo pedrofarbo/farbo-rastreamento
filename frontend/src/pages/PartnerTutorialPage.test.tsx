@@ -12,7 +12,7 @@ vi.mock('@/api/resources', () => ({ publicApi: { partner: () => respond() } }));
 // Os esquemas da ligação têm o teste deles.
 vi.mock('@/components/install/J16Wiring', () => ({ HarnessDiagram: () => null, RelayDiagram: () => null }));
 
-import { PartnerTutorialPage } from './PartnerTutorialPage';
+import { PartnerPage } from './PartnerPage';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const text = () => (document.body.textContent ?? '').replace(/\u00a0/g, ' ');
@@ -30,7 +30,7 @@ async function render() {
     createRoot(host).render(
       <MemoryRouter initialEntries={['/parceiro/segredo-do-joao/tutorial']}>
         <Routes>
-          <Route path="/parceiro/:token/tutorial" element={<PartnerTutorialPage />} />
+          <Route path="/parceiro/:token/:section" element={<PartnerPage />} />
         </Routes>
       </MemoryRouter>,
     ),
@@ -60,8 +60,11 @@ describe('o tutorial do representante', () => {
     expect(text()).not.toContain('link do instalador');
     expect(text()).not.toContain('Precisa ativar');
     expect(text()).not.toContain('Esqueci a senha');
-    const back = Array.from(document.querySelectorAll('a')).find((a) => a.textContent?.includes('Voltar para a sua página'))!;
-    expect(back.getAttribute('href')).toBe('/parceiro/segredo-do-joao');
+    // Dentro da página: o menu com "Como usar" marcado, e o texto leva às seções pelo nome do menu.
+    const active = document.querySelector('nav[aria-label="Seções da sua página"] [aria-current="page"]')!;
+    expect(active.textContent).toBe('Como usar');
+    const toShare = Array.from(document.querySelectorAll('#divulgar a')).find((a) => a.textContent === 'Divulgar')!;
+    expect(toShare.getAttribute('href')).toBe('/parceiro/segredo-do-joao/divulgar');
   });
 
   it('representante com kits, instalações, recebedor e valores próprios: todas as partes, na ordem', async () => {

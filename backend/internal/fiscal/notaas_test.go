@@ -57,7 +57,7 @@ func TestNotaasClient(t *testing.T) {
 	c := NewClient(srv.URL+"/api/v1", "ntaas_chave")
 
 	id, err := c.Emit(ctx, EmitRequest{
-		Reference: "fatura-1", Code: "010700", Text: "Serviço de rastreamento veicular — Plano Mensal", Total: 69.90, ISSRate: 2,
+		Reference: "fatura-1", Code: "010700", Text: "Licença de uso do software de rastreamento veicular Farbo — Plano Mensal", Total: 69.90, ISSRate: 2,
 		Month: "2026-11", Taker: Taker{CPF: "52998224725", Name: "Ana Souza", Email: "ana@farbo.test",
 			Address: &Address{Street: "Rua Augusta", Number: "500", District: "Consolação", City: "São Paulo", State: "SP", ZipCode: "01305000"}},
 	})

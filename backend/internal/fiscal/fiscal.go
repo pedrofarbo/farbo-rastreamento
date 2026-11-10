@@ -319,7 +319,7 @@ func (s *Service) emit(ctx context.Context, j job) bool {
 		return true
 	}
 	text := strings.TrimSpace(s.cfg.Description)
-	if desc := strings.TrimSpace(j.description); desc != "" {
+	if desc := serviceText(j.description); desc != "" {
 		text = strings.TrimSpace(text + " — " + desc)
 	}
 	id, err := s.api.Emit(ctx, EmitRequest{

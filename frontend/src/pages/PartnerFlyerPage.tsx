@@ -284,8 +284,8 @@ export function PartnerFlyerPage() {
               : 'Poste e deixe o QR à vista: no stories, dá também para colar o seu link no adesivo de link.'}
           </p>
 
-          <Link to={`/parceiro/${token}`} className={styles.back}>
-            ← Voltar para as suas indicações
+          <Link to={`/parceiro/${token}/divulgar`} className={styles.back}>
+            ← Voltar para Divulgar
           </Link>
         </>
       )}

@@ -69,7 +69,7 @@ describe('PartnerFlyerPage', () => {
     const a5 = Array.from(host.querySelectorAll('[role=radio]')).find((b) => b.textContent?.startsWith('Flyer A5')) as HTMLButtonElement;
     await act(async () => a5.click());
     expect(buttons(host)).not.toContain('Compartilhar no Instagram');
-    expect(host.querySelector('a[href="/parceiro/segredo-do-joao-0123456789"]')?.textContent).toContain('Voltar');
+    expect(host.querySelector('a[href="/parceiro/segredo-do-joao-0123456789/divulgar"]')?.textContent).toContain('Voltar para Divulgar');
   });
 
   it('sem @, mostra o nome; pausado, sem flyer', async () => {

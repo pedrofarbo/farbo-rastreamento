@@ -1,16 +1,12 @@
-import { useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 import { HarnessDiagram, RelayDiagram } from '@/components/install/J16Wiring';
 import { WHATSAPP_NUMBER, whatsappUrl } from '@/config/contact';
 import { formatMoney, formatPercentBps } from '@/services/format';
 import type { PartnerReport } from '@/types';
 
-import { PasswordGate } from './partner/PasswordGate';
-import { usePartnerReport } from './partner/usePartnerReport';
 import guide from './InstallGuide.module.css';
-import styles from './Partner.module.css';
 import base from './PreLaunch.module.css';
 
 const HELP_MESSAGE = 'Olá! Sou representante da Farbo e tenho uma dúvida sobre a minha página.';
@@ -42,58 +38,18 @@ function partsOf(r: PartnerReport) {
 }
 
 /**
- * O tutorial do representante (/parceiro/<link secreto>/tutorial): como
- * divulgar o link, o que o cliente faz, como acompanhar e receber a comissão
- * e — para quem tem — os kits, o agendamento, o link do instalador, a
- * ligação do rastreador no veículo e os valores de instalação; por fim, o
- * app do cliente (para ensinar quem contratou) e as dúvidas comuns. Mostra
- * só o que vale para ele, com a mesma senha da página.
+ * O tutorial do representante (a seção "Como usar" da página dele,
+ * /parceiro/<link secreto>/tutorial): como divulgar o link, o que o cliente
+ * faz, como acompanhar e receber a comissão e — para quem tem — os kits, o
+ * agendamento, o link do instalador, a ativação, a ligação do rastreador no
+ * veículo e os valores de instalação; por fim, o app do cliente (para ensinar
+ * quem contratou) e as dúvidas comuns. Mostra só o que vale para ele e leva
+ * às seções da página pelos nomes do menu.
  */
-export function PartnerTutorialPage() {
-  const { token = '' } = useParams();
-  const { report, error, locked, unlock } = usePartnerReport(token);
-
-  useEffect(() => {
-    document.title = 'Como usar · Farbo Rastreadores';
-    const metas = [
-      Object.assign(document.createElement('meta'), { name: 'robots', content: 'noindex, nofollow' }),
-      Object.assign(document.createElement('meta'), { name: 'referrer', content: 'no-referrer' }),
-    ];
-    metas.forEach((m) => document.head.appendChild(m));
-    return () => metas.forEach((m) => m.remove());
-  }, []);
-
-  return (
-    <main className={`${base.page} ${guide.page}`} data-theme="dark">
-      <header className={base.header}>
-        <img src="/assets/logo-header.png" width={956} height={176} alt="Farbo Rastreadores" className={base.logo} />
-        <span className={base.badge}>Tutorial</span>
-      </header>
-
-      {error ? (
-        <p className={base.error} role="alert">
-          {error}
-        </p>
-      ) : locked ? (
-        <PasswordGate token={token} onUnlocked={unlock} />
-      ) : !report ? (
-        <p className={base.hint} role="status">
-          Carregando…
-        </p>
-      ) : (
-        <Tutorial report={report} token={token} />
-      )}
-    </main>
-  );
-}
-
-function Tutorial({ report, token }: { report: PartnerReport; token: string }) {
+export function Tutorial({ report, token }: { report: PartnerReport; token: string }) {
   const p = partsOf(report);
-  const back = (
-    <Link to={`/parceiro/${token}`} className={styles.back}>
-      ← Voltar para a sua página
-    </Link>
-  );
+  // A seção da página, pelo nome do menu.
+  const go = (section: string, label: string) => <Link to={`/parceiro/${token}${section ? `/${section}` : ''}`}>{label}</Link>;
   const steps = [
     { id: 'como-funciona', label: 'Como funciona' },
     { id: 'divulgar', label: 'Divulgar o link' },
@@ -117,7 +73,6 @@ function Tutorial({ report, token }: { report: PartnerReport; token: string }) {
 
   return (
     <>
-      {back}
       <section className={guide.hero}>
         <div>
           <h1 className={guide.title}>Como usar a sua página</h1>
@@ -162,7 +117,7 @@ function Tutorial({ report, token }: { report: PartnerReport; token: string }) {
       <Step id="divulgar" n={n('divulgar')} title="Divulgar o seu link">
         <ul className={guide.checklist}>
           <li>
-            Na sua página, em <strong>Seu link de indicação</strong>, toque em <em>Copiar link</em> ou{' '}
+            Em {go('divulgar', 'Divulgar')}, toque em <em>Copiar link</em> ou{' '}
             <em>Compartilhar</em> e mande no WhatsApp, no Instagram, no status ou onde você tiver contato com quem tem
             veículo.
           </li>
@@ -202,12 +157,12 @@ function Tutorial({ report, token }: { report: PartnerReport; token: string }) {
       <Step id="acompanhar" n={n('acompanhar')} title="Acompanhar os números">
         <ul className={guide.checklist}>
           <li>
-            <strong>Cadastros pelo link</strong>: quantas pessoas começaram pelo seu link.{' '}
-            <strong>Viraram clientes</strong>: quantas pagaram. <strong>Veículos ativos</strong>: os que geram comissão
+            No {go('', 'Início')}: <strong>Cadastros pelo link</strong>, quantas pessoas começaram pelo seu link;{' '}
+            <strong>Viraram clientes</strong>, quantas pagaram; <strong>Veículos ativos</strong>, os que geram comissão
             hoje.
           </li>
           <li>
-            <strong>Mês a mês</strong>: a comissão de cada mês, com a situação —{' '}
+            Em {go('ganhos', 'Ganhos')}, o <strong>mês a mês</strong>: a comissão de cada mês, com a situação —{' '}
             {p.split ? (
               <>
                 <em>A receber</em> (sai em cada pagamento) ou <em>Pago</em>.
@@ -222,7 +177,7 @@ function Tutorial({ report, token }: { report: PartnerReport; token: string }) {
           <li>Os números atualizam a cada hora.</li>
           {report.protected ? (
             <li>
-              <strong>Seus clientes</strong>: o nome de cada um, os veículos com a placa e o rastreador e o pagamento dos
+              Em {go('clientes', 'Clientes')}: o nome de cada um, os veículos com a placa e o rastreador e o pagamento dos
               últimos meses (pago, em aberto ou vencido). Cliente com mensalidade vencida não gera comissão: vale um
               lembrete a ele.
             </li>
@@ -244,7 +199,8 @@ function Tutorial({ report, token }: { report: PartnerReport; token: string }) {
             </p>
             <ol className={guide.numbered}>
               <li>
-                Em <strong>Receba na hora, direto na sua conta</strong>, preencha os seus dados e a conta para receber.
+                Em {go('ganhos', 'Ganhos')}, no cartão <strong>Receba na hora, direto na sua conta</strong>, preencha os
+                seus dados e a conta para receber.
                 Eles vão direto para a Pagar.me: a Farbo não guarda nenhum deles.
               </li>
               <li>
@@ -260,7 +216,8 @@ function Tutorial({ report, token }: { report: PartnerReport; token: string }) {
         ) : (
           <p className={guide.text}>
             No começo de cada mês, a Farbo fecha o mês anterior e paga a sua comissão por Pix. Confira em{' '}
-            <strong>Mês a mês</strong>: o mês fechado aparece como <em>A pagar</em> e, depois do Pix, como <em>Pago</em>.
+            {go('ganhos', 'Ganhos')}, no mês a mês: o mês fechado aparece como <em>A pagar</em> e, depois do Pix, como{' '}
+            <em>Pago</em>.
           </p>
         )}
       </Step>
@@ -269,7 +226,7 @@ function Tutorial({ report, token }: { report: PartnerReport; token: string }) {
         <Step id="kits" n={n('kits')} title="Seus kits">
           <ol className={guide.numbered}>
             <li>
-              Em <strong>Seus kits</strong>, use <em>Pedir kits</em>: a quantidade e, se quiser, uma observação. Para
+              Em {go('kits', 'Kits')}, use <em>Pedir kits</em>: a quantidade e, se quiser, uma observação. Para
               mudar a quantidade, cancele o pedido e peça de novo.
             </li>
             <li>A Farbo separa os rastreadores e despacha. O código de rastreio aparece na remessa.</li>
@@ -302,7 +259,7 @@ function Tutorial({ report, token }: { report: PartnerReport; token: string }) {
           <Step id="agendar" n={n('agendar')} title="Agendar a instalação e a retirada">
             <ol className={guide.numbered}>
               <li>
-                Em <strong>Instalações dos seus clientes</strong>, os clientes que pagaram aparecem em{' '}
+                Em {go('instalacoes', 'Instalações')}, os clientes que pagaram aparecem em{' '}
                 <em>Esperando a instalação</em>, com o telefone (toque para ligar) e o endereço. Quem escolheu instalar
                 por conta própria não aparece.
               </li>
@@ -491,7 +448,8 @@ function Tutorial({ report, token }: { report: PartnerReport; token: string }) {
       {p.directPrices && (
         <Step id="valores" n={n('valores')} title="Seus valores de instalação">
           <p className={guide.text}>
-            Você instala, desinstala e recebe direto do cliente. Em <strong>Seus valores de instalação</strong>, defina
+            Você instala, desinstala e recebe direto do cliente. Em {go('instalacoes', 'Instalações')}, no cartão{' '}
+            <strong>Seus valores de instalação</strong>, defina
             quanto cobra pela instalação e pela desinstalação: quem contrata pelo seu link vê esses valores no site e no
             app. Esse dinheiro não passa pela Farbo.
           </p>
@@ -575,8 +533,6 @@ function Tutorial({ report, token }: { report: PartnerReport; token: string }) {
           </a>
         ) : null}
       </Step>
-
-      {back}
     </>
   );
 }

@@ -967,7 +967,7 @@ func Load() (*Config, error) {
 		NotaasBaseURL:       str("NOTAAS_BASE_URL", ""),
 		NotaasWebhookSecret: str("NOTAAS_WEBHOOK_SECRET", ""),
 		ServiceCode:         str("NFSE_SERVICE_CODE", ""),
-		Description:         str("NFSE_DESCRIPTION", "Serviço de rastreamento veicular"),
+		Description:         str("NFSE_DESCRIPTION", "Licença de uso do software de rastreamento veicular Farbo"),
 	}
 	if raw := strings.ReplaceAll(str("NFSE_ISS_RATE", ""), ",", "."); raw != "" {
 		if rate, err := strconv.ParseFloat(raw, 64); err == nil && rate >= 0 && rate <= 5 {

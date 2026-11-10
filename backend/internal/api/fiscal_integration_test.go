@@ -110,7 +110,7 @@ func TestFiscalDocuments(t *testing.T) {
 		c.SetSync()
 		d.Contract = c
 		d.Config.Fiscal = config.Fiscal{NotaasAPIKey: "ntaas_teste", NotaasWebhookSecret: "segredo-do-webhook", ServiceCode: "010700",
-			ISSRate: 2, ISSRateSet: true, Description: "Serviço de rastreamento veicular"}
+			ISSRate: 2, ISSRateSet: true, Description: "Licença de uso do software de rastreamento veicular Farbo"}
 		svc = fiscal.NewService(d.DB, notaas, d.Config.Fiscal, mailer, d.Log)
 		svc.SetClock(func() time.Time { return start })
 		d.Fiscal = svc
@@ -173,7 +173,8 @@ func TestFiscalDocuments(t *testing.T) {
 		Scan(&monthly, &monthlyCents); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := env.db.Exec(ctx, `UPDATE invoices SET amount_cents = amount_cents + 1000 WHERE id = $1`, monthly); err != nil {
+	if _, err := env.db.Exec(ctx, `UPDATE invoices SET amount_cents = amount_cents + 1000, description = description || ' + parcela 1/10 do rastreador'
+		WHERE id = $1`, monthly); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := env.db.Exec(ctx, `INSERT INTO equipment_installments (subscription_id, number, amount_cents, invoice_id)
@@ -191,8 +192,12 @@ func TestFiscalDocuments(t *testing.T) {
 	e := notaas.emitted[0]
 	if e.Reference != monthly.String() || e.Taker.CPF != "52998224725" || e.Taker.Name != "Ana Souza" || e.Taker.Address == nil ||
 		e.Taker.Address.City != "São Paulo" || e.Total != float64(monthlyCents)/100 || e.ISSRate != 2 || e.Code != "010700" ||
-		!strings.HasPrefix(e.Text, "Serviço de rastreamento veicular — Plano Mensal") {
+		!strings.HasPrefix(e.Text, "Licença de uso do software de rastreamento veicular Farbo — Plano Mensal") {
 		t.Errorf("emissão = %+v (taker %+v)", e, e.Taker)
+	}
+	// A nota é de serviço: sem a parcela do rastreador no texto (o valor é o do mês inteiro).
+	if strings.Contains(e.Text, "parcela") || strings.Contains(e.Text, "do rastreador") {
+		t.Errorf("a nota fala do rastreador: %q", e.Text)
 	}
 
 	// A prefeitura emitiu: a nota fica emitida e vai por e-mail uma vez.
