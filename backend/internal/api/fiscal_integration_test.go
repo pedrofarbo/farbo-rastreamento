@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -60,8 +61,12 @@ func (f *fakeNotaas) Cancel(_ context.Context, id, _ string) error {
 	return nil
 }
 
-func (f *fakeNotaas) PDF(_ context.Context, id string) (*fiscal.PDF, error) {
-	return &fiscal.PDF{Body: []byte("%PDF-1.4 " + id)}, nil
+func (f *fakeNotaas) PDF(_ context.Context, id string) (*fiscal.File, error) {
+	return &fiscal.File{Body: []byte("%PDF-1.4 " + id)}, nil
+}
+
+func (f *fakeNotaas) XML(_ context.Context, id string) (*fiscal.File, error) {
+	return &fiscal.File{Body: []byte(`<?xml version="1.0" encoding="utf-8"?><NFSe><nNFSe>` + id + `</nNFSe></NFSe>`)}, nil
 }
 
 type recordingFiscalMailer struct {
@@ -218,7 +223,7 @@ func TestFiscalDocuments(t *testing.T) {
 	}
 	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/customers/"+ana.Tokens.User.ID.String(), nil, http.StatusOK), &detail)
 	note, ok := detail.Fiscal[monthly.String()]
-	if !ok || note.Status != fiscal.StatusIssued || note.Number != "1234" || !note.HasPDF || len(detail.Fiscal) != 1 {
+	if !ok || note.Status != fiscal.StatusIssued || note.Number != "1234" || !note.HasPDF || !note.HasXML || len(detail.Fiscal) != 1 {
 		t.Fatalf("ficha = %+v", detail.Fiscal)
 	}
 	var mine map[string]fiscal.Document
@@ -233,6 +238,30 @@ func TestFiscalDocuments(t *testing.T) {
 	status, _ = env.do(admin, http.MethodGet, "/api/fiscal-documents/"+note.ID.String()+"/pdf", nil)
 	if status != http.StatusOK {
 		t.Errorf("PDF pela central = %d", status)
+	}
+	// O XML, além do PDF: para a dona e para a central (com o nome do arquivo pelo número).
+	xmlOf := func(token, path string) (int, string, http.Header) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, env.srv.URL+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(raw), resp.Header
+	}
+	code, xmlBody, header := xmlOf(ana.Tokens.AccessToken, "/api/me/fiscal-documents/"+note.ID.String()+"/xml")
+	if code != http.StatusOK || !strings.HasPrefix(xmlBody, "<?xml") || header.Get("Content-Type") != "application/xml" ||
+		header.Get("Content-Disposition") != `attachment; filename="nfse-1234.xml"` {
+		t.Errorf("XML da dona = %d %q %v", code, xmlBody, header)
+	}
+	if code, _, _ := xmlOf(admin, "/api/fiscal-documents/"+note.ID.String()+"/xml"); code != http.StatusOK {
+		t.Errorf("XML pela central = %d", code)
 	}
 
 	// Sem CPF no cadastro: recusada até a central emitir de novo.
@@ -337,6 +366,15 @@ func TestFiscalDocuments(t *testing.T) {
 	_ = env.db.QueryRow(ctx, `SELECT status FROM fiscal_documents WHERE id = $1`, note.ID).Scan(&final)
 	if final != fiscal.StatusCancelled {
 		t.Errorf("depois do estorno = %s", final)
+	}
+	// Cancelada, o XML (de emissão) continua para baixar; o PDF, não.
+	var cancelled map[string]fiscal.Document
+	_ = json.Unmarshal(env.must(ana.Tokens.AccessToken, http.MethodGet, "/api/me/fiscal-documents", nil, http.StatusOK), &cancelled)
+	if d := cancelled[monthly.String()]; !d.HasXML || d.HasPDF {
+		t.Errorf("cancelada = %+v", d)
+	}
+	if status, _ := env.do(ana.Tokens.AccessToken, http.MethodGet, "/api/me/fiscal-documents/"+note.ID.String()+"/xml", nil); status != http.StatusOK {
+		t.Errorf("XML da cancelada = %d", status)
 	}
 
 	// A Bia pagou antes de ligar: nenhuma nota; o rastreador vendido e o frete nunca.

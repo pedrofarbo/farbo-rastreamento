@@ -43,9 +43,23 @@ func TestNotaasClient(t *testing.T) {
 				"errors":[{"Codigo":"E0312","Descricao":"CPF do tomador","Complemento":""}]}`))
 		case "GET /api/v1/invoices/inv_abc123/pdf":
 			http.Redirect(w, r, "/cdn/pdf/inv_abc123.pdf", http.StatusFound)
+		case "GET /api/v1/invoices/inv_abc123/xml":
+			http.Redirect(w, r, "/cdn/xml/inv_abc123.xml", http.StatusFound)
+		case "GET /api/v1/invoices/inv_semcdn/xml":
+			// Fora do CDN: a Notaas responde com o XML.
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = w.Write([]byte(`<?xml version="1.0"?><NFSe>banco</NFSe>`))
 		default:
-			if r.URL.Path == "/cdn/pdf/inv_abc123.pdf" {
+			if r.URL.Path == "/cdn/pdf/inv_abc123.pdf" || r.URL.Path == "/cdn/xml/inv_abc123.xml" {
 				// O CDN: sem a chave da API.
+				if r.Header.Get("x-api-key") != "" {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				if strings.HasSuffix(r.URL.Path, ".xml") {
+					_, _ = w.Write([]byte(`<?xml version="1.0"?><NFSe>cdn</NFSe>`))
+					return
+				}
 				_, _ = w.Write([]byte("%PDF-1.4 danfse"))
 				return
 			}
@@ -91,6 +105,16 @@ func TestNotaasClient(t *testing.T) {
 	pdf, err := c.PDF(ctx, "inv_abc123")
 	if err != nil || string(pdf.Body) != "%PDF-1.4 danfse" {
 		t.Errorf("PDF = %+v %v", pdf, err)
+	}
+	// O XML: do CDN (sem a chave) ou direto da Notaas; o que não existe, recusado.
+	if xml, err := c.XML(ctx, "inv_abc123"); err != nil || string(xml.Body) != `<?xml version="1.0"?><NFSe>cdn</NFSe>` {
+		t.Errorf("XML do CDN = %+v %v", xml, err)
+	}
+	if xml, err := c.XML(ctx, "inv_semcdn"); err != nil || string(xml.Body) != `<?xml version="1.0"?><NFSe>banco</NFSe>` {
+		t.Errorf("XML direto = %+v %v", xml, err)
+	}
+	if _, err := c.XML(ctx, "inv_nada"); !errors.As(err, &api) || api.Status != http.StatusNotFound {
+		t.Errorf("XML que não existe = %v", err)
 	}
 	if _, err := NewClient(srv.URL+"/api/v1", "outra").Status(ctx, "inv_abc123"); !errors.As(err, &api) || api.Status != 401 {
 		t.Errorf("chave errada = %v", err)

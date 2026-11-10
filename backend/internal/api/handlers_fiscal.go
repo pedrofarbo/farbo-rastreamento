@@ -11,8 +11,8 @@ import (
 )
 
 // As notas fiscais de serviço (NFS-e) das faturas pagas, pela Notaas: a
-// central emite de novo a recusada e baixa o PDF; o cliente baixa as dele;
-// o webhook da Notaas avisa quando a nota muda.
+// central emite de novo a recusada e baixa o PDF e o XML; o cliente baixa os
+// das dele; o webhook da Notaas avisa quando a nota muda.
 
 func writeFiscalError(w http.ResponseWriter, err error) {
 	switch {
@@ -40,11 +40,15 @@ func (s *Server) handleRetryFiscalDocument(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleFiscalDocumentPDF(w http.ResponseWriter, r *http.Request) {
-	id, ok := idOr400(w, r)
-	if !ok {
-		return
+	if id, ok := idOr400(w, r); ok {
+		s.writeFiscalFile(w, r, id, nil, "pdf")
 	}
-	s.writeFiscalPDF(w, r, id, nil)
+}
+
+func (s *Server) handleFiscalDocumentXML(w http.ResponseWriter, r *http.Request) {
+	if id, ok := idOr400(w, r); ok {
+		s.writeFiscalFile(w, r, id, nil, "xml")
+	}
 }
 
 // handleMyFiscalDocuments: as notas do cliente, pela fatura.
@@ -59,36 +63,45 @@ func (s *Server) handleMyFiscalDocuments(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleMyFiscalDocumentPDF(w http.ResponseWriter, r *http.Request) {
-	id, ok := idOr400(w, r)
-	if !ok {
-		return
+	if id, ok := idOr400(w, r); ok {
+		customerID, _ := customerOf(r)
+		s.writeFiscalFile(w, r, id, &customerID, "pdf")
 	}
-	customerID, _ := customerOf(r)
-	s.writeFiscalPDF(w, r, id, &customerID)
 }
 
-// writeFiscalPDF entrega o DANFSE (o arquivo, para baixar pela tela com o
-// login).
-func (s *Server) writeFiscalPDF(w http.ResponseWriter, r *http.Request, id uuid.UUID, owner *uuid.UUID) {
-	pdf, number, err := s.Fiscal.PDF(r.Context(), id, owner)
+func (s *Server) handleMyFiscalDocumentXML(w http.ResponseWriter, r *http.Request) {
+	if id, ok := idOr400(w, r); ok {
+		customerID, _ := customerOf(r)
+		s.writeFiscalFile(w, r, id, &customerID, "xml")
+	}
+}
+
+// writeFiscalFile entrega o arquivo da nota — o DANFSE (pdf) ou o XML —
+// para baixar pela tela com o login.
+func (s *Server) writeFiscalFile(w http.ResponseWriter, r *http.Request, id uuid.UUID, owner *uuid.UUID, kind string) {
+	get, label, contentType := s.Fiscal.PDF, "PDF", "application/pdf"
+	if kind == "xml" {
+		get, label, contentType = s.Fiscal.XML, "XML", "application/xml"
+	}
+	file, number, err := get(r.Context(), id, owner)
 	if err != nil {
 		var api *fiscal.APIError
 		if errors.As(err, &api) {
-			s.Log.Warn("PDF da nota fiscal indisponível na Notaas", "document", id, "err", err)
-			writeError(w, http.StatusBadGateway, "o PDF da nota não está disponível agora: tente de novo em instantes")
+			s.Log.Warn(label+" da nota fiscal indisponível na Notaas", "document", id, "err", err)
+			writeError(w, http.StatusBadGateway, "o "+label+" da nota não está disponível agora: tente de novo em instantes")
 			return
 		}
 		writeFiscalError(w, err)
 		return
 	}
-	name := "nota-fiscal.pdf"
+	name := "nota-fiscal." + kind
 	if number != "" {
-		name = "nfse-" + number + ".pdf"
+		name = "nfse-" + number + "." + kind
 	}
-	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	w.Header().Set("Cache-Control", "private, no-store")
-	_, _ = w.Write(pdf.Body)
+	_, _ = w.Write(file.Body)
 }
 
 // handleNotaasWebhook: a Notaas avisa que a nota mudou (assinado com o

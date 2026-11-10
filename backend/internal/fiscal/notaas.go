@@ -189,15 +189,27 @@ func (c *Client) Cancel(ctx context.Context, id, reason string) error {
 	return c.do(ctx, http.MethodPost, "/cancelar", body, nil)
 }
 
-// PDF é o DANFSE da NFS-e.
-type PDF struct {
+// File é um arquivo da NFS-e: o DANFSE (PDF) ou o XML.
+type File struct {
 	Body []byte
 }
 
 // PDF busca o DANFSE da NFS-e. Guardado no CDN da Notaas, ela redireciona:
 // o arquivo vem de lá (sem a chave, que é só da API).
-func (c *Client) PDF(ctx context.Context, id string) (*PDF, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/invoices/"+url.PathEscape(id)+"/pdf", nil)
+func (c *Client) PDF(ctx context.Context, id string) (*File, error) {
+	return c.document(ctx, id, "pdf", "PDF")
+}
+
+// XML busca o XML de emissão da NFS-e (vale também para a cancelada): do
+// CDN, quando guardado lá; senão, a Notaas responde com ele.
+func (c *Client) XML(ctx context.Context, id string) (*File, error) {
+	return c.document(ctx, id, "xml", "XML")
+}
+
+// document busca o arquivo da nota (/invoices/{id}/pdf ou /xml), seguindo o
+// redirecionamento para o CDN sem levar a chave.
+func (c *Client) document(ctx context.Context, id, kind, label string) (*File, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/invoices/"+url.PathEscape(id)+"/"+kind, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -209,17 +221,17 @@ func (c *Client) PDF(ctx context.Context, id string) (*PDF, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		if loc, err := resp.Location(); err == nil {
-			return c.fetchPDF(ctx, loc.String())
+			return c.fetchPublic(ctx, loc.String(), label)
 		}
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, apiError(resp)
 	}
-	return readPDF(resp.Body)
+	return readFile(resp.Body)
 }
 
-// fetchPDF baixa o DANFSE do endereço público.
-func (c *Client) fetchPDF(ctx context.Context, location string) (*PDF, error) {
+// fetchPublic baixa o arquivo da nota do endereço público (o CDN).
+func (c *Client) fetchPublic(ctx context.Context, location, label string) (*File, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, location, nil)
 	if err != nil {
 		return nil, err
@@ -230,17 +242,17 @@ func (c *Client) fetchPDF(ctx context.Context, location string) (*PDF, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, &APIError{Status: resp.StatusCode, Message: "PDF da nota indisponível no CDN"}
+		return nil, &APIError{Status: resp.StatusCode, Message: label + " da nota indisponível no CDN"}
 	}
-	return readPDF(resp.Body)
+	return readFile(resp.Body)
 }
 
-func readPDF(body io.Reader) (*PDF, error) {
+func readFile(body io.Reader) (*File, error) {
 	data, err := io.ReadAll(io.LimitReader(body, 5<<20))
 	if err != nil {
 		return nil, err
 	}
-	return &PDF{Body: data}, nil
+	return &File{Body: data}, nil
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {

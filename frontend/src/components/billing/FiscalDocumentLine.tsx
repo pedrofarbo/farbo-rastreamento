@@ -23,8 +23,9 @@ export function fiscalLabel(doc: FiscalDocument): string {
 }
 
 /**
- * A NFS-e de uma fatura paga, numa linha sob ela: o número e o PDF; a
- * recusada, com o motivo e, para a central (onRetry), o emitir de novo.
+ * A NFS-e de uma fatura paga, numa linha sob ela: o número, o PDF e o XML (o
+ * XML também depois de cancelada); a recusada, com o motivo e, para a central
+ * (onRetry), o emitir de novo.
  */
 export function FiscalDocumentLine({
   doc,
@@ -32,30 +33,32 @@ export function FiscalDocumentLine({
   onRetry,
 }: {
   doc: FiscalDocument;
-  onDownload: (id: string) => Promise<void>;
+  onDownload: (id: string, kind: 'pdf' | 'xml') => Promise<void>;
   onRetry?: (id: string) => void;
 }) {
   const { notify } = useToast();
   const failed = doc.status === 'error' || doc.status === 'blocked';
+  const file = (kind: 'pdf' | 'xml', label: string) => (
+    <>
+      {' · '}
+      <button
+        type="button"
+        className={styles.inlineLink}
+        onClick={() =>
+          void onDownload(doc.id, kind).catch((err: Error) =>
+            notify({ tone: 'error', title: `Não deu para baixar o ${label} da nota`, description: err.message }),
+          )
+        }
+      >
+        Baixar o {label}
+      </button>
+    </>
+  );
   return (
     <div className={failed ? styles.fiscalFailed : styles.muted}>
       {fiscalLabel(doc)}
-      {doc.status === 'issued' && doc.hasPdf && (
-        <>
-          {' · '}
-          <button
-            type="button"
-            className={styles.inlineLink}
-            onClick={() =>
-              void onDownload(doc.id).catch((err: Error) =>
-                notify({ tone: 'error', title: 'Não deu para baixar a nota', description: err.message }),
-              )
-            }
-          >
-            Baixar o PDF
-          </button>
-        </>
-      )}
+      {doc.status === 'issued' && doc.hasPdf && file('pdf', 'PDF')}
+      {doc.hasXml && file('xml', 'XML')}
       {failed && onRetry && (
         <>
           {' · '}

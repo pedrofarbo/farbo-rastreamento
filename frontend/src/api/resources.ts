@@ -1202,7 +1202,8 @@ export const customersApi = {
   cancelInvoice: (id: string) => api.post<Invoice>(`/api/invoices/${id}/cancel`),
   /** Emite de novo a NFS-e recusada (depois de corrigir o cadastro ou o plano). */
   retryFiscalDocument: (id: string) => api.post<FiscalDocument>(`/api/fiscal-documents/${id}/retry`),
-  downloadFiscalDocument: (id: string) => download(`/api/fiscal-documents/${id}/pdf`),
+  /** O PDF (DANFSE) ou o XML da nota. */
+  downloadFiscalDocument: (id: string, kind: 'pdf' | 'xml' = 'pdf') => download(`/api/fiscal-documents/${id}/${kind}`),
   /** Muda o vencimento de uma fatura em aberto (hoje ou depois). */
   changeInvoiceDueDate: (id: string, dueDate: string) => api.post<Invoice>(`/api/invoices/${id}/due-date`, { dueDate }),
   /**
@@ -1679,7 +1680,8 @@ export const meApi = {
   fiscalNotes: () => api.get<FiscalNote[]>('/api/me/fiscal-notes'),
   /** A NFS-e de cada fatura paga, pelo id da fatura. */
   fiscalDocuments: () => api.get<Record<string, FiscalDocument>>('/api/me/fiscal-documents'),
-  downloadFiscalDocument: (id: string) => download(`/api/me/fiscal-documents/${id}/pdf`),
+  /** O PDF (DANFSE) ou o XML da nota. */
+  downloadFiscalDocument: (id: string, kind: 'pdf' | 'xml' = 'pdf') => download(`/api/me/fiscal-documents/${id}/${kind}`),
   downloadNote: (id: string) => download(`/api/me/fiscal-notes/${id}/file`),
   account: () => api.get<CustomerAccount>('/api/me/account'),
   subscriptions: () => api.get<Subscription[]>('/api/me/subscriptions'),

@@ -623,6 +623,7 @@ func (s *Server) routes() chi.Router {
 					if s.Fiscal != nil {
 						r.Get("/fiscal-documents", s.handleMyFiscalDocuments)
 						r.Get("/fiscal-documents/{id}/pdf", s.handleMyFiscalDocumentPDF)
+						r.Get("/fiscal-documents/{id}/xml", s.handleMyFiscalDocumentXML)
 					}
 					r.Post("/invoices/{id}/pix", s.handleMyInvoicePix)
 					r.Post("/invoices/{id}/boleto", s.handleMyInvoiceBoleto)
@@ -1166,12 +1167,13 @@ func (s *Server) routes() chi.Router {
 					})
 				}
 
-				// As notas fiscais: emitir de novo a recusada e o PDF.
+				// As notas fiscais: emitir de novo a recusada, o PDF e o XML.
 				if s.Fiscal != nil {
 					r.Route("/fiscal-documents", func(r chi.Router) {
 						r.Use(auth.RequireRole(auth.RoleAdmin, auth.RoleOperator))
 						r.Post("/{id}/retry", s.handleRetryFiscalDocument)
 						r.Get("/{id}/pdf", s.handleFiscalDocumentPDF)
+						r.Get("/{id}/xml", s.handleFiscalDocumentXML)
 					})
 				}
 

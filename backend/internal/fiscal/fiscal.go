@@ -54,7 +54,8 @@ type Gateway interface {
 	Emit(ctx context.Context, req EmitRequest) (string, error)
 	Status(ctx context.Context, id string) (*Status, error)
 	Cancel(ctx context.Context, id, reason string) error
-	PDF(ctx context.Context, id string) (*PDF, error)
+	PDF(ctx context.Context, id string) (*File, error)
+	XML(ctx context.Context, id string) (*File, error)
 }
 
 // Mailer manda a nota ao cliente e avisa a central de que os créditos
@@ -73,7 +74,10 @@ type Document struct {
 	VerificationCode string    `json:"verificationCode"`
 	AmountCents      int       `json:"amountCents"`
 	// HasPDF: dá para baixar o DANFSE (pelo /pdf, que busca na Notaas).
-	HasPDF      bool       `json:"hasPdf"`
+	HasPDF bool `json:"hasPdf"`
+	// HasXML: dá para baixar o XML (pelo /xml): a emitida, também depois de
+	// cancelada.
+	HasXML      bool       `json:"hasXml"`
 	Error       string     `json:"error"`
 	IssuedAt    *time.Time `json:"issuedAt"`
 	CancelledAt *time.Time `json:"cancelledAt"`
@@ -97,11 +101,12 @@ func NewService(db *database.DB, api Gateway, cfg config.Fiscal, mailer Mailer, 
 func (s *Service) SetClock(now func() time.Time) { s.now = now }
 
 const documentColumns = `id, invoice_id, status, number, verification_code, amount_cents, provider_id <> '' AND status = 'issued',
+	provider_id <> '' AND number <> '' AND status IN ('issued', 'cancel_pending', 'cancelled'),
 	error, issued_at, cancelled_at, created_at`
 
 func scanDocument(row database.Scanner) (*Document, error) {
 	var d Document
-	if err := row.Scan(&d.ID, &d.InvoiceID, &d.Status, &d.Number, &d.VerificationCode, &d.AmountCents, &d.HasPDF, &d.Error,
+	if err := row.Scan(&d.ID, &d.InvoiceID, &d.Status, &d.Number, &d.VerificationCode, &d.AmountCents, &d.HasPDF, &d.HasXML, &d.Error,
 		&d.IssuedAt, &d.CancelledAt, &d.CreatedAt); err != nil {
 		return nil, database.MapError(err)
 	}
@@ -144,7 +149,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID, owner *uuid.UUID) (*Doc
 }
 
 // PDF busca o DANFSE da nota emitida (e o número dela, para o nome do arquivo).
-func (s *Service) PDF(ctx context.Context, id uuid.UUID, owner *uuid.UUID) (*PDF, string, error) {
+func (s *Service) PDF(ctx context.Context, id uuid.UUID, owner *uuid.UUID) (*File, string, error) {
 	d, providerID, err := s.Get(ctx, id, owner)
 	if err != nil {
 		return nil, "", err
@@ -154,6 +159,20 @@ func (s *Service) PDF(ctx context.Context, id uuid.UUID, owner *uuid.UUID) (*PDF
 	}
 	pdf, err := s.api.PDF(ctx, providerID)
 	return pdf, d.Number, err
+}
+
+// XML busca o XML de emissão da nota (a emitida, também depois de cancelada)
+// e o número dela, para o nome do arquivo.
+func (s *Service) XML(ctx context.Context, id uuid.UUID, owner *uuid.UUID) (*File, string, error) {
+	d, providerID, err := s.Get(ctx, id, owner)
+	if err != nil {
+		return nil, "", err
+	}
+	if !d.HasXML || s.api == nil {
+		return nil, "", ErrNotFound
+	}
+	xml, err := s.api.XML(ctx, providerID)
+	return xml, d.Number, err
 }
 
 // Retry: a central corrigiu o cadastro (ou o plano) e manda emitir de novo

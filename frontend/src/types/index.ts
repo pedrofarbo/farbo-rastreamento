@@ -1318,6 +1318,8 @@ export interface FiscalDocument {
   verificationCode: string;
   amountCents: number;
   hasPdf: boolean;
+  /** Dá para baixar o XML: a emitida, também depois de cancelada. */
+  hasXml: boolean;
   error: string;
   issuedAt: string | null;
   cancelledAt: string | null;
