@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -17,7 +17,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { formatMoney, formatPhoneInput } from '@/services/format';
 import { formatTaxId } from '@/services/taxid';
-import type { Lead } from '@/types';
+import type { CustomerSummary, Lead } from '@/types';
 import { Pager } from '@/components/ui/Pager';
 import { usePagedList } from '@/hooks/usePagination';
 
@@ -37,6 +37,16 @@ interface CustomerDraft {
   /** Cadastro a partir de um pré-cliente (que passa a convertido). */
   lead?: Lead;
 }
+
+/** Os filtros da lista pela situação (no endereço: ?situacao=atraso). */
+type Situation = 'todos' | 'atraso' | 'suspensos';
+
+const SITUATIONS: { id: Situation; label: string; match: (c: CustomerSummary) => boolean }[] = [
+  { id: 'todos', label: 'Todos', match: () => true },
+  // Em atraso: com fatura vencida (os suspensos também).
+  { id: 'atraso', label: 'Em atraso', match: (c) => c.overdueInvoices > 0 },
+  { id: 'suspensos', label: 'Acesso suspenso', match: (c) => c.suspended },
+];
 
 const EMPTY: CustomerDraft = {
   name: '',
@@ -65,6 +75,9 @@ export function CustomersPage() {
   const newLeads = leadStats.data?.new ?? 0;
 
   const [search, setSearch] = useState('');
+  // A situação vem do endereço: o cartão "Em atraso" (ou um link) já abre a lista filtrada.
+  const situation = SITUATIONS.find((s) => s.id === params.get('situacao')) ?? SITUATIONS[0];
+  const listRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<CustomerDraft | null>(null);
   const [formError, setFormError] = useState('');
 
@@ -90,13 +103,23 @@ export function CustomersPage() {
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const list = customers.data ?? [];
-    if (!term) return list;
-    return list.filter((c) =>
-      [c.name, c.email, c.document, c.phone].some((value) => value.toLowerCase().includes(term)),
-    );
-  }, [customers.data, search]);
-  const paged = usePagedList(filtered, 'customers', search);
+    const list = (customers.data ?? []).filter(situation.match);
+    const found = term
+      ? list.filter((c) => [c.name, c.email, c.document, c.phone].some((value) => value.toLowerCase().includes(term)))
+      : list;
+    // Em atraso: quem tem mais faturas vencidas (e mais em aberto) primeiro.
+    if (situation.id === 'todos') return found;
+    return [...found].sort((a, b) => b.overdueInvoices - a.overdueInvoices || b.openAmountCents - a.openAmountCents);
+  }, [customers.data, search, situation]);
+  const paged = usePagedList(filtered, 'customers', [search, situation.id]);
+  const countOf = (s: (typeof SITUATIONS)[number]) => (customers.data ?? []).filter(s.match).length;
+
+  /** Filtra a lista pela situação (o filtro vai para o endereço). */
+  const filterBy = (id: Situation, scroll = false) => {
+    setParams(id === 'todos' ? {} : { situacao: id }, { replace: true });
+    // O cartão leva até a lista.
+    if (scroll) listRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  };
 
   const submit = () => {
     if (!draft) return;
@@ -230,95 +253,125 @@ export function CustomersPage() {
                 <span className={billing.tileValue}>{formatMoney(totals.open)}</span>
                 <span className={billing.tileHint}>faturas em aberto</span>
               </div>
-              <div className={`${billing.tile} ${totals.overdue > 0 ? billing.tileDanger : ''}`}>
+              <button
+                type="button"
+                aria-pressed={situation.id === 'atraso'}
+                title={situation.id === 'atraso' ? 'Mostrar todos os clientes' : 'Ver os clientes em atraso'}
+                className={`${billing.tile} ${billing.tileButton} ${totals.overdue > 0 ? billing.tileDanger : ''} ${
+                  situation.id === 'atraso' ? billing.tileActive : ''
+                }`}
+                onClick={() => filterBy(situation.id === 'atraso' ? 'todos' : 'atraso', situation.id !== 'atraso')}
+              >
                 <span className={billing.tileLabel}>Em atraso</span>
                 <span className={billing.tileValue}>{totals.overdue}</span>
                 <span className={billing.tileHint}>
-                  {totals.suspended} com acesso suspenso
+                  {totals.suspended} com acesso suspenso · {situation.id === 'atraso' ? 'na lista abaixo' : 'ver a lista'}
                 </span>
-              </div>
+              </button>
             </div>
 
-            <Card flush>
-              <div style={{ padding: 'var(--space-3)' }}>
-                <input
-                  className={fieldStyles.input}
-                  placeholder="Buscar por nome, e-mail, telefone ou documento"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-              </div>
-              {customers.isLoading ? (
-                <Spinner label="Carregando clientes" />
-              ) : filtered.length === 0 ? (
-                <EmptyState
-                  icon="👤"
-                  title={(customers.data ?? []).length === 0 ? 'Nenhum cliente cadastrado' : 'Nada encontrado'}
-                  description={
-                    (customers.data ?? []).length === 0
-                      ? 'Cadastre o primeiro cliente para ele acessar o painel e acompanhar os veículos.'
-                      : 'Ajuste a busca para ver outros clientes.'
-                  }
-                />
-              ) : (
-                <>
-                  <div className={styles.tableWrap}>
-                    <table className={styles.table}>
-                      <thead>
-                        <tr>
-                          <th>Cliente</th>
-                          <th>Contato</th>
-                          <th>Veículos</th>
-                          <th>Assinaturas ativas</th>
-                          <th>Em aberto</th>
-                          <th>Situação</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paged.items.map((customer) => (
-                          <tr key={customer.id}>
-                            <td>
-                              <Link to={`/clientes/${customer.id}`}>
-                                <strong>{customer.name}</strong>
-                              </Link>
-                              {customer.document && <div className={billing.muted}>{formatTaxId(customer.document)}</div>}
-                              {customer.organizationId && (
-                                <div className={billing.muted}>Associado da {customer.organizationName}</div>
-                              )}
-                            </td>
-                            <td>
-                              {customer.email}
-                              {customer.phone && <div className={billing.muted}>{customer.phone}</div>}
-                            </td>
-                            <td>
-                              {customer.vehicleCount}
-                              {customer.sharedVehicles > 0 && (
-                                <div className={billing.muted}>
-                                  + acompanha {customer.sharedVehicles} de outro cliente
-                                </div>
-                              )}
-                            </td>
-                            <td>
-                              {customer.activeSubscriptions - customer.freeSubscriptions}
-                              {customer.freeSubscriptions > 0 && (
-                                <div className={billing.muted}>+ {customer.freeSubscriptions} grátis</div>
-                              )}
-                            </td>
-                            <td className={billing.amount}>
-                              {customer.openInvoices > 0 ? formatMoney(customer.openAmountCents) : '—'}
-                            </td>
-                            <td>
-                              <CustomerStatus customer={customer} />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+            <div ref={listRef} className={styles.anchor}>
+              <Card flush>
+                <div className={styles.listTools}>
+                  <input
+                    className={fieldStyles.input}
+                    placeholder="Buscar por nome, e-mail, telefone ou documento"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                  />
+                  <div className={styles.filterChips} role="group" aria-label="Situação dos clientes">
+                    {SITUATIONS.map((s) => (
+                      <Button
+                        key={s.id}
+                        size="small"
+                        variant={situation.id === s.id ? 'primary' : 'ghost'}
+                        aria-pressed={situation.id === s.id}
+                        onClick={() => filterBy(s.id)}
+                      >
+                        {s.label}
+                        {customers.data ? ` (${countOf(s)})` : ''}
+                      </Button>
+                    ))}
                   </div>
-                  <Pager {...paged.pager} />
-                </>
-              )}
-            </Card>
+                </div>
+                {customers.isLoading ? (
+                  <Spinner label="Carregando clientes" />
+                ) : filtered.length === 0 ? (
+                  (customers.data ?? []).length === 0 ? (
+                    <EmptyState
+                      icon="👤"
+                      title="Nenhum cliente cadastrado"
+                      description="Cadastre o primeiro cliente para ele acessar o painel e acompanhar os veículos."
+                    />
+                  ) : situation.id !== 'todos' && !search.trim() ? (
+                    <EmptyState
+                      icon="✅"
+                      title={situation.id === 'atraso' ? 'Nenhum cliente em atraso' : 'Nenhum cliente com acesso suspenso'}
+                      description="Todos os clientes estão com as faturas em dia."
+                    />
+                  ) : (
+                    <EmptyState icon="🔎" title="Nada encontrado" description="Ajuste a busca ou a situação para ver outros clientes." />
+                  )
+                ) : (
+                  <>
+                    <div className={styles.tableWrap}>
+                      <table className={styles.table}>
+                        <thead>
+                          <tr>
+                            <th>Cliente</th>
+                            <th>Contato</th>
+                            <th>Veículos</th>
+                            <th>Assinaturas ativas</th>
+                            <th>Em aberto</th>
+                            <th>Situação</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paged.items.map((customer) => (
+                            <tr key={customer.id}>
+                              <td>
+                                <Link to={`/clientes/${customer.id}`}>
+                                  <strong>{customer.name}</strong>
+                                </Link>
+                                {customer.document && <div className={billing.muted}>{formatTaxId(customer.document)}</div>}
+                                {customer.organizationId && (
+                                  <div className={billing.muted}>Associado da {customer.organizationName}</div>
+                                )}
+                              </td>
+                              <td>
+                                {customer.email}
+                                {customer.phone && <div className={billing.muted}>{customer.phone}</div>}
+                              </td>
+                              <td>
+                                {customer.vehicleCount}
+                                {customer.sharedVehicles > 0 && (
+                                  <div className={billing.muted}>
+                                    + acompanha {customer.sharedVehicles} de outro cliente
+                                  </div>
+                                )}
+                              </td>
+                              <td>
+                                {customer.activeSubscriptions - customer.freeSubscriptions}
+                                {customer.freeSubscriptions > 0 && (
+                                  <div className={billing.muted}>+ {customer.freeSubscriptions} grátis</div>
+                                )}
+                              </td>
+                              <td className={billing.amount}>
+                                {customer.openInvoices > 0 ? formatMoney(customer.openAmountCents) : '—'}
+                              </td>
+                              <td>
+                                <CustomerStatus customer={customer} />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <Pager {...paged.pager} />
+                  </>
+                )}
+              </Card>
+            </div>
 
             <MrrCard mrr={mrr} />
             <OrderOptionsCard />

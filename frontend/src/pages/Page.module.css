@@ -310,3 +310,22 @@
   flex: 1 1 280px;
   max-width: 440px;
 }
+
+/* O alto de uma lista que a página rola até ela (ex.: o cartão "Em atraso"). */
+.anchor {
+  scroll-margin-top: var(--space-4);
+}
+
+/* A busca e os filtros em cima de uma lista. */
+.listTools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.filterChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

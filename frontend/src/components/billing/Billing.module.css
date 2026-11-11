@@ -118,6 +118,31 @@
   color: var(--danger);
 }
 
+/* O cartão que filtra a lista abaixo (ex.: "Em atraso"): clicável, marcado quando o filtro vale. */
+.tileButton {
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.tileButton:hover {
+  border-color: var(--accent);
+}
+
+.tileButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tileActive {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 /* Cota de veículos */
 
 .quota {
