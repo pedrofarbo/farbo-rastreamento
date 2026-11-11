@@ -66,6 +66,9 @@ func TestContractText(t *testing.T) {
 		"o serviço continua até o último dia do período e a assinatura não renova",
 		"o encerramento vale no fim do período (cláusula 7)",
 		"Instalação com ou sem bloqueio", "Sem o relé, o bloqueio remoto não funciona",
+		// O comodato nos planos semestral e anual (versão 11).
+		"e no comodato, em que o valor do período pode ser diferente do do rastreador incluso",
+		"No comodato, a retirada do rastreador e a taxa de desinstalação, quando houver, ficam para o fim do período",
 	} {
 		if want == "MP" {
 			want = "Medida Provisória nº 2.200-2/2001"
@@ -78,7 +81,7 @@ func TestContractText(t *testing.T) {
 		t.Error("sobrou marcação ou endereço vazio")
 	}
 	// Nada de vender o rastreador nem de nota de produto.
-	for _, gone := range []string{"NF-e", "rastreador à vista", "preço de venda", "rastreador comprado pelo Cliente"} {
+	for _, gone := range []string{"NF-e", "rastreador à vista", "preço de venda", "rastreador comprado pelo Cliente", "e não no comodato"} {
 		if strings.Contains(doc.Text, gone) {
 			t.Errorf("sobrou %q", gone)
 		}

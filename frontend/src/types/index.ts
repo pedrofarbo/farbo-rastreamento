@@ -1809,6 +1809,11 @@ export interface Catalog {
   install?: InstallService | null;
   /** Pessoa física: paga no ato a 1ª mensalidade, o frete e a instalação, quando houver. */
   payNow?: boolean;
+  /**
+   * O semestral e o anual do representante que indicou o cliente (pessoa
+   * física), com o valor no comodato; ausente, só o mensal.
+   */
+  periods?: PeriodOffer[];
 }
 
 /**
@@ -1878,18 +1883,20 @@ export interface CheckoutOffer {
   install: InstallService | null;
   contractVersion: string;
   shippingEnabled: boolean;
-  /** O semestral e o anual (o valor do período, com o rastreador incluso), quando o link — ou o site — os tem ligados. */
+  /** O semestral e o anual (o valor do período, com o rastreador incluso; no comodato, mais a garantia de cada mês), quando o link — ou o site — os tem ligados. */
   periods?: PeriodOffer[];
 }
 
-/** Um plano pago por período na contratação: os meses (6 ou 12), o nome e o valor. */
+/** Um plano pago por período na contratação: os meses (6 ou 12), o nome e o valor (com o rastreador incluso). */
 export interface PeriodOffer {
   months: number;
   planName: string;
   cents: number;
+  /** Com o comodato no link: o valor no comodato, com a garantia de troca de cada mês do período. */
+  loanCents?: number;
 }
 
-/** O semestral e o anual (pagos por período, com o rastreador incluso): ligados ou não, e os valores. */
+/** O semestral e o anual (pagos por período, com o rastreador incluso ou em comodato): ligados ou não, e os valores. */
 export interface Recurrence {
   enabled: boolean;
   semiannualCents: number;

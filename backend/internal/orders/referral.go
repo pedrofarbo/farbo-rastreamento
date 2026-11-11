@@ -198,6 +198,27 @@ func (s *Service) AffiliateRecurrence(ctx context.Context, affiliateID uuid.UUID
 	return &r, nil
 }
 
+// CustomerRecurrence é o semestral e o anual do representante que indicou o
+// cliente, quando ele os tem ligados e a central não definiu um plano para a
+// conta (nil: só o mensal).
+func (s *Service) CustomerRecurrence(ctx context.Context, customerID uuid.UUID) (*Recurrence, error) {
+	account, err := s.AccountPlan(ctx, customerID)
+	if err != nil || account != nil {
+		return nil, err
+	}
+	var r Recurrence
+	err = s.db.QueryRow(ctx, `SELECT a.recurrence_enabled, a.semiannual_cents, a.annual_cents
+		FROM affiliate_referrals x JOIN affiliates a ON a.id = x.affiliate_id WHERE x.customer_id = $1 AND a.active`,
+		customerID).Scan(&r.Enabled, &r.SemiannualCents, &r.AnnualCents)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !r.Enabled) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	return &r, nil
+}
+
 // LinkRecurrence é o semestral e o anual da contratação: pelo link de um
 // afiliado, os dele; sem afiliado, os do site (nil: só o mensal).
 func (s *Service) LinkRecurrence(ctx context.Context, opts *Options, affiliate *uuid.UUID) (*Recurrence, error) {

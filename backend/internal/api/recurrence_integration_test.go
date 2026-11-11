@@ -18,7 +18,8 @@ import (
 // Os planos semestral e anual: desligados até a central ligar (no site, nas
 // opções do pedido; no link de um representante, no cadastro dele, com os
 // valores dele). Pelo link com eles ligados, a contratação semestral sai com
-// o valor do período e o rastreador incluso (nada somado; não no comodato);
+// o valor do período e o rastreador incluso (nada somado; o comodato, em
+// TestPeriodPlansLoan);
 // paga, rende 6 meses de comissão; a fatura seguinte vem 6 meses depois, no
 // dia da conta; cancelada com o período pago, a assinatura fica ativa até o
 // fim dele, não renova e encerra sozinha na data. Precisa de
@@ -84,12 +85,9 @@ func TestPeriodPlans(t *testing.T) {
 		ana.Recurrence.SemiannualCents != 20000 || ana.Recurrence.AnnualCents != 40000 {
 		t.Fatalf("cadastros = %+v / %+v", rafa.Recurrence, ana.Recurrence)
 	}
-	// Ligado sem valor, não; só de comodato, não.
+	// Ligado sem valor, não.
 	env.must(admin, http.MethodPost, "/api/affiliates", map[string]any{"name": "Sem Valor", "code": "sem-valor", "active": true,
 		"recurrence": map[string]any{"enabled": true, "semiannualCents": 0, "annualCents": 40000}}, http.StatusBadRequest)
-	env.must(admin, http.MethodPost, "/api/affiliates", map[string]any{"name": "Comodato", "code": "comodato", "active": true,
-		"equipmentModes": "loan", "recurrence": map[string]any{"enabled": true, "semiannualCents": 20000, "annualCents": 40000}},
-		http.StatusBadRequest)
 	// A edição sem o campo (telas antigas) não desliga.
 	env.must(admin, http.MethodPatch, "/api/affiliates/"+rafa.ID.String(), map[string]any{
 		"name": "Rafa Representante", "code": "rafa", "active": true}, http.StatusOK)
@@ -124,9 +122,7 @@ func TestPeriodPlans(t *testing.T) {
 		}
 		return b
 	}
-	// No comodato, não; pelo link da Ana, não.
-	env.must("", http.MethodPost, "/api/public/checkout", body("caio@site.test", map[string]any{"equipmentMode": "loan"}),
-		http.StatusBadRequest)
+	// Pelo link da Ana, não.
 	env.must("", http.MethodPost, "/api/public/checkout", body("caio@site.test", map[string]any{"ref": "ana"}), http.StatusBadRequest)
 
 	var r struct {

@@ -999,7 +999,7 @@ func (s *Service) Report(ctx context.Context, token string) (*Report, error) {
 	if view, err := s.Recipient(ctx, token); err == nil {
 		out.Recipient = view
 	}
-	if a.Recurrence.Enabled && a.EquipmentModes != orders.EquipmentLoanOnly {
+	if a.Recurrence.Enabled {
 		r := a.Recurrence
 		out.Recurrence = &r
 	}

@@ -11,7 +11,7 @@ import { TextField } from '@/components/ui/Field';
 import { CONTRACT_PATH } from '@/config/legal';
 import { CHECKOUT_ANCHOR, trackerAdded } from '@/config/landing';
 import { track, trackPageview } from '@/services/analytics';
-import { blockingOffered, checkoutTotals, chosenInstall, chosenPeriod, payDestination, vehicleName } from '@/services/checkout';
+import { blockingOffered, checkoutTotals, chosenInstall, chosenPeriod, payDestination, periodPrice, vehicleName } from '@/services/checkout';
 import type { CheckoutChoice } from '@/services/checkout';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { formatMoney, formatPhoneInput, isPhoneComplete } from '@/services/format';
@@ -155,7 +155,7 @@ export function CheckoutPage() {
   const totals = checkoutTotals(o, choice, freightCents, kind);
   const table = o.planByKind;
   const loan = choice.equipmentMode === 'loan' && o.loan !== null;
-  // O semestral e o anual (só com o rastreador incluso), quando o link os oferece.
+  // O semestral e o anual (com o rastreador incluso ou em comodato), quando o link os oferece.
   const periods = o.periods ?? [];
   const period = chosenPeriod(o, choice);
   // Pela tabela do afiliado, a parte do rastreador incluso soma nas primeiras.
@@ -284,7 +284,7 @@ export function CheckoutPage() {
               {loan && '.'}
             </p>
 
-            {periods.length > 0 && !loan && (
+            {periods.length > 0 && (
               <fieldset className={styles.options}>
                 <legend className={styles.legend}>Como pagar</legend>
                 <Option
@@ -296,20 +296,28 @@ export function CheckoutPage() {
                 >
                   Uma fatura por mês.
                 </Option>
-                {periods.map((p) => (
-                  <Option
-                    key={p.months}
-                    checked={period?.months === p.months}
-                    onChange={() => setChoice({ ...choice, equipmentMode: 'sale', periodMonths: p.months })}
-                    name="period"
-                    title={p.months === 12 ? 'Anual' : 'Semestral'}
-                    price={`${formatMoney(p.cents)}${p.months === 12 ? '/ano' : '/semestre'}`}
-                  >
-                    {formatMoney(Math.floor(p.cents / p.months))} por mês, pagos de uma vez a cada {p.months} meses, com o
-                    rastreador incluso no valor. Se cancelar antes do fim do período pago, não há devolução: o rastreamento
-                    segue até o fim dele e não renova.
-                  </Option>
-                ))}
+                {periods.map((p) => {
+                  const cents = periodPrice(p, loan);
+                  return (
+                    <Option
+                      key={p.months}
+                      checked={period?.months === p.months}
+                      onChange={() => setChoice({ ...choice, periodMonths: p.months })}
+                      name="period"
+                      title={p.months === 12 ? 'Anual' : 'Semestral'}
+                      price={`${formatMoney(cents)}${p.months === 12 ? '/ano' : '/semestre'}`}
+                    >
+                      {formatMoney(Math.floor(cents / p.months))} por mês, pagos de uma vez a cada {p.months} meses,{' '}
+                      {loan
+                        ? cents > p.cents
+                          ? 'com a garantia de troca do rastreador emprestado.'
+                          : 'com o rastreador emprestado.'
+                        : 'com o rastreador incluso no valor.'}{' '}
+                      Se cancelar antes do fim do período pago, não há devolução: o rastreamento segue até o fim dele e não
+                      renova.
+                    </Option>
+                  );
+                })}
               </fieldset>
             )}
 
@@ -336,10 +344,16 @@ export function CheckoutPage() {
               {o.loan && (
                 <Option
                   checked={loan}
-                  onChange={() => setChoice({ ...choice, equipmentMode: 'loan', farboInstall: false, periodMonths: 1 })}
+                  onChange={() => setChoice({ ...choice, equipmentMode: 'loan', farboInstall: false })}
                   name="equipment"
                   title="Comodato (emprestado)"
-                  price={o.loan.surchargeCents > 0 ? `+${formatMoney(o.loan.surchargeCents)}/mês` : 'sem taxa mensal'}
+                  price={
+                    o.loan.surchargeCents <= 0
+                      ? 'sem taxa mensal'
+                      : period
+                        ? `+${formatMoney(o.loan.surchargeCents * period.months)} no ${period.months === 12 ? 'ano' : 'semestre'}`
+                        : `+${formatMoney(o.loan.surchargeCents)}/mês`
+                  }
                 >
                   O rastreador emprestado: ele volta quando você encerrar.{' '}
                   {blockingOffered(o)
@@ -804,9 +818,18 @@ function Summary({
       </div>
       {period ? (
         <p className={styles.note}>
-          Depois, <span className={styles.monthly}>{formatMoney(period.cents)}</span> a cada {period.months} meses, no dia{' '}
-          {offer.dueDay}. O rastreador incluso fica com você e já está no valor. Se cancelar antes do fim do período pago,
-          não há devolução: o rastreamento segue até o fim dele e a assinatura não renova.
+          Depois, <span className={styles.monthly}>{formatMoney(totals.monthlyCents)}</span> a cada {period.months} meses, no
+          dia {offer.dueDay}.{' '}
+          {loan
+            ? `O rastreador é emprestado${totals.guaranteeCents > 0 ? `; ${formatMoney(totals.guaranteeCents)} do valor é a garantia de troca dele` : ''}.`
+            : 'O rastreador incluso fica com você e já está no valor.'}{' '}
+          Se cancelar antes do fim do período pago, não há devolução: o rastreamento segue até o fim dele e a assinatura
+          não renova
+          {loan &&
+            offer.loan &&
+            offer.loan.uninstallFeeCents > 0 &&
+            `; no fim, a desinstalação custa ${formatMoney(offer.loan.uninstallFeeCents)}${offer.installDirect ? ', paga direto ao representante' : ''}`}
+          .
         </p>
       ) : (
       <p className={styles.note}>

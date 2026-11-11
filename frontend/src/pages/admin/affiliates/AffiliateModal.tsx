@@ -249,10 +249,6 @@ export function AffiliateModal({
       setError(recurrence);
       return;
     }
-    if (recurrence.enabled && draft.equipmentModes === 'loan') {
-      setError('O semestral e o anual são com o rastreador incluso: o link só de comodato não os oferece.');
-      return;
-    }
     if (draft.manageInstalls && !draft.passwordOn) {
       setError('Para o representante cuidar das instalações, marque a senha da página: ela mostra os dados dos clientes.');
       return;

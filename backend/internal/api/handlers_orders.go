@@ -66,6 +66,9 @@ type catalogView struct {
 	// PayNow: a pessoa física paga no ato (a 1ª mensalidade, o frete e a
 	// instalação); a empresa, na próxima fatura do mês.
 	PayNow bool `json:"payNow,omitempty"`
+	// Periods: o semestral e o anual do representante que indicou o cliente
+	// (pessoa física), com o valor no comodato; vazio, só o mensal.
+	Periods []periodOffer `json:"periods,omitempty"`
 }
 
 // handleCatalog devolve os preços de um rastreador novo. Para o cliente, o
@@ -118,6 +121,9 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 			view.PayNow = true
 			due := s.Billing.Today().AddDays(c.SetupDueDays)
 			view.ChargeDate = &due
+			if recurrence, err := s.Orders.CustomerRecurrence(r.Context(), customerID); err == nil {
+				view.Periods = periodOffers(recurrence, view.Loan)
+			}
 		} else if due, err := s.Billing.ChargeDate(r.Context(), s.DB, customerID, view.DefaultDueDay); err == nil {
 			view.ChargeDate = &due
 		}
@@ -341,6 +347,12 @@ type customerTrackerOrderRequest struct {
 	// Farbo (a taxa vem junto com a 1ª mensalidade); sem isso, o cliente
 	// instala por conta própria. No comodato, a instalação é sempre da Farbo.
 	FarboInstall bool `json:"farboInstall"`
+	// InstallBlocking: a instalação com o relé do bloqueio, quando o
+	// representante que indicou o cliente oferece a escolha.
+	InstallBlocking bool `json:"installBlocking"`
+	// PeriodMonths: o semestral (6) ou o anual (12) do representante que
+	// indicou o cliente (pessoa física); vazio, o mensal.
+	PeriodMonths int `json:"periodMonths"`
 }
 
 func (s *Server) handleMyOrderTracker(w http.ResponseWriter, r *http.Request) {
@@ -376,7 +388,10 @@ func (s *Server) handleMyOrderTracker(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "o rastreador vem incluso na mensalidade: não há o que parcelar. Atualize a página")
 		return
 	}
-	order, err := s.Orders.CustomerOrder(r.Context(), customerID, req.Vehicle, req.LaunchPromo, req.EquipmentMode, req.FarboInstall)
+	order, err := s.Orders.CustomerOrder(r.Context(), customerID, req.Vehicle, orders.CustomerChoice{
+		LaunchPromo: req.LaunchPromo, EquipmentMode: req.EquipmentMode, FarboInstall: req.FarboInstall,
+		InstallBlocking: req.InstallBlocking, PeriodMonths: req.PeriodMonths,
+	})
 	if err != nil {
 		writeOrderError(w, r, err, "cliente não encontrado")
 		return

@@ -427,10 +427,25 @@ func withGuarantee(plan *billing.SubscriptionInput, terms *Terms, cents int) {
 	terms.GuaranteeCents = cents
 }
 
+// CustomerChoice é o que o cliente escolhe no pedido de um veículo novo pelo
+// app: a promoção (quando o painel mostrou), o rastreador, a instalação e,
+// pelo representante que o indicou com o semestral e o anual ligados, o
+// período.
+type CustomerChoice struct {
+	LaunchPromo   bool
+	EquipmentMode string
+	FarboInstall  bool
+	// InstallBlocking: a instalação com o relé do bloqueio, quando o
+	// representante que o indicou oferece a escolha.
+	InstallBlocking bool
+	// PeriodMonths: o semestral (6) ou o anual (12); 0 ou 1, o mensal.
+	PeriodMonths int
+}
+
 // CustomerOrder monta o pedido feito pelo próprio cliente, com os preços dele
 // (CustomerPrices) — ele não escolhe valor.
-func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehicle vehicles.Input, launchPromo bool,
-	equipmentMode string, farboInstall bool) (Order, error) {
+func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehicle vehicles.Input, choice CustomerChoice) (Order, error) {
+	launchPromo, equipmentMode, farboInstall := choice.LaunchPromo, choice.EquipmentMode, choice.FarboInstall
 	summary, err := s.billing.GetCustomer(ctx, customerID)
 	if err != nil {
 		return Order{}, err
@@ -482,8 +497,36 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehic
 			return Order{}, err
 		}
 	}
+	if err := withBlocking(install, choice.InstallBlocking, &order); err != nil {
+		return Order{}, err
+	}
+	// O semestral ou o anual do representante que o indicou: só a pessoa
+	// física (paga no ato, como no site) e sem a promoção (que é mensal).
+	if choice.PeriodMonths > 1 {
+		if err := s.customerPeriod(ctx, customerID, individual, choice.PeriodMonths, &order); err != nil {
+			return Order{}, err
+		}
+	}
 	install.applyInstall(&order)
 	return order, nil
+}
+
+// customerPeriod põe no pedido do cliente o semestral ou o anual do
+// representante que o indicou.
+func (s *Service) customerPeriod(ctx context.Context, customerID uuid.UUID, individual bool, months int, order *Order) error {
+	switch {
+	case !billing.ValidPeriod(months):
+		return ValidationError{"a recorrência é mensal, semestral ou anual"}
+	case !individual:
+		return ValidationError{"o semestral e o anual pelo app são para pessoa física: fale com a Farbo"}
+	case order.LaunchPromo:
+		return ValidationError{"a promoção de pré-lançamento é no plano mensal: escolha o mensal ou contrate sem a promoção"}
+	}
+	recurrence, err := s.CustomerRecurrence(ctx, customerID)
+	if err != nil {
+		return err
+	}
+	return applyPeriod(recurrence, months, order)
 }
 
 // withFarboInstall põe no pedido a instalação pelos instaladores da Farbo,
@@ -587,7 +630,9 @@ func (s *Service) customerPlan(ctx context.Context, customerID uuid.UUID) (billi
 		return billing.SubscriptionInput{}, err
 	}
 	for _, sub := range subscriptions {
-		if sub.Status == billing.SubscriptionActive {
+		// O semestral e o anual são só na contratação: o veículo novo é mensal
+		// (o valor do período não é mensalidade).
+		if sub.Status == billing.SubscriptionActive && sub.PeriodMonths <= 1 {
 			// Sem a garantia de troca do comodato: ela é do rastreador, não do plano.
 			var guarantee int
 			if err := s.db.QueryRow(ctx, `SELECT guarantee_cents FROM subscriptions WHERE id = $1`, sub.ID).Scan(&guarantee); err != nil {

@@ -7,7 +7,7 @@
  */
 import { includedMonthly } from '@/config/landing';
 import { kindPrice } from '@/services/kindPrices';
-import type { CheckoutOffer, VehicleKind } from '@/types';
+import type { CheckoutOffer, PeriodOffer, VehicleKind } from '@/types';
 
 export interface CheckoutChoice {
   /** O rastreador incluso (sale) ou em comodato (loan). */
@@ -37,10 +37,15 @@ export interface CheckoutTotals {
   periodMonths: number;
 }
 
-/** O semestral ou o anual escolhido, se o link o oferece (só com o rastreador incluso). */
+/** O semestral ou o anual escolhido, se o link o oferece (com o rastreador incluso ou em comodato). */
 export function chosenPeriod(offer: CheckoutOffer, choice: CheckoutChoice) {
-  if (choice.equipmentMode === 'loan' || !choice.periodMonths || choice.periodMonths <= 1) return null;
+  if (!choice.periodMonths || choice.periodMonths <= 1) return null;
   return offer.periods?.find((p) => p.months === choice.periodMonths) ?? null;
+}
+
+/** O valor do período: com o rastreador incluso ou, no comodato, com a garantia de troca de cada mês. */
+export function periodPrice(period: PeriodOffer, loan: boolean): number {
+  return loan ? (period.loanCents ?? period.cents) : period.cents;
 }
 
 /** O link oferece a instalação com o relé do bloqueio do motor, ao lado da sem bloqueio. */
@@ -65,17 +70,19 @@ export function checkoutTotals(offer: CheckoutOffer, choice: CheckoutChoice, fre
   const loan = choice.equipmentMode === 'loan' && offer.loan !== null;
   // Pelo link de um representante, a instalação é paga direto a ele: fora do Pix.
   const installNowCents = offer.installDirect ? 0 : chosenInstall(offer, choice).cents;
-  // O semestral ou o anual: o valor do período, com o rastreador incluso nele.
+  // O semestral ou o anual: o valor do período, com o rastreador incluso nele
+  // (no comodato, com a garantia de troca de cada mês).
   const period = chosenPeriod(offer, choice);
   if (period) {
+    const cents = periodPrice(period, loan);
     return {
-      monthlyCents: period.cents,
-      guaranteeCents: 0,
-      firstMonthlyCents: period.cents,
+      monthlyCents: cents,
+      guaranteeCents: loan ? cents - period.cents : 0,
+      firstMonthlyCents: cents,
       trackerMonths: 0,
       installNowCents,
       freightCents,
-      totalNowCents: period.cents + installNowCents + freightCents,
+      totalNowCents: cents + installNowCents + freightCents,
       periodMonths: period.months,
     };
   }

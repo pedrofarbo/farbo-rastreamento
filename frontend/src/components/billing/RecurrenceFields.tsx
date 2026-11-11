@@ -34,8 +34,9 @@ export function recurrenceInput(d: RecurrenceDraft): Recurrence | string {
 
 /**
  * O semestral e o anual: pagos por período (6 ou 12 meses de uma vez), com o
- * rastreador incluso no valor (nada somado). Sem devolução: cancelado, fica
- * ativo até o fim do período pago e não renova.
+ * rastreador incluso no valor (nada somado) ou em comodato (com a garantia de
+ * troca de cada mês somada). Sem devolução: cancelado, fica ativo até o fim
+ * do período pago e não renova.
  */
 export function RecurrenceFields({
   draft,
@@ -58,9 +59,9 @@ export function RecurrenceFields({
         <span>
           <strong>Oferecer o semestral e o anual {where}</strong>
           <br />
-          Pagos por período, de uma vez, com o rastreador incluso no valor (nada somado). Só com o rastreador incluso,
-          não no comodato. Sem devolução: cancelado, segue ativo até o fim do período pago e não renova. Desligado, só o
-          mensal.
+          Pagos por período, de uma vez, com o rastreador incluso no valor (nada somado). No comodato, o mesmo valor
+          mais a garantia de troca de cada mês do período. Sem devolução: cancelado, segue ativo até o fim do período
+          pago e não renova (no comodato, a retirada fica para o fim dele). Desligado, só o mensal.
         </span>
       </label>
       <div className={pageStyles.formRow}>

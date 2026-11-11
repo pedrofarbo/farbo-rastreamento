@@ -272,7 +272,13 @@ function Home({ report, token, sections }: { report: PartnerReport; token: strin
         {report.recurrence?.enabled && (
           <p className={base.hint}>
             Pelo seu link, também dá para pagar o semestral ({money(report.recurrence.semiannualCents)} a cada 6 meses) ou o
-            anual ({money(report.recurrence.annualCents)} por ano), com o rastreador incluso. A sua comissão: no semestral,{' '}
+            anual ({money(report.recurrence.annualCents)} por ano)
+            {report.equipmentModes === 'loan'
+              ? ', no comodato, mais a garantia de troca de cada mês'
+              : report.equipmentModes === 'sale'
+                ? ', com o rastreador incluso'
+                : ', com o rastreador incluso (no comodato, mais a garantia de troca de cada mês)'}
+            . A sua comissão: no semestral,{' '}
             {periodCommissionLabel(report.semiannualCommission, 6)}; no anual, {periodCommissionLabel(report.annualCommission, 12)}.
           </p>
         )}

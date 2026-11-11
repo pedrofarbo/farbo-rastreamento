@@ -8,20 +8,23 @@ import { blockingOffered, checkoutTotals, chosenInstall, payDestination, vehicle
 const offer: CheckoutOffer = OFFER;
 
 describe('a conta da contratação pelo site', () => {
-  it('o semestral e o anual: o valor do período, com o rastreador incluso (nada somado); no comodato, não', () => {
+  it('o semestral e o anual: o valor do período, com o rastreador incluso (nada somado); no comodato, com a garantia', () => {
     const periods = offerWith({
       tracker: { cents: 1200, months: 10, added: true },
       periods: [
-        { months: 6, planName: 'Plano Semestral', cents: 20000 },
-        { months: 12, planName: 'Plano Anual', cents: 40000 },
+        { months: 6, planName: 'Plano Semestral', cents: 20000, loanCents: 21800 },
+        { months: 12, planName: 'Plano Anual', cents: 40000, loanCents: 43600 },
       ],
     });
     const t = checkoutTotals(periods, { equipmentMode: 'sale', farboInstall: true, periodMonths: 6 }, 2290);
     expect(t).toMatchObject({ monthlyCents: 20000, firstMonthlyCents: 20000, trackerMonths: 0, periodMonths: 6, installNowCents: 15000 });
     expect(t.totalNowCents).toBe(20000 + 15000 + 2290);
     expect(checkoutTotals(periods, { equipmentMode: 'sale', farboInstall: false, periodMonths: 12 }).totalNowCents).toBe(40000);
-    // No comodato, ou sem o período no link: o mensal.
-    expect(checkoutTotals(periods, { equipmentMode: 'loan', farboInstall: false, periodMonths: 6 }).periodMonths).toBe(1);
+    // No comodato: o valor do período com a garantia de troca de cada mês, e a instalação do comodato.
+    expect(checkoutTotals(periods, { equipmentMode: 'loan', farboInstall: false, periodMonths: 6 })).toMatchObject({
+      periodMonths: 6, monthlyCents: 21800, guaranteeCents: 1800, installNowCents: 15000, totalNowCents: 21800 + 15000,
+    });
+    // Sem o período no link: o mensal.
     expect(checkoutTotals(offer, { equipmentMode: 'sale', farboInstall: false, periodMonths: 6 }).periodMonths).toBe(1);
   });
 

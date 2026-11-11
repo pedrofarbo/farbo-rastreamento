@@ -1725,6 +1725,10 @@ export const meApi = {
     equipmentMode?: 'sale' | 'loan';
     /** O rastreador incluso instalado pelos instaladores da Farbo (no comodato, ela já é da Farbo). */
     farboInstall?: boolean;
+    /** A instalação com o relé do bloqueio, quando o representante que indicou oferece a escolha. */
+    installBlocking?: boolean;
+    /** O semestral (6) ou o anual (12) do representante que indicou o cliente; ausente, o mensal. */
+    periodMonths?: number;
   }) =>
     api.post<TrackerOrderResult>('/api/me/trackers', input),
   /** As formas de entrega até o endereço do cliente (preço e prazo). */

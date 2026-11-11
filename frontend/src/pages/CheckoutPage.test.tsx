@@ -201,8 +201,8 @@ describe('a contratação pelo site', () => {
   it('o semestral e o anual pelo link: o valor do período no Pix, o rastreador no valor e o pedido com os meses', async () => {
     offer = offerWith({
       periods: [
-        { months: 6, planName: 'Plano Semestral', cents: 20000 },
-        { months: 12, planName: 'Plano Anual', cents: 40000 },
+        { months: 6, planName: 'Plano Semestral', cents: 20000, loanCents: 21800 },
+        { months: 12, planName: 'Plano Anual', cents: 40000, loanCents: 43600 },
       ],
     });
     await render();
@@ -214,11 +214,14 @@ describe('a contratação pelo site', () => {
     expect(text()).toContain('Hoje, no PixR$ 200,00 + frete');
     expect(text()).toContain('Rastreador inclusono valor do plano');
     expect(text()).not.toContain('Se encerrar antes da 10ª mensalidade');
-    // O comodato volta ao mensal (o semestral e o anual são com o rastreador incluso).
+    // No comodato, o semestral continua: o valor com a garantia de troca de cada mês.
     await click(radio('Comodato'));
-    expect(text()).not.toContain('Como pagar');
+    expect(radio('Semestral').checked).toBe(true);
+    expect(text()).toContain('SemestralR$ 218,00/semestre');
+    expect(text()).toContain('com a garantia de troca do rastreador emprestado');
+    expect(text()).toContain('Comodato (emprestado)+R$ 18,00 no semestre');
     await click(radio('Rastreador incluso'));
-    expect(radio('Mensal').checked).toBe(true);
+    expect(radio('Semestral').checked).toBe(true);
     await click(radio('Anual'));
     await fillUntilPayment();
     expect(text()).toContain('1º ano · Plano AnualR$ 400,00');
@@ -227,6 +230,22 @@ describe('a contratação pelo site', () => {
     await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
     await click(button('Pagar'));
     expect(placed[0]).toMatchObject({ equipmentMode: 'sale', periodMonths: 12 });
+  });
+
+  it('o semestral no comodato: a garantia de cada mês no valor, a instalação no Pix e a desinstalação no fim', async () => {
+    offer = offerWith({ periods: [{ months: 6, planName: 'Plano Semestral', cents: 20000, loanCents: 21800 }] });
+    await render();
+    await click(radio('Comodato'));
+    await click(radio('Semestral'));
+    expect(text()).toContain('Hoje, no PixR$ 368,00 + frete');
+    await fillUntilPayment();
+    expect(text()).toContain('1º semestre · Plano SemestralR$ 218,00');
+    expect(text()).toContain('Depois, R$ 218,00 a cada 6 meses, no dia 10');
+    expect(text()).toContain('O rastreador é emprestado; R$ 18,00 do valor é a garantia de troca dele');
+    expect(text()).toContain('no fim, a desinstalação custa R$ 85,00');
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar'));
+    expect(placed[0]).toMatchObject({ equipmentMode: 'loan', periodMonths: 6, farboInstall: false });
   });
 
   it('sem o semestral e o anual no link: só o mensal, e o pedido sem os meses', async () => {

@@ -234,6 +234,86 @@ describe('a pessoa física paga no ato', () => {
     expect(ordered[0]).toMatchObject({ farboInstall: true });
   });
 
+  it('cliente de um representante com o semestral e o anual: o período escolhido no app, sem a promoção', async () => {
+    terms = {
+      payNow: true,
+      chargeDate: '2026-10-23',
+      launchPromo: { months: 3, monthlyCents: 2990 },
+      periods: [
+        { months: 6, planName: 'Plano Semestral', cents: 20000 },
+        { months: 12, planName: 'Plano Anual', cents: 40000 },
+      ],
+    };
+    quote = { enabled: false, zipCode: '', problem: '', arrange: false, quotes: [] };
+    await openWizard();
+    await act(async () => button('Voltar').click());
+    await flush();
+    expect(text()).toContain('Mensal · R$ 69,90/mês, uma fatura por mês.');
+    expect(text()).toContain('Semestral · R$ 200,00 a cada 6 meses (R$ 33,33 por mês), com o rastreador incluso no valor');
+    expect(text()).toContain('Promoção de pré-lançamento');
+    const semiannual = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="period-choice"]'))[1];
+    await act(async () => semiannual.click());
+    // A promoção é do mensal.
+    expect(text()).not.toContain('Promoção de pré-lançamento');
+    await act(async () => button('Continuar').click());
+    await flush();
+    expect(text()).toContain('no Plano Semestral: hoje você paga o 1º semestre');
+    expect(text()).toContain('1º semestreR$ 200,00');
+    expect(text()).toContain('O período começa hoje; o próximo vence em 6 meses, no dia da conta.');
+    expect(text()).toContain('Assinatura: Plano Semestral, a cada 6 meses, no dia 10');
+    await act(async () => button('Confirmar pedido').click());
+    await flush();
+    expect(ordered[0]).toMatchObject({ periodMonths: 6, launchPromo: false });
+  });
+
+  it('cliente de um representante em comodato com o semestral e a instalação com bloqueio', async () => {
+    terms = {
+      payNow: true,
+      chargeDate: '2026-10-23',
+      equipmentModes: 'loan',
+      installDirect: true,
+      install: { enabled: true, priceCents: 10000, blockingCents: 18000 },
+      loan: { enabled: true, surchargeCents: 300, installFeeCents: 10000, uninstallFeeCents: 8500 },
+      periods: [{ months: 6, planName: 'Plano Semestral', cents: 20000, loanCents: 21800 }],
+    };
+    quote = { enabled: false, zipCode: '', problem: '', arrange: false, quotes: [] };
+    await openWizard();
+    await act(async () => button('Voltar').click());
+    await flush();
+    expect(text()).toContain('Semestral · R$ 218,00 a cada 6 meses (R$ 36,33 por mês), com a garantia de troca do rastreador emprestado');
+    expect(text()).toContain('Sem bloqueio · R$ 100,00, pago direto a ele no dia');
+    expect(text()).toContain('Com bloqueio · com o relé que bloqueia o motor pelo app; R$ 180,00, pago direto a ele no dia');
+    await act(async () => Array.from(document.querySelectorAll<HTMLInputElement>('input[name="period-choice"]'))[1].click());
+    await act(async () => Array.from(document.querySelectorAll<HTMLInputElement>('input[name="install-blocking"]'))[1].click());
+    await act(async () => button('Continuar').click());
+    await flush();
+    expect(text()).toContain('1º semestreR$ 218,00');
+    await act(async () => button('Confirmar pedido').click());
+    await flush();
+    expect(ordered[0]).toMatchObject({ equipmentMode: 'loan', periodMonths: 6, installBlocking: true });
+  });
+
+  it('o rastreador incluso pelo representante com a escolha do bloqueio: sem, com ou por conta própria', async () => {
+    terms = {
+      payNow: true, chargeDate: '2026-10-23', installDirect: true, install: { enabled: true, priceCents: 10000, blockingCents: 18000 },
+    };
+    quote = { enabled: false, zipCode: '', problem: '', arrange: false, quotes: [] };
+    await openWizard();
+    await act(async () => button('Voltar').click());
+    await flush();
+    const options = () => Array.from(document.querySelectorAll<HTMLInputElement>('input[name="install-choice"]'));
+    expect(options()).toHaveLength(3);
+    expect(text()).toContain('Com o representante, com bloqueio · com o relé que bloqueia o motor pelo app; R$ 180,00');
+    await act(async () => options()[2].click());
+    expect(options()[2].checked).toBe(true);
+    await act(async () => button('Continuar').click());
+    await flush();
+    await act(async () => button('Confirmar pedido').click());
+    await flush();
+    expect(ordered[0]).toMatchObject({ farboInstall: true, installBlocking: true });
+    expect(ordered[0]).not.toHaveProperty('periodMonths');
+  });
+
   it('o rastreador incluso: instalar por conta própria ou com os instaladores da Farbo (pago no pedido)', async () => {
     terms = { payNow: true, chargeDate: '2026-10-23', install: { enabled: true, priceCents: 15000 } };
     quote = { enabled: false, zipCode: '', problem: '', arrange: false, quotes: [] };

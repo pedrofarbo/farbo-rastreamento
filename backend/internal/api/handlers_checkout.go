@@ -64,16 +64,35 @@ type checkoutView struct {
 	ContractVersion string `json:"contractVersion"`
 	ShippingEnabled bool   `json:"shippingEnabled"`
 	// Periods: o semestral e o anual (o valor do período, com o rastreador
-	// incluso), quando o link do representante — ou o site — os tem ligados;
-	// vazio, só o mensal.
+	// incluso; no comodato, com a garantia de troca de cada mês), quando o
+	// link do representante — ou o site — os tem ligados; vazio, só o mensal.
 	Periods []periodOffer `json:"periods"`
 }
 
-// periodOffer é um plano pago por período: os meses, o nome e o valor.
+// periodOffers são o semestral e o anual ligados (vazio: só o mensal); com o
+// comodato oferecido, o valor nele soma a garantia de troca de cada mês.
+func periodOffers(recurrence *orders.Recurrence, loan *orders.LoanOffer) []periodOffer {
+	var out []periodOffer
+	for _, months := range []int{billing.PeriodSemiannual, billing.PeriodAnnual} {
+		if cents := recurrence.PeriodCents(months); cents > 0 {
+			p := periodOffer{Months: months, PlanName: orders.PeriodPlanName(months), Cents: cents}
+			if loan != nil {
+				p.LoanCents = cents + loan.SurchargeCents*months
+			}
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// periodOffer é um plano pago por período: os meses, o nome e o valor (com o
+// rastreador incluso) e, quando há o comodato, o valor nele (com a garantia
+// de troca de cada mês do período).
 type periodOffer struct {
-	Months   int    `json:"months"`
-	PlanName string `json:"planName"`
-	Cents    int    `json:"cents"`
+	Months    int    `json:"months"`
+	PlanName  string `json:"planName"`
+	Cents     int    `json:"cents"`
+	LoanCents int    `json:"loanCents,omitempty"`
 }
 
 func (s *Server) handleCheckoutOffer(w http.ResponseWriter, r *http.Request) {
@@ -125,20 +144,14 @@ func (s *Server) handleCheckoutOffer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// O semestral e o anual: os do link do representante, ou os do site (só
-	// com o rastreador incluso: o link só de comodato não os tem).
-	if view.EquipmentModes != orders.EquipmentLoanOnly {
-		recurrence, err := s.Orders.LinkRecurrence(r.Context(), opts, s.referralFor(r, r.URL.Query().Get("ref")))
-		if err != nil {
-			handleStoreError(w, err, "contratação indisponível")
-			return
-		}
-		for _, months := range []int{billing.PeriodSemiannual, billing.PeriodAnnual} {
-			if cents := recurrence.PeriodCents(months); cents > 0 {
-				view.Periods = append(view.Periods, periodOffer{Months: months, PlanName: orders.PeriodPlanName(months), Cents: cents})
-			}
-		}
+	// O semestral e o anual: os do link do representante, ou os do site (no
+	// comodato, com a garantia de troca de cada mês somada).
+	recurrence, err := s.Orders.LinkRecurrence(r.Context(), opts, s.referralFor(r, r.URL.Query().Get("ref")))
+	if err != nil {
+		handleStoreError(w, err, "contratação indisponível")
+		return
 	}
+	view.Periods = periodOffers(recurrence, view.Loan)
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, view)
 }

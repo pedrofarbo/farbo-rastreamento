@@ -99,8 +99,8 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 	default:
 		return Order{}, ValidationError{"escolha o rastreador: incluso ou em comodato"}
 	}
-	// O semestral ou o anual: o valor do período, com o rastreador incluso
-	// nele (nada somado).
+	// O semestral ou o anual: o valor do período (com o rastreador incluso
+	// nele, nada somado; no comodato, com a garantia de troca de cada mês).
 	if in.PeriodMonths > 1 {
 		if err := s.periodPlan(ctx, opts, in, &order); err != nil {
 			return Order{}, err
@@ -129,7 +129,8 @@ func withBlocking(install *InstallPrices, blocking bool, order *Order) error {
 }
 
 // periodPlan põe no pedido o semestral ou o anual: o valor do período (o do
-// link do representante, ou o do site), com o rastreador incluso no valor.
+// link do representante, ou o do site). Com o rastreador incluso, ele já está
+// no valor; no comodato, soma-se a garantia de troca de cada mês do período.
 func (s *Service) periodPlan(ctx context.Context, opts *Options, in CheckoutChoice, order *Order) error {
 	if !billing.ValidPeriod(in.PeriodMonths) {
 		return ValidationError{"a recorrência é mensal, semestral ou anual"}
@@ -138,14 +139,23 @@ func (s *Service) periodPlan(ctx context.Context, opts *Options, in CheckoutChoi
 	if err != nil {
 		return err
 	}
-	cents := recurrence.PeriodCents(in.PeriodMonths)
-	switch {
-	case cents == 0:
+	return applyPeriod(recurrence, in.PeriodMonths, order)
+}
+
+// applyPeriod troca o plano do pedido pelo semestral ou pelo anual: o valor
+// do período (com o rastreador incluso nele; no comodato, mais a garantia de
+// troca de cada mês), sem a parte do rastreador nas mensalidades.
+func applyPeriod(recurrence *Recurrence, months int, order *Order) error {
+	cents := recurrence.PeriodCents(months)
+	if cents == 0 {
 		return ValidationError{"o plano semestral e o anual não estão disponíveis agora: escolha o mensal"}
-	case order.Terms.EquipmentMode != billing.EquipmentSale:
-		return ValidationError{"o semestral e o anual são com o rastreador incluso: escolha o rastreador incluso ou o plano mensal"}
 	}
-	order.Plan.PlanName, order.Plan.PriceCents, order.Plan.PeriodMonths = PeriodPlanName(in.PeriodMonths), cents, in.PeriodMonths
+	name := PeriodPlanName(months)
+	if guarantee := order.Terms.GuaranteeCents; guarantee > 0 {
+		cents += guarantee * months
+		name += GuaranteeName
+	}
+	order.Plan.PlanName, order.Plan.PriceCents, order.Plan.PeriodMonths = name, cents, months
 	order.Tracker = Tracker{}
 	return nil
 }

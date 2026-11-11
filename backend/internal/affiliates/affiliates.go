@@ -270,8 +270,6 @@ func (in Input) Normalize() (Input, error) {
 			return in, invalid("Os valores do semestral e do anual vão de R$ 0 a R$ 100.000.")
 		case r.Enabled && (r.SemiannualCents == 0 || r.AnnualCents == 0):
 			return in, invalid("Para ligar o semestral e o anual, informe os dois valores.")
-		case r.Enabled && in.EquipmentModes == orders.EquipmentLoanOnly:
-			return in, invalid("O semestral e o anual são com o rastreador incluso: o link só de comodato não os oferece.")
 		}
 	}
 	return in, nil

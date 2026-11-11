@@ -323,11 +323,22 @@ func (r *Repository) CancelSubscription(ctx context.Context, id uuid.UUID, today
 	var balance, uninstall *Invoice
 	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
 		// O semestral ou o anual com o período pago: fica ativo até o fim
-		// dele e não renova (sem devolução).
+		// dele e não renova (sem devolução). No comodato, a desinstalação
+		// fica para o fim (dispensada agora, ela sai da assinatura).
 		scheduled, err := scheduleEnd(ctx, tx, id, today)
-		if err != nil || scheduled != nil {
-			sub = scheduled
+		if err != nil {
 			return err
+		}
+		if scheduled != nil {
+			if opts.WaiveUninstall && scheduled.UninstallFeeCents > 0 {
+				if _, err := tx.Exec(ctx, `UPDATE subscriptions SET uninstall_fee_cents = 0, updated_at = NOW() WHERE id = $1`,
+					id); err != nil {
+					return err
+				}
+				scheduled.UninstallFeeCents = 0
+			}
+			sub = scheduled
+			return nil
 		}
 		sub, err = scanSubscription(tx.QueryRow(ctx, `
 			UPDATE subscriptions SET status = 'CANCELED', canceled_at = NOW(), updated_at = NOW()
@@ -363,22 +374,8 @@ func (r *Repository) CancelSubscription(ctx context.Context, id uuid.UUID, today
 			}
 		}
 		// O comodato: a desinstalação vai para a próxima fatura da conta.
-		if sub.EquipmentMode == EquipmentLoan && sub.UninstallFeeCents > 0 && !opts.WaiveUninstall {
-			due, err := ChargeDate(ctx, tx, sub.CustomerID, today, sub.DueDay)
-			if err != nil {
-				return err
-			}
-			description := "Desinstalação do rastreador (comodato)"
-			var vehicle string
-			if sub.VehicleID != nil {
-				if err := tx.QueryRow(ctx, `SELECT name || COALESCE(' · ' || plate, '') FROM vehicles WHERE id = $1`,
-					*sub.VehicleID).Scan(&vehicle); err == nil {
-					description += ": " + vehicle
-				}
-			}
-			if uninstall, err = InsertInvoice(ctx, tx, &Invoice{
-				CustomerID: sub.CustomerID, Description: description, AmountCents: sub.UninstallFeeCents, DueDate: due,
-			}); err != nil {
+		if !opts.WaiveUninstall {
+			if uninstall, err = uninstallInvoice(ctx, tx, sub, today); err != nil {
 				return err
 			}
 		}
@@ -450,16 +447,67 @@ func scheduleEnd(ctx context.Context, tx pgx.Tx, id uuid.UUID, today Date) (*Sub
 		UPDATE subscriptions SET ends_on = $2, updated_at = NOW() WHERE id = $1 RETURNING `+subscriptionColumns, id, end.Time))
 }
 
+// uninstallInvoice lança, na próxima fatura da conta, a desinstalação do
+// rastreador do comodato encerrado (nula fora do comodato ou sem a taxa).
+func uninstallInvoice(ctx context.Context, tx pgx.Tx, sub *Subscription, today Date) (*Invoice, error) {
+	if sub.EquipmentMode != EquipmentLoan || sub.UninstallFeeCents <= 0 {
+		return nil, nil
+	}
+	due, err := ChargeDate(ctx, tx, sub.CustomerID, today, sub.DueDay)
+	if err != nil {
+		return nil, err
+	}
+	description := "Desinstalação do rastreador (comodato)"
+	var vehicle string
+	if sub.VehicleID != nil {
+		if err := tx.QueryRow(ctx, `SELECT name || COALESCE(' · ' || plate, '') FROM vehicles WHERE id = $1`,
+			*sub.VehicleID).Scan(&vehicle); err == nil {
+			description += ": " + vehicle
+		}
+	}
+	return InsertInvoice(ctx, tx, &Invoice{
+		CustomerID: sub.CustomerID, Description: description, AmountCents: sub.UninstallFeeCents, DueDate: due,
+	})
+}
+
 // FinishEnded encerra os semestrais e anuais cancelados cujo período pago
-// acabou (o fim agendado chegou).
+// acabou (o fim agendado chegou); no comodato, com a desinstalação na
+// próxima fatura da conta (e o rastreador entra na fila da retirada).
 func (r *Repository) FinishEnded(ctx context.Context, today Date) (int64, error) {
-	tag, err := r.db.Exec(ctx, `
-		UPDATE subscriptions SET status = 'CANCELED', canceled_at = NOW(), updated_at = NOW()
-		WHERE status = 'ACTIVE' AND ends_on IS NOT NULL AND ends_on <= $1`, today.Time)
+	var ended int64
+	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			UPDATE subscriptions SET status = 'CANCELED', canceled_at = NOW(), updated_at = NOW()
+			WHERE status = 'ACTIVE' AND ends_on IS NOT NULL AND ends_on <= $1
+			RETURNING `+subscriptionColumns, today.Time)
+		if err != nil {
+			return err
+		}
+		var subs []*Subscription
+		for rows.Next() {
+			sub, err := scanSubscription(rows)
+			if err != nil {
+				rows.Close()
+				return err
+			}
+			subs = append(subs, sub)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		ended = int64(len(subs))
+		for _, sub := range subs {
+			if _, err := uninstallInvoice(ctx, tx, sub, today); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return 0, database.MapError(err)
 	}
-	return tag.RowsAffected(), nil
+	return ended, nil
 }
 
 func (r *Repository) ListSubscriptions(ctx context.Context, customerID uuid.UUID) ([]*Subscription, error) {
