@@ -199,6 +199,38 @@ describe('o cadastro do afiliado', () => {
     expect(calls[0][1]).toMatchObject({ recurrence: { enabled: true, semiannualCents: 20000, annualCents: 45000 } });
   });
 
+  it('a comissão por tipo de assinatura: o semestral com valor fixo por semestre, o anual em percentual do ano', async () => {
+    await render();
+    await setValue(control<HTMLInputElement>('Nome'), 'Bia Representante');
+    expect(control<HTMLSelectElement>('Comissão no semestral').value).toBe('');
+    expect(text()).toContain('A do mensal, pelos meses: paga a fatura, entram 6 meses de comissão.');
+    await setValue(control<HTMLSelectElement>('Comissão no semestral'), 'fixed');
+    await setValue(control<HTMLInputElement>('Valor por semestre pago (R$)'), '30,00');
+    await setValue(control<HTMLSelectElement>('Comissão no anual'), 'percent');
+    await setValue(control<HTMLInputElement>('Percentual do ano pago (%)'), '150');
+    await act(async () => button('Criar afiliado').click());
+    expect(text()).toContain('Percentual da comissão do anual inválido');
+    expect(calls).toHaveLength(0);
+    await setValue(control<HTMLInputElement>('Percentual do ano pago (%)'), '10');
+    await act(async () => button('Criar afiliado').click());
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0][1]).toMatchObject({
+      semiannualCommission: { type: 'fixed', cents: 3000, bps: 0 },
+      annualCommission: { type: 'percent', cents: 0, bps: 1000 },
+    });
+  });
+
+  it('sem regra própria, o semestral e o anual vão como o mensal', async () => {
+    await render();
+    await setValue(control<HTMLInputElement>('Nome'), 'Caio Mensal');
+    await act(async () => button('Criar afiliado').click());
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0][1]).toMatchObject({
+      semiannualCommission: { type: '', cents: 0, bps: 0 },
+      annualCommission: { type: '', cents: 0, bps: 0 },
+    });
+  });
+
   it('valor fixo continua como antes', async () => {
     await render();
     await setValue(control<HTMLInputElement>('Nome'), 'João');

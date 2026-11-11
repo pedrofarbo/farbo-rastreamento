@@ -10,7 +10,7 @@ import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { bpsToInput, centsToInput, formatMoney, formatPhoneInput, parseMoney, parsePercentBps } from '@/services/format';
 import { partnerUrl, referralCode, referralUrl } from '@/services/referral';
-import type { Affiliate, AffiliateInput, CommissionType, EquipmentModes, InstallPrices, KindPrices } from '@/types';
+import type { Affiliate, AffiliateInput, CommissionType, EquipmentModes, InstallPrices, KindPrices, PeriodCommission } from '@/types';
 
 import company from '../company/Company.module.css';
 import styles from './Affiliates.module.css';
@@ -22,6 +22,11 @@ interface Draft {
   commissionType: CommissionType;
   commission: string;
   percent: string;
+  /** A comissão própria do semestral e a do anual ('': a do mensal, pelos meses); o valor (R$ ou %). */
+  semiannualType: PeriodCommission['type'];
+  semiannualValue: string;
+  annualType: PeriodCommission['type'];
+  annualValue: string;
   /** A mensalidade pelo link por tipo de veículo (falso: o preço normal do site). */
   planByKind: boolean;
   planMotorcycle: string;
@@ -63,6 +68,10 @@ function draftOf(a: Affiliate | null, defaultCents: number): Draft {
     commissionType: a?.commissionType ?? 'fixed',
     commission: centsToInput(a?.commissionCents ?? defaultCents),
     percent: a && a.commissionBps > 0 ? bpsToInput(a.commissionBps) : '',
+    semiannualType: a?.semiannualCommission?.type ?? '',
+    semiannualValue: periodValue(a?.semiannualCommission),
+    annualType: a?.annualCommission?.type ?? '',
+    annualValue: periodValue(a?.annualCommission),
     planByKind: !!a?.planPrices,
     planMotorcycle: a?.planPrices ? centsToInput(a.planPrices.motorcycleCents) : '',
     planCar: a?.planPrices ? centsToInput(a.planPrices.carCents) : '',
@@ -87,6 +96,28 @@ function draftOf(a: Affiliate | null, defaultCents: number): Draft {
     notes: a?.notes ?? '',
     active: a?.active ?? true,
   };
+}
+
+/** O valor da comissão do período, como na tela (R$ ou %). */
+function periodValue(p?: PeriodCommission): string {
+  if (p?.type === 'fixed') return centsToInput(p.cents);
+  if (p?.type === 'percent') return bpsToInput(p.bps);
+  return '';
+}
+
+/** A comissão do período para o servidor; inválida, a mensagem. */
+function periodCommission(type: PeriodCommission['type'], value: string, name: string): PeriodCommission | string {
+  if (type === 'fixed') {
+    const cents = parseMoney(value);
+    return cents === null ? `Valor da comissão do ${name} inválido (por exemplo, 30,00).` : { type, cents, bps: 0 };
+  }
+  if (type === 'percent') {
+    const bps = parsePercentBps(value);
+    return bps === null || bps <= 0 || bps > 10_000
+      ? `Percentual da comissão do ${name} inválido: de 0,01 a 100.`
+      : { type, cents: 0, bps };
+  }
+  return { type: '', cents: 0, bps: 0 };
 }
 
 /** O código que o servidor vai usar: o digitado, ou o do @, ou o do nome. */
@@ -170,6 +201,14 @@ export function AffiliateModal({
       setError('Percentual inválido: de 0,01 a 100 (por exemplo, 10 ou 12,5).');
       return;
     }
+    const semiannualCommission = periodCommission(draft.semiannualType, draft.semiannualValue, 'semestral');
+    const annualCommission = periodCommission(draft.annualType, draft.annualValue, 'anual');
+    for (const p of [semiannualCommission, annualCommission]) {
+      if (typeof p === 'string') {
+        setError(p);
+        return;
+      }
+    }
     let planPrices: KindPrices | null = null;
     if (draft.planByKind) {
       const [motorcycleCents, carCents, truckCents] = [draft.planMotorcycle, draft.planCar, draft.planTruck].map(parseMoney);
@@ -243,6 +282,8 @@ export function AffiliateModal({
       listingArea: draft.listingArea,
       listingWhatsapp: draft.listingWhatsapp,
       recurrence,
+      semiannualCommission: semiannualCommission as PeriodCommission,
+      annualCommission: annualCommission as PeriodCommission,
       email: draft.email,
       phone: draft.phone,
       pixKey: draft.pixKey,
@@ -385,7 +426,7 @@ export function AffiliateModal({
             }
           />
           <SelectField
-            label="Comissão"
+            label="Comissão no mensal"
             value={draft.commissionType}
             onChange={(e) => set('commissionType', e.target.value as CommissionType)}
             hint="Por veículo do cliente indicado, em cada mês em que a mensalidade dele é paga."
@@ -415,6 +456,41 @@ export function AffiliateModal({
               hint={affiliate ? 'O valor novo vale para as mensalidades ainda não pagas.' : `Padrão: ${formatMoney(defaultCents)}.`}
             />
           )}
+          {([
+            ['semiannual', 'semestral', 'semestre', 6],
+            ['annual', 'anual', 'ano', 12],
+          ] as const).map(([key, name, period, months]) => {
+            const type = key === 'semiannual' ? draft.semiannualType : draft.annualType;
+            const value = key === 'semiannual' ? draft.semiannualValue : draft.annualValue;
+            return (
+              <div key={key} className={styles.periodCommission}>
+                <SelectField
+                  label={`Comissão no ${name}`}
+                  value={type}
+                  onChange={(e) => set(`${key}Type`, e.target.value as PeriodCommission['type'])}
+                  hint={
+                    type === ''
+                      ? `A do mensal, pelos meses: paga a fatura, entram ${months} meses de comissão.`
+                      : `De uma vez, no mês em que o cliente paga o ${period}.`
+                  }
+                >
+                  <option value="">Como o mensal ({months} meses de comissão)</option>
+                  <option value="fixed">Valor fixo por {period} pago</option>
+                  <option value="percent">Percentual do {period} pago</option>
+                </SelectField>
+                {type !== '' && (
+                  <TextField
+                    label={type === 'fixed' ? `Valor por ${period} pago (R$)` : `Percentual do ${period} pago (%)`}
+                    value={value}
+                    inputMode="decimal"
+                    placeholder={type === 'fixed' ? '30,00' : '10'}
+                    onChange={(e) => set(`${key}Value`, e.target.value)}
+                    hint={type === 'percent' ? 'Sobre o valor pago, líquido dos impostos da Farbo (como o do mensal).' : undefined}
+                  />
+                )}
+              </div>
+            );
+          })}
           <SelectField
             label="Mensalidade pelo link"
             value={draft.planByKind ? 'kind' : 'normal'}

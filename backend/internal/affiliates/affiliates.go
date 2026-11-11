@@ -112,6 +112,44 @@ type Affiliate struct {
 	// Recurrence: o semestral e o anual pelo link dele (pagos por período,
 	// com o rastreador incluso), ligados ou não, e os valores.
 	Recurrence orders.Recurrence `json:"recurrence"`
+	// A comissão do semestral e a do anual (Type vazio: seguem a do mensal,
+	// pelos meses do período).
+	SemiannualCommission PeriodCommission `json:"semiannualCommission"`
+	AnnualCommission     PeriodCommission `json:"annualCommission"`
+}
+
+// PeriodCommission é a comissão própria do semestral ou do anual: valor fixo
+// por período pago (Cents) ou percentual do valor pago (Bps, líquido dos
+// impostos da Farbo), de uma vez no mês do pagamento. Type vazio: segue a do
+// mensal, pelos meses do período.
+type PeriodCommission struct {
+	Type  string `json:"type"`
+	Cents int    `json:"cents"`
+	Bps   int    `json:"bps"`
+}
+
+// valid confere a comissão do período (vazia vale).
+func (p PeriodCommission) valid() bool {
+	switch p.Type {
+	case "":
+		return true
+	case CommissionFixed:
+		return p.Cents >= 0 && p.Cents <= 100_000_00
+	case CommissionPercent:
+		return p.Bps > 0 && p.Bps <= 10000
+	}
+	return false
+}
+
+// columns são os valores no banco: o tipo e só o valor do tipo.
+func (p PeriodCommission) columns() (string, int, int) {
+	switch p.Type {
+	case CommissionFixed:
+		return p.Type, p.Cents, 0
+	case CommissionPercent:
+		return p.Type, 0, p.Bps
+	}
+	return "", 0, 0
 }
 
 // Input é o cadastro de um afiliado. Sem CommissionType, o afiliado novo fica
@@ -147,6 +185,10 @@ type Input struct {
 	// Recurrence: o semestral e o anual pelo link (nil: no novo, desligado
 	// com os valores padrão; na edição, ficam como estão).
 	Recurrence *orders.Recurrence `json:"recurrence"`
+	// A comissão do semestral e a do anual (nil: no novo, a do mensal; na
+	// edição, ficam como estão).
+	SemiannualCommission *PeriodCommission `json:"semiannualCommission"`
+	AnnualCommission     *PeriodCommission `json:"annualCommission"`
 }
 
 var handlePattern = regexp.MustCompile(`^[A-Za-z0-9._]{1,30}$`)
@@ -215,6 +257,11 @@ func (in Input) Normalize() (Input, error) {
 			return in, invalid("WhatsApp da landing inválido: informe DDD e número, ex.: (11) 99999-0000.")
 		}
 		in.ListingWhatsApp = phone
+	}
+	for _, p := range []*PeriodCommission{in.SemiannualCommission, in.AnnualCommission} {
+		if p != nil && !p.valid() {
+			return in, invalid("Comissão do semestral ou do anual inválida: valor fixo de R$ 0 a R$ 100.000 ou percentual de 0,01%% a 100%%.")
+		}
 	}
 	if r := in.Recurrence; r != nil {
 		const max = 100_000_00

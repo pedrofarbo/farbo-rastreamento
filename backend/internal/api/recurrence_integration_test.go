@@ -222,3 +222,117 @@ func TestPeriodPlans(t *testing.T) {
 		t.Fatalf("no fim do período = %+v (%v)", got, err)
 	}
 }
+
+// A comissão do semestral e do anual com regra própria: o valor fixo por
+// semestre pago e o percentual do ano pago, cada um uma comissão só, no mês
+// do pagamento; sem regra própria, a do mensal pelos meses (TestPeriodPlans).
+// A página do representante mostra as regras. Precisa de
+// FARBO_TEST_DATABASE_URL.
+func TestPeriodCommissionRules(t *testing.T) {
+	var bs *billing.Service
+	var aff *affiliates.Service
+	env, _ := newLeadsEnv(t, func(d *Deps) {
+		bs, aff = d.Billing, d.Affiliates
+		d.Config.Catalog.SetupDueDays = 0
+		d.Orders = orders.NewService(d.DB, d.Billing, d.Vehicles, d.Config.Catalog, d.Log)
+		doc, err := contract.Render(contract.Params{Company: config.Company{Name: "Farbo Rastreadores"}, HistoryOptions: []int{7, 14, 30}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		svc := contract.NewService(d.DB, doc, &recordingContractMailer{}, d.Log)
+		svc.SetSync()
+		d.Contract = svc
+	})
+	ctx := context.Background()
+	bs.SetClock(func() time.Time { return time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC) })
+	admin := env.login(auth.RoleAdmin + "@leads.test")
+
+	// Regra inválida, não.
+	env.must(admin, http.MethodPost, "/api/affiliates", map[string]any{"name": "Errada", "code": "errada", "active": true,
+		"semiannualCommission": map[string]any{"type": "percent", "bps": 0}}, http.StatusBadRequest)
+	var bia affiliates.Affiliate
+	_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/affiliates", map[string]any{
+		"name": "Bia Representante", "code": "bia", "active": true, "commissionCents": 500, "reportPassword": "",
+		"recurrence":           map[string]any{"enabled": true, "semiannualCents": 20000, "annualCents": 40000},
+		"semiannualCommission": map[string]any{"type": "fixed", "cents": 3000},
+		"annualCommission":     map[string]any{"type": "percent", "bps": 1000},
+	}, http.StatusCreated), &bia)
+	if bia.SemiannualCommission != (affiliates.PeriodCommission{Type: "fixed", Cents: 3000}) ||
+		bia.AnnualCommission != (affiliates.PeriodCommission{Type: "percent", Bps: 1000}) {
+		t.Fatalf("regras = %+v / %+v", bia.SemiannualCommission, bia.AnnualCommission)
+	}
+	// A edição sem os campos (telas antigas) não muda as regras.
+	var edited affiliates.Affiliate
+	_ = json.Unmarshal(env.must(admin, http.MethodPatch, "/api/affiliates/"+bia.ID.String(), map[string]any{
+		"name": "Bia Representante", "code": "bia", "active": true}, http.StatusOK), &edited)
+	if edited.SemiannualCommission.Type != "fixed" || edited.AnnualCommission.Type != "percent" {
+		t.Fatalf("depois da edição = %+v / %+v", edited.SemiannualCommission, edited.AnnualCommission)
+	}
+
+	var version string
+	var offer struct {
+		ContractVersion string `json:"contractVersion"`
+	}
+	_ = json.Unmarshal(env.must("", http.MethodGet, "/api/public/checkout", nil, http.StatusOK), &offer)
+	version = offer.ContractVersion
+	checkout := func(email, document string, months int) billing.Subscription {
+		t.Helper()
+		var r struct {
+			Subscription billing.Subscription `json:"subscription"`
+		}
+		_ = json.Unmarshal(env.must("", http.MethodPost, "/api/public/checkout", map[string]any{
+			"name": "Cliente " + email, "email": email, "phone": "(11) 95555-0000", "document": document, "password": "senha-forte-1",
+			"vehicle": map[string]any{"kind": "CAR", "brand": "Fiat", "model": "Uno", "plate": ""},
+			"address": map[string]any{"zipCode": "01305-000", "street": "Rua Augusta", "number": "500", "district": "Consolação",
+				"city": "São Paulo", "state": "SP"},
+			"contractVersion": version, "accept": true, "ref": "bia", "periodMonths": months,
+		}, http.StatusCreated), &r)
+		return r.Subscription
+	}
+	semester := checkout("semestre@site.test", "529.982.247-25", 6)
+	year := checkout("ano@site.test", "390.533.447-05", 12)
+	if _, err := env.db.Exec(ctx, `UPDATE invoices SET status = 'PAID', paid_at = NOW(), paid_via = 'MANUAL'
+		WHERE subscription_id = ANY($1)`, []any{semester.ID, year.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := aff.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	commissions := func(sub billing.Subscription) map[string]int {
+		t.Helper()
+		out := map[string]int{}
+		rows, err := env.db.Query(ctx, `SELECT to_char(month, 'YYYY-MM'), amount_cents FROM affiliate_commissions WHERE subscription_id = $1`, sub.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var m string
+			var cents int
+			_ = rows.Scan(&m, &cents)
+			out[m] = cents
+		}
+		return out
+	}
+	if got := commissions(semester); len(got) != 1 || got["2026-11"] != 3000 {
+		t.Errorf("comissão do semestral = %v", got)
+	}
+	if got := commissions(year); len(got) != 1 || got["2026-11"] != 4000 {
+		t.Errorf("comissão do anual = %v", got)
+	}
+	// De novo: nada muda.
+	if created, removed, err := aff.Reconcile(ctx); err != nil || created != 0 || removed != 0 {
+		t.Fatalf("de novo: criadas %d, apagadas %d (%v)", created, removed, err)
+	}
+
+	// A página dela mostra as regras.
+	var report struct {
+		SemiannualCommission *affiliates.PeriodCommission `json:"semiannualCommission"`
+		AnnualCommission     *affiliates.PeriodCommission `json:"annualCommission"`
+	}
+	_ = json.Unmarshal(env.must("", http.MethodGet, "/api/public/partner/"+bia.ReportToken, nil, http.StatusOK), &report)
+	if report.SemiannualCommission == nil || report.SemiannualCommission.Cents != 3000 || report.AnnualCommission == nil ||
+		report.AnnualCommission.Bps != 1000 {
+		t.Errorf("página = %+v / %+v", report.SemiannualCommission, report.AnnualCommission)
+	}
+}

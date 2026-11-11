@@ -2894,10 +2894,24 @@ export interface Affiliate {
   listingWhatsapp?: string;
   /** O semestral e o anual pelo link dele. */
   recurrence?: Recurrence;
+  /** A comissão própria do semestral e a do anual (type vazio: a do mensal, pelos meses). */
+  semiannualCommission?: PeriodCommission;
+  annualCommission?: PeriodCommission;
 }
 
 /** A comissão do afiliado: um valor fixo por veículo ou um percentual da mensalidade. */
 export type CommissionType = 'fixed' | 'percent';
+
+/**
+ * A comissão própria do semestral ou do anual: valor fixo por período pago
+ * (cents) ou percentual do valor pago (bps), de uma vez no mês do pagamento.
+ * type vazio: segue a do mensal, pelos meses do período.
+ */
+export interface PeriodCommission {
+  type: '' | CommissionType;
+  cents: number;
+  bps: number;
+}
 
 export interface AffiliateInput {
   name: string;
@@ -2930,6 +2944,9 @@ export interface AffiliateInput {
   listingWhatsapp: string;
   /** O semestral e o anual pelo link (ausente: no novo, desligado; na edição, como está). */
   recurrence?: Recurrence;
+  /** A comissão própria do semestral e a do anual (ausente: no novo, a do mensal; na edição, como está). */
+  semiannualCommission?: PeriodCommission;
+  annualCommission?: PeriodCommission;
 }
 
 export interface AffiliateSettings {
@@ -3036,6 +3053,9 @@ export interface PartnerReport {
   recipient?: PartnerRecipient | null;
   /** O semestral e o anual pelo link dele (nulo: desligados). */
   recurrence?: Recurrence | null;
+  /** A comissão própria do semestral e a do anual (nula: a do mensal, pelos meses do período). */
+  semiannualCommission?: PeriodCommission | null;
+  annualCommission?: PeriodCommission | null;
 }
 
 /** A situação de uma remessa de kits: pedida pelo representante, separada, enviada, entregue ou cancelada. */

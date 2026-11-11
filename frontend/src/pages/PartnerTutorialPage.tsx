@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 
 import { HarnessDiagram, RelayDiagram } from '@/components/install/J16Wiring';
 import { WHATSAPP_NUMBER, whatsappUrl } from '@/config/contact';
+import { periodCommissionLabel } from '@/services/commission';
 import { formatMoney, formatPercentBps } from '@/services/format';
 import type { PartnerReport } from '@/types';
 
@@ -107,6 +108,13 @@ export function Tutorial({ report, token }: { report: PartnerReport; token: stri
           <li>
             Você ganha <strong>{commissionText(report)}</strong> dos seus clientes, em cada mês em que a mensalidade é
             paga.
+            {report.recurrence?.enabled && (
+              <>
+                {' '}
+                No semestral, {periodCommissionLabel(report.semiannualCommission, 6)}; no anual,{' '}
+                {periodCommissionLabel(report.annualCommission, 12)}.
+              </>
+            )}
           </li>
         </ol>
         {!report.active && (

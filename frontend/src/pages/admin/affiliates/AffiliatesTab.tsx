@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { TextField } from '@/components/ui/Field';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
+import { periodCommissionLabel } from '@/services/commission';
 import { bpsToInput, centsToInput, formatDateOnly, formatMoney, formatPercentBps, parseMoney, parsePercentBps } from '@/services/format';
 import { kindPricesLabel } from '@/services/kindPrices';
 import { monthLabel, referralUrl } from '@/services/referral';
@@ -199,6 +200,12 @@ export function AffiliatesTab() {
                         {a.commissionType === 'percent'
                           ? `${formatPercentBps(a.commissionBps)} da mensalidade${taxBps > 0 ? ' líquida' : ''}`
                           : formatMoney(a.commissionCents)}
+                        {(a.semiannualCommission?.type || a.annualCommission?.type) && (
+                          <div className={company.muted}>
+                            semestral: {periodCommissionLabel(a.semiannualCommission, 6)} · anual:{' '}
+                            {periodCommissionLabel(a.annualCommission, 12)}
+                          </div>
+                        )}
                       </td>
                       <td data-label="Cadastros" className={company.right}>
                         {a.signups}

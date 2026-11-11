@@ -111,6 +111,8 @@ const columns = `a.id, a.name, a.handle, a.code, a.report_token, a.commission_ty
 	a.loan_surcharge_cents, a.report_password_hash <> '', a.equipment_modes, a.manage_installs,
 	a.hand_delivery, a.listed, a.listing_city, a.listing_area, a.listing_whatsapp,
 	a.recurrence_enabled, a.semiannual_cents, a.annual_cents,
+	a.semiannual_commission_type, a.semiannual_commission_cents, a.semiannual_commission_bps,
+	a.annual_commission_type, a.annual_commission_cents, a.annual_commission_bps,
 	(SELECT count(DISTINCT lower(x.email)) FROM (
 		SELECT email FROM launch_waitlist WHERE affiliate_id = a.id
 		UNION ALL SELECT email FROM leads WHERE affiliate_id = a.id) x),
@@ -139,6 +141,8 @@ func scan(row database.Scanner) (*Affiliate, error) {
 		&installMode, &install, &uninstall, &guarantee, &a.ReportPassword, &a.EquipmentModes, &a.ManageInstalls,
 		&a.HandDelivery, &a.Listed, &a.ListingCity, &a.ListingArea, &a.ListingWhatsApp,
 		&a.Recurrence.Enabled, &a.Recurrence.SemiannualCents, &a.Recurrence.AnnualCents,
+		&a.SemiannualCommission.Type, &a.SemiannualCommission.Cents, &a.SemiannualCommission.Bps,
+		&a.AnnualCommission.Type, &a.AnnualCommission.Cents, &a.AnnualCommission.Bps,
 		&a.Signups, &a.Customers, &a.ActiveCustomers, &a.ActiveVehicles, &a.PendingCents, &a.SplitPaidCents, &a.OpenCents,
 		&a.PaidCents)
 	if err != nil {
@@ -238,6 +242,8 @@ func (s *Service) Create(ctx context.Context, in Input) (*Affiliate, error) {
 	motorcycle, car, truck := planColumns(in.PlanPrices)
 	installMode, install, uninstall, guarantee := installColumns(in.InstallPrices)
 	recEnabled, recSemiannual, recAnnual := recurrenceColumns(in.Recurrence)
+	semType, semCents, semBps := periodCommissionColumns(in.SemiannualCommission)
+	annType, annCents, annBps := periodCommissionColumns(in.AnnualCommission)
 	password, err := hashReportPassword(in.ReportPassword)
 	if err != nil {
 		return nil, err
@@ -253,14 +259,17 @@ func (s *Service) Create(ctx context.Context, in Input) (*Affiliate, error) {
 		INSERT INTO affiliates (name, handle, code, report_token, commission_type, commission_cents, commission_bps, email,
 			phone, pix_key, notes, active, plan_motorcycle_cents, plan_car_cents, plan_truck_cents, install_mode, install_cents,
 			uninstall_cents, loan_surcharge_cents, report_password_hash, equipment_modes, manage_installs, hand_delivery,
-			listed, listing_city, listing_area, listing_whatsapp, recurrence_enabled, semiannual_cents, annual_cents)
+			listed, listing_city, listing_area, listing_whatsapp, recurrence_enabled, semiannual_cents, annual_cents,
+			semiannual_commission_type, semiannual_commission_cents, semiannual_commission_bps,
+			annual_commission_type, annual_commission_cents, annual_commission_bps)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23,
-			$24, $25, $26, $27, COALESCE($28, FALSE), COALESCE($29, 20000), COALESCE($30, 40000))
+			$24, $25, $26, $27, COALESCE($28, FALSE), COALESCE($29, 20000), COALESCE($30, 40000),
+			COALESCE($31, ''), COALESCE($32, 0), COALESCE($33, 0), COALESCE($34, ''), COALESCE($35, 0), COALESCE($36, 0))
 		RETURNING id`,
 		in.Name, in.Handle, in.Code, token, in.CommissionType, *in.CommissionCents, bps, in.Email, in.Phone, in.PixKey,
 		in.Notes, in.Active, motorcycle, car, truck, installMode, install, uninstall, guarantee, *password, in.EquipmentModes,
 		in.ManageInstalls, in.HandDelivery, in.Listed, in.ListingCity, in.ListingArea, in.ListingWhatsApp,
-		recEnabled, recSemiannual, recAnnual).Scan(&id)
+		recEnabled, recSemiannual, recAnnual, semType, semCents, semBps, annType, annCents, annBps).Scan(&id)
 	if err != nil {
 		return nil, conflictMessage(err)
 	}
@@ -281,6 +290,8 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Affiliat
 	motorcycle, car, truck := planColumns(in.PlanPrices)
 	installMode, install, uninstall, guarantee := installColumns(in.InstallPrices)
 	recEnabled, recSemiannual, recAnnual := recurrenceColumns(in.Recurrence)
+	semType, semCents, semBps := periodCommissionColumns(in.SemiannualCommission)
+	annType, annCents, annBps := periodCommissionColumns(in.AnnualCommission)
 	password, err := hashReportPassword(in.ReportPassword)
 	if err != nil {
 		return nil, err
@@ -302,12 +313,18 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Affiliat
 				report_password_hash = COALESCE($20, report_password_hash), equipment_modes = $21, manage_installs = $22,
 				hand_delivery = $23, listed = $24, listing_city = $25, listing_area = $26, listing_whatsapp = $27,
 				recurrence_enabled = COALESCE($28, recurrence_enabled), semiannual_cents = COALESCE($29, semiannual_cents),
-				annual_cents = COALESCE($30, annual_cents), updated_at = NOW()
+				annual_cents = COALESCE($30, annual_cents),
+				semiannual_commission_type = COALESCE($31, semiannual_commission_type),
+				semiannual_commission_cents = COALESCE($32, semiannual_commission_cents),
+				semiannual_commission_bps = COALESCE($33, semiannual_commission_bps),
+				annual_commission_type = COALESCE($34, annual_commission_type),
+				annual_commission_cents = COALESCE($35, annual_commission_cents),
+				annual_commission_bps = COALESCE($36, annual_commission_bps), updated_at = NOW()
 			WHERE id = $1`,
 			id, in.Name, in.Handle, in.Code, in.CommissionCents, in.Email, in.Phone, in.PixKey, in.Notes, in.Active,
 			in.CommissionType, in.CommissionBps, motorcycle, car, truck, installMode, install, uninstall, guarantee,
 			password, in.EquipmentModes, in.ManageInstalls, in.HandDelivery, in.Listed, in.ListingCity, in.ListingArea,
-			in.ListingWhatsApp, recEnabled, recSemiannual, recAnnual); err != nil {
+			in.ListingWhatsApp, recEnabled, recSemiannual, recAnnual, semType, semCents, semBps, annType, annCents, annBps); err != nil {
 			return err
 		}
 		// A gestão das instalações mostra os dados dos clientes: só com a senha.
@@ -496,13 +513,21 @@ func (s *Service) Reconcile(ctx context.Context) (created, removed int64, err er
 		tag, err := tx.Exec(ctx, `
 			INSERT INTO affiliate_commissions (affiliate_id, customer_id, subscription_id, month, amount_cents)
 			SELECT affiliate_id, customer_id, subscription_id, month, amount FROM (
-				-- Cada mês que a fatura cobre (o semestral, 6; o anual, 12) é um mês de comissão.
+				-- O semestral e o anual com regra própria: uma comissão, no mês do pagamento.
+				-- Sem regra própria (e o mensal), cada mês que a fatura cobre é um mês de comissão.
 				SELECT r.affiliate_id, i.customer_id, i.subscription_id, m.month::date AS month,
-					-- O percentual é da mensalidade líquida dos impostos da Farbo (no
-					-- semestral e no anual, do valor dividido pelos meses).
-					CASE WHEN a.commission_type = 'percent'
-						THEN round(sum(greatest(i.amount_cents - inst.cents - tr.cents, 0)::numeric / i.period_months)
-							* a.commission_bps / 10000.0 * (10000 - st.commission_tax_bps) / 10000.0)::int
+					CASE
+						-- A regra própria: o valor fixo por período pago, ou o percentual do valor pago
+						-- (líquido dos impostos da Farbo).
+						WHEN pc.type = 'fixed' THEN pc.cents
+						WHEN pc.type = 'percent'
+							THEN round(sum(greatest(i.amount_cents - inst.cents - tr.cents, 0)) * pc.bps / 10000.0
+								* (10000 - st.commission_tax_bps) / 10000.0)::int
+						-- A do mensal: o percentual da mensalidade líquida dos impostos (no semestral e
+						-- no anual sem regra própria, do valor dividido pelos meses), ou o valor fixo.
+						WHEN a.commission_type = 'percent'
+							THEN round(sum(greatest(i.amount_cents - inst.cents - tr.cents, 0)::numeric / i.period_months)
+								* a.commission_bps / 10000.0 * (10000 - st.commission_tax_bps) / 10000.0)::int
 						ELSE a.commission_cents END AS amount
 				FROM invoices i
 				JOIN affiliate_referrals r ON r.customer_id = i.customer_id
@@ -514,12 +539,18 @@ func (s *Service) Reconcile(ctx context.Context) (created, removed int64, err er
 				-- A parte do rastreador incluso somada ao plano, nas primeiras, também.
 				CROSS JOIN LATERAL (SELECT COALESCE(max(CASE WHEN s.tracker_added AND i.due_date < s.tracker_until
 					THEN s.tracker_cents END), 0) AS cents FROM subscriptions s WHERE s.id = i.subscription_id) tr
+				-- A regra própria do período da fatura (vazia: a do mensal).
+				CROSS JOIN LATERAL (SELECT
+					CASE i.period_months WHEN 6 THEN a.semiannual_commission_type WHEN 12 THEN a.annual_commission_type ELSE '' END AS type,
+					CASE i.period_months WHEN 6 THEN a.semiannual_commission_cents WHEN 12 THEN a.annual_commission_cents ELSE 0 END AS cents,
+					CASE i.period_months WHEN 6 THEN a.semiannual_commission_bps WHEN 12 THEN a.annual_commission_bps ELSE 0 END AS bps) pc
 				CROSS JOIN LATERAL generate_series(date_trunc('month', i.due_date),
-					date_trunc('month', i.due_date) + (i.period_months - 1) * interval '1 month', interval '1 month') AS m(month)
+					date_trunc('month', i.due_date) + (CASE WHEN pc.type = '' THEN i.period_months - 1 ELSE 0 END) * interval '1 month',
+					interval '1 month') AS m(month)
 				WHERE i.status = 'PAID' AND i.subscription_id IS NOT NULL AND i.amount_cents > 0 AND a.active
 					AND i.due_date >= date_trunc('month', r.created_at AT TIME ZONE $1)::date
 				GROUP BY r.affiliate_id, i.customer_id, i.subscription_id, m.month, a.commission_type, a.commission_cents,
-					a.commission_bps, st.commission_tax_bps) c
+					a.commission_bps, st.commission_tax_bps, pc.type, pc.cents, pc.bps) c
 			WHERE amount > 0
 			ON CONFLICT (affiliate_id, subscription_id, month) DO NOTHING`, s.loc.String())
 		if err != nil {
@@ -923,6 +954,10 @@ type Report struct {
 	Recipient *RecipientView `json:"recipient"`
 	// Recurrence: o semestral e o anual pelo link dele (nil: desligados).
 	Recurrence *orders.Recurrence `json:"recurrence"`
+	// A comissão própria do semestral e a do anual (nil: seguem a do mensal,
+	// pelos meses do período).
+	SemiannualCommission *PeriodCommission `json:"semiannualCommission"`
+	AnnualCommission     *PeriodCommission `json:"annualCommission"`
 }
 
 // ReferralCode é o código do link de indicação do afiliado ativo, pelo link
@@ -965,6 +1000,12 @@ func (s *Service) Report(ctx context.Context, token string) (*Report, error) {
 	if a.Recurrence.Enabled && a.EquipmentModes != orders.EquipmentLoanOnly {
 		r := a.Recurrence
 		out.Recurrence = &r
+	}
+	if p := a.SemiannualCommission; p.Type != "" {
+		out.SemiannualCommission = &p
+	}
+	if p := a.AnnualCommission; p.Type != "" {
+		out.AnnualCommission = &p
 	}
 	if err := s.db.QueryRow(ctx, `SELECT commission_tax_bps FROM affiliate_settings`).Scan(&out.CommissionTaxBps); err != nil {
 		return nil, database.MapError(err)
@@ -1016,4 +1057,14 @@ func recurrenceColumns(r *orders.Recurrence) (enabled *bool, semiannual, annual 
 		return nil, nil, nil
 	}
 	return &r.Enabled, &r.SemiannualCents, &r.AnnualCents
+}
+
+// periodCommissionColumns são as colunas da comissão do semestral ou do anual
+// (nil: no novo, a do mensal; na edição, as atuais).
+func periodCommissionColumns(p *PeriodCommission) (kind *string, cents, bps *int) {
+	if p == nil {
+		return nil, nil, nil
+	}
+	t, c, b := p.columns()
+	return &t, &c, &b
 }

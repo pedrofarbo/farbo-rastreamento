@@ -37,15 +37,18 @@ func (s *Service) SplitEnabled() bool { return s.split }
 // split) e reserva para ela as comissões acumuladas que cabem até maxCents.
 func (s *Service) PlanSplit(ctx context.Context, chargeID, customerID uuid.UUID, invoices []*billing.Invoice, maxCents int) (*payments.SplitPlan, error) {
 	var plan payments.SplitPlan
-	var kind string
-	var fixedCents, bps, taxBps int
+	var rule commissionRule
 	var since time.Time
 	err := s.db.QueryRow(ctx, `
 		SELECT a.id, a.recipient_id, a.commission_type, a.commission_cents, a.commission_bps,
+			a.semiannual_commission_type, a.semiannual_commission_cents, a.semiannual_commission_bps,
+			a.annual_commission_type, a.annual_commission_cents, a.annual_commission_bps,
 			date_trunc('month', r.created_at AT TIME ZONE $2)::date, (SELECT commission_tax_bps FROM affiliate_settings)
 		FROM affiliate_referrals r JOIN affiliates a ON a.id = r.affiliate_id
 		WHERE r.customer_id = $1 AND a.active AND a.recipient_id <> '' AND a.recipient_status = 'active'`,
-		customerID, s.loc.String()).Scan(&plan.AffiliateID, &plan.RecipientID, &kind, &fixedCents, &bps, &since, &taxBps)
+		customerID, s.loc.String()).Scan(&plan.AffiliateID, &plan.RecipientID, &rule.kind, &rule.fixedCents, &rule.bps,
+		&rule.semiannual.Type, &rule.semiannual.Cents, &rule.semiannual.Bps,
+		&rule.annual.Type, &rule.annual.Cents, &rule.annual.Bps, &since, &rule.taxBps)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -53,7 +56,7 @@ func (s *Service) PlanSplit(ctx context.Context, chargeID, customerID uuid.UUID,
 		return nil, database.MapError(err)
 	}
 
-	items, err := s.splitItems(ctx, plan.AffiliateID, invoices, kind, fixedCents, bps, taxBps, since)
+	items, err := s.splitItems(ctx, plan.AffiliateID, invoices, rule, since)
 	if err != nil {
 		return nil, err
 	}
@@ -113,8 +116,8 @@ func (s *Service) PlanSplit(ctx context.Context, chargeID, customerID uuid.UUID,
 // comprado nem a parte do incluso somada ao plano, e líquida dos impostos
 // (taxBps). As que já existem (o mês já rendeu) ficam
 // de fora.
-func (s *Service) splitItems(ctx context.Context, affiliateID uuid.UUID, invoices []*billing.Invoice, kind string,
-	fixedCents, bps, taxBps int, since time.Time) ([]payments.SplitItem, error) {
+func (s *Service) splitItems(ctx context.Context, affiliateID uuid.UUID, invoices []*billing.Invoice, rule commissionRule,
+	since time.Time) ([]payments.SplitItem, error) {
 	type key struct {
 		sub   uuid.UUID
 		month time.Time
@@ -146,16 +149,29 @@ func (s *Service) splitItems(ctx context.Context, affiliateID uuid.UUID, invoice
 	rows.Close()
 
 	bases := map[key]int{}
+	// own: a comissão do mês é a regra própria do semestral ou do anual.
+	own := map[key]PeriodCommission{}
 	var keys []key
 	var subs []uuid.UUID
 	for _, inv := range invoices {
 		if inv.SubscriptionID == nil || inv.AmountCents <= 0 || inv.DueDate.Before(billing.Date{Time: since}) {
 			continue
 		}
-		// Cada mês que a fatura cobre (o semestral, 6; o anual, 12) é um mês de
-		// comissão, com o valor dividido pelos meses.
+		// O semestral e o anual com regra própria: uma comissão, no mês do
+		// pagamento. Sem ela (e o mensal), cada mês que a fatura cobre é um mês
+		// de comissão, com o valor dividido pelos meses.
 		period := max(inv.PeriodMonths, 1)
 		base := max(inv.AmountCents-installments[inv.ID], 0)
+		if pc := rule.forPeriod(period); pc.Type != "" {
+			k := key{*inv.SubscriptionID, time.Date(inv.DueDate.Year(), inv.DueDate.Month(), 1, 0, 0, 0, 0, time.UTC)}
+			if _, ok := bases[k]; !ok {
+				keys = append(keys, k)
+				subs = append(subs, k.sub)
+			}
+			bases[k] += base
+			own[k] = pc
+			continue
+		}
 		for m := 0; m < period; m++ {
 			k := key{*inv.SubscriptionID, time.Date(inv.DueDate.Year(), inv.DueDate.Month()+time.Month(m), 1, 0, 0, 0, 0, time.UTC)}
 			if _, ok := bases[k]; !ok {
@@ -191,10 +207,14 @@ func (s *Service) splitItems(ctx context.Context, affiliateID uuid.UUID, invoice
 		if existing[k] {
 			continue
 		}
+		kind, fixedCents, bps := rule.kind, rule.fixedCents, rule.bps
+		if pc, ok := own[k]; ok {
+			kind, fixedCents, bps = pc.Type, pc.Cents, pc.Bps
+		}
 		amount := fixedCents
 		if kind == CommissionPercent {
-			// O percentual da mensalidade líquida dos impostos da Farbo.
-			amount = int(math.Round(float64(bases[k]) * float64(bps) / 10000 * float64(10000-taxBps) / 10000))
+			// O percentual da mensalidade (ou do período) líquida dos impostos da Farbo.
+			amount = int(math.Round(float64(bases[k]) * float64(bps) / 10000 * float64(10000-rule.taxBps) / 10000))
 		}
 		if amount > 0 {
 			out = append(out, payments.SplitItem{SubscriptionID: k.sub, Month: k.month, AmountCents: amount})
@@ -251,3 +271,24 @@ const onSplitConflict = `
 	ON CONFLICT (affiliate_id, subscription_id, month) DO UPDATE
 		SET split_charge_id = EXCLUDED.split_charge_id, amount_cents = EXCLUDED.amount_cents
 		WHERE affiliate_commissions.payout_id IS NULL AND affiliate_commissions.split_charge_id IS NULL`
+
+// commissionRule é a regra do afiliado: a do mensal (kind, fixedCents, bps),
+// a própria do semestral e a do anual (vazias: a do mensal) e os impostos da
+// Farbo que saem antes do percentual.
+type commissionRule struct {
+	kind               string
+	fixedCents, bps    int
+	taxBps             int
+	semiannual, annual PeriodCommission
+}
+
+// forPeriod é a regra própria do período (vazia: a do mensal).
+func (r commissionRule) forPeriod(months int) PeriodCommission {
+	switch months {
+	case billing.PeriodSemiannual:
+		return r.semiannual
+	case billing.PeriodAnnual:
+		return r.annual
+	}
+	return PeriodCommission{}
+}

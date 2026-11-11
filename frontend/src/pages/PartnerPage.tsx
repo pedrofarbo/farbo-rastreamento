@@ -4,6 +4,7 @@ import { Link, Navigate, NavLink, useParams } from 'react-router-dom';
 
 import { publicApi } from '@/api/resources';
 import { formatMoney, formatPercentBps } from '@/services/format';
+import { periodCommissionLabel } from '@/services/commission';
 import { kindPricesLabel } from '@/services/kindPrices';
 import { monthLabel, referralUrl } from '@/services/referral';
 import type { PartnerMonth, PartnerReport } from '@/types';
@@ -271,8 +272,8 @@ function Home({ report, token, sections }: { report: PartnerReport; token: strin
         {report.recurrence?.enabled && (
           <p className={base.hint}>
             Pelo seu link, também dá para pagar o semestral ({money(report.recurrence.semiannualCents)} a cada 6 meses) ou o
-            anual ({money(report.recurrence.annualCents)} por ano), com o rastreador incluso. A comissão entra por mês do
-            período: 6 meses no semestral, 12 no anual.
+            anual ({money(report.recurrence.annualCents)} por ano), com o rastreador incluso. A sua comissão: no semestral,{' '}
+            {periodCommissionLabel(report.semiannualCommission, 6)}; no anual, {periodCommissionLabel(report.annualCommission, 12)}.
           </p>
         )}
         {!report.active && <p className={base.error}>Seu link está pausado: cadastros novos não contam. Fale com a Farbo.</p>}

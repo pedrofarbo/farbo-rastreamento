@@ -203,3 +203,10 @@
   border: 1px solid var(--border-subtle, var(--border));
   border-radius: var(--radius-md, 10px);
 }
+
+/* A comissão do semestral e do anual: o tipo e o valor juntos, na coluna. */
+.periodCommission {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
