@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { OFFER, offerWith } from '@/test/checkoutOffer';
 import type { CheckoutOffer } from '@/types';
 
-import { checkoutTotals, payDestination, vehicleName } from './checkout';
+import { blockingOffered, checkoutTotals, chosenInstall, payDestination, vehicleName } from './checkout';
 
 const offer: CheckoutOffer = OFFER;
 
@@ -68,6 +68,28 @@ describe('a conta da contratação pelo site', () => {
     expect(sale).toMatchObject({ installNowCents: 0, totalNowCents: 3490 });
     const loan = checkoutTotals(rep, { equipmentMode: 'loan', farboInstall: false });
     expect(loan).toMatchObject({ installNowCents: 0, totalNowCents: 3490 + 300 });
+  });
+
+  it('a instalação com bloqueio, quando o link oferece: o preço dela no lugar da sem bloqueio', () => {
+    const farbo = offerWith({
+      install: { enabled: true, priceCents: 10000, blockingCents: 18000 },
+      loan: { enabled: true, surchargeCents: 300, installFeeCents: 10000, uninstallFeeCents: 8500 },
+    });
+    expect(blockingOffered(farbo)).toBe(true);
+    expect(blockingOffered(offerWith({ install: { enabled: true, priceCents: 10000 } }))).toBe(false);
+    const sale = { equipmentMode: 'sale' as const, farboInstall: true };
+    expect(chosenInstall(farbo, sale)).toEqual({ cents: 10000, blocking: false });
+    expect(chosenInstall(farbo, { ...sale, installBlocking: true })).toEqual({ cents: 18000, blocking: true });
+    expect(checkoutTotals(farbo, { ...sale, installBlocking: true })).toMatchObject({ installNowCents: 18000, totalNowCents: 3490 + 18000 });
+    // Por conta própria, a escolha não vale.
+    expect(chosenInstall(farbo, { ...sale, farboInstall: false, installBlocking: true })).toEqual({ cents: 0, blocking: false });
+    // No comodato, a taxa da instalação é a com bloqueio.
+    const loan = { equipmentMode: 'loan' as const, farboInstall: false, installBlocking: true };
+    expect(checkoutTotals(farbo, loan)).toMatchObject({ installNowCents: 18000 });
+    // Pelo link do representante, fora do Pix do mesmo jeito.
+    const rep = { ...farbo, installDirect: true };
+    expect(checkoutTotals(rep, { ...sale, installBlocking: true })).toMatchObject({ installNowCents: 0, totalNowCents: 3490 });
+    expect(chosenInstall(rep, { ...sale, installBlocking: true })).toEqual({ cents: 18000, blocking: true });
   });
 
   it('o nome do veículo', () => {

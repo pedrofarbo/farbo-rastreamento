@@ -95,14 +95,18 @@ const GuaranteeName = " + garantia de troca"
 type InstallService struct {
 	Enabled    bool `json:"enabled"`
 	PriceCents int  `json:"priceCents"`
+	// BlockingCents: pelo link de um representante que oferece a escolha, a
+	// instalação com o relé do bloqueio do motor (PriceCents é a sem
+	// bloqueio; vale também para o comodato). Zero: sem a escolha.
+	BlockingCents int `json:"blockingCents,omitempty"`
 }
 
 // Options são as opções do pedido do cliente.
 type Options struct {
-	Loan      LoanOffer      `json:"loan"`
-	Install   InstallService `json:"install"`
-	Checkout  Checkout       `json:"checkout"`
-	Tracker   TrackerRule    `json:"tracker"`
+	Loan     LoanOffer      `json:"loan"`
+	Install  InstallService `json:"install"`
+	Checkout Checkout       `json:"checkout"`
+	Tracker  TrackerRule    `json:"tracker"`
 	// Recurrence: o semestral e o anual na contratação pelo site.
 	Recurrence Recurrence `json:"recurrence"`
 	UpdatedAt  time.Time  `json:"updatedAt"`

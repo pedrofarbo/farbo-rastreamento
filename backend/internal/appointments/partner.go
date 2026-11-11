@@ -36,6 +36,8 @@ type PartnerVehicle struct {
 	IMEI string `json:"imei"`
 	// Since: desde quando espera (o pedido ou o encerramento).
 	Since time.Time `json:"since"`
+	// Blocking: a instalação contratada com o relé do bloqueio do motor.
+	Blocking bool `json:"blocking"`
 }
 
 // PartnerQueue é a página das instalações do representante: os veículos
@@ -53,7 +55,8 @@ const partnerVehicle = `
 		u.name, u.phone,
 		COALESCE((SELECT concat_ws(', ', ad.street || ' ' || ad.number, NULLIF(ad.complement, ''), ad.district,
 			ad.city || '/' || ad.state) FROM customer_addresses ad WHERE ad.customer_id = u.id), ''),
-		COALESCE(d.imei, ''), %s
+		COALESCE(d.imei, ''), %s,
+		EXISTS (SELECT 1 FROM subscriptions sb WHERE sb.vehicle_id = v.id AND sb.status = 'ACTIVE' AND sb.install_blocking)
 	FROM vehicles v JOIN users u ON u.id = v.owner_id LEFT JOIN devices d ON d.id = v.device_id
 	WHERE ` + referredBy + `
 		AND NOT EXISTS (SELECT 1 FROM installation_appointments x WHERE x.vehicle_id = v.id AND x.status IN ('scheduled', 'arrived'))`
@@ -99,7 +102,7 @@ func (s *Service) partnerVehicles(ctx context.Context, since, where string, affi
 	for rows.Next() {
 		var v PartnerVehicle
 		if err := rows.Scan(&v.VehicleID, &v.VehicleName, &v.Plate, &v.VehicleDetails, &v.CustomerName, &v.CustomerPhone,
-			&v.Address, &v.IMEI, &v.Since); err != nil {
+			&v.Address, &v.IMEI, &v.Since, &v.Blocking); err != nil {
 			return nil, database.MapError(err)
 		}
 		out = append(out, v)

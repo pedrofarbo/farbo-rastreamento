@@ -67,13 +67,17 @@ type InstallPrices struct {
 	// GuaranteeCents: a garantia de troca do rastreador no comodato, por mês
 	// (a Farbo cobra na mensalidade, também no modo direto); nil, a da Farbo.
 	GuaranteeCents *int `json:"guaranteeCents"`
+	// BlockingCents: a instalação com o relé do bloqueio do motor, ao lado da
+	// sem bloqueio (InstallCents), à escolha do cliente; nil, o link não
+	// oferece a escolha.
+	BlockingCents *int `json:"blockingCents"`
 }
 
 // Valid: um dos modos, com os valores na faixa.
 func (p InstallPrices) Valid() bool {
 	in := func(cents int) bool { return cents >= 0 && cents <= vehicles.MaxPlanCents }
 	return (p.Mode == InstallCustom || p.Mode == InstallDirect) && in(p.InstallCents) && in(p.UninstallCents) &&
-		(p.GuaranteeCents == nil || in(*p.GuaranteeCents))
+		(p.GuaranteeCents == nil || in(*p.GuaranteeCents)) && (p.BlockingCents == nil || in(*p.BlockingCents))
 }
 
 // Guarantee é a garantia de troca do comodato: a do afiliado ou, sem ela, a
@@ -87,17 +91,26 @@ func (p *InstallPrices) Guarantee(farbo int) int {
 
 // Charged é o que a Farbo cobra da instalação e da desinstalação (no modo
 // direto, nada: o representante recebe do cliente).
-func (p InstallPrices) Charged() (install, uninstall int) {
+func (p InstallPrices) Charged(blocking bool) (install, uninstall int) {
 	if p.Mode == InstallDirect {
 		return 0, 0
 	}
-	return p.InstallCents, p.UninstallCents
+	return p.Install(blocking), p.UninstallCents
+}
+
+// Install é o preço da instalação: com o relé do bloqueio (se o link oferece
+// a escolha) ou sem ele.
+func (p InstallPrices) Install(blocking bool) int {
+	if blocking && p.BlockingCents != nil {
+		return *p.BlockingCents
+	}
+	return p.InstallCents
 }
 
 // AffiliateInstall é a instalação do link do afiliado ativo (nil: a da Farbo).
 func (s *Service) AffiliateInstall(ctx context.Context, affiliateID uuid.UUID) (*InstallPrices, error) {
-	return s.installPrices(ctx, `SELECT install_mode, install_cents, uninstall_cents, loan_surcharge_cents
-		FROM affiliates WHERE id = $1 AND active`, affiliateID)
+	return s.installPrices(ctx, `SELECT install_mode, install_cents, uninstall_cents, loan_surcharge_cents,
+		install_blocking_cents FROM affiliates WHERE id = $1 AND active`, affiliateID)
 }
 
 // CustomerInstall é a instalação do afiliado que indicou o cliente, quando a
@@ -107,14 +120,14 @@ func (s *Service) CustomerInstall(ctx context.Context, customerID uuid.UUID) (*I
 	if err != nil || account != nil {
 		return nil, err
 	}
-	return s.installPrices(ctx, `SELECT a.install_mode, a.install_cents, a.uninstall_cents, a.loan_surcharge_cents
-		FROM affiliate_referrals r JOIN affiliates a ON a.id = r.affiliate_id WHERE r.customer_id = $1`, customerID)
+	return s.installPrices(ctx, `SELECT a.install_mode, a.install_cents, a.uninstall_cents, a.loan_surcharge_cents,
+		a.install_blocking_cents FROM affiliate_referrals r JOIN affiliates a ON a.id = r.affiliate_id WHERE r.customer_id = $1`, customerID)
 }
 
 func (s *Service) installPrices(ctx context.Context, query string, id uuid.UUID) (*InstallPrices, error) {
 	var p InstallPrices
 	var install, uninstall *int
-	err := s.db.QueryRow(ctx, query, id).Scan(&p.Mode, &install, &uninstall, &p.GuaranteeCents)
+	err := s.db.QueryRow(ctx, query, id).Scan(&p.Mode, &install, &uninstall, &p.GuaranteeCents, &p.BlockingCents)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -135,19 +148,22 @@ func (p *InstallPrices) WithInstall(install *InstallService, loan *LoanOffer) {
 	if p == nil {
 		return
 	}
-	install.Enabled, install.PriceCents = true, p.InstallCents
+	install.Enabled, install.PriceCents, install.BlockingCents = true, p.InstallCents, 0
+	if p.BlockingCents != nil {
+		install.BlockingCents = *p.BlockingCents
+	}
 	loan.InstallFeeCents, loan.UninstallFeeCents = p.InstallCents, p.UninstallCents
 	loan.SurchargeCents = p.Guarantee(loan.SurchargeCents)
 }
 
 // applyInstall põe no pedido o que a Farbo cobra da instalação do afiliado:
 // a do rastreador incluso (com a instalação contratada) e as taxas do
-// comodato.
+// comodato — a instalação com o relé do bloqueio, se o cliente a escolheu.
 func (p *InstallPrices) applyInstall(o *Order) {
 	if p == nil {
 		return
 	}
-	install, uninstall := p.Charged()
+	install, uninstall := p.Charged(o.InstallBlocking)
 	if o.Terms.EquipmentMode == billing.EquipmentLoan {
 		o.Terms.InstallFeeCents, o.Terms.UninstallFeeCents = install, uninstall
 		return

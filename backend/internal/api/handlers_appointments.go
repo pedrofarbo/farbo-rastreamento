@@ -271,6 +271,8 @@ type installView struct {
 	VehicleIMEI string     `json:"vehicleImei"`
 	CompletedAt *time.Time `json:"completedAt"`
 	Photos      []string   `json:"photos"`
+	// Blocking: o cliente contratou a instalação com o relé do bloqueio.
+	Blocking bool `json:"blocking"`
 }
 
 // installPinHeader leva a senha do link do instalador (a foto, que abre numa
@@ -347,6 +349,7 @@ func toInstallView(a *appointments.Appointment) installView {
 		Kind: a.Kind, VehicleName: a.VehicleName, Plate: a.Plate, VehicleDetails: a.VehicleDetails, CustomerName: first,
 		CustomerPhone: a.CustomerPhone, InstallerName: a.InstallerName, ScheduledFor: a.ScheduledFor, Address: a.Address,
 		Notes: a.Notes, Status: a.Status, IMEI: a.IMEI, VehicleIMEI: a.VehicleIMEI, CompletedAt: a.CompletedAt, Photos: a.Photos,
+		Blocking: a.Blocking,
 	}
 }
 

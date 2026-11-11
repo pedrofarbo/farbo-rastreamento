@@ -164,6 +164,7 @@ export function InstallationsSection({ token }: { token: string }) {
                       vehicle={{
                         vehicleId: a.vehicleId, vehicleName: a.vehicleName, plate: a.plate, vehicleDetails: a.vehicleDetails,
                         customerName: a.customerName, customerPhone: a.customerPhone, address: a.address, imei: a.imei, since: a.createdAt,
+                        blocking: a.blocking && a.kind === 'install',
                       }}
                     />
                     {a.notes && <span className={styles.muted}>Obs.: {a.notes}</span>}
@@ -242,6 +243,11 @@ function Vehicle({ vehicle: v }: { vehicle: PartnerVehicle }) {
         {v.plate && ` · ${v.plate}`}
       </strong>
       {v.vehicleDetails && <span className={styles.muted}>{v.vehicleDetails}</span>}
+      {v.blocking && (
+        <span>
+          <strong>Com bloqueio:</strong> instalar também o relé que bloqueia o motor pelo app.
+        </span>
+      )}
       <span>
         {v.customerName}
         {v.customerPhone && (

@@ -24,6 +24,9 @@ type CheckoutChoice struct {
 	// PeriodMonths: o semestral (6) ou o anual (12), quando o link (ou o
 	// site) os tem ligados; 0 ou 1, o mensal.
 	PeriodMonths int
+	// InstallBlocking: a instalação com o relé do bloqueio do motor, quando
+	// o link oferece a escolha (no comodato ou com a instalação contratada).
+	InstallBlocking bool
 }
 
 // CheckoutOrder monta o pedido da contratação rápida pela landing (a pessoa
@@ -103,8 +106,26 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 			return Order{}, err
 		}
 	}
+	if err := withBlocking(install, in.InstallBlocking, &order); err != nil {
+		return Order{}, err
+	}
 	install.applyInstall(&order)
 	return order, nil
+}
+
+// withBlocking põe no pedido a instalação com o relé do bloqueio, quando o
+// cliente a escolheu: só pelo link que oferece a escolha e com quem instala
+// sendo a Farbo ou o representante (no rastreador incluso por conta própria,
+// a escolha não vale).
+func withBlocking(install *InstallPrices, blocking bool, order *Order) error {
+	if !blocking || (order.Terms.EquipmentMode != billing.EquipmentLoan && !order.FarboInstall) {
+		return nil
+	}
+	if install == nil || install.BlockingCents == nil {
+		return ValidationError{"a instalação com bloqueio não está disponível por este link: escolha a instalação sem bloqueio"}
+	}
+	order.InstallBlocking = true
+	return nil
 }
 
 // periodPlan põe no pedido o semestral ou o anual: o valor do período (o do

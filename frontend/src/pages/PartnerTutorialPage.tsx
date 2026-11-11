@@ -461,6 +461,11 @@ export function Tutorial({ report, token }: { report: PartnerReport; token: stri
             quanto cobra pela instalação e pela desinstalação: quem contrata pelo seu link vê esses valores no site e no
             app. Esse dinheiro não passa pela Farbo.
           </p>
+          <p className={guide.text}>
+            Se você também instala o relé do bloqueio, preencha a <strong>instalação com bloqueio</strong>: o cliente
+            escolhe no pedido entre a instalação sem e com bloqueio, e a escolha aparece na sua lista de instalações e no
+            link do instalador (<strong>Com bloqueio</strong>). Em branco, o cliente não escolhe.
+          </p>
         </Step>
       )}
 

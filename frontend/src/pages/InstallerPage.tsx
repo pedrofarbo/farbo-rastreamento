@@ -153,6 +153,11 @@ export function InstallerPage() {
         {view.plate && <span className={styles.plate}>{view.plate}</span>}
         {view.vehicleDetails && <p className={styles.text}>{view.vehicleDetails}</p>}
         {view.address && <p className={styles.text}>📍 {view.address}</p>}
+        {view.blocking && view.kind === 'install' && (
+          <p className={styles.text}>
+            <strong>Com bloqueio:</strong> o cliente contratou a instalação com o relé que bloqueia o motor pelo app.
+          </p>
+        )}
         {view.notes && <p className={styles.muted}>📝 {view.notes}</p>}
         <div className={local.contact}>
           {view.customerPhone && (

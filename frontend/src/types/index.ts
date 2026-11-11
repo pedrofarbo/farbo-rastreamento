@@ -465,6 +465,8 @@ export interface InstallPrices {
   uninstallCents: number;
   /** A garantia de troca do rastreador no comodato, por mês (nula: a da Farbo); a Farbo cobra na mensalidade. */
   guaranteeCents?: number | null;
+  /** A instalação com o relé do bloqueio do motor, ao lado da sem bloqueio (installCents); nula, sem a escolha. */
+  blockingCents?: number | null;
 }
 
 /** O rastreador pelo link de um afiliado: '' incluso e comodato; sale só o incluso; loan só comodato. */
@@ -1901,6 +1903,8 @@ export interface CheckoutInput {
   /** O semestral (6) ou o anual (12); ausente, o mensal. */
   periodMonths?: number;
   farboInstall: boolean;
+  /** A instalação com o relé do bloqueio, quando o link oferece a escolha. */
+  installBlocking?: boolean;
   vehicle: { kind: VehicleKind; name: string; brand: string; model: string; plate: string };
   name: string;
   email: string;
@@ -1928,6 +1932,12 @@ export interface CheckoutResult extends TrackerOrderResult {
 export interface InstallService {
   enabled: boolean;
   priceCents: number;
+  /**
+   * Pelo link de um representante que oferece a escolha, a instalação com o
+   * relé do bloqueio do motor (priceCents é a sem bloqueio; vale também no
+   * comodato). Ausente: sem a escolha.
+   */
+  blockingCents?: number;
 }
 
 /** As opções do pedido do cliente (central): o comodato, a instalação Farbo, os preços do site e o rastreador incluso. */
@@ -3469,6 +3479,8 @@ export interface InstallationAppointment {
   url?: string;
   /** A senha que abre o link (a central passa junto; o link do representante não tem). */
   pin?: string;
+  /** O cliente contratou a instalação com o relé do bloqueio do motor. */
+  blocking?: boolean;
 }
 
 export interface InstallationInput {
@@ -3499,6 +3511,8 @@ export interface AwaitingInstall {
   farboInstall: boolean;
   /** O representante que cuida da instalação deste cliente (vazio: a central). */
   representative?: string;
+  /** A instalação contratada com o relé do bloqueio do motor. */
+  blocking?: boolean;
 }
 
 /** Um veículo de cliente do representante esperando a instalação ou a retirada do rastreador. */
@@ -3513,6 +3527,8 @@ export interface PartnerVehicle {
   /** O rastreador a retirar (na desinstalação). */
   imei: string;
   since: string;
+  /** A instalação contratada com o relé do bloqueio do motor. */
+  blocking?: boolean;
 }
 
 /** As instalações do representante: as filas e os agendamentos (com o link do instalador). */
@@ -3575,6 +3591,8 @@ export interface PublicInstallView {
   vehicleImei: string;
   completedAt: string | null;
   photos: InstallationSlot[];
+  /** O cliente contratou a instalação com o relé do bloqueio do motor. */
+  blocking?: boolean;
 }
 
 /** Um rastreador livre para o instalador escolher (ativado: já conectou alguma vez). */

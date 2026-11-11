@@ -126,12 +126,15 @@ func (s *Server) handlePartnerInstallPrices(w http.ResponseWriter, r *http.Reque
 	var req struct {
 		InstallCents   int `json:"installCents"`
 		UninstallCents int `json:"uninstallCents"`
+		// BlockingCents: a instalação com o relé do bloqueio (nulo: sem a escolha).
+		BlockingCents *int `json:"blockingCents"`
 	}
 	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "corpo inválido")
 		return
 	}
-	prices, err := s.Affiliates.SetPartnerInstall(r.Context(), chi.URLParam(r, "token"), req.InstallCents, req.UninstallCents)
+	prices, err := s.Affiliates.SetPartnerInstall(r.Context(), chi.URLParam(r, "token"), req.InstallCents, req.UninstallCents,
+		req.BlockingCents)
 	if err != nil {
 		affiliateError(w, err, "link inválido: peça o novo à Farbo")
 		return

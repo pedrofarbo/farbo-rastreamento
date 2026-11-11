@@ -16,6 +16,8 @@ export interface CheckoutChoice {
   farboInstall: boolean;
   /** O semestral (6) ou o anual (12), quando o link os oferece; ausente ou 1, o mensal. */
   periodMonths?: number;
+  /** A instalação com o relé do bloqueio do motor, quando o link oferece a escolha. */
+  installBlocking?: boolean;
 }
 
 export interface CheckoutTotals {
@@ -41,10 +43,28 @@ export function chosenPeriod(offer: CheckoutOffer, choice: CheckoutChoice) {
   return offer.periods?.find((p) => p.months === choice.periodMonths) ?? null;
 }
 
+/** O link oferece a instalação com o relé do bloqueio do motor, ao lado da sem bloqueio. */
+export function blockingOffered(offer: CheckoutOffer): boolean {
+  return (offer.install?.blockingCents ?? 0) > 0;
+}
+
+/**
+ * A instalação escolhida (paga à Farbo ou, pelo link do representante, direto a ele): no
+ * comodato, a taxa dele; no incluso, a contratada (zero por conta própria). Com o relé do
+ * bloqueio, quando escolhido e o link oferece.
+ */
+export function chosenInstall(offer: CheckoutOffer, choice: CheckoutChoice): { cents: number; blocking: boolean } {
+  const loan = choice.equipmentMode === 'loan' && offer.loan !== null;
+  if (!loan && (!choice.farboInstall || !offer.install)) return { cents: 0, blocking: false };
+  if (choice.installBlocking && blockingOffered(offer)) return { cents: offer.install?.blockingCents ?? 0, blocking: true };
+  return { cents: loan ? (offer.loan?.installFeeCents ?? 0) : (offer.install?.priceCents ?? 0), blocking: false };
+}
+
 /** Pelo link de um afiliado com tabela, a mensalidade é a do tipo do veículo. */
 export function checkoutTotals(offer: CheckoutOffer, choice: CheckoutChoice, freightCents = 0, kind?: VehicleKind): CheckoutTotals {
   const loan = choice.equipmentMode === 'loan' && offer.loan !== null;
-  const installFarbo = !offer.installDirect && !loan && choice.farboInstall && offer.install ? offer.install.priceCents : 0;
+  // Pelo link de um representante, a instalação é paga direto a ele: fora do Pix.
+  const installNowCents = offer.installDirect ? 0 : chosenInstall(offer, choice).cents;
   // O semestral ou o anual: o valor do período, com o rastreador incluso nele.
   const period = chosenPeriod(offer, choice);
   if (period) {
@@ -53,9 +73,9 @@ export function checkoutTotals(offer: CheckoutOffer, choice: CheckoutChoice, fre
       guaranteeCents: 0,
       firstMonthlyCents: period.cents,
       trackerMonths: 0,
-      installNowCents: installFarbo,
+      installNowCents,
       freightCents,
-      totalNowCents: period.cents + installFarbo + freightCents,
+      totalNowCents: period.cents + installNowCents + freightCents,
       periodMonths: period.months,
     };
   }
@@ -63,14 +83,6 @@ export function checkoutTotals(offer: CheckoutOffer, choice: CheckoutChoice, fre
   const monthlyCents = (offer.planByKind ? kindPrice(offer.planByKind, kind) : offer.planCents) + guaranteeCents;
   // O comodato não tem a parte do rastreador: ele volta à Farbo.
   const included = includedMonthly(monthlyCents, loan ? undefined : offer.tracker);
-  // Pelo link de um representante, a instalação é paga direto a ele: fora do Pix.
-  const installNowCents = offer.installDirect
-    ? 0
-    : loan
-      ? (offer.loan?.installFeeCents ?? 0)
-      : choice.farboInstall && offer.install
-        ? offer.install.priceCents
-        : 0;
   return {
     monthlyCents,
     guaranteeCents,

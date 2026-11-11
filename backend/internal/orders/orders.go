@@ -80,6 +80,10 @@ type Order struct {
 	// da Farbo, com a taxa dos Terms.
 	FarboInstall bool
 	InstallCents int
+	// InstallBlocking: a instalação com o relé do bloqueio do motor (pelo
+	// link do representante que oferece a escolha), no preço dela; fica na
+	// assinatura para a agenda e o instalador.
+	InstallBlocking bool
 }
 
 // Result é o que a contratação criou. Tudo vence em ChargeDate: no ato, para
@@ -283,8 +287,9 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 		// agenda da central mostra. E a garantia de troca que a mensalidade
 		// inclui (o próximo veículo parte do plano sem ela).
 		if loan || o.FarboInstall || o.Terms.GuaranteeCents > 0 {
-			if _, err := tx.Exec(ctx, `UPDATE subscriptions SET farbo_install = $2, guarantee_cents = $3 WHERE id = $1`,
-				result.Subscription.ID, loan || o.FarboInstall, o.Terms.GuaranteeCents); err != nil {
+			if _, err := tx.Exec(ctx, `UPDATE subscriptions SET farbo_install = $2, guarantee_cents = $3, install_blocking = $4
+				WHERE id = $1`, result.Subscription.ID, loan || o.FarboInstall, o.Terms.GuaranteeCents,
+				o.InstallBlocking && (loan || o.FarboInstall)); err != nil {
 				return err
 			}
 		}

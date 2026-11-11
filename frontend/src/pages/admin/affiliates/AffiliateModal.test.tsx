@@ -101,10 +101,17 @@ describe('o cadastro do afiliado', () => {
     expect(calls).toHaveLength(0);
 
     await setValue(control<HTMLInputElement>('Garantia de troca no comodato'), '5,00');
+    await setValue(control<HTMLInputElement>('Instalação com bloqueio'), 'cento e oitenta');
+    await act(async () => button('Criar afiliado').click());
+    expect(text()).toContain('Instalação com bloqueio inválida');
+    expect(calls).toHaveLength(0);
+
+    await setValue(control<HTMLInputElement>('Instalação com bloqueio'), '180,00');
+    expect(text()).toContain('Instalação sem bloqueio (R$)');
     await act(async () => button('Criar afiliado').click());
     await vi.waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0][1]).toMatchObject({
-      installPrices: { mode: 'direct', installCents: 12000, uninstallCents: 0, guaranteeCents: 500 },
+      installPrices: { mode: 'direct', installCents: 12000, uninstallCents: 0, guaranteeCents: 500, blockingCents: 18000 },
     });
   });
 

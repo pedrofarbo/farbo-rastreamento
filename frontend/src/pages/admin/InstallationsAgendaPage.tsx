@@ -138,6 +138,12 @@ export function InstallationsAgendaPage() {
                             ) : (
                               <span className={styles.muted}>cliente instala por conta própria</span>
                             )}
+                            {w.blocking && (
+                              <>
+                                {' '}
+                                <Badge tone="warning">Com bloqueio</Badge>
+                              </>
+                            )}
                           </div>
                         </td>
                         <td data-label="Cliente">

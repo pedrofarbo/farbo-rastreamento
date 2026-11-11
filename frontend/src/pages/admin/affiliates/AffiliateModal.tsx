@@ -38,6 +38,8 @@ interface Draft {
   uninstallPrice: string;
   /** A garantia de troca do comodato (vazio: a da Farbo). */
   guarantee: string;
+  /** A instalação com o relé do bloqueio, ao lado da sem bloqueio (vazio: sem a escolha). */
+  blockingPrice: string;
   /** A página do afiliado pede senha; password: a nova (vazia mantém a que já existe). */
   passwordOn: boolean;
   password: string;
@@ -80,6 +82,7 @@ function draftOf(a: Affiliate | null, defaultCents: number): Draft {
     installPrice: a?.installPrices ? centsToInput(a.installPrices.installCents) : '',
     uninstallPrice: a?.installPrices ? centsToInput(a.installPrices.uninstallCents) : '',
     guarantee: a?.installPrices?.guaranteeCents != null ? centsToInput(a.installPrices.guaranteeCents) : '',
+    blockingPrice: a?.installPrices?.blockingCents != null ? centsToInput(a.installPrices.blockingCents) : '',
     passwordOn: a?.reportPassword ?? false,
     password: '',
     equipmentModes: a?.equipmentModes ?? '',
@@ -230,7 +233,12 @@ export function AffiliateModal({
         setError('Garantia de troca inválida: deixe em branco para a da Farbo (ou 0 para sem garantia).');
         return;
       }
-      installPrices = { mode: draft.installMode, installCents, uninstallCents, guaranteeCents };
+      const blockingCents = draft.blockingPrice.trim() === '' ? null : parseMoney(draft.blockingPrice);
+      if (draft.blockingPrice.trim() !== '' && blockingCents === null) {
+        setError('Instalação com bloqueio inválida: deixe em branco para o link não oferecer a escolha.');
+        return;
+      }
+      installPrices = { mode: draft.installMode, installCents, uninstallCents, guaranteeCents, blockingCents };
     }
     if (draft.listed && !draft.listingCity.trim()) {
       setError('Para aparecer na landing, diga a cidade do representante (por exemplo, Campinas/SP).');
@@ -540,10 +548,18 @@ export function AffiliateModal({
           {draft.installMode && (
             <>
               <TextField
-                label="Instalação (R$)"
+                label={draft.blockingPrice.trim() ? 'Instalação sem bloqueio (R$)' : 'Instalação (R$)'}
                 value={draft.installPrice}
                 inputMode="decimal"
                 onChange={(e) => set('installPrice', e.target.value)}
+              />
+              <TextField
+                label="Instalação com bloqueio (R$)"
+                value={draft.blockingPrice}
+                inputMode="decimal"
+                placeholder="sem a escolha"
+                onChange={(e) => set('blockingPrice', e.target.value)}
+                hint="Com o relé que bloqueia o motor pelo app. Preenchido, o cliente escolhe no pedido a instalação sem ou com bloqueio; em branco, só a de cima."
               />
               <TextField
                 label="Desinstalação do comodato (R$)"

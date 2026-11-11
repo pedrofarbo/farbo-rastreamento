@@ -108,7 +108,7 @@ const columns = `a.id, a.name, a.handle, a.code, a.report_token, a.commission_ty
 	a.commission_bps, a.email, a.phone, a.pix_key,
 	a.notes, a.supplier_id, a.active, a.created_at, a.recipient_status,
 	a.plan_motorcycle_cents, a.plan_car_cents, a.plan_truck_cents, a.install_mode, a.install_cents, a.uninstall_cents,
-	a.loan_surcharge_cents, a.report_password_hash <> '', a.equipment_modes, a.manage_installs,
+	a.loan_surcharge_cents, a.install_blocking_cents, a.report_password_hash <> '', a.equipment_modes, a.manage_installs,
 	a.hand_delivery, a.listed, a.listing_city, a.listing_area, a.listing_whatsapp,
 	a.recurrence_enabled, a.semiannual_cents, a.annual_cents,
 	a.semiannual_commission_type, a.semiannual_commission_cents, a.semiannual_commission_bps,
@@ -134,11 +134,11 @@ func scan(row database.Scanner) (*Affiliate, error) {
 	var a Affiliate
 	var motorcycle, car, truck, install, uninstall *int
 	var installMode string
-	var guarantee *int
+	var guarantee, blocking *int
 	err := row.Scan(&a.ID, &a.Name, &a.Handle, &a.Code, &a.ReportToken, &a.CommissionType, &a.CommissionCents,
 		&a.CommissionBps, &a.Email, &a.Phone,
 		&a.PixKey, &a.Notes, &a.SupplierID, &a.Active, &a.CreatedAt, &a.RecipientStatus, &motorcycle, &car, &truck,
-		&installMode, &install, &uninstall, &guarantee, &a.ReportPassword, &a.EquipmentModes, &a.ManageInstalls,
+		&installMode, &install, &uninstall, &guarantee, &blocking, &a.ReportPassword, &a.EquipmentModes, &a.ManageInstalls,
 		&a.HandDelivery, &a.Listed, &a.ListingCity, &a.ListingArea, &a.ListingWhatsApp,
 		&a.Recurrence.Enabled, &a.Recurrence.SemiannualCents, &a.Recurrence.AnnualCents,
 		&a.SemiannualCommission.Type, &a.SemiannualCommission.Cents, &a.SemiannualCommission.Bps,
@@ -151,18 +151,18 @@ func scan(row database.Scanner) (*Affiliate, error) {
 	a.PlanPrices = planPrices(motorcycle, car, truck)
 	if installMode != "" && install != nil && uninstall != nil {
 		a.InstallPrices = &orders.InstallPrices{Mode: installMode, InstallCents: *install, UninstallCents: *uninstall,
-			GuaranteeCents: guarantee}
+			GuaranteeCents: guarantee, BlockingCents: blocking}
 	}
 	return &a, nil
 }
 
 // installColumns são os valores das colunas da instalação (sem ela: o modo
 // vazio, sem valores).
-func installColumns(p *orders.InstallPrices) (mode string, install, uninstall, guarantee *int) {
+func installColumns(p *orders.InstallPrices) (mode string, install, uninstall, guarantee, blocking *int) {
 	if p == nil {
-		return "", nil, nil, nil
+		return "", nil, nil, nil, nil
 	}
-	return p.Mode, &p.InstallCents, &p.UninstallCents, p.GuaranteeCents
+	return p.Mode, &p.InstallCents, &p.UninstallCents, p.GuaranteeCents, p.BlockingCents
 }
 
 // planPrices monta a tabela das colunas (todas nulas: sem tabela).
@@ -240,7 +240,7 @@ func (s *Service) Create(ctx context.Context, in Input) (*Affiliate, error) {
 		bps = *in.CommissionBps
 	}
 	motorcycle, car, truck := planColumns(in.PlanPrices)
-	installMode, install, uninstall, guarantee := installColumns(in.InstallPrices)
+	installMode, install, uninstall, guarantee, blocking := installColumns(in.InstallPrices)
 	recEnabled, recSemiannual, recAnnual := recurrenceColumns(in.Recurrence)
 	semType, semCents, semBps := periodCommissionColumns(in.SemiannualCommission)
 	annType, annCents, annBps := periodCommissionColumns(in.AnnualCommission)
@@ -261,15 +261,15 @@ func (s *Service) Create(ctx context.Context, in Input) (*Affiliate, error) {
 			uninstall_cents, loan_surcharge_cents, report_password_hash, equipment_modes, manage_installs, hand_delivery,
 			listed, listing_city, listing_area, listing_whatsapp, recurrence_enabled, semiannual_cents, annual_cents,
 			semiannual_commission_type, semiannual_commission_cents, semiannual_commission_bps,
-			annual_commission_type, annual_commission_cents, annual_commission_bps)
+			annual_commission_type, annual_commission_cents, annual_commission_bps, install_blocking_cents)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23,
 			$24, $25, $26, $27, COALESCE($28, FALSE), COALESCE($29, 20000), COALESCE($30, 40000),
-			COALESCE($31, ''), COALESCE($32, 0), COALESCE($33, 0), COALESCE($34, ''), COALESCE($35, 0), COALESCE($36, 0))
+			COALESCE($31, ''), COALESCE($32, 0), COALESCE($33, 0), COALESCE($34, ''), COALESCE($35, 0), COALESCE($36, 0), $37)
 		RETURNING id`,
 		in.Name, in.Handle, in.Code, token, in.CommissionType, *in.CommissionCents, bps, in.Email, in.Phone, in.PixKey,
 		in.Notes, in.Active, motorcycle, car, truck, installMode, install, uninstall, guarantee, *password, in.EquipmentModes,
 		in.ManageInstalls, in.HandDelivery, in.Listed, in.ListingCity, in.ListingArea, in.ListingWhatsApp,
-		recEnabled, recSemiannual, recAnnual, semType, semCents, semBps, annType, annCents, annBps).Scan(&id)
+		recEnabled, recSemiannual, recAnnual, semType, semCents, semBps, annType, annCents, annBps, blocking).Scan(&id)
 	if err != nil {
 		return nil, conflictMessage(err)
 	}
@@ -288,7 +288,7 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Affiliat
 		return nil, err
 	}
 	motorcycle, car, truck := planColumns(in.PlanPrices)
-	installMode, install, uninstall, guarantee := installColumns(in.InstallPrices)
+	installMode, install, uninstall, guarantee, blocking := installColumns(in.InstallPrices)
 	recEnabled, recSemiannual, recAnnual := recurrenceColumns(in.Recurrence)
 	semType, semCents, semBps := periodCommissionColumns(in.SemiannualCommission)
 	annType, annCents, annBps := periodCommissionColumns(in.AnnualCommission)
@@ -319,12 +319,14 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Affiliat
 				semiannual_commission_bps = COALESCE($33, semiannual_commission_bps),
 				annual_commission_type = COALESCE($34, annual_commission_type),
 				annual_commission_cents = COALESCE($35, annual_commission_cents),
-				annual_commission_bps = COALESCE($36, annual_commission_bps), updated_at = NOW()
+				annual_commission_bps = COALESCE($36, annual_commission_bps), install_blocking_cents = $37,
+				updated_at = NOW()
 			WHERE id = $1`,
 			id, in.Name, in.Handle, in.Code, in.CommissionCents, in.Email, in.Phone, in.PixKey, in.Notes, in.Active,
 			in.CommissionType, in.CommissionBps, motorcycle, car, truck, installMode, install, uninstall, guarantee,
 			password, in.EquipmentModes, in.ManageInstalls, in.HandDelivery, in.Listed, in.ListingCity, in.ListingArea,
-			in.ListingWhatsApp, recEnabled, recSemiannual, recAnnual, semType, semCents, semBps, annType, annCents, annBps); err != nil {
+			in.ListingWhatsApp, recEnabled, recSemiannual, recAnnual, semType, semCents, semBps, annType, annCents, annBps,
+			blocking); err != nil {
 			return err
 		}
 		// A gestão das instalações mostra os dados dos clientes: só com a senha.

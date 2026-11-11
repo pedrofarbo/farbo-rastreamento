@@ -8,7 +8,10 @@ import type { InstallPrices } from '@/types';
 const calls = vi.hoisted(() => [] as unknown[][]);
 vi.mock('@/api/resources', () => ({
   publicApi: {
-    partnerInstallPrices: async (token: string, input: { installCents: number; uninstallCents: number }) => {
+    partnerInstallPrices: async (
+      token: string,
+      input: { installCents: number; uninstallCents: number; blockingCents?: number | null },
+    ) => {
       calls.push([token, input]);
       return { mode: 'direct', ...input, guaranteeCents: null };
     },
@@ -55,8 +58,32 @@ describe('os valores de instalação do representante', () => {
     await type(input('Instalação (R$)'), '180,00');
     await type(input('Desinstalação do comodato (R$)'), '0');
     await act(async () => (host.querySelector('button[type="submit"]') as HTMLButtonElement).click());
-    expect(calls).toEqual([['tok', { installCents: 18000, uninstallCents: 0 }]]);
+    expect(calls).toEqual([['tok', { installCents: 18000, uninstallCents: 0, blockingCents: null }]]);
     expect(changed[0]).toMatchObject({ installCents: 18000, uninstallCents: 0 });
     expect(text()).toContain('Valores salvos');
+  });
+
+  it('com a instalação com bloqueio, o cliente escolhe entre as duas; em branco, some', async () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    await act(async () =>
+      createRoot(host).render(
+        <InstallPricesSection
+          token="tok"
+          prices={{ mode: 'direct', installCents: 10000, uninstallCents: 8500, blockingCents: 18000 }}
+          onChange={() => {}}
+        />,
+      ),
+    );
+    expect(text()).toContain('R$ 180,00 com bloqueio');
+    expect(input('Instalação com bloqueio (R$)').value).toBe('180,00');
+    await type(input('Instalação sem bloqueio (R$)'), '110,00');
+    await act(async () => (host.querySelector('button[type="submit"]') as HTMLButtonElement).click());
+    expect(calls).toEqual([['tok', { installCents: 11000, uninstallCents: 8500, blockingCents: 18000 }]]);
+
+    await type(input('Instalação com bloqueio (R$)'), '');
+    expect(input('Instalação (R$)').value).toBe('110,00');
+    await act(async () => (host.querySelector('button[type="submit"]') as HTMLButtonElement).click());
+    expect(calls[1]).toEqual(['tok', { installCents: 11000, uninstallCents: 8500, blockingCents: null }]);
   });
 });

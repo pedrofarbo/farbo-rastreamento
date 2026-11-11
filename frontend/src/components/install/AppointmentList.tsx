@@ -60,6 +60,7 @@ export function AppointmentList({
                   {a.notes && <span className={styles.muted}>📝 {a.notes}</span>}
                   <span className={styles.badges}>
                     <Badge tone={a.kind === 'uninstall' ? 'warning' : 'accent'}>{KIND_LABEL[a.kind]}</Badge>
+                    {a.blocking && a.kind === 'install' && <Badge tone="warning">Com bloqueio</Badge>}
                     <Badge tone={st.tone}>{st.label}</Badge>
                   </span>
                   {a.status === 'done' ? (

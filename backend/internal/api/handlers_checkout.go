@@ -211,12 +211,15 @@ type checkoutRequest struct {
 	PeriodMonths int `json:"periodMonths"`
 	// Installments: o parcelamento do rastreador comprado, das telas antigas.
 	// O rastreador vem incluso: mais de uma vez, a contratação é recusada.
-	Installments int            `json:"installments"`
-	FarboInstall bool           `json:"farboInstall"`
-	Vehicle      vehicles.Input `json:"vehicle"`
-	Name         string         `json:"name"`
-	Email        string         `json:"email"`
-	Phone        string         `json:"phone"`
+	Installments int  `json:"installments"`
+	FarboInstall bool `json:"farboInstall"`
+	// InstallBlocking: a instalação com o relé do bloqueio, quando o link
+	// do representante oferece a escolha.
+	InstallBlocking bool           `json:"installBlocking"`
+	Vehicle         vehicles.Input `json:"vehicle"`
+	Name            string         `json:"name"`
+	Email           string         `json:"email"`
+	Phone           string         `json:"phone"`
 	// Document: o CPF (a contratação pelo site é de pessoa física).
 	Document string            `json:"document"`
 	Password string            `json:"password"`
@@ -288,7 +291,7 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	// não deixa conta pela metade.
 	order, err := s.Orders.CheckoutOrder(ctx, orders.CheckoutChoice{
 		EquipmentMode: req.EquipmentMode, FarboInstall: req.FarboInstall, Vehicle: req.Vehicle,
-		Affiliate: s.referralFor(r, req.Ref), PeriodMonths: req.PeriodMonths,
+		Affiliate: s.referralFor(r, req.Ref), PeriodMonths: req.PeriodMonths, InstallBlocking: req.InstallBlocking,
 	})
 	if err != nil {
 		writeOrderError(w, r, err, "contratação indisponível")

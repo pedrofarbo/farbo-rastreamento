@@ -11,7 +11,7 @@ import { TextField } from '@/components/ui/Field';
 import { CONTRACT_PATH } from '@/config/legal';
 import { CHECKOUT_ANCHOR, trackerAdded } from '@/config/landing';
 import { track, trackPageview } from '@/services/analytics';
-import { checkoutTotals, chosenPeriod, payDestination, vehicleName } from '@/services/checkout';
+import { blockingOffered, checkoutTotals, chosenInstall, chosenPeriod, payDestination, vehicleName } from '@/services/checkout';
 import type { CheckoutChoice } from '@/services/checkout';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { formatMoney, formatPhoneInput, isPhoneComplete } from '@/services/format';
@@ -191,6 +191,7 @@ export function CheckoutPage() {
         equipmentMode: loan ? 'loan' : 'sale',
         ...(period ? { periodMonths: period.months } : {}),
         farboInstall: !loan && choice.farboInstall,
+        ...(chosenInstall(o, choice).blocking ? { installBlocking: true } : {}),
         vehicle: { kind, name: vehicleName(kind, brand, model), brand: brand.trim(), model: model.trim(), plate: plate.trim() },
         name: person.name.trim(),
         email,
@@ -341,11 +342,13 @@ export function CheckoutPage() {
                   price={o.loan.surchargeCents > 0 ? `+${formatMoney(o.loan.surchargeCents)}/mês` : 'sem taxa mensal'}
                 >
                   O rastreador emprestado: ele volta quando você encerrar.{' '}
-                  {o.installDirect
-                    ? o.loan.installFeeCents > 0
-                      ? `Instalação pelo representante por ${formatMoney(o.loan.installFeeCents)}, paga direto a ele`
-                      : 'Instalação pelo representante, sem custo'
-                    : `Instalação pelos nossos instaladores por ${formatMoney(o.loan.installFeeCents)}`}
+                  {blockingOffered(o)
+                    ? `Instalação ${o.installDirect ? 'pelo representante' : 'pelos nossos instaladores'} sem ou com bloqueio (escolha abaixo)${o.installDirect ? ', paga direto a ele' : ''}`
+                    : o.installDirect
+                      ? o.loan.installFeeCents > 0
+                        ? `Instalação pelo representante por ${formatMoney(o.loan.installFeeCents)}, paga direto a ele`
+                        : 'Instalação pelo representante, sem custo'
+                      : `Instalação pelos nossos instaladores por ${formatMoney(o.loan.installFeeCents)}`}
                   {o.loan.surchargeCents > 0 && ', com a garantia de troca do rastreador na mensalidade'}
                   {o.loan.uninstallFeeCents > 0 &&
                     `; desinstalação de ${formatMoney(o.loan.uninstallFeeCents)} ao encerrar${o.installDirect ? ', também direto a ele' : ''}`}
@@ -359,17 +362,17 @@ export function CheckoutPage() {
                 <legend className={styles.legend}>A instalação</legend>
                 <Option
                   checked={!choice.farboInstall}
-                  onChange={() => setChoice({ ...choice, farboInstall: false })}
+                  onChange={() => setChoice({ ...choice, farboInstall: false, installBlocking: false })}
                   name="install"
                   title="Por conta própria"
                   price="sem custo"
                 >
                   Com o instalador da sua preferência, pago direto a ele. O guia de instalação vai junto.
                 </Option>
-                {o.install && (
+                {o.install && !blockingOffered(o) && (
                   <Option
                     checked={choice.farboInstall}
-                    onChange={() => setChoice({ ...choice, farboInstall: true })}
+                    onChange={() => setChoice({ ...choice, farboInstall: true, installBlocking: false })}
                     name="install"
                     title={o.installDirect ? 'Com o representante' : 'Com os instaladores da Farbo'}
                     price={o.install.priceCents > 0 ? formatMoney(o.install.priceCents) : 'sem custo'}
@@ -379,6 +382,15 @@ export function CheckoutPage() {
                       : 'A gente agenda o dia com você.'}
                   </Option>
                 )}
+                {o.install && blockingOffered(o) && (
+                  <BlockingOptions offer={o} choice={choice} setChoice={setChoice} sale />
+                )}
+              </fieldset>
+            )}
+            {loan && blockingOffered(o) && (
+              <fieldset className={styles.options}>
+                <legend className={styles.legend}>A instalação</legend>
+                <BlockingOptions offer={o} choice={choice} setChoice={setChoice} />
               </fieldset>
             )}
 
@@ -649,6 +661,50 @@ function Option({
   );
 }
 
+/**
+ * A instalação sem ou com o relé do bloqueio do motor, quando o link oferece a escolha: no
+ * rastreador incluso (sale), ao lado da instalação por conta própria; no comodato, sozinhas.
+ */
+function BlockingOptions({
+  offer,
+  choice,
+  setChoice,
+  sale = false,
+}: {
+  offer: CheckoutOffer;
+  choice: CheckoutChoice;
+  setChoice: (c: CheckoutChoice) => void;
+  sale?: boolean;
+}) {
+  const who = offer.installDirect ? 'Com o representante' : 'Com os instaladores da Farbo';
+  const plain = sale ? (offer.install?.priceCents ?? 0) : (offer.loan?.installFeeCents ?? 0);
+  const blocking = offer.install?.blockingCents ?? 0;
+  const on = !sale || choice.farboInstall;
+  const paid = offer.installDirect ? ' Pago direto a ele na instalação, fora do Pix.' : '';
+  return (
+    <>
+      <Option
+        checked={on && !choice.installBlocking}
+        onChange={() => setChoice({ ...choice, farboInstall: sale, installBlocking: false })}
+        name="install"
+        title={`${who}, sem bloqueio`}
+        price={plain > 0 ? formatMoney(plain) : 'sem custo'}
+      >
+        O rastreador com a localização, os trajetos e os alertas.{paid} A gente agenda o dia com você.
+      </Option>
+      <Option
+        checked={on && Boolean(choice.installBlocking)}
+        onChange={() => setChoice({ ...choice, farboInstall: sale, installBlocking: true })}
+        name="install"
+        title={`${who}, com bloqueio`}
+        price={formatMoney(blocking)}
+      >
+        Também o relé que bloqueia o motor pelo app (com o veículo parado).{paid} A gente agenda o dia com você.
+      </Option>
+    </>
+  );
+}
+
 /** O total de agora, no pé das etapas antes do resumo. */
 function Total({ totals, shippingPending }: { totals: ReturnType<typeof checkoutTotals>; shippingPending: boolean }) {
   if (totals.periodMonths > 1) {
@@ -714,13 +770,8 @@ function Summary({
   const period = chosenPeriod(offer, choice);
   const plan = period ? period.planName : offer.planByKind ? `${offer.planName} · ${KIND_NAMES[kind]}` : offer.planName;
   // Pelo link de um representante: a instalação e a desinstalação são pagas direto a ele.
-  const directInstall = offer.installDirect
-    ? loan
-      ? (offer.loan?.installFeeCents ?? 0)
-      : choice.farboInstall
-        ? (offer.install?.priceCents ?? 0)
-        : 0
-    : 0;
+  const install = chosenInstall(offer, choice);
+  const directInstall = offer.installDirect ? install.cents : 0;
   const tracker = offer.tracker;
   return (
     <div className={styles.summary} aria-label="Resumo do pedido">
@@ -737,7 +788,7 @@ function Summary({
       )}
       {totals.installNowCents > 0 && (
         <div className={styles.line}>
-          <span>Instalação pelos instaladores da Farbo</span>
+          <span>Instalação pelos instaladores da Farbo{install.blocking && ', com bloqueio'}</span>
           <span>{formatMoney(totals.installNowCents)}</span>
         </div>
       )}
@@ -787,7 +838,8 @@ function Summary({
       )}
       {directInstall > 0 && (
         <p className={styles.note}>
-          A instalação ({formatMoney(directInstall)}) é paga direto ao representante, no dia, fora do Pix.
+          A instalação{install.blocking && ' com bloqueio'} ({formatMoney(directInstall)}) é paga direto ao representante,
+          no dia, fora do Pix.
         </p>
       )}
     </div>

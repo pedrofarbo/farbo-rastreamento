@@ -1451,7 +1451,10 @@ export const publicApi = {
       headers: partnerHeaders(token),
     }),
   /** Os valores da instalação e da desinstalação do representante que recebe direto (ele define). */
-  partnerInstallPrices: (token: string, input: { installCents: number; uninstallCents: number }) =>
+  partnerInstallPrices: (
+    token: string,
+    input: { installCents: number; uninstallCents: number; blockingCents?: number | null },
+  ) =>
     request<InstallPrices>(`/api/public/partner/${encodeURIComponent(token)}/install-prices`, {
       method: 'PUT',
       body: input,

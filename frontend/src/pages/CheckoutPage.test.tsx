@@ -291,6 +291,41 @@ describe('a contratação pelo site', () => {
     expect(placed[0]).toMatchObject({ equipmentMode: 'sale', farboInstall: true });
   });
 
+  it('pelo link do representante com a instalação com bloqueio: o cliente escolhe, e o pedido vai com a escolha', async () => {
+    offer = offerWith({
+      installDirect: true,
+      equipmentModes: 'sale',
+      loan: null,
+      install: { enabled: true, priceCents: 10000, blockingCents: 18000 },
+    });
+    await render();
+    expect(text()).not.toContain('Com o representanteR$');
+    expect(text()).toContain('Com o representante, sem bloqueioR$ 100,00');
+    expect(text()).toContain('Com o representante, com bloqueioR$ 180,00');
+    await click(radio('Com o representante, com bloqueio'));
+    expect(text()).toContain('Também o relé que bloqueia o motor pelo app');
+    // Pago direto a ele: hoje, só a 1ª mensalidade.
+    expect(text()).toContain('Hoje, no PixR$ 34,90 + frete');
+    await fillUntilPayment();
+    expect(text()).toContain('A instalação com bloqueio (R$ 180,00) é paga direto ao representante');
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar'));
+    expect(placed[0]).toMatchObject({ equipmentMode: 'sale', farboInstall: true, installBlocking: true });
+  });
+
+  it('a instalação sem bloqueio, ou por conta própria depois de marcar a com bloqueio: o pedido vai sem ela', async () => {
+    offer = offerWith({ installDirect: true, install: { enabled: true, priceCents: 10000, blockingCents: 18000 } });
+    await render();
+    await click(radio('Com o representante, com bloqueio'));
+    await click(radio('Por conta própria'));
+    await fillUntilPayment();
+    expect(text()).not.toContain('paga direto ao representante');
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar'));
+    expect(placed[0]).toMatchObject({ farboInstall: false });
+    expect(placed[0]).not.toHaveProperty('installBlocking');
+  });
+
   it('pelo link do representante que entrega em mãos: sem frete', async () => {
     saveReferral('rui');
     offer = offerWith({ handDelivery: 'Rui Representante' });

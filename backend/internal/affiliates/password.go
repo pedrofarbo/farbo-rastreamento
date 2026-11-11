@@ -172,19 +172,21 @@ func (s *Service) Manager(ctx context.Context, token string) (*Manager, error) {
 }
 
 // SetPartnerInstall: o representante que recebe direto do cliente define, pela
-// página dele, os valores da instalação e da desinstalação (eles não passam
+// página dele, os valores da instalação (sem e, se ele oferece a escolha, com
+// o relé do bloqueio — nil: sem a escolha) e da desinstalação (eles não passam
 // pela plataforma: só aparecem para o cliente). Só no modo direto.
-func (s *Service) SetPartnerInstall(ctx context.Context, token string, installCents, uninstallCents int) (*orders.InstallPrices, error) {
-	prices := orders.InstallPrices{Mode: orders.InstallDirect, InstallCents: installCents, UninstallCents: uninstallCents}
+func (s *Service) SetPartnerInstall(ctx context.Context, token string, installCents, uninstallCents int, blockingCents *int) (*orders.InstallPrices, error) {
+	prices := orders.InstallPrices{Mode: orders.InstallDirect, InstallCents: installCents, UninstallCents: uninstallCents,
+		BlockingCents: blockingCents}
 	if !prices.Valid() {
 		return nil, invalid("Valores inválidos: de R$ 0 a R$ 100.000.")
 	}
 	if len(token) < 20 || len(token) > 64 {
 		return nil, database.ErrNotFound
 	}
-	err := s.db.QueryRow(ctx, `UPDATE affiliates SET install_cents = $2, uninstall_cents = $3, updated_at = NOW()
-		WHERE report_token = $1 AND install_mode = 'direct' RETURNING loan_surcharge_cents`,
-		token, installCents, uninstallCents).Scan(&prices.GuaranteeCents)
+	err := s.db.QueryRow(ctx, `UPDATE affiliates SET install_cents = $2, uninstall_cents = $3, install_blocking_cents = $4,
+		updated_at = NOW() WHERE report_token = $1 AND install_mode = 'direct' RETURNING loan_surcharge_cents`,
+		token, installCents, uninstallCents, blockingCents).Scan(&prices.GuaranteeCents)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, invalid("Os valores da instalação são da Farbo para o seu link: fale com a Farbo para mudar.")
 	}

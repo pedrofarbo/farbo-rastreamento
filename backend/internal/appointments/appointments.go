@@ -106,7 +106,10 @@ type Appointment struct {
 	// AffiliateID: o representante que agendou pela página dele (nulo: a
 	// central).
 	AffiliateID *uuid.UUID `json:"-"`
-	accessPin   string
+	// Blocking: o cliente contratou a instalação com o relé do bloqueio do
+	// motor (pela assinatura ativa do veículo).
+	Blocking  bool `json:"blocking"`
+	accessPin string
 }
 
 // Input é o agendamento pedido.
@@ -196,7 +199,8 @@ const selectAppointment = `
 		a.completed_at,
 		a.installer_note,
 		COALESCE((SELECT array_agg(p.slot ORDER BY p.slot) FROM installation_photos p WHERE p.appointment_id = a.id), '{}'),
-		a.created_at, a.affiliate_id, COALESCE(a.access_pin, '')
+		a.created_at, a.affiliate_id, COALESCE(a.access_pin, ''),
+		EXISTS (SELECT 1 FROM subscriptions sb WHERE sb.vehicle_id = a.vehicle_id AND sb.status = 'ACTIVE' AND sb.install_blocking)
 	FROM installation_appointments a
 	JOIN vehicles v ON v.id = a.vehicle_id
 	JOIN users u ON u.id = v.owner_id
@@ -210,7 +214,7 @@ func scan(row database.Scanner) (*Appointment, error) {
 	if err := row.Scan(&a.ID, &a.Kind, &a.VehicleID, &a.VehicleName, &a.Plate, &a.VehicleDetails, &a.CustomerID, &a.CustomerName,
 		&a.CustomerPhone, &a.OrganizationName, &a.InstallerID, &a.InstallerName, &a.ScheduledFor, &a.DurationMin, &a.Address,
 		&a.Notes, &a.Status, &a.ArrivedAt, &a.DeviceID, &a.IMEI, &a.VehicleIMEI, &a.CompletedAt, &a.InstallerNote, &a.Photos,
-		&a.CreatedAt, &a.AffiliateID, &a.accessPin); err != nil {
+		&a.CreatedAt, &a.AffiliateID, &a.accessPin, &a.Blocking); err != nil {
 		return nil, database.MapError(err)
 	}
 	return &a, nil
@@ -281,6 +285,8 @@ type Awaiting struct {
 	// Representative: o representante que cuida da instalação deste cliente
 	// (ele agenda pela página dele); vazio, a central.
 	Representative string `json:"representative"`
+	// Blocking: a instalação contratada com o relé do bloqueio do motor.
+	Blocking bool `json:"blocking"`
 }
 
 // AwaitingInstall são os veículos de cliente sem rastreador, com o endereço
@@ -298,7 +304,8 @@ func (s *Service) AwaitingInstall(ctx context.Context) ([]Awaiting, error) {
 			u.organization_id IS NOT NULL OR EXISTS (SELECT 1 FROM subscriptions s
 				WHERE s.vehicle_id = v.id AND s.status = 'ACTIVE' AND s.farbo_install) AS farbo,
 			COALESCE((SELECT af.name FROM affiliate_referrals r JOIN affiliates af ON af.id = r.affiliate_id
-				WHERE r.customer_id = u.id AND af.manage_installs), '')
+				WHERE r.customer_id = u.id AND af.manage_installs), ''),
+			EXISTS (SELECT 1 FROM subscriptions sb WHERE sb.vehicle_id = v.id AND sb.status = 'ACTIVE' AND sb.install_blocking)
 		FROM vehicles v JOIN users u ON u.id = v.owner_id LEFT JOIN users o ON o.id = u.organization_id
 		WHERE v.device_id IS NULL AND u.active AND u.role = 'customer' AND NOT checkout_pending(u.id)
 			-- O rastreador retirado na desinstalação não volta para a fila.
@@ -313,7 +320,8 @@ func (s *Service) AwaitingInstall(ctx context.Context) ([]Awaiting, error) {
 	for rows.Next() {
 		var a Awaiting
 		if err := rows.Scan(&a.VehicleID, &a.VehicleName, &a.Plate, &a.CustomerID, &a.CustomerName, &a.CustomerPhone,
-			&a.OrganizationName, &a.Address, &a.ScheduledFor, &a.CreatedAt, &a.FarboInstall, &a.Representative); err != nil {
+			&a.OrganizationName, &a.Address, &a.ScheduledFor, &a.CreatedAt, &a.FarboInstall, &a.Representative,
+			&a.Blocking); err != nil {
 			return nil, database.MapError(err)
 		}
 		out = append(out, a)

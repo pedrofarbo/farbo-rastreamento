@@ -188,7 +188,10 @@ export function AffiliatesTab() {
                         {a.planPrices && <div className={company.muted}>Mensalidade: {kindPricesLabel(a.planPrices)}</div>}
                         {a.installPrices && (
                           <div className={company.muted}>
-                            Instalação {formatMoney(a.installPrices.installCents)} · desinstalação{' '}
+                            Instalação {formatMoney(a.installPrices.installCents)}
+                            {a.installPrices.blockingCents != null &&
+                              ` (com bloqueio ${formatMoney(a.installPrices.blockingCents)})`}{' '}
+                            · desinstalação{' '}
                             {formatMoney(a.installPrices.uninstallCents)}
                             {a.installPrices.mode === 'direct' ? ' (direto a ele)' : ''}
                             {a.installPrices.guaranteeCents != null &&
