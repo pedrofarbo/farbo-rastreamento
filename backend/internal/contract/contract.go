@@ -33,11 +33,11 @@ import (
 // A versão em vigor. Ao mudar o texto (contrato.md), mude a versão e a data:
 // todo cliente aceita de novo no próximo acesso.
 const (
-	Version       = "9"
-	EffectiveDate = "7 de novembro de 2026"
+	Version       = "10"
+	EffectiveDate = "11 de novembro de 2026"
 	// Changes resume o que mudou desde a versão anterior (o cliente que
 	// aceitou a anterior lê ao aceitar de novo, e recebe por e-mail).
-	Changes = "A Farbo deixa de vender o rastreador: fora do comodato, ele vai incluso no serviço e fica com o Cliente, com o custo dele nas primeiras mensalidades (em alguns planos, somado à mensalidade nesse período). Se a assinatura for encerrada antes da última dessas mensalidades, a parte do rastreador que falta vence numa fatura só. As notas fiscais passam a ser só de serviço (NFS-e). Quem já comprou o rastreador continua com ele, nas mesmas condições."
+	Changes = "Novos planos semestral e anual: quando o pedido os oferece, a assinatura de um veículo pode ser paga por período (6 ou 12 meses de uma vez), com o rastreador incluso no valor. O período é pago adiantado e renova sozinho; se a assinatura for encerrada antes do fim do período pago, não há devolução proporcional: o serviço continua até o fim dele e não renova. Quando o pedido oferece, a instalação pode ser com o relé do bloqueio remoto do motor ou sem ele, cada uma pela sua taxa. Para quem paga por mês, nada muda."
 	// MinMonths é a permanência mínima de cada assinatura.
 	MinMonths = 3
 

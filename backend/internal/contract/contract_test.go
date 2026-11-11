@@ -58,6 +58,14 @@ func TestContractText(t *testing.T) {
 		"permite a retirada do rastreador no dia e no endereço combinados, em até 30 (trinta) dias",
 		"o valor de reposição do mesmo rastreador na data", "comprovado pelo boletim de ocorrência",
 		"no comodato, a retirada não tem a taxa de desinstalação", "o rastreador em comodato é devolvido",
+		// Os planos semestral e anual e a instalação com ou sem bloqueio (versão 10).
+		"cobrada por mês ou, quando o pedido oferecer, por semestre ou por ano",
+		"Nos planos semestral e anual (cláusula 5), ele já está no valor do período: nada é somado",
+		"6 meses (semestral) ou 12 meses (anual)", "o 2º pelo menos 6 ou 12 meses depois do 1º",
+		"o reajuste vale para o valor do período", "não há devolução proporcional",
+		"o serviço continua até o último dia do período e a assinatura não renova",
+		"o encerramento vale no fim do período (cláusula 7)",
+		"Instalação com ou sem bloqueio", "Sem o relé, o bloqueio remoto não funciona",
 	} {
 		if want == "MP" {
 			want = "Medida Provisória nº 2.200-2/2001"
@@ -77,10 +85,10 @@ func TestContractText(t *testing.T) {
 	}
 	// As cláusulas viram blocos: a de permanência é uma lista, com o
 	// rastreador incluso e o comprado antes; a de preço também.
-	if s := doc.Sections[6]; s.Title != "7. Permanência mínima e multa" || len(s.Blocks) != 1 || s.Blocks[0].Kind != "ul" || len(s.Blocks[0].Items) != 6 {
+	if s := doc.Sections[6]; s.Title != "7. Permanência mínima e multa" || len(s.Blocks) != 1 || s.Blocks[0].Kind != "ul" || len(s.Blocks[0].Items) != 7 {
 		t.Errorf("cláusula 7 = %+v", s)
 	}
-	if s := doc.Sections[4]; len(s.Blocks) != 1 || len(s.Blocks[0].Items) != 8 {
+	if s := doc.Sections[4]; len(s.Blocks) != 1 || len(s.Blocks[0].Items) != 9 {
 		t.Errorf("cláusula 5 = %+v", s)
 	}
 	if s := doc.Sections[3]; s.Title != "4. O rastreador: incluso ou em comodato" {
