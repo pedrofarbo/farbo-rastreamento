@@ -10,6 +10,8 @@ import { useToast } from '@/components/ui/Toast';
 import { centsToInput, formatMoney, parseMoney } from '@/services/format';
 import type { OrderOptions } from '@/types';
 
+import { RecurrenceFields, recurrenceDraft, recurrenceInput } from './RecurrenceFields';
+
 import pageStyles from '@/pages/Page.module.css';
 import styles from './Billing.module.css';
 
@@ -46,6 +48,7 @@ export function OrderOptionsCard() {
   const [siteInsanos, setSiteInsanos] = useState('');
   const [trackerPart, setTrackerPart] = useState('');
   const [trackerMonths, setTrackerMonths] = useState('');
+  const [recurrence, setRecurrence] = useState(recurrenceDraft());
   const [error, setError] = useState('');
   useEffect(() => {
     const o = options.data;
@@ -61,6 +64,7 @@ export function OrderOptionsCard() {
     setSiteInsanos(centsToInput(o.checkout.insanosCents));
     setTrackerPart(centsToInput(o.tracker.cents));
     setTrackerMonths(String(o.tracker.months));
+    setRecurrence(recurrenceDraft(o.recurrence));
   }, [options.data]);
   const save = useMutation({
     mutationFn: () => {
@@ -72,6 +76,8 @@ export function OrderOptionsCard() {
       if (!Number.isInteger(months) || months < 1 || months > 60) {
         throw new Error('O rastreador incluso vai de 1 a 60 mensalidades.');
       }
+      const periods = recurrenceInput(recurrence);
+      if (typeof periods === 'string') throw new Error(periods);
       const input: Omit<OrderOptions, 'updatedAt'> = {
         loan: {
           enabled: loanOn,
@@ -82,6 +88,7 @@ export function OrderOptionsCard() {
         install: { enabled: farboOn, priceCents: priceCents ?? 0 },
         checkout: { enabled: checkoutOn, planCents: planCents ?? 0, insanosCents: insanosCents ?? 0 },
         tracker: { cents: trackerCents ?? 0, months },
+        recurrence: periods,
       };
       return catalogApi.setOrderOptions(input);
     },
@@ -131,6 +138,12 @@ export function OrderOptionsCard() {
               onChange={(e) => setSiteInsanos(e.target.value)}
             />
           </div>
+
+          <h3 className={pageStyles.sectionTitle}>Planos semestral e anual (site)</h3>
+          <RecurrenceFields draft={recurrence} onChange={setRecurrence} where="na contratação pelo site" />
+          <p className={pageStyles.description}>
+            Pelo link de um representante valem os do cadastro dele (ligados ou não lá), não estes.
+          </p>
 
           <h3 className={pageStyles.sectionTitle}>Rastreador incluso</h3>
           <p className={pageStyles.description}>

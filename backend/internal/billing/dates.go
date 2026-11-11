@@ -86,3 +86,24 @@ var monthNames = [...]string{
 func invoiceDescription(planName string, due Date) string {
 	return fmt.Sprintf("%s — %s/%d", planName, monthNames[due.Month()-1], due.Year())
 }
+
+// periodDescription é a fatura de um período: no mensal, o mês ("Plano
+// Mensal — outubro/2026"); no semestral e no anual, os meses que ela cobre
+// ("Plano Semestral — novembro/2026 a abril/2027").
+func periodDescription(planName string, due Date, months int) string {
+	if months <= 1 {
+		return invoiceDescription(planName, due)
+	}
+	last := NewDate(due.Year(), due.Month()+time.Month(months-1), 1)
+	return fmt.Sprintf("%s — %s/%d a %s/%d", planName, monthNames[due.Month()-1], due.Year(),
+		monthNames[last.Month()-1], last.Year())
+}
+
+// followingPeriod é o vencimento do período seguinte: no mensal, o de
+// followingDue; no semestral e no anual, 6 ou 12 passos dele (no dia da conta).
+func followingPeriod(d Date, dueDay, months int) Date {
+	for i := 0; i < max(months, 1); i++ {
+		d = followingDue(d, dueDay)
+	}
+	return d
+}

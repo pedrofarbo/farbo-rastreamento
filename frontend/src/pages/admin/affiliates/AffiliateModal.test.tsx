@@ -176,6 +176,29 @@ describe('o cadastro do afiliado', () => {
     });
   });
 
+  it('o semestral e o anual pelo link: desligados por padrão; ligados, com os valores dele; não no só comodato', async () => {
+    await render();
+    await setValue(control<HTMLInputElement>('Nome'), 'Rafa Representante');
+    const toggle = Array.from(document.querySelectorAll('label')).find((l) => l.textContent?.startsWith('Oferecer o semestral e o anual pelo link dele'))!
+      .querySelector('input') as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    expect(control<HTMLInputElement>('Semestral (R$, a cada 6 meses)').value).toBe('200,00');
+    expect(control<HTMLInputElement>('Anual (R$, a cada 12 meses)').value).toBe('400,00');
+    await act(async () => toggle.click());
+    await setValue(control<HTMLInputElement>('Anual (R$, a cada 12 meses)'), '');
+    await act(async () => button('Criar afiliado').click());
+    expect(text()).toContain('Para ligar o semestral e o anual, informe os dois valores.');
+    await setValue(control<HTMLInputElement>('Anual (R$, a cada 12 meses)'), '450,00');
+    await setValue(control<HTMLSelectElement>('Rastreador pelo link'), 'loan');
+    await act(async () => button('Criar afiliado').click());
+    expect(text()).toContain('o link só de comodato não os oferece');
+    expect(calls).toHaveLength(0);
+    await setValue(control<HTMLSelectElement>('Rastreador pelo link'), '');
+    await act(async () => button('Criar afiliado').click());
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0][1]).toMatchObject({ recurrence: { enabled: true, semiannualCents: 20000, annualCents: 45000 } });
+  });
+
   it('valor fixo continua como antes', async () => {
     await render();
     await setValue(control<HTMLInputElement>('Nome'), 'João');

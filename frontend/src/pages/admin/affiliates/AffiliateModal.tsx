@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { affiliatesApi, leadsApi } from '@/api/resources';
+import { RecurrenceFields, recurrenceDraft, recurrenceInput } from '@/components/billing/RecurrenceFields';
+import type { RecurrenceDraft } from '@/components/billing/RecurrenceFields';
 import { Button } from '@/components/ui/Button';
 import { SelectField, TextField } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
@@ -44,6 +46,8 @@ interface Draft {
   listingCity: string;
   listingArea: string;
   listingWhatsapp: string;
+  /** O semestral e o anual pelo link (ligados ou não, e os valores dele). */
+  recurrence: RecurrenceDraft;
   email: string;
   phone: string;
   pixKey: string;
@@ -76,6 +80,7 @@ function draftOf(a: Affiliate | null, defaultCents: number): Draft {
     listingCity: a?.listingCity ?? '',
     listingArea: a?.listingArea ?? '',
     listingWhatsapp: a?.listingWhatsapp ? formatPhoneInput(a.listingWhatsapp) : '',
+    recurrence: recurrenceDraft(a?.recurrence),
     email: a?.email ?? '',
     phone: a?.phone ?? '',
     pixKey: a?.pixKey ?? '',
@@ -192,6 +197,15 @@ export function AffiliateModal({
       setError('Para aparecer na landing, diga a cidade do representante (por exemplo, Campinas/SP).');
       return;
     }
+    const recurrence = recurrenceInput(draft.recurrence);
+    if (typeof recurrence === 'string') {
+      setError(recurrence);
+      return;
+    }
+    if (recurrence.enabled && draft.equipmentModes === 'loan') {
+      setError('O semestral e o anual são com o rastreador incluso: o link só de comodato não os oferece.');
+      return;
+    }
     if (draft.manageInstalls && !draft.passwordOn) {
       setError('Para o representante cuidar das instalações, marque a senha da página: ela mostra os dados dos clientes.');
       return;
@@ -228,6 +242,7 @@ export function AffiliateModal({
       listingCity: draft.listingCity,
       listingArea: draft.listingArea,
       listingWhatsapp: draft.listingWhatsapp,
+      recurrence,
       email: draft.email,
       phone: draft.phone,
       pixKey: draft.pixKey,
@@ -489,6 +504,13 @@ export function AffiliateModal({
             onChange={(e) => set('phone', formatPhoneInput(e.target.value, draft.phone))}
           />
           <TextField label="Chave Pix" value={draft.pixKey} maxLength={140} onChange={(e) => set('pixKey', e.target.value)} hint="Vai na conta a pagar do fechamento." />
+        </div>
+        <div className={styles.recurrence}>
+          <strong>Planos semestral e anual pelo link</strong>
+          <RecurrenceFields draft={draft.recurrence} onChange={(d) => set('recurrence', d)} where="pelo link dele" />
+          <span className={company.muted}>
+            A comissão sai por mês do período: paga a fatura semestral, entram 6 meses (12 no anual).
+          </span>
         </div>
         <label className={company.check}>
           <input type="checkbox" checked={draft.active} onChange={(e) => set('active', e.target.checked)} />

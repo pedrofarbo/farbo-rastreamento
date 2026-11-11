@@ -276,7 +276,7 @@ func changeDueDay(ctx context.Context, tx pgx.Tx, sub *Subscription, day int, to
 		return nil, err
 	}
 	if last != nil {
-		if rule := followingDue(Date{*last}, day); rule.Before(next) && !rule.Before(today) {
+		if rule := followingPeriod(Date{*last}, day, sub.PeriodMonths); rule.Before(next) && !rule.Before(today) {
 			next = rule
 		}
 	}

@@ -14,6 +14,8 @@ export interface CheckoutChoice {
   equipmentMode: 'sale' | 'loan';
   /** O rastreador incluso instalado pelos instaladores da Farbo. */
   farboInstall: boolean;
+  /** O semestral (6) ou o anual (12), quando o link os oferece; ausente ou 1, o mensal. */
+  periodMonths?: number;
 }
 
 export interface CheckoutTotals {
@@ -29,11 +31,34 @@ export interface CheckoutTotals {
   freightCents: number;
   /** O que se paga agora, com Pix. */
   totalNowCents: number;
+  /** O semestral (6) ou o anual (12): monthlyCents e firstMonthlyCents são o valor do período. 1: o mensal. */
+  periodMonths: number;
+}
+
+/** O semestral ou o anual escolhido, se o link o oferece (só com o rastreador incluso). */
+export function chosenPeriod(offer: CheckoutOffer, choice: CheckoutChoice) {
+  if (choice.equipmentMode === 'loan' || !choice.periodMonths || choice.periodMonths <= 1) return null;
+  return offer.periods?.find((p) => p.months === choice.periodMonths) ?? null;
 }
 
 /** Pelo link de um afiliado com tabela, a mensalidade é a do tipo do veículo. */
 export function checkoutTotals(offer: CheckoutOffer, choice: CheckoutChoice, freightCents = 0, kind?: VehicleKind): CheckoutTotals {
   const loan = choice.equipmentMode === 'loan' && offer.loan !== null;
+  const installFarbo = !offer.installDirect && !loan && choice.farboInstall && offer.install ? offer.install.priceCents : 0;
+  // O semestral ou o anual: o valor do período, com o rastreador incluso nele.
+  const period = chosenPeriod(offer, choice);
+  if (period) {
+    return {
+      monthlyCents: period.cents,
+      guaranteeCents: 0,
+      firstMonthlyCents: period.cents,
+      trackerMonths: 0,
+      installNowCents: installFarbo,
+      freightCents,
+      totalNowCents: period.cents + installFarbo + freightCents,
+      periodMonths: period.months,
+    };
+  }
   const guaranteeCents = loan ? (offer.loan?.surchargeCents ?? 0) : 0;
   const monthlyCents = (offer.planByKind ? kindPrice(offer.planByKind, kind) : offer.planCents) + guaranteeCents;
   // O comodato não tem a parte do rastreador: ele volta à Farbo.
@@ -54,6 +79,7 @@ export function checkoutTotals(offer: CheckoutOffer, choice: CheckoutChoice, fre
     installNowCents,
     freightCents,
     totalNowCents: included.first + installNowCents + freightCents,
+    periodMonths: 1,
   };
 }
 

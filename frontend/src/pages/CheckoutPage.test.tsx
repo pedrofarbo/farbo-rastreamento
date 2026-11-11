@@ -198,6 +198,46 @@ describe('a contratação pelo site', () => {
     expect(placed[0]).not.toHaveProperty('installments');
   });
 
+  it('o semestral e o anual pelo link: o valor do período no Pix, o rastreador no valor e o pedido com os meses', async () => {
+    offer = offerWith({
+      periods: [
+        { months: 6, planName: 'Plano Semestral', cents: 20000 },
+        { months: 12, planName: 'Plano Anual', cents: 40000 },
+      ],
+    });
+    await render();
+    expect(radio('Mensal').checked).toBe(true);
+    expect(text()).toContain('SemestralR$ 200,00/semestreR$ 33,33 por mês, pagos de uma vez a cada 6 meses');
+    expect(text()).toContain('AnualR$ 400,00/ano');
+    await click(radio('Semestral'));
+    expect(text()).toContain('Plano semestralR$ 200,00/semestre');
+    expect(text()).toContain('Hoje, no PixR$ 200,00 + frete');
+    expect(text()).toContain('Rastreador inclusono valor do plano');
+    expect(text()).not.toContain('Se encerrar antes da 10ª mensalidade');
+    // O comodato volta ao mensal (o semestral e o anual são com o rastreador incluso).
+    await click(radio('Comodato'));
+    expect(text()).not.toContain('Como pagar');
+    await click(radio('Rastreador incluso'));
+    expect(radio('Mensal').checked).toBe(true);
+    await click(radio('Anual'));
+    await fillUntilPayment();
+    expect(text()).toContain('1º ano · Plano AnualR$ 400,00');
+    expect(text()).toContain('Depois, R$ 400,00 a cada 12 meses, no dia 10');
+    expect(text()).toContain('não há devolução');
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar'));
+    expect(placed[0]).toMatchObject({ equipmentMode: 'sale', periodMonths: 12 });
+  });
+
+  it('sem o semestral e o anual no link: só o mensal, e o pedido sem os meses', async () => {
+    await render();
+    expect(text()).not.toContain('Como pagar');
+    await fillUntilPayment();
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar'));
+    expect(placed[0]).not.toHaveProperty('periodMonths');
+  });
+
   it('pelo link de um afiliado com tabela: o tipo do veículo dá a mensalidade', async () => {
     saveReferral('lia');
     // Pela tabela, a parte do rastreador incluso soma nas 10 primeiras.

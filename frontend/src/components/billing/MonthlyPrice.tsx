@@ -5,7 +5,23 @@ import type { PromoOffer, Subscription } from '@/types';
 import styles from './Billing.module.css';
 
 type Priced = Pick<Subscription, 'priceCents' | 'promoPriceCents' | 'promoUntil' | 'nextDueDate'> &
-  Partial<Pick<Subscription, 'nextPriceCents' | 'nextPriceFrom' | 'trackerCents' | 'trackerUntil' | 'trackerAdded'>>;
+  Partial<
+    Pick<Subscription, 'nextPriceCents' | 'nextPriceFrom' | 'trackerCents' | 'trackerUntil' | 'trackerAdded' | 'periodMonths' | 'endsOn'>
+  >;
+
+/** "/mês", "/semestre" ou "/ano": de quanto em quanto tempo a assinatura é cobrada. */
+export function periodUnit(months?: number): string {
+  if (months === 12) return '/ano';
+  if (months === 6) return '/semestre';
+  return '/mês';
+}
+
+/** "Mensal", "Semestral" ou "Anual". */
+export function periodLabel(months?: number): string {
+  if (months === 12) return 'Anual';
+  if (months === 6) return 'Semestral';
+  return 'Mensal';
+}
 
 /**
  * A parte do rastreador incluso somada à próxima mensalidade (zero: já no
@@ -50,6 +66,21 @@ export function MonthlyPrice({ sub, staff = false }: { sub: Priced; staff?: bool
     ) : null;
   if (isFree(sub)) {
     return <span className={styles.amount}>Grátis</span>;
+  }
+  // O semestral e o anual: o valor do período (o rastreador já está nele);
+  // cancelado com o período pago, até quando fica ativo.
+  if ((sub.periodMonths ?? 1) > 1) {
+    return (
+      <span>
+        <span className={styles.amount}>{formatMoney(sub.priceCents)}</span>
+        {periodUnit(sub.periodMonths)}{' '}
+        <span className={styles.muted}>
+          ({formatMoney(Math.floor(sub.priceCents / (sub.periodMonths as number)))} por mês
+          {sub.endsOn ? `; encerra em ${formatDateOnly(sub.endsOn)}, no fim do período pago` : ''})
+        </span>
+        {adjustment}
+      </span>
+    );
   }
   const tracker = trackerPart(sub);
   if (tracker > 0) {

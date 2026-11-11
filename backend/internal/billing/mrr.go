@@ -78,13 +78,22 @@ type mrrSub struct {
 	trackerAdded bool
 	canceled     time.Time
 	isCanceled   bool
+	// period: de quantos em quantos meses é cobrada (0 ou 1, o mensal).
+	period int
 }
 
-// priceOn é a mensalidade do dia, com a parte do rastreador incluso quando
-// ela é somada (como o gerador faz).
+// priceOn é a fatura do dia (a mensalidade, ou o valor do semestral ou do
+// anual), com a parte do rastreador incluso quando ela é somada (como o
+// gerador faz).
 func (m mrrSub) priceOn(day Date) int {
 	amount, _ := priceOn(m.priceCents, m.nextCents, m.nextFrom, m.promoCents, m.promoUntil, day)
 	return amount + trackerOn(m.trackerCents, m.trackerAdded, m.trackerUntil, day)
+}
+
+// mrrOn é o que a assinatura rende por mês: a mensalidade, ou o valor do
+// semestral ou do anual dividido pelos meses.
+func (m mrrSub) mrrOn(day Date) int {
+	return m.priceOn(day) / max(m.period, 1)
 }
 
 // mrrBill é o que as faturas de um mês cobram.
@@ -109,7 +118,7 @@ func churnByMonth(subs []mrrSub, loc *time.Location) map[string]mrrChurn {
 			continue
 		}
 		day := DateIn(s.canceled, loc)
-		if p := s.priceOn(day); p > 0 {
+		if p := s.mrrOn(day); p > 0 {
 			c := out[day.Format("2006-01")]
 			c.cents += int64(p)
 			c.count++
@@ -183,7 +192,20 @@ func (s *Service) MRR(ctx context.Context, months int) (*MRR, error) {
 	if err != nil {
 		return nil, err
 	}
-	current := computeForecast(subs, generated, cur, next)
+	// O mês atual: as mensais pelo que é cobrado nele; o semestral e o anual,
+	// pelo valor do período dividido pelos meses (rendem todo mês).
+	monthlySubs, monthlyInvoices := monthlyOnly(subs, generated)
+	current := computeForecast(monthlySubs, monthlyInvoices, cur, next)
+	periodic, err := s.repo.mrrPeriodic(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range periodic {
+		if v := p.mrrOn(today); v > 0 {
+			current.MonthlyCents += int64(v)
+			current.Monthlies++
+		}
+	}
 	if err := s.addOrganizations(ctx, &current, cur, next); err != nil {
 		return nil, err
 	}
@@ -194,29 +216,34 @@ func (s *Service) MRR(ctx context.Context, months int) (*MRR, error) {
 	return out, nil
 }
 
-// mrrBilled soma, por mês de vencimento em [from, to), as faturas de
-// clientes (menos as canceladas): as mensalidades (a fatura da assinatura
-// menos as parcelas que leva; as de valor zero não contam), as que são a 1ª
-// da assinatura e as parcelas do rastreador (de qualquer fatura).
+// mrrBilled soma, por mês em [from, to), as faturas de clientes (menos as
+// canceladas): as mensalidades (a fatura da assinatura menos as parcelas que
+// leva; as de valor zero não contam), as que são a 1ª da assinatura e as
+// parcelas do rastreador (de qualquer fatura). A do semestral e a do anual
+// entram em cada mês que cobrem, pelo valor dividido pelos meses.
 func (r *Repository) mrrBilled(ctx context.Context, from, to Date) (map[string]mrrBill, error) {
 	rows, err := r.db.Query(ctx, `
 		WITH inv AS (
-			SELECT i.subscription_id, i.due_date, i.status, i.amount_cents::bigint AS amount,
+			SELECT i.subscription_id, i.due_date, i.status, i.amount_cents::bigint AS amount, i.period_months AS period,
 				COALESCE((SELECT sum(e.amount_cents) FROM equipment_installments e WHERE e.invoice_id = i.id), 0)::bigint AS parcel,
 				i.subscription_id IS NOT NULL AND NOT EXISTS (
 					SELECT 1 FROM invoices p WHERE p.subscription_id = i.subscription_id AND p.status <> 'CANCELED'
 						AND p.due_date < i.due_date) AS first
 			FROM invoices i JOIN users u ON u.id = i.customer_id
 			WHERE i.status <> 'CANCELED' AND u.role = 'customer' AND NOT checkout_pending(u.id)
-				AND i.due_date >= $1::date AND i.due_date < $2::date)
-		SELECT to_char(due_date, 'YYYY-MM'),
-			COALESCE(sum(amount - parcel) FILTER (WHERE subscription_id IS NOT NULL AND amount > parcel), 0)::bigint,
+				AND i.due_date >= ($1::date - interval '11 months') AND i.due_date < $2::date),
+		spread AS (
+			SELECT (date_trunc('month', due_date) + k * interval '1 month')::date AS month, k, subscription_id, status,
+				amount, parcel, first, (amount - parcel) / period AS share
+			FROM inv CROSS JOIN LATERAL generate_series(0, period - 1) AS k)
+		SELECT to_char(month, 'YYYY-MM'),
+			COALESCE(sum(share) FILTER (WHERE subscription_id IS NOT NULL AND amount > parcel), 0)::bigint,
 			count(*) FILTER (WHERE subscription_id IS NOT NULL AND amount > parcel),
-			COALESCE(sum(amount - parcel) FILTER (WHERE first AND amount > parcel), 0)::bigint,
-			count(*) FILTER (WHERE first AND amount > parcel),
-			COALESCE(sum(parcel), 0)::bigint,
-			COALESCE(sum(parcel) FILTER (WHERE status = 'PAID'), 0)::bigint
-		FROM inv GROUP BY 1`, from.String(), to.String())
+			COALESCE(sum(share) FILTER (WHERE first AND k = 0 AND amount > parcel), 0)::bigint,
+			count(*) FILTER (WHERE first AND k = 0 AND amount > parcel),
+			COALESCE(sum(parcel) FILTER (WHERE k = 0), 0)::bigint,
+			COALESCE(sum(parcel) FILTER (WHERE k = 0 AND status = 'PAID'), 0)::bigint
+		FROM spread WHERE month >= $1::date AND month < $2::date GROUP BY 1`, from.String(), to.String())
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -343,7 +370,7 @@ func (r *Repository) orgMonth(ctx context.Context, start, end Date) ([]orgMonthR
 func (r *Repository) mrrCanceled(ctx context.Context, from time.Time) ([]mrrSub, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT s.price_cents, s.promo_price_cents, s.promo_until, s.next_price_cents, s.next_price_from,
-			COALESCE(s.canceled_at, s.updated_at), s.tracker_cents, s.tracker_until, s.tracker_added
+			COALESCE(s.canceled_at, s.updated_at), s.tracker_cents, s.tracker_until, s.tracker_added, s.period_months
 		FROM subscriptions s JOIN users u ON u.id = s.customer_id
 		WHERE u.role = 'customer' AND s.status = 'CANCELED' AND COALESCE(s.canceled_at, s.updated_at) >= $1`, from)
 	if err != nil {
@@ -355,7 +382,7 @@ func (r *Repository) mrrCanceled(ctx context.Context, from time.Time) ([]mrrSub,
 		var m mrrSub
 		var promoUntil, nextFrom, trackerUntil *time.Time
 		if err := rows.Scan(&m.priceCents, &m.promoCents, &promoUntil, &m.nextCents, &nextFrom, &m.canceled,
-			&m.trackerCents, &trackerUntil, &m.trackerAdded); err != nil {
+			&m.trackerCents, &trackerUntil, &m.trackerAdded, &m.period); err != nil {
 			return nil, err
 		}
 		m.isCanceled = true
@@ -406,6 +433,26 @@ type forecastInvoice struct {
 	due          Date
 	monthly      int64
 	installment  int64
+	// period: os meses que ela cobre (0 ou 1, o mensal).
+	period int
+}
+
+// monthlyOnly separa as mensais (as do semestral e do anual rendem todo mês
+// pelo valor dividido, fora daqui).
+func monthlyOnly(subs []forecastSub, generated []forecastInvoice) ([]forecastSub, []forecastInvoice) {
+	var s []forecastSub
+	for _, x := range subs {
+		if x.period <= 1 {
+			s = append(s, x)
+		}
+	}
+	var g []forecastInvoice
+	for _, x := range generated {
+		if x.period <= 1 {
+			g = append(g, x)
+		}
+	}
+	return s, g
 }
 
 // computeForecast monta a previsão do mês [start, end).
@@ -430,7 +477,7 @@ func computeForecast(subs []forecastSub, generated []forecastInvoice, start, end
 		// As que o gerador ainda vai fazer, desde a próxima: cada uma leva a
 		// próxima parcela (a que já existe no mesmo dia não sai de novo).
 		parcel := 0
-		for d, i := s.next, 0; d.Before(end) && i < maxCatchUp; d, i = followingDue(d, s.dueDay), i+1 {
+		for d, i := s.next, 0; d.Before(end) && i < maxCatchUp; d, i = followingPeriod(d, s.dueDay, s.period), i+1 {
 			if exists[s.id][d] {
 				continue
 			}
@@ -471,9 +518,10 @@ func (r *Repository) forecastData(ctx context.Context, start, end Date) ([]forec
 		SELECT s.id, s.due_day, s.next_due_date, s.price_cents, s.promo_price_cents, s.promo_until, s.next_price_cents, s.next_price_from,
 			COALESCE((SELECT array_agg(e.amount_cents::bigint ORDER BY e.number) FROM equipment_installments e
 				WHERE e.subscription_id = s.id AND e.invoice_id IS NULL AND e.waived_at IS NULL), '{}'),
-			s.tracker_cents, s.tracker_until, s.tracker_added
+			s.tracker_cents, s.tracker_until, s.tracker_added, s.period_months
 		FROM subscriptions s JOIN users u ON u.id = s.customer_id
-		WHERE s.status = 'ACTIVE' AND u.role = 'customer' AND NOT checkout_pending(u.id) AND s.next_due_date < $1::date`,
+		WHERE s.status = 'ACTIVE' AND u.role = 'customer' AND NOT checkout_pending(u.id) AND s.next_due_date < $1::date
+			AND (s.ends_on IS NULL OR s.next_due_date < s.ends_on)`,
 		end.String())
 	if err != nil {
 		return nil, nil, database.MapError(err)
@@ -484,7 +532,7 @@ func (r *Repository) forecastData(ctx context.Context, start, end Date) ([]forec
 		var next time.Time
 		var promoUntil, nextFrom, trackerUntil *time.Time
 		if err := rows.Scan(&f.id, &f.dueDay, &next, &f.priceCents, &f.promoCents, &promoUntil, &f.nextCents, &nextFrom, &f.pending,
-			&f.trackerCents, &trackerUntil, &f.trackerAdded); err != nil {
+			&f.trackerCents, &trackerUntil, &f.trackerAdded, &f.period); err != nil {
 			rows.Close()
 			return nil, nil, err
 		}
@@ -506,7 +554,7 @@ func (r *Repository) forecastData(ctx context.Context, start, end Date) ([]forec
 	}
 
 	rows, err = r.db.Query(ctx, `
-		SELECT i.subscription_id, i.due_date, i.amount_cents::bigint - p.cents, p.cents
+		SELECT i.subscription_id, i.due_date, i.amount_cents::bigint - p.cents, p.cents, i.period_months
 		FROM invoices i
 		JOIN users u ON u.id = i.customer_id
 		CROSS JOIN LATERAL (SELECT COALESCE(sum(e.amount_cents), 0)::bigint AS cents FROM equipment_installments e WHERE e.invoice_id = i.id) p
@@ -520,11 +568,45 @@ func (r *Repository) forecastData(ctx context.Context, start, end Date) ([]forec
 	for rows.Next() {
 		var f forecastInvoice
 		var due time.Time
-		if err := rows.Scan(&f.subscription, &due, &f.monthly, &f.installment); err != nil {
+		if err := rows.Scan(&f.subscription, &due, &f.monthly, &f.installment, &f.period); err != nil {
 			return nil, nil, err
 		}
 		f.due = Date{due}
 		generated = append(generated, f)
 	}
 	return subs, generated, database.MapError(rows.Err())
+}
+
+// mrrPeriodic: os semestrais e anuais ativos de clientes (rendem todo mês o
+// valor do período dividido pelos meses).
+func (r *Repository) mrrPeriodic(ctx context.Context) ([]mrrSub, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT s.price_cents, s.promo_price_cents, s.promo_until, s.next_price_cents, s.next_price_from,
+			s.tracker_cents, s.tracker_until, s.tracker_added, s.period_months
+		FROM subscriptions s JOIN users u ON u.id = s.customer_id
+		WHERE s.status = 'ACTIVE' AND s.period_months > 1 AND u.role = 'customer' AND NOT checkout_pending(u.id)`)
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	defer rows.Close()
+	var out []mrrSub
+	for rows.Next() {
+		var m mrrSub
+		var promoUntil, nextFrom, trackerUntil *time.Time
+		if err := rows.Scan(&m.priceCents, &m.promoCents, &promoUntil, &m.nextCents, &nextFrom,
+			&m.trackerCents, &trackerUntil, &m.trackerAdded, &m.period); err != nil {
+			return nil, err
+		}
+		if promoUntil != nil {
+			m.promoUntil = &Date{*promoUntil}
+		}
+		if nextFrom != nil {
+			m.nextFrom = &Date{*nextFrom}
+		}
+		if trackerUntil != nil {
+			m.trackerUntil = &Date{*trackerUntil}
+		}
+		out = append(out, m)
+	}
+	return out, database.MapError(rows.Err())
 }

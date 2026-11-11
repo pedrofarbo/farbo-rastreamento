@@ -76,6 +76,13 @@ type Subscription struct {
 	TrackerMonths int   `json:"trackerMonths"`
 	TrackerUntil  *Date `json:"trackerUntil"`
 	TrackerAdded  bool  `json:"trackerAdded"`
+	// PeriodMonths: de quantos em quantos meses a assinatura é cobrada (1, o
+	// mensal; 6, o semestral; 12, o anual). PriceCents é o valor do período.
+	PeriodMonths int `json:"periodMonths"`
+	// EndsOn: o semestral ou o anual cancelado com o período já pago fica
+	// ativo até esta data (o fim do período) e não renova; nulo, sem
+	// encerramento agendado.
+	EndsOn *Date `json:"endsOn"`
 	// O andamento das parcelas (só nas parceladas, preenchido na leitura): o
 	// valor parcelado, a parcela, quantas foram pagas e quanto falta pagar.
 	EquipmentCents       int       `json:"equipmentCents"`
@@ -140,8 +147,10 @@ type Invoice struct {
 	PaidChargeID *uuid.UUID `json:"paidChargeId"`
 	PaymentURL   string     `json:"paymentUrl"`
 	PixCode      string     `json:"pixCode"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
+	// PeriodMonths: os meses que a fatura cobre (o semestral, 6; o anual, 12).
+	PeriodMonths int       `json:"periodMonths"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 // CustomerSummary é a linha da lista de clientes da central.
@@ -184,19 +193,23 @@ func NewRepository(db *database.DB) *Repository { return &Repository{db: db} }
 const subscriptionColumns = `id, customer_id, plan_name, price_cents, due_day, next_due_date,
 	status, canceled_at, vehicle_id, delivery_address, promo_price_cents, promo_until,
 	next_price_cents, next_price_from, installments, commitment_until, equipment_mode, uninstall_fee_cents,
-	tracker_cents, tracker_months, tracker_until, tracker_added, created_at, updated_at`
+	tracker_cents, tracker_months, tracker_until, tracker_added, period_months, ends_on, created_at, updated_at`
 
 func scanSubscription(row database.Scanner) (*Subscription, error) {
 	var s Subscription
 	var next time.Time
-	var promoUntil, nextFrom, commitment, trackerUntil *time.Time
+	var promoUntil, nextFrom, commitment, trackerUntil, endsOn *time.Time
 	if err := row.Scan(&s.ID, &s.CustomerID, &s.PlanName, &s.PriceCents, &s.DueDay, &next,
 		&s.Status, &s.CanceledAt, &s.VehicleID, &s.DeliveryAddress, &s.PromoPriceCents, &promoUntil,
 		&s.NextPriceCents, &nextFrom, &s.Installments, &commitment, &s.EquipmentMode, &s.UninstallFeeCents,
-		&s.TrackerCents, &s.TrackerMonths, &trackerUntil, &s.TrackerAdded, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		&s.TrackerCents, &s.TrackerMonths, &trackerUntil, &s.TrackerAdded, &s.PeriodMonths, &endsOn,
+		&s.CreatedAt, &s.UpdatedAt); err != nil {
 		return nil, database.MapError(err)
 	}
 	s.NextDueDate = Date{next}
+	if endsOn != nil {
+		s.EndsOn = &Date{*endsOn}
+	}
 	if promoUntil != nil {
 		s.PromoUntil = &Date{*promoUntil}
 	}
@@ -218,12 +231,14 @@ func InsertSubscription(ctx context.Context, q database.Querier, s *Subscription
 	return scanSubscription(q.QueryRow(ctx, `
 		INSERT INTO subscriptions (customer_id, plan_name, price_cents, due_day, next_due_date,
 			vehicle_id, delivery_address, promo_price_cents, promo_until, installments, commitment_until,
-			equipment_mode, uninstall_fee_cents, tracker_cents, tracker_months, tracker_until, tracker_added)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE(NULLIF($12, ''), 'sale'), $13, $14, $15, $16, $17)
+			equipment_mode, uninstall_fee_cents, tracker_cents, tracker_months, tracker_until, tracker_added, period_months)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE(NULLIF($12, ''), 'sale'), $13, $14, $15, $16, $17,
+			GREATEST($18, 1))
 		RETURNING `+subscriptionColumns,
 		s.CustomerID, s.PlanName, s.PriceCents, s.DueDay, s.NextDueDate.Time, s.VehicleID, s.DeliveryAddress,
 		s.PromoPriceCents, dateOrNil(s.PromoUntil), s.Installments, dateOrNil(s.CommitmentUntil),
-		s.EquipmentMode, s.UninstallFeeCents, s.TrackerCents, s.TrackerMonths, dateOrNil(s.TrackerUntil), s.TrackerAdded))
+		s.EquipmentMode, s.UninstallFeeCents, s.TrackerCents, s.TrackerMonths, dateOrNil(s.TrackerUntil), s.TrackerAdded,
+		s.PeriodMonths))
 }
 
 func dateOrNil(d *Date) *time.Time {
@@ -307,7 +322,13 @@ func (r *Repository) CancelSubscription(ctx context.Context, id uuid.UUID, today
 	var sub *Subscription
 	var balance, uninstall *Invoice
 	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
-		var err error
+		// O semestral ou o anual com o período pago: fica ativo até o fim
+		// dele e não renova (sem devolução).
+		scheduled, err := scheduleEnd(ctx, tx, id, today)
+		if err != nil || scheduled != nil {
+			sub = scheduled
+			return err
+		}
 		sub, err = scanSubscription(tx.QueryRow(ctx, `
 			UPDATE subscriptions SET status = 'CANCELED', canceled_at = NOW(), updated_at = NOW()
 			WHERE id = $1 AND status = 'ACTIVE'
@@ -385,6 +406,62 @@ func (r *Repository) CancelSubscription(ctx context.Context, id uuid.UUID, today
 	return &Canceled{Subscription: sub, Balance: balance, Uninstall: uninstall}, nil
 }
 
+// ErrEndScheduled: o semestral ou o anual já está com o fim agendado.
+var ErrEndScheduled = ValidationError{"esta assinatura já está encerrando: ela fica ativa até o fim do período pago e não renova"}
+
+// scheduleEnd agenda o fim do semestral ou do anual cancelado com o período
+// já pago: ele fica ativo até o fim do período e não renova (sem devolução);
+// as faturas dos períodos seguintes que ainda não venceram saem. Nil: não é o
+// caso (o mensal, ou o período não está pago) — o encerramento é na hora.
+func scheduleEnd(ctx context.Context, tx pgx.Tx, id uuid.UUID, today Date) (*Subscription, error) {
+	var period, dueDay int
+	var status string
+	var endsOn *time.Time
+	err := tx.QueryRow(ctx, `SELECT period_months, due_day, status, ends_on FROM subscriptions WHERE id = $1 FOR UPDATE`, id).
+		Scan(&period, &dueDay, &status, &endsOn)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (status != SubscriptionActive || period <= 1)) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if endsOn != nil {
+		return nil, ErrEndScheduled
+	}
+	// O fim do período pago: o vencimento do período seguinte ao último pago.
+	var lastPaid *time.Time
+	if err := tx.QueryRow(ctx, `SELECT max(due_date) FROM invoices WHERE subscription_id = $1 AND status = 'PAID'`, id).
+		Scan(&lastPaid); err != nil {
+		return nil, err
+	}
+	if lastPaid == nil {
+		return nil, nil
+	}
+	end := followingPeriod(Date{*lastPaid}, dueDay, period)
+	if !today.Before(end) {
+		return nil, nil
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE invoices SET status = 'CANCELED', updated_at = NOW()
+		WHERE subscription_id = $1 AND status = 'OPEN' AND due_date >= $2`, id, today.Time); err != nil {
+		return nil, err
+	}
+	return scanSubscription(tx.QueryRow(ctx, `
+		UPDATE subscriptions SET ends_on = $2, updated_at = NOW() WHERE id = $1 RETURNING `+subscriptionColumns, id, end.Time))
+}
+
+// FinishEnded encerra os semestrais e anuais cancelados cujo período pago
+// acabou (o fim agendado chegou).
+func (r *Repository) FinishEnded(ctx context.Context, today Date) (int64, error) {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE subscriptions SET status = 'CANCELED', canceled_at = NOW(), updated_at = NOW()
+		WHERE status = 'ACTIVE' AND ends_on IS NOT NULL AND ends_on <= $1`, today.Time)
+	if err != nil {
+		return 0, database.MapError(err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (r *Repository) ListSubscriptions(ctx context.Context, customerID uuid.UUID) ([]*Subscription, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT `+subscriptionColumns+` FROM subscriptions
@@ -411,14 +488,14 @@ func (r *Repository) ListSubscriptions(ctx context.Context, customerID uuid.UUID
 // ---------------------------------------------------------------------------
 
 const invoiceColumns = `id, customer_id, subscription_id, description, amount_cents, due_date,
-	status, paid_at, paid_via, paid_charge_id, payment_url, pix_code, created_at, updated_at`
+	status, paid_at, paid_via, paid_charge_id, payment_url, pix_code, period_months, created_at, updated_at`
 
 func scanInvoice(row database.Scanner) (*Invoice, error) {
 	var inv Invoice
 	var due time.Time
 	if err := row.Scan(&inv.ID, &inv.CustomerID, &inv.SubscriptionID, &inv.Description,
 		&inv.AmountCents, &due, &inv.Status, &inv.PaidAt, &inv.PaidVia, &inv.PaidChargeID, &inv.PaymentURL, &inv.PixCode,
-		&inv.CreatedAt, &inv.UpdatedAt); err != nil {
+		&inv.PeriodMonths, &inv.CreatedAt, &inv.UpdatedAt); err != nil {
 		return nil, database.MapError(err)
 	}
 	inv.DueDate = Date{due}
@@ -614,6 +691,8 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 		trackerCents   int
 		trackerUntil   *Date
 		trackerAdded   bool
+		periodMonths   int
+		endsOn         *Date
 	}
 
 	var created int64
@@ -622,7 +701,7 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 			SELECT s.id, s.customer_id, s.plan_name, s.price_cents, s.due_day, s.next_due_date, s.promo_price_cents,
 				s.promo_until, s.next_price_cents, s.next_price_from, s.installments,
 				NOT EXISTS (SELECT 1 FROM invoices i WHERE i.subscription_id = s.id),
-				s.tracker_cents, s.tracker_until, s.tracker_added
+				s.tracker_cents, s.tracker_until, s.tracker_added, s.period_months, s.ends_on
 			FROM subscriptions s
 			WHERE s.status = 'ACTIVE'
 				AND (s.next_due_date <= $1 OR NOT EXISTS (SELECT 1 FROM invoices i WHERE i.subscription_id = s.id))
@@ -635,14 +714,17 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 		for rows.Next() {
 			var d due
 			var next time.Time
-			var promoUntil, nextFrom, trackerUntil *time.Time
+			var promoUntil, nextFrom, trackerUntil, endsOn *time.Time
 			if err := rows.Scan(&d.id, &d.customerID, &d.planName, &d.priceCents, &d.dueDay, &next,
 				&d.promoCents, &promoUntil, &d.nextPrice, &nextFrom, &d.installments, &d.first,
-				&d.trackerCents, &trackerUntil, &d.trackerAdded); err != nil {
+				&d.trackerCents, &trackerUntil, &d.trackerAdded, &d.periodMonths, &endsOn); err != nil {
 				rows.Close()
 				return err
 			}
 			d.next = Date{next}
+			if endsOn != nil {
+				d.endsOn = &Date{*endsOn}
+			}
 			if promoUntil != nil {
 				d.promoUntil = &Date{*promoUntil}
 			}
@@ -667,8 +749,12 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 				until = next
 			}
 			for i := 0; i < maxCatchUp && !until.Before(next); i++ {
+				// O semestral ou o anual cancelado: nada depois do fim do período pago.
+				if d.endsOn != nil && !next.Before(*d.endsOn) {
+					break
+				}
 				amount, promotional := priceOn(d.priceCents, d.nextPrice, d.nextFrom, d.promoCents, d.promoUntil, next)
-				description := invoiceDescription(d.planName, next)
+				description := periodDescription(d.planName, next, d.periodMonths)
 				if promotional {
 					description += " · promoção de pré-lançamento"
 				}
@@ -687,11 +773,11 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 				}
 				var invoiceID uuid.UUID
 				err := tx.QueryRow(ctx, `
-					INSERT INTO invoices (customer_id, subscription_id, description, amount_cents, due_date)
-					VALUES ($1, $2, $3, $4, $5)
+					INSERT INTO invoices (customer_id, subscription_id, description, amount_cents, due_date, period_months)
+					VALUES ($1, $2, $3, $4, $5, $6)
 					ON CONFLICT (subscription_id, due_date) DO NOTHING
 					RETURNING id`,
-					d.customerID, d.id, description, amount, next.Time).Scan(&invoiceID)
+					d.customerID, d.id, description, amount, next.Time, max(d.periodMonths, 1)).Scan(&invoiceID)
 				switch {
 				case errors.Is(err, pgx.ErrNoRows):
 					// Já existia: a parcela fica para a próxima.
@@ -706,7 +792,7 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 						}
 					}
 				}
-				next = followingDue(next, d.dueDay)
+				next = followingPeriod(next, d.dueDay, d.periodMonths)
 			}
 			if _, err := tx.Exec(ctx,
 				`UPDATE subscriptions SET next_due_date = $2, updated_at = NOW() WHERE id = $1`,

@@ -64,8 +64,14 @@ func (s *Service) IsSuspended(ctx context.Context, customerID uuid.UUID) (bool, 
 	return s.repo.HasOverdue(ctx, customerID, s.suspensionCutoff())
 }
 
-// GenerateInvoices cria as faturas que vencem nos próximos InvoiceLeadDays.
+// GenerateInvoices cria as faturas que vencem nos próximos InvoiceLeadDays
+// (e, antes, encerra os semestrais e anuais cujo fim agendado chegou).
 func (s *Service) GenerateInvoices(ctx context.Context) {
+	if ended, err := s.repo.FinishEnded(ctx, s.Today()); err != nil {
+		s.log.Error("falha ao encerrar as assinaturas no fim do período pago", "err", err)
+	} else if ended > 0 {
+		s.log.Info("assinaturas encerradas no fim do período pago", "count", ended)
+	}
 	created, err := s.repo.GenerateDue(ctx, s.Today().AddDays(s.cfg.InvoiceLeadDays))
 	if err != nil {
 		s.log.Error("falha ao gerar faturas", "err", err)
@@ -96,6 +102,9 @@ type SubscriptionInput struct {
 	// FirstDueDate é opcional; sem ele, o primeiro vencimento é o próximo
 	// dia DueDay a partir de hoje.
 	FirstDueDate *Date `json:"firstDueDate"`
+	// PeriodMonths: de quantos em quantos meses é cobrada (0 ou 1, o mensal;
+	// 6, o semestral; 12, o anual). PriceCents é o valor do período.
+	PeriodMonths int `json:"periodMonths"`
 }
 
 // Validate confere a assinatura antes de qualquer gravação.
@@ -105,6 +114,9 @@ func (s *Service) Validate(in SubscriptionInput) error {
 	}
 	if in.DueDay < 1 || in.DueDay > 28 {
 		return ValidationError{"o dia de vencimento vai de 1 a 28"}
+	}
+	if !ValidPeriod(in.PeriodMonths) {
+		return ValidationError{"a recorrência é mensal, semestral ou anual"}
 	}
 	if in.FirstDueDate != nil {
 		if in.FirstDueDate.Day() != in.DueDay {
@@ -139,12 +151,25 @@ func (s *Service) NewSubscription(customerID uuid.UUID, in SubscriptionInput) (*
 		first = *in.FirstDueDate
 	}
 	return &Subscription{
-		CustomerID:  customerID,
-		PlanName:    strings.TrimSpace(in.PlanName),
-		PriceCents:  in.PriceCents,
-		DueDay:      in.DueDay,
-		NextDueDate: first,
+		CustomerID:   customerID,
+		PlanName:     strings.TrimSpace(in.PlanName),
+		PriceCents:   in.PriceCents,
+		DueDay:       in.DueDay,
+		NextDueDate:  first,
+		PeriodMonths: max(in.PeriodMonths, 1),
 	}, nil
+}
+
+// Os períodos de cobrança: o mensal, o semestral e o anual.
+const (
+	PeriodMonthly    = 1
+	PeriodSemiannual = 6
+	PeriodAnnual     = 12
+)
+
+// ValidPeriod diz se o período existe (0 vale como o mensal).
+func ValidPeriod(months int) bool {
+	return months == 0 || months == PeriodMonthly || months == PeriodSemiannual || months == PeriodAnnual
 }
 
 // HasActiveForVehicle diz se o veículo tem assinatura ativa (e não pode ser

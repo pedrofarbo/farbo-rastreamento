@@ -53,6 +53,16 @@ describe('o valor da mensalidade', () => {
     expect(text()).toContain('R$ 34,90/mês (pré-lançamento');
   });
 
+  it('o semestral e o anual: o valor do período, por mês e, cancelado, até quando fica ativo', async () => {
+    await render(true, { ...sub, priceCents: 20000, periodMonths: 6, endsOn: null });
+    expect((document.body.textContent ?? '').replace(/\u00a0/g, ' ')).toContain('R$ 200,00/semestre');
+    expect((document.body.textContent ?? '').replace(/\u00a0/g, ' ')).toContain('R$ 33,33 por mês');
+    document.body.innerHTML = '';
+    await render(true, { ...sub, priceCents: 40000, periodMonths: 12, endsOn: '2027-11-10' });
+    expect((document.body.textContent ?? '').replace(/\u00a0/g, ' ')).toContain('R$ 400,00/ano');
+    expect((document.body.textContent ?? '').replace(/\u00a0/g, ' ')).toContain('encerra em 10/11/2027, no fim do período pago');
+  });
+
   it('a grátis é "Grátis", e não R$ 0,00/mês', async () => {
     const free = { priceCents: 0, promoPriceCents: null, promoUntil: null, nextDueDate: '2026-11-10' };
     expect(isFree(free)).toBe(true);

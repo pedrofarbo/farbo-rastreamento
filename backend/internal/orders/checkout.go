@@ -21,6 +21,9 @@ type CheckoutChoice struct {
 	// Affiliate: o afiliado do link (a mensalidade sai da tabela dele por
 	// tipo de veículo, se ele tiver uma).
 	Affiliate *uuid.UUID
+	// PeriodMonths: o semestral (6) ou o anual (12), quando o link (ou o
+	// site) os tem ligados; 0 ou 1, o mensal.
+	PeriodMonths int
 }
 
 // CheckoutOrder monta o pedido da contratação rápida pela landing (a pessoa
@@ -93,6 +96,35 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 	default:
 		return Order{}, ValidationError{"escolha o rastreador: incluso ou em comodato"}
 	}
+	// O semestral ou o anual: o valor do período, com o rastreador incluso
+	// nele (nada somado).
+	if in.PeriodMonths > 1 {
+		if err := s.periodPlan(ctx, opts, in, &order); err != nil {
+			return Order{}, err
+		}
+	}
 	install.applyInstall(&order)
 	return order, nil
+}
+
+// periodPlan põe no pedido o semestral ou o anual: o valor do período (o do
+// link do representante, ou o do site), com o rastreador incluso no valor.
+func (s *Service) periodPlan(ctx context.Context, opts *Options, in CheckoutChoice, order *Order) error {
+	if !billing.ValidPeriod(in.PeriodMonths) {
+		return ValidationError{"a recorrência é mensal, semestral ou anual"}
+	}
+	recurrence, err := s.LinkRecurrence(ctx, opts, in.Affiliate)
+	if err != nil {
+		return err
+	}
+	cents := recurrence.PeriodCents(in.PeriodMonths)
+	switch {
+	case cents == 0:
+		return ValidationError{"o plano semestral e o anual não estão disponíveis agora: escolha o mensal"}
+	case order.Terms.EquipmentMode != billing.EquipmentSale:
+		return ValidationError{"o semestral e o anual são com o rastreador incluso: escolha o rastreador incluso ou o plano mensal"}
+	}
+	order.Plan.PlanName, order.Plan.PriceCents, order.Plan.PeriodMonths = PeriodPlanName(in.PeriodMonths), cents, in.PeriodMonths
+	order.Tracker = Tracker{}
+	return nil
 }

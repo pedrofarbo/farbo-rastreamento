@@ -110,6 +110,7 @@ const columns = `a.id, a.name, a.handle, a.code, a.report_token, a.commission_ty
 	a.plan_motorcycle_cents, a.plan_car_cents, a.plan_truck_cents, a.install_mode, a.install_cents, a.uninstall_cents,
 	a.loan_surcharge_cents, a.report_password_hash <> '', a.equipment_modes, a.manage_installs,
 	a.hand_delivery, a.listed, a.listing_city, a.listing_area, a.listing_whatsapp,
+	a.recurrence_enabled, a.semiannual_cents, a.annual_cents,
 	(SELECT count(DISTINCT lower(x.email)) FROM (
 		SELECT email FROM launch_waitlist WHERE affiliate_id = a.id
 		UNION ALL SELECT email FROM leads WHERE affiliate_id = a.id) x),
@@ -137,6 +138,7 @@ func scan(row database.Scanner) (*Affiliate, error) {
 		&a.PixKey, &a.Notes, &a.SupplierID, &a.Active, &a.CreatedAt, &a.RecipientStatus, &motorcycle, &car, &truck,
 		&installMode, &install, &uninstall, &guarantee, &a.ReportPassword, &a.EquipmentModes, &a.ManageInstalls,
 		&a.HandDelivery, &a.Listed, &a.ListingCity, &a.ListingArea, &a.ListingWhatsApp,
+		&a.Recurrence.Enabled, &a.Recurrence.SemiannualCents, &a.Recurrence.AnnualCents,
 		&a.Signups, &a.Customers, &a.ActiveCustomers, &a.ActiveVehicles, &a.PendingCents, &a.SplitPaidCents, &a.OpenCents,
 		&a.PaidCents)
 	if err != nil {
@@ -235,6 +237,7 @@ func (s *Service) Create(ctx context.Context, in Input) (*Affiliate, error) {
 	}
 	motorcycle, car, truck := planColumns(in.PlanPrices)
 	installMode, install, uninstall, guarantee := installColumns(in.InstallPrices)
+	recEnabled, recSemiannual, recAnnual := recurrenceColumns(in.Recurrence)
 	password, err := hashReportPassword(in.ReportPassword)
 	if err != nil {
 		return nil, err
@@ -250,13 +253,14 @@ func (s *Service) Create(ctx context.Context, in Input) (*Affiliate, error) {
 		INSERT INTO affiliates (name, handle, code, report_token, commission_type, commission_cents, commission_bps, email,
 			phone, pix_key, notes, active, plan_motorcycle_cents, plan_car_cents, plan_truck_cents, install_mode, install_cents,
 			uninstall_cents, loan_surcharge_cents, report_password_hash, equipment_modes, manage_installs, hand_delivery,
-			listed, listing_city, listing_area, listing_whatsapp)
+			listed, listing_city, listing_area, listing_whatsapp, recurrence_enabled, semiannual_cents, annual_cents)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23,
-			$24, $25, $26, $27)
+			$24, $25, $26, $27, COALESCE($28, FALSE), COALESCE($29, 20000), COALESCE($30, 40000))
 		RETURNING id`,
 		in.Name, in.Handle, in.Code, token, in.CommissionType, *in.CommissionCents, bps, in.Email, in.Phone, in.PixKey,
 		in.Notes, in.Active, motorcycle, car, truck, installMode, install, uninstall, guarantee, *password, in.EquipmentModes,
-		in.ManageInstalls, in.HandDelivery, in.Listed, in.ListingCity, in.ListingArea, in.ListingWhatsApp).Scan(&id)
+		in.ManageInstalls, in.HandDelivery, in.Listed, in.ListingCity, in.ListingArea, in.ListingWhatsApp,
+		recEnabled, recSemiannual, recAnnual).Scan(&id)
 	if err != nil {
 		return nil, conflictMessage(err)
 	}
@@ -276,6 +280,7 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Affiliat
 	}
 	motorcycle, car, truck := planColumns(in.PlanPrices)
 	installMode, install, uninstall, guarantee := installColumns(in.InstallPrices)
+	recEnabled, recSemiannual, recAnnual := recurrenceColumns(in.Recurrence)
 	password, err := hashReportPassword(in.ReportPassword)
 	if err != nil {
 		return nil, err
@@ -296,12 +301,13 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Affiliat
 				install_mode = $16, install_cents = $17, uninstall_cents = $18, loan_surcharge_cents = $19,
 				report_password_hash = COALESCE($20, report_password_hash), equipment_modes = $21, manage_installs = $22,
 				hand_delivery = $23, listed = $24, listing_city = $25, listing_area = $26, listing_whatsapp = $27,
-				updated_at = NOW()
+				recurrence_enabled = COALESCE($28, recurrence_enabled), semiannual_cents = COALESCE($29, semiannual_cents),
+				annual_cents = COALESCE($30, annual_cents), updated_at = NOW()
 			WHERE id = $1`,
 			id, in.Name, in.Handle, in.Code, in.CommissionCents, in.Email, in.Phone, in.PixKey, in.Notes, in.Active,
 			in.CommissionType, in.CommissionBps, motorcycle, car, truck, installMode, install, uninstall, guarantee,
 			password, in.EquipmentModes, in.ManageInstalls, in.HandDelivery, in.Listed, in.ListingCity, in.ListingArea,
-			in.ListingWhatsApp); err != nil {
+			in.ListingWhatsApp, recEnabled, recSemiannual, recAnnual); err != nil {
 			return err
 		}
 		// A gestão das instalações mostra os dados dos clientes: só com a senha.
@@ -490,11 +496,13 @@ func (s *Service) Reconcile(ctx context.Context) (created, removed int64, err er
 		tag, err := tx.Exec(ctx, `
 			INSERT INTO affiliate_commissions (affiliate_id, customer_id, subscription_id, month, amount_cents)
 			SELECT affiliate_id, customer_id, subscription_id, month, amount FROM (
-				SELECT r.affiliate_id, i.customer_id, i.subscription_id, date_trunc('month', i.due_date)::date AS month,
-					-- O percentual é da mensalidade líquida dos impostos da Farbo.
+				-- Cada mês que a fatura cobre (o semestral, 6; o anual, 12) é um mês de comissão.
+				SELECT r.affiliate_id, i.customer_id, i.subscription_id, m.month::date AS month,
+					-- O percentual é da mensalidade líquida dos impostos da Farbo (no
+					-- semestral e no anual, do valor dividido pelos meses).
 					CASE WHEN a.commission_type = 'percent'
-						THEN round(sum(greatest(i.amount_cents - inst.cents - tr.cents, 0)) * a.commission_bps / 10000.0
-							* (10000 - st.commission_tax_bps) / 10000.0)::int
+						THEN round(sum(greatest(i.amount_cents - inst.cents - tr.cents, 0)::numeric / i.period_months)
+							* a.commission_bps / 10000.0 * (10000 - st.commission_tax_bps) / 10000.0)::int
 						ELSE a.commission_cents END AS amount
 				FROM invoices i
 				JOIN affiliate_referrals r ON r.customer_id = i.customer_id
@@ -506,9 +514,11 @@ func (s *Service) Reconcile(ctx context.Context) (created, removed int64, err er
 				-- A parte do rastreador incluso somada ao plano, nas primeiras, também.
 				CROSS JOIN LATERAL (SELECT COALESCE(max(CASE WHEN s.tracker_added AND i.due_date < s.tracker_until
 					THEN s.tracker_cents END), 0) AS cents FROM subscriptions s WHERE s.id = i.subscription_id) tr
+				CROSS JOIN LATERAL generate_series(date_trunc('month', i.due_date),
+					date_trunc('month', i.due_date) + (i.period_months - 1) * interval '1 month', interval '1 month') AS m(month)
 				WHERE i.status = 'PAID' AND i.subscription_id IS NOT NULL AND i.amount_cents > 0 AND a.active
 					AND i.due_date >= date_trunc('month', r.created_at AT TIME ZONE $1)::date
-				GROUP BY r.affiliate_id, i.customer_id, i.subscription_id, month, a.commission_type, a.commission_cents,
+				GROUP BY r.affiliate_id, i.customer_id, i.subscription_id, m.month, a.commission_type, a.commission_cents,
 					a.commission_bps, st.commission_tax_bps) c
 			WHERE amount > 0
 			ON CONFLICT (affiliate_id, subscription_id, month) DO NOTHING`, s.loc.String())
@@ -521,7 +531,8 @@ func (s *Service) Reconcile(ctx context.Context) (created, removed int64, err er
 			WHERE c.payout_id IS NULL AND (
 				NOT EXISTS (SELECT 1 FROM invoices i
 					WHERE i.subscription_id = c.subscription_id AND i.customer_id = c.customer_id AND i.status = 'PAID'
-						AND date_trunc('month', i.due_date)::date = c.month)
+						AND c.month BETWEEN date_trunc('month', i.due_date)::date
+							AND (date_trunc('month', i.due_date) + (i.period_months - 1) * interval '1 month')::date)
 				OR NOT EXISTS (SELECT 1 FROM affiliate_referrals r
 					WHERE r.customer_id = c.customer_id AND r.affiliate_id = c.affiliate_id))`)
 		if err != nil {
@@ -910,6 +921,8 @@ type Report struct {
 	Months           []ReportMonth `json:"months"`
 	// Recipient: o cadastro de recebedor do split (Enabled falso: desligado).
 	Recipient *RecipientView `json:"recipient"`
+	// Recurrence: o semestral e o anual pelo link dele (nil: desligados).
+	Recurrence *orders.Recurrence `json:"recurrence"`
 }
 
 // ReferralCode é o código do link de indicação do afiliado ativo, pelo link
@@ -948,6 +961,10 @@ func (s *Service) Report(ctx context.Context, token string) (*Report, error) {
 	}
 	if view, err := s.Recipient(ctx, token); err == nil {
 		out.Recipient = view
+	}
+	if a.Recurrence.Enabled && a.EquipmentModes != orders.EquipmentLoanOnly {
+		r := a.Recurrence
+		out.Recurrence = &r
 	}
 	if err := s.db.QueryRow(ctx, `SELECT commission_tax_bps FROM affiliate_settings`).Scan(&out.CommissionTaxBps); err != nil {
 		return nil, database.MapError(err)
@@ -990,4 +1007,13 @@ func (s *Service) Report(ctx context.Context, token string) (*Report, error) {
 		out.Months = append(out.Months, m)
 	}
 	return out, rows.Err()
+}
+
+// recurrenceColumns são as colunas do semestral e do anual (nil: os padrões
+// no novo, os atuais na edição).
+func recurrenceColumns(r *orders.Recurrence) (enabled *bool, semiannual, annual *int) {
+	if r == nil {
+		return nil, nil, nil
+	}
+	return &r.Enabled, &r.SemiannualCents, &r.AnnualCents
 }

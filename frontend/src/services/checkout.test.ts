@@ -8,6 +8,23 @@ import { checkoutTotals, payDestination, vehicleName } from './checkout';
 const offer: CheckoutOffer = OFFER;
 
 describe('a conta da contratação pelo site', () => {
+  it('o semestral e o anual: o valor do período, com o rastreador incluso (nada somado); no comodato, não', () => {
+    const periods = offerWith({
+      tracker: { cents: 1200, months: 10, added: true },
+      periods: [
+        { months: 6, planName: 'Plano Semestral', cents: 20000 },
+        { months: 12, planName: 'Plano Anual', cents: 40000 },
+      ],
+    });
+    const t = checkoutTotals(periods, { equipmentMode: 'sale', farboInstall: true, periodMonths: 6 }, 2290);
+    expect(t).toMatchObject({ monthlyCents: 20000, firstMonthlyCents: 20000, trackerMonths: 0, periodMonths: 6, installNowCents: 15000 });
+    expect(t.totalNowCents).toBe(20000 + 15000 + 2290);
+    expect(checkoutTotals(periods, { equipmentMode: 'sale', farboInstall: false, periodMonths: 12 }).totalNowCents).toBe(40000);
+    // No comodato, ou sem o período no link: o mensal.
+    expect(checkoutTotals(periods, { equipmentMode: 'loan', farboInstall: false, periodMonths: 6 }).periodMonths).toBe(1);
+    expect(checkoutTotals(offer, { equipmentMode: 'sale', farboInstall: false, periodMonths: 6 }).periodMonths).toBe(1);
+  });
+
   it('o rastreador incluso, por conta própria: a 1ª mensalidade e o frete (a parte dele já no preço do site)', () => {
     const t = checkoutTotals(offer, { equipmentMode: 'sale', farboInstall: false }, 2290);
     expect(t).toMatchObject({ monthlyCents: 3490, firstMonthlyCents: 3490, trackerMonths: 0, installNowCents: 0 });

@@ -109,6 +109,9 @@ type Affiliate struct {
 	ListingCity     string `json:"listingCity"`
 	ListingArea     string `json:"listingArea"`
 	ListingWhatsApp string `json:"listingWhatsapp"`
+	// Recurrence: o semestral e o anual pelo link dele (pagos por período,
+	// com o rastreador incluso), ligados ou não, e os valores.
+	Recurrence orders.Recurrence `json:"recurrence"`
 }
 
 // Input é o cadastro de um afiliado. Sem CommissionType, o afiliado novo fica
@@ -141,6 +144,9 @@ type Input struct {
 	ListingCity     string `json:"listingCity"`
 	ListingArea     string `json:"listingArea"`
 	ListingWhatsApp string `json:"listingWhatsapp"`
+	// Recurrence: o semestral e o anual pelo link (nil: no novo, desligado
+	// com os valores padrão; na edição, ficam como estão).
+	Recurrence *orders.Recurrence `json:"recurrence"`
 }
 
 var handlePattern = regexp.MustCompile(`^[A-Za-z0-9._]{1,30}$`)
@@ -209,6 +215,17 @@ func (in Input) Normalize() (Input, error) {
 			return in, invalid("WhatsApp da landing inválido: informe DDD e número, ex.: (11) 99999-0000.")
 		}
 		in.ListingWhatsApp = phone
+	}
+	if r := in.Recurrence; r != nil {
+		const max = 100_000_00
+		switch {
+		case r.SemiannualCents < 0 || r.SemiannualCents > max || r.AnnualCents < 0 || r.AnnualCents > max:
+			return in, invalid("Os valores do semestral e do anual vão de R$ 0 a R$ 100.000.")
+		case r.Enabled && (r.SemiannualCents == 0 || r.AnnualCents == 0):
+			return in, invalid("Para ligar o semestral e o anual, informe os dois valores.")
+		case r.Enabled && in.EquipmentModes == orders.EquipmentLoanOnly:
+			return in, invalid("O semestral e o anual são com o rastreador incluso: o link só de comodato não os oferece.")
+		}
 	}
 	return in, nil
 }

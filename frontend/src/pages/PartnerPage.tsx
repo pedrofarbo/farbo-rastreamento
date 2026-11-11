@@ -268,6 +268,13 @@ function Home({ report, token, sections }: { report: PartnerReport; token: strin
             Você entrega o rastreador em mãos, com os kits que estão com você: quem contrata pelo seu link não paga frete.
           </p>
         )}
+        {report.recurrence?.enabled && (
+          <p className={base.hint}>
+            Pelo seu link, também dá para pagar o semestral ({money(report.recurrence.semiannualCents)} a cada 6 meses) ou o
+            anual ({money(report.recurrence.annualCents)} por ano), com o rastreador incluso. A comissão entra por mês do
+            período: 6 meses no semestral, 12 no anual.
+          </p>
+        )}
         {!report.active && <p className={base.error}>Seu link está pausado: cadastros novos não contam. Fale com a Farbo.</p>}
       </section>
 

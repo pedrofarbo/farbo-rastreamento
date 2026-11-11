@@ -167,6 +167,34 @@ const (
 
 // AffiliateEquipment é o rastreador que o link do afiliado ativo oferece
 // (vazio: os dois).
+// AffiliateRecurrence é o semestral e o anual pelo link do afiliado, com os
+// valores dele (nil: ele não os tem ligados).
+func (s *Service) AffiliateRecurrence(ctx context.Context, affiliateID uuid.UUID) (*Recurrence, error) {
+	var r Recurrence
+	err := s.db.QueryRow(ctx, `SELECT recurrence_enabled, semiannual_cents, annual_cents FROM affiliates WHERE id = $1 AND active`,
+		affiliateID).Scan(&r.Enabled, &r.SemiannualCents, &r.AnnualCents)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !r.Enabled) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	return &r, nil
+}
+
+// LinkRecurrence é o semestral e o anual da contratação: pelo link de um
+// afiliado, os dele; sem afiliado, os do site (nil: só o mensal).
+func (s *Service) LinkRecurrence(ctx context.Context, opts *Options, affiliate *uuid.UUID) (*Recurrence, error) {
+	if affiliate != nil {
+		return s.AffiliateRecurrence(ctx, *affiliate)
+	}
+	if opts != nil && opts.Recurrence.Enabled {
+		r := opts.Recurrence
+		return &r, nil
+	}
+	return nil, nil
+}
+
 func (s *Service) AffiliateEquipment(ctx context.Context, affiliateID uuid.UUID) (string, error) {
 	return s.equipmentModes(ctx, `SELECT equipment_modes FROM affiliates WHERE id = $1 AND active`, affiliateID)
 }

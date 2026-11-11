@@ -11,7 +11,7 @@ import { InvoiceDayRows } from '@/components/billing/InvoiceDayRows';
 import { CustomerStatus, InvoiceStatus } from '@/components/billing/InvoiceStatus';
 import { FiscalDocumentLine } from '@/components/billing/FiscalDocumentLine';
 import { gatewayName } from '@/components/billing/PixCheckout';
-import { MonthlyPrice, promoActive } from '@/components/billing/MonthlyPrice';
+import { MonthlyPrice, periodLabel, promoActive } from '@/components/billing/MonthlyPrice';
 import { installmentProgress, trackerOpen, trackerProgress } from '@/components/billing/installments';
 import { FleetImportModal } from '@/components/billing/FleetImportModal';
 import { NewVehicleWizard } from '@/components/billing/NewVehicleWizard';
@@ -550,7 +550,9 @@ export function CustomerDetailsPage() {
                                   {sub.planName} · <MonthlyPrice sub={sub} staff />
                                 </div>
                                 <div className={billing.muted}>
-                                  dia {sub.dueDay} · próxima fatura {formatDateOnly(sub.nextDueDate)}
+                                  {sub.endsOn
+                                    ? `cancelada: ativa até ${formatDateOnly(sub.endsOn)}, no fim do período pago (não renova)`
+                                    : `${(sub.periodMonths ?? 1) > 1 ? `${periodLabel(sub.periodMonths).toLowerCase()} · ` : ''}dia ${sub.dueDay} · próxima fatura ${formatDateOnly(sub.nextDueDate)}`}
                                 </div>
                                 {installmentProgress(sub) && <div className={billing.muted}>{installmentProgress(sub)}</div>}
                                 {trackerProgress(sub) && <div className={billing.muted}>{trackerProgress(sub)}</div>}
@@ -583,11 +585,21 @@ export function CustomerDetailsPage() {
                                   >
                                     Editar assinatura
                                   </Button>
+                                  {!sub.endsOn && (
                                   <Button
                                     size="small"
                                     variant="ghost"
                                     onClick={() =>
-                                      sub.installmentsDueCents > 0 || trackerOpen(sub, todayISO())
+                                      (sub.periodMonths ?? 1) > 1
+                                        ? setConfirmation({
+                                            title: `Encerrar o plano ${periodLabel(sub.periodMonths).toLowerCase()}?`,
+                                            body: `Sem devolução. Com o período atual pago, ${vehicle.name} continua sendo rastreado até o fim dele e a assinatura não renova (as faturas dos próximos períodos saem). Sem o período pago, ela encerra agora e as faturas vencidas continuam em aberto.`,
+                                            label: 'Encerrar no fim do período',
+                                            success: 'Encerramento registrado',
+                                            tone: 'danger',
+                                            run: () => customersApi.cancelSubscription(sub.id),
+                                          })
+                                        : sub.installmentsDueCents > 0 || trackerOpen(sub, todayISO())
                                         ? openModal(() => setEndFinanced({ sub, vehicle: vehicle.name, balance: 'CHARGE' }))
                                         : setConfirmation({
                                             title: 'Encerrar assinatura?',
@@ -616,6 +628,7 @@ export function CustomerDetailsPage() {
                                   >
                                     Encerrar
                                   </Button>
+                                  )}
                                 </>
                               ) : (
                                 <>

@@ -1239,6 +1239,10 @@ export interface Subscription {
   trackerMonths: number;
   trackerUntil: DateOnly | null;
   trackerAdded: boolean;
+  /** De quantos em quantos meses é cobrada (1, o mensal; 6, o semestral; 12, o anual): priceCents é o valor do período. */
+  periodMonths?: number;
+  /** O semestral ou o anual cancelado com o período pago: fica ativo até esta data e não renova (nulo: sem fim agendado). */
+  endsOn?: DateOnly | null;
   equipmentCents: number;
   installmentCents: number;
   installmentsPaid: number;
@@ -1300,6 +1304,8 @@ export interface Invoice {
   paidChargeId: string | null;
   paymentUrl: string;
   pixCode: string;
+  /** Os meses que a fatura cobre (o semestral, 6; o anual, 12). */
+  periodMonths?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -1870,12 +1876,30 @@ export interface CheckoutOffer {
   install: InstallService | null;
   contractVersion: string;
   shippingEnabled: boolean;
+  /** O semestral e o anual (o valor do período, com o rastreador incluso), quando o link — ou o site — os tem ligados. */
+  periods?: PeriodOffer[];
+}
+
+/** Um plano pago por período na contratação: os meses (6 ou 12), o nome e o valor. */
+export interface PeriodOffer {
+  months: number;
+  planName: string;
+  cents: number;
+}
+
+/** O semestral e o anual (pagos por período, com o rastreador incluso): ligados ou não, e os valores. */
+export interface Recurrence {
+  enabled: boolean;
+  semiannualCents: number;
+  annualCents: number;
 }
 
 /** A contratação pelo site: a escolha, o veículo, quem contrata, o endereço, a entrega e o aceite. */
 export interface CheckoutInput {
   /** O rastreador incluso (sale) ou em comodato (loan). */
   equipmentMode: 'sale' | 'loan';
+  /** O semestral (6) ou o anual (12); ausente, o mensal. */
+  periodMonths?: number;
   farboInstall: boolean;
   vehicle: { kind: VehicleKind; name: string; brand: string; model: string; plate: string };
   name: string;
@@ -1912,6 +1936,8 @@ export interface OrderOptions {
   install: InstallService;
   checkout: CheckoutPrices;
   tracker: TrackerRule;
+  /** O semestral e o anual na contratação pelo site. */
+  recurrence?: Recurrence;
   updatedAt?: string;
 }
 
@@ -2866,6 +2892,8 @@ export interface Affiliate {
   listingArea?: string;
   /** O WhatsApp público da landing: só dígitos, com o 55 (vazio: sem). */
   listingWhatsapp?: string;
+  /** O semestral e o anual pelo link dele. */
+  recurrence?: Recurrence;
 }
 
 /** A comissão do afiliado: um valor fixo por veículo ou um percentual da mensalidade. */
@@ -2900,6 +2928,8 @@ export interface AffiliateInput {
   listingCity: string;
   listingArea: string;
   listingWhatsapp: string;
+  /** O semestral e o anual pelo link (ausente: no novo, desligado; na edição, como está). */
+  recurrence?: Recurrence;
 }
 
 export interface AffiliateSettings {
@@ -3004,6 +3034,8 @@ export interface PartnerReport {
   months: PartnerMonth[];
   /** O recebedor do split (enabled falso: o split está desligado). */
   recipient?: PartnerRecipient | null;
+  /** O semestral e o anual pelo link dele (nulo: desligados). */
+  recurrence?: Recurrence | null;
 }
 
 /** A situação de uma remessa de kits: pedida pelo representante, separada, enviada, entregue ou cancelada. */

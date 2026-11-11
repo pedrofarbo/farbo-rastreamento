@@ -193,3 +193,13 @@
   padding-top: var(--space-3);
   border-top: 1px solid var(--border-subtle, var(--border));
 }
+
+/* O semestral e o anual pelo link, no cadastro do representante. */
+.recurrence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: var(--radius-md, 10px);
+}

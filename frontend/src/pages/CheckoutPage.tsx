@@ -11,7 +11,7 @@ import { TextField } from '@/components/ui/Field';
 import { CONTRACT_PATH } from '@/config/legal';
 import { CHECKOUT_ANCHOR, trackerAdded } from '@/config/landing';
 import { track, trackPageview } from '@/services/analytics';
-import { checkoutTotals, payDestination, vehicleName } from '@/services/checkout';
+import { checkoutTotals, chosenPeriod, payDestination, vehicleName } from '@/services/checkout';
 import type { CheckoutChoice } from '@/services/checkout';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { formatMoney, formatPhoneInput, isPhoneComplete } from '@/services/format';
@@ -155,6 +155,9 @@ export function CheckoutPage() {
   const totals = checkoutTotals(o, choice, freightCents, kind);
   const table = o.planByKind;
   const loan = choice.equipmentMode === 'loan' && o.loan !== null;
+  // O semestral e o anual (só com o rastreador incluso), quando o link os oferece.
+  const periods = o.periods ?? [];
+  const period = chosenPeriod(o, choice);
   // Pela tabela do afiliado, a parte do rastreador incluso soma nas primeiras.
   const added = trackerAdded(o);
   const cpf = taxIdDigits(person.document);
@@ -186,6 +189,7 @@ export function CheckoutPage() {
     try {
       const result = await checkoutApi.place({
         equipmentMode: loan ? 'loan' : 'sale',
+        ...(period ? { periodMonths: period.months } : {}),
         farboInstall: !loan && choice.farboInstall,
         vehicle: { kind, name: vehicleName(kind, brand, model), brand: brand.trim(), model: model.trim(), plate: plate.trim() },
         name: person.name.trim(),
@@ -279,6 +283,35 @@ export function CheckoutPage() {
               {loan && '.'}
             </p>
 
+            {periods.length > 0 && !loan && (
+              <fieldset className={styles.options}>
+                <legend className={styles.legend}>Como pagar</legend>
+                <Option
+                  checked={!period}
+                  onChange={() => setChoice({ ...choice, periodMonths: 1 })}
+                  name="period"
+                  title="Mensal"
+                  price={`${formatMoney(table ? kindPrice(table, kind) : o.planCents)}/mês`}
+                >
+                  Uma fatura por mês.
+                </Option>
+                {periods.map((p) => (
+                  <Option
+                    key={p.months}
+                    checked={period?.months === p.months}
+                    onChange={() => setChoice({ ...choice, equipmentMode: 'sale', periodMonths: p.months })}
+                    name="period"
+                    title={p.months === 12 ? 'Anual' : 'Semestral'}
+                    price={`${formatMoney(p.cents)}${p.months === 12 ? '/ano' : '/semestre'}`}
+                  >
+                    {formatMoney(Math.floor(p.cents / p.months))} por mês, pagos de uma vez a cada {p.months} meses, com o
+                    rastreador incluso no valor. Se cancelar antes do fim do período pago, não há devolução: o rastreamento
+                    segue até o fim dele e não renova.
+                  </Option>
+                ))}
+              </fieldset>
+            )}
+
             <fieldset className={styles.options}>
               <legend className={styles.legend}>O rastreador</legend>
               {o.equipmentModes !== 'loan' && (
@@ -287,10 +320,10 @@ export function CheckoutPage() {
                   onChange={() => setChoice({ ...choice, equipmentMode: 'sale' })}
                   name="equipment"
                   title="Rastreador incluso"
-                  price={added ? `+${formatMoney(added.cents)}/mês nas ${added.months} primeiras` : 'na mensalidade'}
+                  price={period ? 'no valor do plano' : added ? `+${formatMoney(added.cents)}/mês nas ${added.months} primeiras` : 'na mensalidade'}
                 >
                   Ele fica com você, e você só paga o frete.
-                  {o.tracker.cents > 0 && o.tracker.months > 0 && (
+                  {!period && o.tracker.cents > 0 && o.tracker.months > 0 && (
                     <>
                       {' '}
                       Se encerrar antes da {o.tracker.months}ª mensalidade, a parte do rastreador que falta (
@@ -302,7 +335,7 @@ export function CheckoutPage() {
               {o.loan && (
                 <Option
                   checked={loan}
-                  onChange={() => setChoice({ ...choice, equipmentMode: 'loan', farboInstall: false })}
+                  onChange={() => setChoice({ ...choice, equipmentMode: 'loan', farboInstall: false, periodMonths: 1 })}
                   name="equipment"
                   title="Comodato (emprestado)"
                   price={o.loan.surchargeCents > 0 ? `+${formatMoney(o.loan.surchargeCents)}/mês` : 'sem taxa mensal'}
@@ -618,6 +651,26 @@ function Option({
 
 /** O total de agora, no pé das etapas antes do resumo. */
 function Total({ totals, shippingPending }: { totals: ReturnType<typeof checkoutTotals>; shippingPending: boolean }) {
+  if (totals.periodMonths > 1) {
+    return (
+      <div className={styles.summary}>
+        <div className={styles.line}>
+          <span>{totals.periodMonths === 12 ? 'Plano anual' : 'Plano semestral'}</span>
+          <span className={styles.monthly}>
+            {formatMoney(totals.monthlyCents)}
+            {totals.periodMonths === 12 ? '/ano' : '/semestre'}
+          </span>
+        </div>
+        <div className={`${styles.line} ${styles.total}`}>
+          <span>Hoje, no Pix</span>
+          <span>
+            {formatMoney(totals.totalNowCents)}
+            {shippingPending ? ' + frete' : ''}
+          </span>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={styles.summary}>
       <div className={styles.line}>
@@ -658,7 +711,8 @@ function Summary({
   freightPending: boolean;
 }) {
   const loan = choice.equipmentMode === 'loan' && offer.loan !== null;
-  const plan = offer.planByKind ? `${offer.planName} · ${KIND_NAMES[kind]}` : offer.planName;
+  const period = chosenPeriod(offer, choice);
+  const plan = period ? period.planName : offer.planByKind ? `${offer.planName} · ${KIND_NAMES[kind]}` : offer.planName;
   // Pelo link de um representante: a instalação e a desinstalação são pagas direto a ele.
   const directInstall = offer.installDirect
     ? loan
@@ -672,7 +726,7 @@ function Summary({
     <div className={styles.summary} aria-label="Resumo do pedido">
       <p className={styles.legend}>Resumo · {vehicle}</p>
       <div className={styles.line}>
-        <span>1ª mensalidade · {plan}</span>
+        <span>{period ? `${period.months === 12 ? '1º ano' : '1º semestre'} · ${plan}` : `1ª mensalidade · ${plan}`}</span>
         <span>{formatMoney(totals.firstMonthlyCents)}</span>
       </div>
       {!loan && (
@@ -697,6 +751,13 @@ function Summary({
         <span>Hoje, no Pix</span>
         <span>{freightPending ? '—' : formatMoney(totals.totalNowCents)}</span>
       </div>
+      {period ? (
+        <p className={styles.note}>
+          Depois, <span className={styles.monthly}>{formatMoney(period.cents)}</span> a cada {period.months} meses, no dia{' '}
+          {offer.dueDay}. O rastreador incluso fica com você e já está no valor. Se cancelar antes do fim do período pago,
+          não há devolução: o rastreamento segue até o fim dele e a assinatura não renova.
+        </p>
+      ) : (
       <p className={styles.note}>
         {totals.trackerMonths > 1 ? (
           <>
@@ -717,7 +778,8 @@ function Summary({
           `. Ao encerrar, a desinstalação custa ${formatMoney(offer.loan.uninstallFeeCents)}${offer.installDirect ? ', paga direto ao representante' : ''}`}
         .
       </p>
-      {!loan && tracker.cents > 0 && tracker.months > 0 && (
+      )}
+      {!loan && !period && tracker.cents > 0 && tracker.months > 0 && (
         <p className={styles.note}>
           O rastreador incluso fica com você. Se a assinatura for encerrada antes da {tracker.months}ª mensalidade, a parte
           dele que falta ({formatMoney(tracker.cents)} por mensalidade) vence de uma vez.

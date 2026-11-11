@@ -63,6 +63,17 @@ type checkoutView struct {
 	// ContractVersion: a versão que o aceite confirma.
 	ContractVersion string `json:"contractVersion"`
 	ShippingEnabled bool   `json:"shippingEnabled"`
+	// Periods: o semestral e o anual (o valor do período, com o rastreador
+	// incluso), quando o link do representante — ou o site — os tem ligados;
+	// vazio, só o mensal.
+	Periods []periodOffer `json:"periods"`
+}
+
+// periodOffer é um plano pago por período: os meses, o nome e o valor.
+type periodOffer struct {
+	Months   int    `json:"months"`
+	PlanName string `json:"planName"`
+	Cents    int    `json:"cents"`
 }
 
 func (s *Server) handleCheckoutOffer(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +123,20 @@ func (s *Server) handleCheckoutOffer(w http.ResponseWriter, r *http.Request) {
 		if view.HandDelivery, err = s.Orders.AffiliateHandDelivery(r.Context(), *affiliate); err != nil {
 			handleStoreError(w, err, "contratação indisponível")
 			return
+		}
+	}
+	// O semestral e o anual: os do link do representante, ou os do site (só
+	// com o rastreador incluso: o link só de comodato não os tem).
+	if view.EquipmentModes != orders.EquipmentLoanOnly {
+		recurrence, err := s.Orders.LinkRecurrence(r.Context(), opts, s.referralFor(r, r.URL.Query().Get("ref")))
+		if err != nil {
+			handleStoreError(w, err, "contratação indisponível")
+			return
+		}
+		for _, months := range []int{billing.PeriodSemiannual, billing.PeriodAnnual} {
+			if cents := recurrence.PeriodCents(months); cents > 0 {
+				view.Periods = append(view.Periods, periodOffer{Months: months, PlanName: orders.PeriodPlanName(months), Cents: cents})
+			}
 		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -182,6 +207,8 @@ type checkoutRequest struct {
 	// define esse plano (no cliente): marcado, a contratação é recusada.
 	Insanos       bool   `json:"insanos"`
 	EquipmentMode string `json:"equipmentMode"`
+	// PeriodMonths: o semestral (6) ou o anual (12); vazio, o mensal.
+	PeriodMonths int `json:"periodMonths"`
 	// Installments: o parcelamento do rastreador comprado, das telas antigas.
 	// O rastreador vem incluso: mais de uma vez, a contratação é recusada.
 	Installments int            `json:"installments"`
@@ -261,7 +288,7 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	// não deixa conta pela metade.
 	order, err := s.Orders.CheckoutOrder(ctx, orders.CheckoutChoice{
 		EquipmentMode: req.EquipmentMode, FarboInstall: req.FarboInstall, Vehicle: req.Vehicle,
-		Affiliate: s.referralFor(r, req.Ref),
+		Affiliate: s.referralFor(r, req.Ref), PeriodMonths: req.PeriodMonths,
 	})
 	if err != nil {
 		writeOrderError(w, r, err, "contratação indisponível")

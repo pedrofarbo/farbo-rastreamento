@@ -152,12 +152,18 @@ func (s *Service) splitItems(ctx context.Context, affiliateID uuid.UUID, invoice
 		if inv.SubscriptionID == nil || inv.AmountCents <= 0 || inv.DueDate.Before(billing.Date{Time: since}) {
 			continue
 		}
-		k := key{*inv.SubscriptionID, time.Date(inv.DueDate.Year(), inv.DueDate.Month(), 1, 0, 0, 0, 0, time.UTC)}
-		if _, ok := bases[k]; !ok {
-			keys = append(keys, k)
-			subs = append(subs, k.sub)
+		// Cada mês que a fatura cobre (o semestral, 6; o anual, 12) é um mês de
+		// comissão, com o valor dividido pelos meses.
+		period := max(inv.PeriodMonths, 1)
+		base := max(inv.AmountCents-installments[inv.ID], 0)
+		for m := 0; m < period; m++ {
+			k := key{*inv.SubscriptionID, time.Date(inv.DueDate.Year(), inv.DueDate.Month()+time.Month(m), 1, 0, 0, 0, 0, time.UTC)}
+			if _, ok := bases[k]; !ok {
+				keys = append(keys, k)
+				subs = append(subs, k.sub)
+			}
+			bases[k] += base / period
 		}
-		bases[k] += max(inv.AmountCents-installments[inv.ID], 0)
 	}
 	if len(keys) == 0 {
 		return nil, nil

@@ -41,6 +41,50 @@ type TrackerRule struct {
 	Months int `json:"months"`
 }
 
+// Recurrence são os planos semestral e anual: pagos por período (6 ou 12
+// meses de uma vez), com o rastreador incluso no valor (nada somado), na
+// contratação pelo site — ou, com os valores dele, pelo link de um
+// representante que os tenha ligados. Desligado, só o mensal.
+type Recurrence struct {
+	Enabled         bool `json:"enabled"`
+	SemiannualCents int  `json:"semiannualCents"`
+	AnnualCents     int  `json:"annualCents"`
+}
+
+// PeriodCents é o valor do período (0: não oferecido).
+func (r *Recurrence) PeriodCents(months int) int {
+	if r == nil || !r.Enabled {
+		return 0
+	}
+	switch months {
+	case billing.PeriodSemiannual:
+		return r.SemiannualCents
+	case billing.PeriodAnnual:
+		return r.AnnualCents
+	}
+	return 0
+}
+
+// Check confere os valores (ligada, os dois são obrigatórios).
+func (r Recurrence) Check() error {
+	const max = 100_000_00
+	switch {
+	case r.SemiannualCents < 0 || r.SemiannualCents > max || r.AnnualCents < 0 || r.AnnualCents > max:
+		return ValidationError{"os valores do semestral e do anual vão de R$ 0 a R$ 100.000"}
+	case r.Enabled && (r.SemiannualCents == 0 || r.AnnualCents == 0):
+		return ValidationError{"para ligar o semestral e o anual, informe os dois valores"}
+	}
+	return nil
+}
+
+// PeriodPlanName é o nome do plano do semestral e do anual.
+func PeriodPlanName(months int) string {
+	if months == billing.PeriodAnnual {
+		return "Plano Anual"
+	}
+	return "Plano Semestral"
+}
+
 // GuaranteeName é o que a mensalidade com a garantia de troca leva no nome
 // do plano ("Plano Mensal + garantia de troca").
 const GuaranteeName = " + garantia de troca"
@@ -59,7 +103,9 @@ type Options struct {
 	Install   InstallService `json:"install"`
 	Checkout  Checkout       `json:"checkout"`
 	Tracker   TrackerRule    `json:"tracker"`
-	UpdatedAt time.Time      `json:"updatedAt"`
+	// Recurrence: o semestral e o anual na contratação pelo site.
+	Recurrence Recurrence `json:"recurrence"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
 }
 
 // Options são as opções em vigor.
@@ -68,11 +114,13 @@ func (s *Service) Options(ctx context.Context) (*Options, error) {
 	err := s.db.QueryRow(ctx, `
 		SELECT loan_enabled, loan_surcharge_cents, loan_install_fee_cents, loan_uninstall_fee_cents,
 			install_enabled, install_cents,
-			checkout_enabled, checkout_plan_cents, checkout_insanos_cents, tracker_cents, tracker_months, updated_at
+			checkout_enabled, checkout_plan_cents, checkout_insanos_cents, tracker_cents, tracker_months,
+			recurrence_enabled, semiannual_cents, annual_cents, updated_at
 		FROM order_settings`).
 		Scan(&o.Loan.Enabled, &o.Loan.SurchargeCents, &o.Loan.InstallFeeCents, &o.Loan.UninstallFeeCents,
 			&o.Install.Enabled, &o.Install.PriceCents,
-			&o.Checkout.Enabled, &o.Checkout.PlanCents, &o.Checkout.InsanosCents, &o.Tracker.Cents, &o.Tracker.Months, &o.UpdatedAt)
+			&o.Checkout.Enabled, &o.Checkout.PlanCents, &o.Checkout.InsanosCents, &o.Tracker.Cents, &o.Tracker.Months,
+			&o.Recurrence.Enabled, &o.Recurrence.SemiannualCents, &o.Recurrence.AnnualCents, &o.UpdatedAt)
 	return &o, database.MapError(err)
 }
 
@@ -88,13 +136,22 @@ func (s *Service) Loan(ctx context.Context) (*LoanOffer, error) {
 // SetOptions muda as opções (valem para os pedidos novos).
 func (s *Service) SetOptions(ctx context.Context, in Options, by *uuid.UUID) (*Options, error) {
 	const max = 100_000_00
-	// Sem a regra do rastreador (telas antigas), fica a que está.
-	if in.Tracker == (TrackerRule{}) {
+	// Sem a regra do rastreador ou o semestral e o anual (telas antigas),
+	// fica o que está.
+	if in.Tracker == (TrackerRule{}) || in.Recurrence == (Recurrence{}) {
 		current, err := s.Options(ctx)
 		if err != nil {
 			return nil, err
 		}
-		in.Tracker = current.Tracker
+		if in.Tracker == (TrackerRule{}) {
+			in.Tracker = current.Tracker
+		}
+		if in.Recurrence == (Recurrence{}) {
+			in.Recurrence = current.Recurrence
+		}
+	}
+	if err := in.Recurrence.Check(); err != nil {
+		return nil, err
 	}
 	l, c, t := in.Loan, in.Checkout, in.Tracker
 	out := func(v int) bool { return v < 0 || v > max }
@@ -116,9 +173,11 @@ func (s *Service) SetOptions(ctx context.Context, in Options, by *uuid.UUID) (*O
 		UPDATE order_settings SET loan_enabled = $1, loan_surcharge_cents = $2, loan_install_fee_cents = $3,
 			loan_uninstall_fee_cents = $4, install_enabled = $5, install_cents = $6,
 			checkout_enabled = $7, checkout_plan_cents = $8, checkout_insanos_cents = $9, tracker_cents = $10,
-			tracker_months = $11, updated_by = $12, updated_at = NOW()`,
+			tracker_months = $11, updated_by = $12, recurrence_enabled = $13, semiannual_cents = $14, annual_cents = $15,
+			updated_at = NOW()`,
 		l.Enabled, l.SurchargeCents, l.InstallFeeCents, l.UninstallFeeCents, in.Install.Enabled, in.Install.PriceCents,
-		c.Enabled, c.PlanCents, c.InsanosCents, t.Cents, t.Months, by); err != nil {
+		c.Enabled, c.PlanCents, c.InsanosCents, t.Cents, t.Months, by,
+		in.Recurrence.Enabled, in.Recurrence.SemiannualCents, in.Recurrence.AnnualCents); err != nil {
 		return nil, database.MapError(err)
 	}
 	return s.Options(ctx)
