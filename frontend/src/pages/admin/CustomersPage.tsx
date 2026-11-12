@@ -5,6 +5,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { customersApi, leadsApi } from '@/api/resources';
 import billing from '@/components/billing/Billing.module.css';
 import { CustomerStatus } from '@/components/billing/InvoiceStatus';
+import { CouponsCard } from '@/components/billing/CouponsCard';
 import { OrderOptionsCard } from '@/components/billing/OrderOptionsCard';
 import { PriceAdjustmentCard } from '@/components/billing/PriceAdjustmentCard';
 import { Button } from '@/components/ui/Button';
@@ -375,6 +376,7 @@ export function CustomersPage() {
 
             <MrrCard mrr={mrr} />
             <OrderOptionsCard />
+            <CouponsCard />
             <PriceAdjustmentCard />
           </>
         )}

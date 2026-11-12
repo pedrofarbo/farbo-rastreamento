@@ -16,6 +16,7 @@ vi.mock('@/components/ui/Toast', () => ({ useToast: () => ({ notify: () => {} })
 // As outras partes da tela têm os testes delas.
 vi.mock('./MrrCard', () => ({ MrrCard: () => null, ForecastTile: () => null, mrrParts: () => '', signedMoney: () => '' }));
 vi.mock('@/components/billing/OrderOptionsCard', () => ({ OrderOptionsCard: () => null }));
+vi.mock('@/components/billing/CouponsCard', () => ({ CouponsCard: () => null }));
 vi.mock('@/components/billing/PriceAdjustmentCard', () => ({ PriceAdjustmentCard: () => null }));
 vi.mock('./affiliates/AffiliatesTab', () => ({ AffiliatesTab: () => null }));
 vi.mock('./LeadsTab', () => ({ LeadsTab: () => null }));

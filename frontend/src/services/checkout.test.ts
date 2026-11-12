@@ -3,9 +3,39 @@ import { describe, expect, it } from 'vitest';
 import { OFFER, offerWith } from '@/test/checkoutOffer';
 import type { CheckoutOffer } from '@/types';
 
-import { blockingOffered, checkoutTotals, chosenInstall, payDestination, vehicleName } from './checkout';
+import { blockingOffered, checkoutTotals, chosenInstall, couponDiscounted, couponLabel, payDestination, vehicleName } from './checkout';
 
 const offer: CheckoutOffer = OFFER;
+
+describe('o cupom de desconto', () => {
+  it('a porcentagem arredondada ao centavo, o valor fixo sem passar de zero', () => {
+    expect(couponDiscounted({ code: 'A', description: '', percent: 10, charges: 1 }, 3490)).toBe(3141);
+    expect(couponDiscounted({ code: 'A', description: '', percent: 15, charges: 1 }, 3490)).toBe(2966); // 523,5 → 524
+    expect(couponDiscounted({ code: 'A', description: '', percent: 100, charges: 1 }, 3490)).toBe(0);
+    expect(couponDiscounted({ code: 'B', description: '', amountCents: 5000, charges: 1 }, 3490)).toBe(0);
+    expect(couponLabel({ code: 'A', description: '', percent: 10, charges: 1 })).toBe('10% de desconto na 1ª cobrança');
+    expect(couponLabel({ code: 'B', description: '', amountCents: 2000, charges: 3 }).replace(/\u00a0/g, ' ')).toBe(
+      'R$ 20,00 de desconto nas 3 primeiras cobranças',
+    );
+  });
+
+  it('sai do plano na 1ª cobrança (no comodato, com a garantia; no período, do valor dele)', () => {
+    const coupon = { code: 'A', description: '', percent: 10, charges: 2 };
+    const loan = checkoutTotals(offer, { equipmentMode: 'loan', farboInstall: false }, 0, undefined, coupon);
+    // 34,90 + 3,00 de garantia = 37,90; 10% = 3,79.
+    expect(loan).toMatchObject({ monthlyCents: 3790, couponCents: 379, firstMonthlyCents: 3411, couponCharges: 2 });
+    expect(loan.totalNowCents).toBe(3411 + 15000);
+    const year = checkoutTotals(
+      offerWith({ periods: [{ months: 12, planName: 'Plano Anual', cents: 40000 }] }),
+      { equipmentMode: 'sale', farboInstall: false, periodMonths: 12 },
+      2290,
+      undefined,
+      coupon,
+    );
+    expect(year).toMatchObject({ monthlyCents: 40000, couponCents: 4000, firstMonthlyCents: 36000, totalNowCents: 38290 });
+    expect(checkoutTotals(offer, { equipmentMode: 'sale', farboInstall: false })).toMatchObject({ couponCents: 0, couponCharges: 0 });
+  });
+});
 
 describe('a conta da contratação pelo site', () => {
   it('o semestral e o anual: o valor do período, com o rastreador incluso (nada somado); no comodato, com a garantia', () => {

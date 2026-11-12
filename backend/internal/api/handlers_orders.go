@@ -565,7 +565,10 @@ func (s *Server) orderPlaced(r *http.Request, customerID string, result *orders.
 		meta["setupInvoiceId"] = result.SetupInvoice.ID
 		meta["setupCents"] = result.SetupInvoice.AmountCents
 	}
-	if result.Subscription.PromoPriceCents != nil {
+	switch sub := result.Subscription; {
+	case sub.CouponCode != "":
+		meta["coupon"], meta["couponPriceCents"] = sub.CouponCode, sub.PromoPriceCents
+	case sub.PromoPriceCents != nil:
 		meta["launchPromo"] = true
 	}
 	if sub := result.Subscription; sub.TrackerCents > 0 {

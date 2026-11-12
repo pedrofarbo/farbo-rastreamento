@@ -53,6 +53,17 @@ describe('o valor da mensalidade', () => {
     expect(text()).toContain('R$ 34,90/mês (pré-lançamento');
   });
 
+  it('com o cupom da contratação pelo site: o valor com o desconto, o cupom e quando volta ao normal (também no anual)', async () => {
+    await render(false, { ...sub, nextPriceCents: undefined, promoPriceCents: 6291, promoUntil: '2027-09-10', couponCode: 'BEMVINDO' });
+    expect(text()).toBe('R$ 62,91/mês (cupom BEMVINDO; a partir de 10/09/2027, R$ 69,90)');
+    document.body.innerHTML = '';
+    await render(false, {
+      ...sub, nextPriceCents: undefined, priceCents: 40000, periodMonths: 12, endsOn: null, promoPriceCents: 38000,
+      promoUntil: '2028-07-10', couponCode: 'VINTE',
+    });
+    expect(text()).toBe('R$ 380,00/ano (R$ 31,66 por mês; cupom VINTE: a partir de 10/07/2028, R$ 400,00)');
+  });
+
   it('o semestral e o anual: o valor do período, por mês e, cancelado, até quando fica ativo', async () => {
     await render(true, { ...sub, priceCents: 20000, periodMonths: 6, endsOn: null });
     expect((document.body.textContent ?? '').replace(/\u00a0/g, ' ')).toContain('R$ 200,00/semestre');

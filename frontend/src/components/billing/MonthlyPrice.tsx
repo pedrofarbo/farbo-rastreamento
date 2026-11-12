@@ -6,7 +6,10 @@ import styles from './Billing.module.css';
 
 type Priced = Pick<Subscription, 'priceCents' | 'promoPriceCents' | 'promoUntil' | 'nextDueDate'> &
   Partial<
-    Pick<Subscription, 'nextPriceCents' | 'nextPriceFrom' | 'trackerCents' | 'trackerUntil' | 'trackerAdded' | 'periodMonths' | 'endsOn'>
+    Pick<
+      Subscription,
+      'nextPriceCents' | 'nextPriceFrom' | 'trackerCents' | 'trackerUntil' | 'trackerAdded' | 'periodMonths' | 'endsOn' | 'couponCode'
+    >
   >;
 
 /** "/mês", "/semestre" ou "/ano": de quanto em quanto tempo a assinatura é cobrada. */
@@ -34,6 +37,11 @@ export function trackerPart(sub: Priced): number {
 /** A próxima fatura ainda sai pelo preço da promoção de pré-lançamento? */
 export function promoActive(sub: Priced): boolean {
   return sub.promoPriceCents !== null && sub.promoUntil !== null && sub.nextDueDate < sub.promoUntil;
+}
+
+/** De onde vem o preço promocional: o cupom da contratação pelo site ou a promoção de pré-lançamento. */
+export function promoName(sub: Priced): string {
+  return sub.couponCode ? `cupom ${sub.couponCode}` : 'pré-lançamento';
 }
 
 /** Assinatura grátis (cortesia): mensalidade zero, sem promoção, sem cobrança. */
@@ -70,12 +78,15 @@ export function MonthlyPrice({ sub, staff = false }: { sub: Priced; staff?: bool
   // O semestral e o anual: o valor do período (o rastreador já está nele);
   // cancelado com o período pago, até quando fica ativo.
   if ((sub.periodMonths ?? 1) > 1) {
+    // Com o cupom ainda valendo: o próximo período sai com o desconto.
+    const price = promoActive(sub) ? (sub.promoPriceCents as number) : sub.priceCents;
     return (
       <span>
-        <span className={styles.amount}>{formatMoney(sub.priceCents)}</span>
+        <span className={styles.amount}>{formatMoney(price)}</span>
         {periodUnit(sub.periodMonths)}{' '}
         <span className={styles.muted}>
-          ({formatMoney(Math.floor(sub.priceCents / (sub.periodMonths as number)))} por mês
+          ({formatMoney(Math.floor(price / (sub.periodMonths as number)))} por mês
+          {promoActive(sub) ? `; ${promoName(sub)}: a partir de ${formatDateOnly(sub.promoUntil)}, ${formatMoney(sub.priceCents)}` : ''}
           {sub.endsOn ? `; encerra em ${formatDateOnly(sub.endsOn)}, no fim do período pago` : ''})
         </span>
         {adjustment}
@@ -106,7 +117,7 @@ export function MonthlyPrice({ sub, staff = false }: { sub: Priced; staff?: bool
     <span>
       <span className={styles.amount}>{formatMoney(sub.promoPriceCents as number)}</span>/mês{' '}
       <span className={styles.muted}>
-        (pré-lançamento; a partir de {formatDateOnly(sub.promoUntil)}, {formatMoney(sub.priceCents)})
+        ({promoName(sub)}; a partir de {formatDateOnly(sub.promoUntil)}, {formatMoney(sub.priceCents)})
       </span>
     </span>
   );

@@ -213,6 +213,52 @@
   font-size: 0.8125rem;
 }
 
+/* O cupom: o campo e o "Aplicar" lado a lado; aplicado, o desconto em verde. */
+.couponRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.6rem;
+}
+
+.couponApply {
+  /* Alinhado ao campo, abaixo do rótulo. */
+  margin-top: 1.45rem;
+  min-height: 48px;
+  padding: 0 1.1rem;
+  border: 1px solid var(--color-neon-green);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-neon-green);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.couponApply:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.couponApplied {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-neon-green);
+  border-radius: 14px;
+  background: rgba(59, 229, 88, 0.08);
+  color: #ffffff;
+  font-size: 0.9375rem;
+}
+
+.discount {
+  color: var(--color-neon-green);
+  font-weight: 700;
+}
+
 .honeypot {
   position: absolute;
   left: -10000px;

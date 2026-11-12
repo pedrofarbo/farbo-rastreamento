@@ -1211,6 +1211,8 @@ export interface Subscription {
    */
   promoPriceCents: number | null;
   promoUntil: DateOnly | null;
+  /** O cupom de desconto da contratação pelo site: com ele, promoPriceCents é o valor com o desconto (não o do pré-lançamento). */
+  couponCode?: string;
   /**
    * Reajuste anual já avisado: as faturas que vencem a partir de
    * nextPriceFrom saem por nextPriceCents. Nulos: sem mudança agendada.
@@ -1885,7 +1887,41 @@ export interface CheckoutOffer {
   shippingEnabled: boolean;
   /** O semestral e o anual (o valor do período, com o rastreador incluso; no comodato, mais a garantia de cada mês), quando o link — ou o site — os tem ligados. */
   periods?: PeriodOffer[];
+  /** O campo do cupom de desconto: há cupom valendo, e a contratação é direta (sem o link de um representante). */
+  coupons?: boolean;
 }
+
+/** Um cupom válido, como o site mostra: a porcentagem ou o valor fixo, em quantas das primeiras cobranças. */
+export interface CouponOffer {
+  code: string;
+  description: string;
+  percent?: number;
+  amountCents?: number;
+  charges: number;
+}
+
+/** Um cupom de desconto da contratação pelo site (central), com quantas contratações já o usaram. */
+export interface Coupon {
+  id: string;
+  code: string;
+  description: string;
+  /** Um dos dois: a porcentagem ou o valor fixo abatido em cada cobrança. */
+  percent: number | null;
+  amountCents: number | null;
+  /** Em quantas das primeiras cobranças o desconto vale (no semestral e no anual, cada cobrança é um período). */
+  charges: number;
+  /** Até que dia (inclusive) dá para usar; nulo, sem validade. */
+  validUntil: DateOnly | null;
+  /** Quantas contratações podem usar; nulo, sem limite. */
+  maxUses: number | null;
+  active: boolean;
+  uses: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** O que a central informa de um cupom (o código fica depois de criado). */
+export type CouponInput = Pick<Coupon, 'code' | 'description' | 'percent' | 'amountCents' | 'charges' | 'validUntil' | 'maxUses' | 'active'>;
 
 /** Um plano pago por período na contratação: os meses (6 ou 12), o nome e o valor (com o rastreador incluso). */
 export interface PeriodOffer {
@@ -1912,6 +1948,8 @@ export interface CheckoutInput {
   farboInstall: boolean;
   /** A instalação com o relé do bloqueio, quando o link oferece a escolha. */
   installBlocking?: boolean;
+  /** O cupom de desconto (só sem o link de um representante). */
+  coupon?: string;
   vehicle: { kind: VehicleKind; name: string; brand: string; model: string; plate: string };
   name: string;
   email: string;

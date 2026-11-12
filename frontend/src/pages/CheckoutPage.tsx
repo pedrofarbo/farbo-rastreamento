@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
+import type { FormEvent, KeyboardEvent, ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -11,7 +11,16 @@ import { TextField } from '@/components/ui/Field';
 import { CONTRACT_PATH } from '@/config/legal';
 import { CHECKOUT_ANCHOR, trackerAdded } from '@/config/landing';
 import { track, trackPageview } from '@/services/analytics';
-import { blockingOffered, checkoutTotals, chosenInstall, chosenPeriod, payDestination, periodPrice, vehicleName } from '@/services/checkout';
+import {
+  blockingOffered,
+  checkoutTotals,
+  chosenInstall,
+  chosenPeriod,
+  couponLabel,
+  payDestination,
+  periodPrice,
+  vehicleName,
+} from '@/services/checkout';
 import type { CheckoutChoice } from '@/services/checkout';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { formatMoney, formatPhoneInput, isPhoneComplete } from '@/services/format';
@@ -19,7 +28,7 @@ import { KIND_NAMES, PRICED_KINDS, kindPrice } from '@/services/kindPrices';
 import { currentReferral } from '@/services/referral';
 import { formatTaxId, taxIdDigits, validTaxId } from '@/services/taxid';
 import { useAuth } from '@/stores/AuthContext';
-import type { CheckoutOffer, DeliveryAddress, VehicleKind } from '@/types';
+import type { CheckoutOffer, CouponOffer, DeliveryAddress, VehicleKind } from '@/types';
 
 import pre from './PreLaunch.module.css';
 import styles from './CheckoutPage.module.css';
@@ -72,6 +81,9 @@ export function CheckoutPage() {
   const [website, setWebsite] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<ReactNode>('');
+  // O cupom de desconto (só na contratação direta): o aplicado e o do link (?cupom=), que já vem conferido.
+  const [coupon, setCoupon] = useState<CouponOffer | null>(null);
+  const linkCoupon = params.get('cupom') ?? '';
 
   useEffect(() => {
     document.title = 'Contratar · Farbo Rastreadores';
@@ -82,6 +94,18 @@ export function CheckoutPage() {
   }, []);
 
   const o = offer.data;
+  // O cupom do link: conferido assim que a oferta diz que há cupom valendo.
+  useEffect(() => {
+    if (!o?.coupons || !linkCoupon.trim()) return;
+    let live = true;
+    checkoutApi.coupon(linkCoupon).then(
+      (c) => live && setCoupon(c),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [o?.coupons, linkCoupon]);
   const addressReady = isAddressComplete(address);
   const quote = useQuery({
     queryKey: ['checkout-shipping', address.zipCode, address.city, address.state],
@@ -152,7 +176,8 @@ export function CheckoutPage() {
     );
   }
 
-  const totals = checkoutTotals(o, choice, freightCents, kind);
+  const applied = o.coupons ? coupon : null;
+  const totals = checkoutTotals(o, choice, freightCents, kind, applied);
   const table = o.planByKind;
   const loan = choice.equipmentMode === 'loan' && o.loan !== null;
   // O semestral e o anual (com o rastreador incluso ou em comodato), quando o link os oferece.
@@ -192,6 +217,7 @@ export function CheckoutPage() {
         ...(period ? { periodMonths: period.months } : {}),
         farboInstall: !loan && choice.farboInstall,
         ...(chosenInstall(o, choice).blocking ? { installBlocking: true } : {}),
+        ...(applied ? { coupon: applied.code } : {}),
         vehicle: { kind, name: vehicleName(kind, brand, model), brand: brand.trim(), model: model.trim(), plate: plate.trim() },
         name: person.name.trim(),
         email,
@@ -545,6 +571,10 @@ export function CheckoutPage() {
               />
             </div>
 
+            {o.coupons && (
+              <CouponField key={applied?.code ?? ''} initial={linkCoupon} applied={applied} onChange={setCoupon} disabled={sending} />
+            )}
+
             <Summary
               offer={o}
               choice={choice}
@@ -552,6 +582,7 @@ export function CheckoutPage() {
               vehicle={vehicleName(kind, brand, model)}
               kind={kind}
               freightPending={!shippingReady}
+              coupon={applied}
             />
 
             {/* Isca para robôs: fora da tela e fora do Tab. */}
@@ -719,6 +750,95 @@ function BlockingOptions({
   );
 }
 
+/**
+ * O cupom de desconto (só na contratação direta): a pessoa digita e aplica (o servidor confere e diz o
+ * desconto, ou o motivo de não valer); aplicado, o desconto e o "Remover". O Enter aplica, sem enviar o
+ * pedido. O do link (?cupom=) já vem no campo.
+ */
+function CouponField({
+  initial,
+  applied,
+  onChange,
+  disabled,
+}: {
+  initial: string;
+  applied: CouponOffer | null;
+  onChange: (coupon: CouponOffer | null) => void;
+  disabled: boolean;
+}) {
+  const [code, setCode] = useState(applied?.code ?? initial);
+  const [checking, setChecking] = useState(false);
+  const [problem, setProblem] = useState('');
+  const apply = async () => {
+    if (!code.trim() || checking) return;
+    setChecking(true);
+    setProblem('');
+    try {
+      onChange(await checkoutApi.coupon(code.trim()));
+    } catch (err) {
+      setProblem(
+        err instanceof ApiError && err.status === 429
+          ? 'Muitas tentativas. Espere um minuto e tente de novo.'
+          : err instanceof Error && err.message
+            ? `${err.message.charAt(0).toUpperCase()}${err.message.slice(1)}.`
+            : 'Não deu para conferir o cupom agora. Tente de novo.',
+      );
+    } finally {
+      setChecking(false);
+    }
+  };
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    void apply();
+  };
+  if (applied) {
+    return (
+      <div className={styles.couponApplied} role="status">
+        <span>
+          Cupom <strong>{applied.code}</strong>: {couponLabel(applied)}.
+        </span>
+        <button type="button" className={styles.linkButton} onClick={() => onChange(null)} disabled={disabled}>
+          Remover
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className={`${styles.panel} ${styles.couponRow}`}>
+      <TextField
+        label="Cupom de desconto"
+        autoCapitalize="characters"
+        autoComplete="off"
+        spellCheck={false}
+        maxLength={30}
+        placeholder="Se tiver um, digite aqui"
+        value={code}
+        error={problem || undefined}
+        onChange={(e) => {
+          setCode(e.target.value.toUpperCase());
+          setProblem('');
+        }}
+        onKeyDown={onKeyDown}
+      />
+      <button type="button" className={styles.couponApply} onClick={() => void apply()} disabled={!code.trim() || checking || disabled}>
+        {checking ? 'Conferindo…' : 'Aplicar'}
+      </button>
+    </div>
+  );
+}
+
+/** O desconto do cupom aplicado, na linha do resumo. */
+function CouponLine({ totals }: { totals: ReturnType<typeof checkoutTotals> }) {
+  if (totals.couponCents <= 0) return null;
+  return (
+    <div className={`${styles.line} ${styles.discount}`}>
+      <span>Cupom de desconto</span>
+      <span>−{formatMoney(totals.couponCents)}</span>
+    </div>
+  );
+}
+
 /** O total de agora, no pé das etapas antes do resumo. */
 function Total({ totals, shippingPending }: { totals: ReturnType<typeof checkoutTotals>; shippingPending: boolean }) {
   if (totals.periodMonths > 1) {
@@ -731,6 +851,7 @@ function Total({ totals, shippingPending }: { totals: ReturnType<typeof checkout
             {totals.periodMonths === 12 ? '/ano' : '/semestre'}
           </span>
         </div>
+        <CouponLine totals={totals} />
         <div className={`${styles.line} ${styles.total}`}>
           <span>Hoje, no Pix</span>
           <span>
@@ -745,8 +866,9 @@ function Total({ totals, shippingPending }: { totals: ReturnType<typeof checkout
     <div className={styles.summary}>
       <div className={styles.line}>
         <span>{totals.trackerMonths > 0 ? `Mensalidade, nas ${totals.trackerMonths} primeiras` : 'Mensalidade'}</span>
-        <span className={styles.monthly}>{formatMoney(totals.firstMonthlyCents)}/mês</span>
+        <span className={styles.monthly}>{formatMoney(totals.firstMonthlyCents + totals.couponCents)}/mês</span>
       </div>
+      <CouponLine totals={totals} />
       {totals.trackerMonths > 0 && (
         <div className={styles.line}>
           <span>Depois</span>
@@ -772,6 +894,7 @@ function Summary({
   vehicle,
   kind,
   freightPending,
+  coupon,
 }: {
   offer: CheckoutOffer;
   choice: CheckoutChoice;
@@ -779,6 +902,7 @@ function Summary({
   vehicle: string;
   kind: VehicleKind;
   freightPending: boolean;
+  coupon: CouponOffer | null;
 }) {
   const loan = choice.equipmentMode === 'loan' && offer.loan !== null;
   const period = chosenPeriod(offer, choice);
@@ -787,13 +911,21 @@ function Summary({
   const install = chosenInstall(offer, choice);
   const directInstall = offer.installDirect ? install.cents : 0;
   const tracker = offer.tracker;
+  // Com o cupom em mais de uma cobrança: as seguintes com o desconto, antes do valor normal.
+  const moreDiscounted = coupon && totals.couponCents > 0 ? totals.couponCharges - 1 : 0;
   return (
     <div className={styles.summary} aria-label="Resumo do pedido">
       <p className={styles.legend}>Resumo · {vehicle}</p>
       <div className={styles.line}>
         <span>{period ? `${period.months === 12 ? '1º ano' : '1º semestre'} · ${plan}` : `1ª mensalidade · ${plan}`}</span>
-        <span>{formatMoney(totals.firstMonthlyCents)}</span>
+        <span>{formatMoney(totals.firstMonthlyCents + totals.couponCents)}</span>
       </div>
+      {coupon && totals.couponCents > 0 && (
+        <div className={`${styles.line} ${styles.discount}`}>
+          <span>Cupom {coupon.code}</span>
+          <span>−{formatMoney(totals.couponCents)}</span>
+        </div>
+      )}
       {!loan && (
         <div className={styles.line}>
           <span>Rastreador (fica com você)</span>
@@ -818,8 +950,19 @@ function Summary({
       </div>
       {period ? (
         <p className={styles.note}>
-          Depois, <span className={styles.monthly}>{formatMoney(totals.monthlyCents)}</span> a cada {period.months} meses, no
-          dia {offer.dueDay}.{' '}
+          {moreDiscounted > 0 ? (
+            <>
+              Depois, mais {moreDiscounted} {moreDiscounted === 1 ? 'cobrança' : 'cobranças'} de{' '}
+              <span className={styles.monthly}>{formatMoney(totals.firstMonthlyCents)}</span>, com o cupom, e, a partir da{' '}
+              {totals.couponCharges + 1}ª, <span className={styles.monthly}>{formatMoney(totals.monthlyCents)}</span> a cada{' '}
+              {period.months} meses, no dia {offer.dueDay}.{' '}
+            </>
+          ) : (
+            <>
+              Depois, <span className={styles.monthly}>{formatMoney(totals.monthlyCents)}</span> a cada {period.months} meses, no
+              dia {offer.dueDay}.{' '}
+            </>
+          )}
           {loan
             ? `O rastreador é emprestado${totals.guaranteeCents > 0 ? `; ${formatMoney(totals.guaranteeCents)} do valor é a garantia de troca dele` : ''}.`
             : 'O rastreador incluso fica com você e já está no valor.'}{' '}
@@ -836,9 +979,16 @@ function Summary({
         {totals.trackerMonths > 1 ? (
           <>
             Depois, mais {totals.trackerMonths - 1} mensalidades de{' '}
-            <span className={styles.monthly}>{formatMoney(totals.firstMonthlyCents)}</span> e, a partir da{' '}
+            <span className={styles.monthly}>{formatMoney(totals.firstMonthlyCents + totals.couponCents)}</span> e, a partir da{' '}
             {totals.trackerMonths + 1}ª, <span className={styles.monthly}>{formatMoney(totals.monthlyCents)}/mês</span>, no
             dia {offer.dueDay}
+          </>
+        ) : moreDiscounted > 0 ? (
+          <>
+            Depois, mais {moreDiscounted} {moreDiscounted === 1 ? 'mensalidade' : 'mensalidades'} de{' '}
+            <span className={styles.monthly}>{formatMoney(totals.firstMonthlyCents)}</span>, com o cupom, e, a partir da{' '}
+            {totals.couponCharges + 1}ª, <span className={styles.monthly}>{formatMoney(totals.monthlyCents)}/mês</span>, no dia{' '}
+            {offer.dueDay}
           </>
         ) : (
           <>

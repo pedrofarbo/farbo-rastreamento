@@ -67,6 +67,9 @@ type checkoutView struct {
 	// incluso; no comodato, com a garantia de troca de cada mês), quando o
 	// link do representante — ou o site — os tem ligados; vazio, só o mensal.
 	Periods []periodOffer `json:"periods"`
+	// Coupons: o campo do cupom de desconto aparece (há cupom valendo, e a
+	// contratação é direta, sem o link de um representante).
+	Coupons bool `json:"coupons"`
 }
 
 // periodOffers são o semestral e o anual ligados (vazio: só o mensal); com o
@@ -152,6 +155,13 @@ func (s *Server) handleCheckoutOffer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view.Periods = periodOffers(recurrence, view.Loan)
+	// O cupom: só na contratação direta, e com algum valendo.
+	if view.Enabled && s.referralFor(r, r.URL.Query().Get("ref")) == nil {
+		if view.Coupons, err = s.Orders.HasCheckoutCoupons(r.Context()); err != nil {
+			handleStoreError(w, err, "contratação indisponível")
+			return
+		}
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, view)
 }
@@ -228,11 +238,13 @@ type checkoutRequest struct {
 	FarboInstall bool `json:"farboInstall"`
 	// InstallBlocking: a instalação com o relé do bloqueio, quando o link
 	// do representante oferece a escolha.
-	InstallBlocking bool           `json:"installBlocking"`
-	Vehicle         vehicles.Input `json:"vehicle"`
-	Name            string         `json:"name"`
-	Email           string         `json:"email"`
-	Phone           string         `json:"phone"`
+	InstallBlocking bool `json:"installBlocking"`
+	// Coupon: o cupom de desconto (só sem o link de um representante).
+	Coupon  string         `json:"coupon"`
+	Vehicle vehicles.Input `json:"vehicle"`
+	Name    string         `json:"name"`
+	Email   string         `json:"email"`
+	Phone   string         `json:"phone"`
 	// Document: o CPF (a contratação pelo site é de pessoa física).
 	Document string            `json:"document"`
 	Password string            `json:"password"`
@@ -305,6 +317,7 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	order, err := s.Orders.CheckoutOrder(ctx, orders.CheckoutChoice{
 		EquipmentMode: req.EquipmentMode, FarboInstall: req.FarboInstall, Vehicle: req.Vehicle,
 		Affiliate: s.referralFor(r, req.Ref), PeriodMonths: req.PeriodMonths, InstallBlocking: req.InstallBlocking,
+		Coupon: req.Coupon,
 	})
 	if err != nil {
 		writeOrderError(w, r, err, "contratação indisponível")

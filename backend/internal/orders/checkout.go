@@ -27,6 +27,9 @@ type CheckoutChoice struct {
 	// InstallBlocking: a instalação com o relé do bloqueio do motor, quando
 	// o link oferece a escolha (no comodato ou com a instalação contratada).
 	InstallBlocking bool
+	// Coupon: o cupom de desconto, só na contratação direta (sem o link de
+	// um representante).
+	Coupon string
 }
 
 // CheckoutOrder monta o pedido da contratação rápida pela landing (a pessoa
@@ -110,6 +113,17 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 		return Order{}, err
 	}
 	install.applyInstall(&order)
+	// O cupom: conferido aqui (a pessoa vê o motivo antes de criar a conta)
+	// e de novo, travado, na gravação do pedido.
+	if code := NormalizeCouponCode(in.Coupon); code != "" {
+		if in.Affiliate != nil {
+			return Order{}, ValidationError{"o cupom vale só na contratação direta pelo site, sem o link de um representante"}
+		}
+		if _, err := s.CheckoutCoupon(ctx, code); err != nil {
+			return Order{}, err
+		}
+		order.Coupon = code
+	}
 	return order, nil
 }
 

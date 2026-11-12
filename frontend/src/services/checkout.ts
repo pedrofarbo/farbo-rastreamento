@@ -7,7 +7,8 @@
  */
 import { includedMonthly } from '@/config/landing';
 import { kindPrice } from '@/services/kindPrices';
-import type { CheckoutOffer, PeriodOffer, VehicleKind } from '@/types';
+import { formatMoney } from '@/services/format';
+import type { CheckoutOffer, CouponOffer, PeriodOffer, VehicleKind } from '@/types';
 
 export interface CheckoutChoice {
   /** O rastreador incluso (sale) ou em comodato (loan). */
@@ -35,6 +36,22 @@ export interface CheckoutTotals {
   totalNowCents: number;
   /** O semestral (6) ou o anual (12): monthlyCents e firstMonthlyCents são o valor do período. 1: o mensal. */
   periodMonths: number;
+  /** O cupom: o desconto em cada uma das primeiras cobranças (já fora de firstMonthlyCents) e em quantas. */
+  couponCents: number;
+  couponCharges: number;
+}
+
+/** O valor da cobrança com o cupom (nunca abaixo de zero): a porcentagem arredondada ao centavo, ou o valor fixo. */
+export function couponDiscounted(coupon: CouponOffer, cents: number): number {
+  if (coupon.percent) return cents - Math.floor((cents * coupon.percent + 50) / 100);
+  if (coupon.amountCents) return Math.max(cents - coupon.amountCents, 0);
+  return cents;
+}
+
+/** "10% de desconto na 1ª cobrança" ou "R$ 20,00 de desconto nas 3 primeiras cobranças". */
+export function couponLabel(coupon: CouponOffer): string {
+  const off = coupon.percent ? `${coupon.percent}%` : formatMoney(coupon.amountCents ?? 0);
+  return `${off} de desconto ${coupon.charges === 1 ? 'na 1ª cobrança' : `nas ${coupon.charges} primeiras cobranças`}`;
 }
 
 /** O semestral ou o anual escolhido, se o link o oferece (com o rastreador incluso ou em comodato). */
@@ -65,8 +82,17 @@ export function chosenInstall(offer: CheckoutOffer, choice: CheckoutChoice): { c
   return { cents: loan ? (offer.loan?.installFeeCents ?? 0) : (offer.install?.priceCents ?? 0), blocking: false };
 }
 
-/** Pelo link de um afiliado com tabela, a mensalidade é a do tipo do veículo. */
-export function checkoutTotals(offer: CheckoutOffer, choice: CheckoutChoice, freightCents = 0, kind?: VehicleKind): CheckoutTotals {
+/**
+ * Pelo link de um afiliado com tabela, a mensalidade é a do tipo do veículo. Com o cupom (só na contratação
+ * direta), o desconto sai do valor do plano nas primeiras cobranças — a 1ª é a de agora.
+ */
+export function checkoutTotals(
+  offer: CheckoutOffer,
+  choice: CheckoutChoice,
+  freightCents = 0,
+  kind?: VehicleKind,
+  coupon?: CouponOffer | null,
+): CheckoutTotals {
   const loan = choice.equipmentMode === 'loan' && offer.loan !== null;
   // Pelo link de um representante, a instalação é paga direto a ele: fora do Pix.
   const installNowCents = offer.installDirect ? 0 : chosenInstall(offer, choice).cents;
@@ -75,30 +101,37 @@ export function checkoutTotals(offer: CheckoutOffer, choice: CheckoutChoice, fre
   const period = chosenPeriod(offer, choice);
   if (period) {
     const cents = periodPrice(period, loan);
+    const couponCents = coupon ? cents - couponDiscounted(coupon, cents) : 0;
     return {
       monthlyCents: cents,
       guaranteeCents: loan ? cents - period.cents : 0,
-      firstMonthlyCents: cents,
+      firstMonthlyCents: cents - couponCents,
       trackerMonths: 0,
       installNowCents,
       freightCents,
-      totalNowCents: cents + installNowCents + freightCents,
+      totalNowCents: cents - couponCents + installNowCents + freightCents,
       periodMonths: period.months,
+      couponCents,
+      couponCharges: coupon?.charges ?? 0,
     };
   }
   const guaranteeCents = loan ? (offer.loan?.surchargeCents ?? 0) : 0;
   const monthlyCents = (offer.planByKind ? kindPrice(offer.planByKind, kind) : offer.planCents) + guaranteeCents;
   // O comodato não tem a parte do rastreador: ele volta à Farbo.
   const included = includedMonthly(monthlyCents, loan ? undefined : offer.tracker);
+  // O cupom abate o valor do plano (a parte do rastreador somada, quando há, fica).
+  const couponCents = coupon ? monthlyCents - couponDiscounted(coupon, monthlyCents) : 0;
   return {
     monthlyCents,
     guaranteeCents,
-    firstMonthlyCents: included.first,
+    firstMonthlyCents: included.first - couponCents,
     trackerMonths: included.months,
     installNowCents,
     freightCents,
-    totalNowCents: included.first + installNowCents + freightCents,
+    totalNowCents: included.first - couponCents + installNowCents + freightCents,
     periodMonths: 1,
+    couponCents,
+    couponCharges: coupon?.charges ?? 0,
   };
 }
 

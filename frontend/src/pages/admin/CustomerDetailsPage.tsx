@@ -1312,12 +1312,19 @@ export function CustomerDetailsPage() {
               value={editSubscription.price}
               onChange={(e) => setEditSubscription({ ...editSubscription, price: e.target.value })}
             />
-            {promoActive(editSubscription.sub) && (
-              <p className={billing.muted}>
-                Na promoção de pré-lançamento até {formatDateOnly(editSubscription.sub.promoUntil)}: a mensalidade
-                promocional segue o plano (no Especial Insanos MC, a dos Insanos; nos demais, a padrão).
-              </p>
-            )}
+            {promoActive(editSubscription.sub) &&
+              (editSubscription.sub.couponCode ? (
+                <p className={billing.muted}>
+                  Com o cupom {editSubscription.sub.couponCode} até {formatDateOnly(editSubscription.sub.promoUntil)}: as
+                  cobranças até lá ficam em {formatMoney(editSubscription.sub.promoPriceCents as number)}, mesmo trocando o
+                  plano ou o valor.
+                </p>
+              ) : (
+                <p className={billing.muted}>
+                  Na promoção de pré-lançamento até {formatDateOnly(editSubscription.sub.promoUntil)}: a mensalidade
+                  promocional segue o plano (no Especial Insanos MC, a dos Insanos; nos demais, a padrão).
+                </p>
+              ))}
             <SelectField
               label="Vencimento da conta"
               hint="Muda todas as assinaturas ativas do cliente: a conta vence num dia só. As mensalidades em aberto que ainda não venceram vão para o dia novo; as próximas já saem nele."

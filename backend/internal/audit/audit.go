@@ -77,6 +77,11 @@ const (
 	// ActionOrderOptionsChanged: a central mudou as opções do pedido do
 	// cliente (o comodato e a instalação pelos instaladores da Farbo).
 	ActionOrderOptionsChanged = "ORDER_OPTIONS_CHANGED"
+	// ActionCouponCreated / Updated / Deleted: a central mexeu num cupom de
+	// desconto da contratação pelo site.
+	ActionCouponCreated = "COUPON_CREATED"
+	ActionCouponUpdated = "COUPON_UPDATED"
+	ActionCouponDeleted = "COUPON_DELETED"
 	// ActionOrderCanceled: a central cancelou o pedido de um veículo (antes do
 	// envio), com o motivo e o que foi pago a devolver.
 	ActionOrderCanceled        = "ORDER_CANCELED"

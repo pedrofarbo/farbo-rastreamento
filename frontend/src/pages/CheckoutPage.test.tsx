@@ -18,6 +18,8 @@ const shippingRefs: (string | undefined)[] = [];
 let shippingView: ShippingQuoteView | null = null;
 let placeResult: () => Promise<unknown>;
 const placed: CheckoutInput[] = [];
+/** Os cupons conferidos; o BEMVINDO vale (10% nas 3 primeiras), o VINTE dá R$ 20 na 1ª, os outros não. */
+const couponCodes: string[] = [];
 const logins: string[] = [];
 const quote: ShippingQuoteView = {
   enabled: true, zipCode: '13010000', problem: '', arrange: false,
@@ -37,6 +39,12 @@ vi.mock('@/api/resources', () => ({
     place: (input: CheckoutInput) => {
       placed.push(input);
       return placeResult();
+    },
+    coupon: async (code: string) => {
+      couponCodes.push(code);
+      if (code === 'BEMVINDO') return { code, description: '', percent: 10, charges: 3 };
+      if (code === 'VINTE') return { code, description: '', amountCents: 2000, charges: 1 };
+      throw new ApiError(400, 'cupom não encontrado: confira o código');
     },
   },
 }));
@@ -133,6 +141,7 @@ beforeEach(() => {
     tokens: { accessToken: 'a', refreshToken: 'r', expiresAt: '', user: { email: 'lia@exemplo.com.br' } },
   });
   placed.length = 0;
+  couponCodes.length = 0;
   logins.length = 0;
   offerRefs.length = 0;
   shippingRefs.length = 0;
@@ -436,6 +445,69 @@ describe('a contratação pelo site', () => {
     expect(text()).toContain('Você já contratou com este e-mail e o pagamento vale até 16:39 de 04/11');
     expect(document.querySelector('a[href="https://painel.farbo.test/pagar/abc?todas=1"]')?.textContent).toBe('Pagar o pedido já feito');
     expect(logins).toEqual([]);
+  });
+
+  it('sem cupom valendo (ou pelo link de um representante): o campo do cupom não aparece', async () => {
+    await render('/contratar?cupom=BEMVINDO');
+    await fillUntilPayment();
+    expect(text()).not.toContain('Cupom de desconto');
+    expect(couponCodes).toEqual([]);
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar R$ 57,80 com Pix'));
+    expect(placed[0]).not.toHaveProperty('coupon');
+  });
+
+  it('o cupom: o código errado diz o motivo; o certo abate a 1ª mensalidade no Pix e vai no pedido; o Enter não paga', async () => {
+    offer = offerWith({ coupons: true });
+    await render();
+    await fillUntilPayment();
+    // 34,90 + 22,90 de frete.
+    expect(button('Pagar R$ 57,80 com Pix')).toBeTruthy();
+    type(field('Cupom de desconto'), 'errado');
+    await click(button('Aplicar'));
+    expect(couponCodes).toEqual(['ERRADO']);
+    expect(text()).toContain('Cupom não encontrado: confira o código.');
+    type(field('Cupom de desconto'), 'bemvindo');
+    expect(text()).not.toContain('Cupom não encontrado');
+    // O Enter no campo aplica o cupom, sem enviar o pedido.
+    await act(async () => {
+      field('Cupom de desconto').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await flush();
+    expect(placed).toEqual([]);
+    expect(text()).toContain('Cupom BEMVINDO: 10% de desconto nas 3 primeiras cobranças.');
+    // 10% de 34,90 = 3,49: a 1ª mensalidade por 31,41.
+    expect(text()).toContain('1ª mensalidade · Plano MensalR$ 34,90');
+    expect(text()).toContain('Cupom BEMVINDO−R$ 3,49');
+    expect(text()).toContain('Hoje, no PixR$ 54,31');
+    expect(text()).toContain('Depois, mais 2 mensalidades de R$ 31,41, com o cupom, e, a partir da 4ª, R$ 34,90/mês, no dia 10.');
+    // Tirar e pôr de novo.
+    await click(button('Remover'));
+    expect(button('Pagar R$ 57,80 com Pix')).toBeTruthy();
+    expect(field('Cupom de desconto').value).toBe('');
+    type(field('Cupom de desconto'), 'BEMVINDO');
+    await click(button('Aplicar'));
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar R$ 54,31 com Pix'));
+    expect(placed[0]).toMatchObject({ coupon: 'BEMVINDO', equipmentMode: 'sale' });
+  });
+
+  it('o cupom do link (?cupom=) já vem aplicado, desde o plano; no anual, o valor fixo sai do período', async () => {
+    offer = offerWith({ coupons: true, periods: [{ months: 12, planName: 'Plano Anual', cents: 40000 }] });
+    await render('/contratar?cupom=VINTE');
+    expect(couponCodes).toEqual(['VINTE']);
+    expect(text()).toContain('Cupom de desconto−R$ 20,00');
+    expect(text()).toContain('Hoje, no PixR$ 14,90 + frete');
+    await click(radio('Anual'));
+    expect(text()).toContain('Hoje, no PixR$ 380,00 + frete');
+    await fillUntilPayment();
+    expect(text()).toContain('Cupom VINTE: R$ 20,00 de desconto na 1ª cobrança.');
+    expect(text()).toContain('1º ano · Plano AnualR$ 400,00');
+    expect(text()).toContain('Hoje, no PixR$ 402,90');
+    expect(text()).toContain('Depois, R$ 400,00 a cada 12 meses');
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar R$ 402,90 com Pix'));
+    expect(placed[0]).toMatchObject({ coupon: 'VINTE', periodMonths: 12 });
   });
 
   it('fechada na central: chama para deixar o contato', async () => {

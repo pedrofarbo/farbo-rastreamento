@@ -84,6 +84,10 @@ type Order struct {
 	// link do representante que oferece a escolha), no preço dela; fica na
 	// assinatura para a agenda e o instalador.
 	InstallBlocking bool
+	// Coupon: o código do cupom de desconto (a contratação direta pelo
+	// site): a mensalidade com o desconto nas primeiras cobranças. Não vai
+	// junto com a promoção de pré-lançamento.
+	Coupon string
 }
 
 // Result é o que a contratação criou. Tudo vence em ChargeDate: no ato, para
@@ -148,6 +152,9 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 	if err := o.Tracker.check(); err != nil {
 		return nil, err
 	}
+	if o.Coupon != "" && o.LaunchPromo {
+		return nil, ValidationError{"o cupom não vale junto com a promoção de pré-lançamento"}
+	}
 	loan := o.Terms.EquipmentMode == billing.EquipmentLoan
 	if loan {
 		// O rastreador emprestado volta à Farbo: não há parte dele a pagar.
@@ -198,6 +205,13 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 				return err
 			}
 		}
+		var coupon *Coupon
+		if o.Coupon != "" {
+			var err error
+			if coupon, err = s.applyCoupon(ctx, tx, o.Coupon, sub); err != nil {
+				return err
+			}
+		}
 		// O rastreador incluso: a parte dele nas primeiras mensalidades, a
 		// partir da 1ª.
 		sub.IncludeTracker(o.Tracker.Cents, o.Tracker.Months, o.Tracker.Added)
@@ -231,6 +245,13 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 		}
 		if result.Subscription, err = billing.InsertSubscription(ctx, tx, sub); err != nil {
 			return err
+		}
+		if coupon != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO coupon_redemptions (subscription_id, coupon_id, customer_id, discount_cents)
+				VALUES ($1, $2, $3, $4)`, result.Subscription.ID, coupon.ID, customerID,
+				result.Subscription.PriceCents-*result.Subscription.PromoPriceCents); err != nil {
+				return err
+			}
 		}
 		if o.LaunchPromo {
 			// A vaga fica com o cliente; a linha, com esta assinatura (a
@@ -338,7 +359,7 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 		freightCents = result.Shipping.PriceCents
 	}
 	s.log.Info("rastreador contratado", "customer", customerID, "vehicle", result.Vehicle.ID,
-		"subscription", result.Subscription.ID, "promo", o.LaunchPromo, "freight_cents", freightCents,
+		"subscription", result.Subscription.ID, "promo", o.LaunchPromo, "coupon", o.Coupon, "freight_cents", freightCents,
 		"equipment_mode", o.Terms.EquipmentMode, "tracker_cents", o.Tracker.Cents, "tracker_months", o.Tracker.Months,
 		"tracker_added", o.Tracker.Added, "charge_date", result.ChargeDate.String(), "pay_now", result.PayNow)
 	return result, nil

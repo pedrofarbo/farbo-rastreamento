@@ -54,6 +54,9 @@ type Subscription struct {
 	// promoção.
 	PromoPriceCents *int  `json:"promoPriceCents"`
 	PromoUntil      *Date `json:"promoUntil"`
+	// CouponCode: o cupom de desconto da contratação pelo site; com ele, o
+	// preço promocional é o do cupom (não o da promoção de pré-lançamento).
+	CouponCode string `json:"couponCode,omitempty"`
 	// NextPriceCents vale para as faturas que vencem a partir de
 	// NextPriceFrom (o reajuste anual, já avisado); nulos sem mudança agendada.
 	NextPriceCents *int  `json:"nextPriceCents"`
@@ -193,7 +196,8 @@ func NewRepository(db *database.DB) *Repository { return &Repository{db: db} }
 const subscriptionColumns = `id, customer_id, plan_name, price_cents, due_day, next_due_date,
 	status, canceled_at, vehicle_id, delivery_address, promo_price_cents, promo_until,
 	next_price_cents, next_price_from, installments, commitment_until, equipment_mode, uninstall_fee_cents,
-	tracker_cents, tracker_months, tracker_until, tracker_added, period_months, ends_on, created_at, updated_at`
+	tracker_cents, tracker_months, tracker_until, tracker_added, period_months, ends_on, COALESCE(coupon_code, ''),
+	created_at, updated_at`
 
 func scanSubscription(row database.Scanner) (*Subscription, error) {
 	var s Subscription
@@ -202,7 +206,7 @@ func scanSubscription(row database.Scanner) (*Subscription, error) {
 	if err := row.Scan(&s.ID, &s.CustomerID, &s.PlanName, &s.PriceCents, &s.DueDay, &next,
 		&s.Status, &s.CanceledAt, &s.VehicleID, &s.DeliveryAddress, &s.PromoPriceCents, &promoUntil,
 		&s.NextPriceCents, &nextFrom, &s.Installments, &commitment, &s.EquipmentMode, &s.UninstallFeeCents,
-		&s.TrackerCents, &s.TrackerMonths, &trackerUntil, &s.TrackerAdded, &s.PeriodMonths, &endsOn,
+		&s.TrackerCents, &s.TrackerMonths, &trackerUntil, &s.TrackerAdded, &s.PeriodMonths, &endsOn, &s.CouponCode,
 		&s.CreatedAt, &s.UpdatedAt); err != nil {
 		return nil, database.MapError(err)
 	}
@@ -231,14 +235,15 @@ func InsertSubscription(ctx context.Context, q database.Querier, s *Subscription
 	return scanSubscription(q.QueryRow(ctx, `
 		INSERT INTO subscriptions (customer_id, plan_name, price_cents, due_day, next_due_date,
 			vehicle_id, delivery_address, promo_price_cents, promo_until, installments, commitment_until,
-			equipment_mode, uninstall_fee_cents, tracker_cents, tracker_months, tracker_until, tracker_added, period_months)
+			equipment_mode, uninstall_fee_cents, tracker_cents, tracker_months, tracker_until, tracker_added, period_months,
+			coupon_code)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE(NULLIF($12, ''), 'sale'), $13, $14, $15, $16, $17,
-			GREATEST($18, 1))
+			GREATEST($18, 1), NULLIF($19, ''))
 		RETURNING `+subscriptionColumns,
 		s.CustomerID, s.PlanName, s.PriceCents, s.DueDay, s.NextDueDate.Time, s.VehicleID, s.DeliveryAddress,
 		s.PromoPriceCents, dateOrNil(s.PromoUntil), s.Installments, dateOrNil(s.CommitmentUntil),
 		s.EquipmentMode, s.UninstallFeeCents, s.TrackerCents, s.TrackerMonths, dateOrNil(s.TrackerUntil), s.TrackerAdded,
-		s.PeriodMonths))
+		s.PeriodMonths, s.CouponCode))
 }
 
 func dateOrNil(d *Date) *time.Time {
@@ -277,7 +282,8 @@ func (r *Repository) GetSubscription(ctx context.Context, id uuid.UUID) (*Subscr
 // UpdateSubscription troca o plano e o preço. Preço novo à mão substitui o
 // reajuste agendado (vale o que o admin informou).
 // UpdateSubscription grava o plano. promoCents é a mensalidade promocional do
-// plano novo: vale só se o plano mudou e a promoção ainda não acabou.
+// plano novo: vale só se o plano mudou e a promoção ainda não acabou (a de
+// pré-lançamento: o desconto de um cupom fica como está).
 func (r *Repository) UpdateSubscription(ctx context.Context, id uuid.UUID, planName string, priceCents int, promoCents *int) (*Subscription, error) {
 	return scanSubscription(r.db.QueryRow(ctx, `
 		UPDATE subscriptions SET plan_name = $2, price_cents = $3,
@@ -285,7 +291,7 @@ func (r *Repository) UpdateSubscription(ctx context.Context, id uuid.UUID, planN
 			next_price_from = CASE WHEN price_cents = $3 THEN next_price_from END,
 			promo_price_cents = CASE
 				WHEN $4::int IS NOT NULL AND promo_price_cents IS NOT NULL AND promo_until >= CURRENT_DATE
-					AND lower(btrim(plan_name)) <> lower(btrim($2)) THEN $4
+					AND coupon_code IS NULL AND lower(btrim(plan_name)) <> lower(btrim($2)) THEN $4
 				ELSE promo_price_cents END,
 			updated_at = NOW()
 		WHERE id = $1
@@ -741,6 +747,7 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 		trackerAdded   bool
 		periodMonths   int
 		endsOn         *Date
+		couponCode     string
 	}
 
 	var created int64
@@ -749,7 +756,7 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 			SELECT s.id, s.customer_id, s.plan_name, s.price_cents, s.due_day, s.next_due_date, s.promo_price_cents,
 				s.promo_until, s.next_price_cents, s.next_price_from, s.installments,
 				NOT EXISTS (SELECT 1 FROM invoices i WHERE i.subscription_id = s.id),
-				s.tracker_cents, s.tracker_until, s.tracker_added, s.period_months, s.ends_on
+				s.tracker_cents, s.tracker_until, s.tracker_added, s.period_months, s.ends_on, COALESCE(s.coupon_code, '')
 			FROM subscriptions s
 			WHERE s.status = 'ACTIVE'
 				AND (s.next_due_date <= $1 OR NOT EXISTS (SELECT 1 FROM invoices i WHERE i.subscription_id = s.id))
@@ -765,7 +772,7 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 			var promoUntil, nextFrom, trackerUntil, endsOn *time.Time
 			if err := rows.Scan(&d.id, &d.customerID, &d.planName, &d.priceCents, &d.dueDay, &next,
 				&d.promoCents, &promoUntil, &d.nextPrice, &nextFrom, &d.installments, &d.first,
-				&d.trackerCents, &trackerUntil, &d.trackerAdded, &d.periodMonths, &endsOn); err != nil {
+				&d.trackerCents, &trackerUntil, &d.trackerAdded, &d.periodMonths, &endsOn, &d.couponCode); err != nil {
 				rows.Close()
 				return err
 			}
@@ -803,7 +810,10 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 				}
 				amount, promotional := priceOn(d.priceCents, d.nextPrice, d.nextFrom, d.promoCents, d.promoUntil, next)
 				description := periodDescription(d.planName, next, d.periodMonths)
-				if promotional {
+				switch {
+				case promotional && d.couponCode != "":
+					description += " · cupom " + d.couponCode
+				case promotional:
 					description += " · promoção de pré-lançamento"
 				}
 				// O rastreador incluso: a parte dele nas primeiras mensalidades.

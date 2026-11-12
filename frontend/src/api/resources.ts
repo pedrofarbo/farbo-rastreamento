@@ -13,6 +13,9 @@ import type {
   AwaitingUninstall,
   CheckoutInput,
   CheckoutOffer,
+  Coupon,
+  CouponInput,
+  CouponOffer,
   CheckoutResult,
   OrderOptions,
   BusRoute,
@@ -658,6 +661,17 @@ export const checkoutApi = {
     }),
   place: (input: CheckoutInput) =>
     request<CheckoutResult>('/api/public/checkout', { method: 'POST', body: input, anonymous: true }),
+  /** Confere o cupom: o desconto e em quantas cobranças, ou o motivo de não valer. */
+  coupon: (code: string) =>
+    request<CouponOffer>(`/api/public/checkout/coupon?${new URLSearchParams({ code })}`, { anonymous: true }),
+};
+
+/** Os cupons de desconto da contratação direta pelo site (central). */
+export const couponsApi = {
+  list: () => api.get<Coupon[]>('/api/coupons'),
+  create: (input: CouponInput) => api.post<Coupon>('/api/coupons', input),
+  update: (id: string, input: Omit<CouponInput, 'code'>) => api.put<Coupon>(`/api/coupons/${id}`, input),
+  remove: (id: string) => api.delete<void>(`/api/coupons/${id}`),
 };
 
 /** A agenda de instalação (central). */

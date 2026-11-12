@@ -241,6 +241,8 @@ func (s *Server) routes() chi.Router {
 	// cria a conta, poucas por IP.
 	checkoutLimiter := newRateLimiter(0.5, 30)
 	checkoutOrderLimiter := newRateLimiter(0.02, 10)
+	// O cupom: poucas tentativas por minuto (não dá para varrer os códigos).
+	couponLimiter := newRateLimiter(0.1, 10)
 	// Lista de lançamento: mais folgado que o pré-cadastro, porque num evento
 	// (QR Code) muita gente se inscreve pela mesma rede, ou no mesmo tablet.
 	launchLimiter := newRateLimiter(0.5, 20)
@@ -354,6 +356,7 @@ func (s *Server) routes() chi.Router {
 		if s.Orders != nil {
 			r.With(checkoutLimiter.middleware).Get("/public/checkout", s.handleCheckoutOffer)
 			r.With(checkoutLimiter.middleware).Post("/public/checkout/shipping", s.handleCheckoutShipping)
+			r.With(couponLimiter.middleware).Get("/public/checkout/coupon", s.handleCheckoutCoupon)
 			r.With(checkoutOrderLimiter.middleware).Post("/public/checkout", s.handleCheckout)
 		}
 		// Link de pagamento da fatura (sem login): o lembrete abre o Pix.
@@ -977,6 +980,12 @@ func (s *Server) routes() chi.Router {
 					// As opções do pedido do cliente: o comodato e a instalação Farbo.
 					r.Get("/order-options", s.handleOrderOptions)
 					r.Put("/order-options", s.handleSetOrderOptions)
+
+					// Os cupons de desconto da contratação direta pelo site.
+					r.Get("/coupons", s.handleListCoupons)
+					r.Post("/coupons", s.handleCreateCoupon)
+					r.Put("/coupons/{id}", s.handleUpdateCoupon)
+					r.Delete("/coupons/{id}", s.handleDeleteCoupon)
 
 					// O reajuste anual pelo IPCA: o próximo, os anteriores e o veto.
 					if s.Adjustment != nil {
