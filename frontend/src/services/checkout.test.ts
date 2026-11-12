@@ -35,6 +35,15 @@ describe('o cupom de desconto', () => {
     expect(year).toMatchObject({ monthlyCents: 40000, couponCents: 4000, firstMonthlyCents: 36000, totalNowCents: 38290 });
     expect(checkoutTotals(offer, { equipmentMode: 'sale', farboInstall: false })).toMatchObject({ couponCents: 0, couponCharges: 0 });
   });
+
+  it('para sempre: o desconto também na mensalidade de depois', () => {
+    const coupon = { code: 'SEMPRE', description: '', percent: 20, charges: null };
+    expect(couponLabel(coupon)).toBe('20% de desconto em todas as cobranças, para sempre');
+    // 34,90 − 6,98.
+    expect(checkoutTotals(offer, { equipmentMode: 'sale', farboInstall: false }, 0, undefined, coupon)).toMatchObject({
+      monthlyCents: 2792, firstMonthlyCents: 2792, couponCents: 698, couponCharges: 0, couponForever: true, totalNowCents: 2792,
+    });
+  });
 });
 
 describe('a conta da contratação pelo site', () => {

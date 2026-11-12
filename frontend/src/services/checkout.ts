@@ -36,9 +36,13 @@ export interface CheckoutTotals {
   totalNowCents: number;
   /** O semestral (6) ou o anual (12): monthlyCents e firstMonthlyCents são o valor do período. 1: o mensal. */
   periodMonths: number;
-  /** O cupom: o desconto em cada uma das primeiras cobranças (já fora de firstMonthlyCents) e em quantas. */
+  /**
+   * O cupom: o desconto em cada uma das primeiras cobranças (já fora de firstMonthlyCents) e em quantas; para
+   * sempre (couponForever), em todas, e já fora de monthlyCents também.
+   */
   couponCents: number;
   couponCharges: number;
+  couponForever: boolean;
 }
 
 /** O valor da cobrança com o cupom (nunca abaixo de zero): a porcentagem arredondada ao centavo, ou o valor fixo. */
@@ -48,9 +52,10 @@ export function couponDiscounted(coupon: CouponOffer, cents: number): number {
   return cents;
 }
 
-/** "10% de desconto na 1ª cobrança" ou "R$ 20,00 de desconto nas 3 primeiras cobranças". */
+/** "10% de desconto na 1ª cobrança", "R$ 20,00 de desconto nas 3 primeiras cobranças" ou "… em todas as cobranças, para sempre". */
 export function couponLabel(coupon: CouponOffer): string {
   const off = coupon.percent ? `${coupon.percent}%` : formatMoney(coupon.amountCents ?? 0);
+  if (coupon.charges === null) return `${off} de desconto em todas as cobranças, para sempre`;
   return `${off} de desconto ${coupon.charges === 1 ? 'na 1ª cobrança' : `nas ${coupon.charges} primeiras cobranças`}`;
 }
 
@@ -102,8 +107,9 @@ export function checkoutTotals(
   if (period) {
     const cents = periodPrice(period, loan);
     const couponCents = coupon ? cents - couponDiscounted(coupon, cents) : 0;
+    const forever = coupon?.charges === null;
     return {
-      monthlyCents: cents,
+      monthlyCents: forever ? cents - couponCents : cents,
       guaranteeCents: loan ? cents - period.cents : 0,
       firstMonthlyCents: cents - couponCents,
       trackerMonths: 0,
@@ -113,6 +119,7 @@ export function checkoutTotals(
       periodMonths: period.months,
       couponCents,
       couponCharges: coupon?.charges ?? 0,
+      couponForever: forever,
     };
   }
   const guaranteeCents = loan ? (offer.loan?.surchargeCents ?? 0) : 0;
@@ -121,8 +128,9 @@ export function checkoutTotals(
   const included = includedMonthly(monthlyCents, loan ? undefined : offer.tracker);
   // O cupom abate o valor do plano (a parte do rastreador somada, quando há, fica).
   const couponCents = coupon ? monthlyCents - couponDiscounted(coupon, monthlyCents) : 0;
+  const forever = coupon?.charges === null;
   return {
-    monthlyCents,
+    monthlyCents: forever ? monthlyCents - couponCents : monthlyCents,
     guaranteeCents,
     firstMonthlyCents: included.first - couponCents,
     trackerMonths: included.months,
@@ -132,6 +140,7 @@ export function checkoutTotals(
     periodMonths: 1,
     couponCents,
     couponCharges: coupon?.charges ?? 0,
+    couponForever: forever,
   };
 }
 

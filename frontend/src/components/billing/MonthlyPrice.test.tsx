@@ -62,6 +62,10 @@ describe('o valor da mensalidade', () => {
       promoUntil: '2028-07-10', couponCode: 'VINTE',
     });
     expect(text()).toBe('R$ 380,00/ano (R$ 31,66 por mês; cupom VINTE: a partir de 10/07/2028, R$ 400,00)');
+    // Para sempre: o desconto já está no valor.
+    document.body.innerHTML = '';
+    await render(false, { ...sub, nextPriceCents: undefined, priceCents: 5592, couponCode: 'SEMPRE' });
+    expect(text()).toBe('R$ 55,92/mês (com o cupom SEMPRE, para sempre)');
   });
 
   it('o semestral e o anual: o valor do período, por mês e, cancelado, até quando fica ativo', async () => {

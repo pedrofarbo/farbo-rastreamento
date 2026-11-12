@@ -93,11 +93,16 @@ describe('os cupons de desconto (central)', () => {
   });
 
   it('a lista com o desconto, a validade e os usos; o usado edita, mas não exclui', async () => {
-    list = [base, { ...base, id: 'c2', code: 'VINTE', description: '', percent: null, amountCents: 2000, charges: 1, maxUses: 5, uses: 0 }];
+    list = [
+      base,
+      { ...base, id: 'c2', code: 'VINTE', description: '', percent: null, amountCents: 2000, charges: 1, maxUses: 5, uses: 0 },
+      { ...base, id: 'c3', code: 'SEMPRE', description: '', percent: 20, charges: null, uses: 1 },
+    ];
     await render();
     expect(text()).toContain('BEMVINDOInstagram10% nas 3 primeirassem validade2Valendo');
     expect(text()).toContain('VINTER$ 20,00 na 1ª cobrança');
     expect(text()).toContain('0 de 5');
+    expect(text()).toContain('SEMPRE20% para sempre');
     await click(button('Editar'));
     expect(field('Código').disabled).toBe(true);
     expect(button('Excluir')).toBeUndefined();
@@ -129,6 +134,20 @@ describe('os cupons de desconto (central)', () => {
     await click(button('Criar cupom'));
     expect(created).toEqual([
       { code: 'VINTE', description: '', percent: null, amountCents: 2000, charges: 2, validUntil: '2026-12-31', maxUses: 50, active: true },
+    ]);
+  });
+
+  it('o para sempre: sem o número de cobranças', async () => {
+    await render();
+    await click(button('Novo cupom'));
+    type(field('Código'), 'sempre');
+    type(field('Porcentagem (%)'), '20');
+    type(document.querySelectorAll('select')[1] as HTMLSelectElement, 'forever');
+    expect(document.body.textContent).not.toContain('Nas primeiras (cobranças)');
+    expect(text()).toContain('O próximo veículo do cliente sai no preço normal.');
+    await click(button('Criar cupom'));
+    expect(created).toEqual([
+      { code: 'SEMPRE', description: '', percent: 20, amountCents: null, charges: null, validUntil: null, maxUses: null, active: true },
     ]);
   });
 });

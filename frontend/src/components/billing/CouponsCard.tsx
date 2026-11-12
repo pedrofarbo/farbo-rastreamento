@@ -23,8 +23,9 @@ export function couponDiscount(c: Pick<Coupon, 'percent' | 'amountCents'>): stri
   return c.percent ? `${c.percent}%` : formatMoney(c.amountCents ?? 0);
 }
 
-/** "na 1ª cobrança" ou "nas 3 primeiras". */
-export function couponCharges(charges: number): string {
+/** "na 1ª cobrança", "nas 3 primeiras" ou "para sempre". */
+export function couponCharges(charges: number | null): string {
+  if (charges === null) return 'para sempre';
   return charges === 1 ? 'na 1ª cobrança' : `nas ${charges} primeiras`;
 }
 
@@ -121,6 +122,8 @@ interface Draft {
   description: string;
   kind: 'percent' | 'amount';
   value: string;
+  /** Para sempre (em todas as cobranças) ou nas primeiras (charges). */
+  forever: boolean;
   charges: string;
   validUntil: string;
   maxUses: string;
@@ -129,14 +132,17 @@ interface Draft {
 
 function draftOf(c: Coupon | null): Draft {
   if (!c) {
-    return { code: '', description: '', kind: 'percent', value: '', charges: '1', validUntil: '', maxUses: '', active: true };
+    return {
+      code: '', description: '', kind: 'percent', value: '', forever: false, charges: '1', validUntil: '', maxUses: '', active: true,
+    };
   }
   return {
     code: c.code,
     description: c.description,
     kind: c.percent ? 'percent' : 'amount',
     value: c.percent ? String(c.percent) : centsToInput(c.amountCents ?? 0),
-    charges: String(c.charges),
+    forever: c.charges === null,
+    charges: c.charges === null ? '1' : String(c.charges),
     validUntil: c.validUntil ?? '',
     maxUses: c.maxUses !== null ? String(c.maxUses) : '',
     active: c.active,
@@ -156,8 +162,8 @@ export function couponInput(d: Draft): CouponInput | string {
     amountCents = parseMoney(d.value);
     if (amountCents === null || amountCents < 1) return 'Valor inválido: use, por exemplo, 20,00.';
   }
-  const charges = Number(d.charges);
-  if (!Number.isInteger(charges) || charges < 1 || charges > 60) return 'O desconto vale de 1 a 60 cobranças.';
+  const charges = d.forever ? null : Number(d.charges);
+  if (charges !== null && (!Number.isInteger(charges) || charges < 1 || charges > 60)) return 'O desconto vale de 1 a 60 cobranças.';
   let maxUses: number | null = null;
   if (d.maxUses.trim()) {
     maxUses = Number(d.maxUses);
@@ -262,13 +268,30 @@ function CouponModal({ coupon, onClose }: { coupon: Coupon | null; onClose: () =
             value={draft.value}
             onChange={(e) => set('value', e.target.value)}
           />
-          <TextField
-            label="Nas primeiras (cobranças)"
-            inputMode="numeric"
-            hint="1: só a primeira. No semestral e no anual, cada cobrança é um período."
-            value={draft.charges}
-            onChange={(e) => set('charges', e.target.value.replace(/\D/g, '').slice(0, 2))}
-          />
+        </div>
+        <div className={pageStyles.formRow}>
+          <SelectField
+            label="Por quanto tempo"
+            hint={
+              draft.forever
+                ? 'Em todas as mensalidades enquanto a assinatura durar (o reajuste anual vale sobre o valor com o desconto). O próximo veículo do cliente sai no preço normal.'
+                : undefined
+            }
+            value={draft.forever ? 'forever' : 'first'}
+            onChange={(e) => set('forever', e.target.value === 'forever')}
+          >
+            <option value="first">Nas primeiras cobranças</option>
+            <option value="forever">Para sempre (todas as mensalidades)</option>
+          </SelectField>
+          {!draft.forever && (
+            <TextField
+              label="Nas primeiras (cobranças)"
+              inputMode="numeric"
+              hint="1: só a primeira. No semestral e no anual, cada cobrança é um período."
+              value={draft.charges}
+              onChange={(e) => set('charges', e.target.value.replace(/\D/g, '').slice(0, 2))}
+            />
+          )}
         </div>
         <div className={pageStyles.formRow}>
           <TextField

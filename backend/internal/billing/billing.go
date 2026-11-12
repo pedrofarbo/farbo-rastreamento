@@ -811,7 +811,9 @@ func (r *Repository) GenerateDue(ctx context.Context, horizon Date) (int64, erro
 				amount, promotional := priceOn(d.priceCents, d.nextPrice, d.nextFrom, d.promoCents, d.promoUntil, next)
 				description := periodDescription(d.planName, next, d.periodMonths)
 				switch {
-				case promotional && d.couponCode != "":
+				case d.couponCode != "" && (promotional || d.promoCents == nil):
+					// O cupom: nas primeiras (o preço promocional) ou para
+					// sempre (já no valor da assinatura).
 					description += " · cupom " + d.couponCode
 				case promotional:
 					description += " · promoção de pré-lançamento"

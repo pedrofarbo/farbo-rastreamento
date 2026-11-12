@@ -65,6 +65,7 @@ func TestCheckoutCoupons(t *testing.T) {
 		{"code": "NADA", "charges": 1, "active": true},
 		{"code": "MUITO", "percent": 101, "charges": 1, "active": true},
 		{"code": "LONGO", "percent": 10, "charges": 61, "active": true},
+		{"code": "ZERO", "percent": 10, "charges": 0, "active": true},
 	} {
 		env.must(admin, http.MethodPost, "/api/coupons", bad, http.StatusBadRequest)
 	}
@@ -72,7 +73,7 @@ func TestCheckoutCoupons(t *testing.T) {
 	_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/coupons", map[string]any{
 		"code": " bem-vindo ", "description": "Instagram", "percent": 10, "charges": 2, "active": true,
 	}, http.StatusCreated), &welcome)
-	if welcome.Code != "BEM-VINDO" || *welcome.Percent != 10 || welcome.Charges != 2 || welcome.Uses != 0 {
+	if welcome.Code != "BEM-VINDO" || *welcome.Percent != 10 || welcome.Charges == nil || *welcome.Charges != 2 || welcome.Uses != 0 {
 		t.Fatalf("cupom criado = %+v", welcome)
 	}
 	env.must(admin, http.MethodPost, "/api/coupons", map[string]any{"code": "BEM-VINDO", "percent": 5, "charges": 1, "active": true},
@@ -86,7 +87,7 @@ func TestCheckoutCoupons(t *testing.T) {
 	}
 	var shown orders.CouponOffer
 	_ = json.Unmarshal(env.must("", http.MethodGet, "/api/public/checkout/coupon?code=bem-vindo", nil, http.StatusOK), &shown)
-	if shown.Code != "BEM-VINDO" || shown.Percent == nil || *shown.Percent != 10 || shown.Charges != 2 || shown.AmountCents != nil {
+	if shown.Code != "BEM-VINDO" || shown.Percent == nil || *shown.Percent != 10 || shown.Charges == nil || *shown.Charges != 2 || shown.AmountCents != nil {
 		t.Fatalf("cupom no site = %+v", shown)
 	}
 	env.must("", http.MethodGet, "/api/public/checkout/coupon?code=NAOEXISTE", nil, http.StatusBadRequest)
@@ -97,6 +98,9 @@ func TestCheckoutCoupons(t *testing.T) {
 	type checkoutResult struct {
 		Subscription billing.Subscription `json:"subscription"`
 		FirstInvoice *billing.Invoice     `json:"firstInvoice"`
+		Tokens       *struct {
+			AccessToken string `json:"accessToken"`
+		} `json:"tokens"`
 	}
 	body := func(email, document, coupon, ref string) map[string]any {
 		return map[string]any{
@@ -185,6 +189,49 @@ func TestCheckoutCoupons(t *testing.T) {
 	}
 	refused("ana@cupom.test", "456.123.789-55", "VINTE", "", "máximo de vezes")
 
+	// Para sempre (sem o número de cobranças): o desconto no valor da
+	// assinatura, em todas as cobranças; o veículo novo pelo app não herda.
+	var forever orders.Coupon
+	_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/coupons", map[string]any{
+		"code": "SEMPRE", "percent": 20, "active": true,
+	}, http.StatusCreated), &forever)
+	if forever.Charges != nil {
+		t.Fatalf("cupom para sempre = %+v", forever)
+	}
+	always := price - (price*20+50)/100
+	rui := checkout("rui@cupom.test", "741.852.963-55", "sempre")
+	if rui.Subscription.PriceCents != always || rui.Subscription.PromoPriceCents != nil || rui.Subscription.CouponCode != "SEMPRE" ||
+		rui.FirstInvoice == nil || rui.FirstInvoice.AmountCents != always || !strings.Contains(rui.FirstInvoice.Description, "cupom SEMPRE") {
+		t.Fatalf("cupom para sempre = %+v / %+v", rui.Subscription, rui.FirstInvoice)
+	}
+	var discount int
+	_ = env.db.QueryRow(ctx, `SELECT discount_cents FROM coupon_redemptions WHERE subscription_id = $1`, rui.Subscription.ID).Scan(&discount)
+	if discount != price-always {
+		t.Fatalf("desconto gravado do para sempre = %d", discount)
+	}
+	if _, err := env.db.Exec(ctx, `UPDATE invoices SET status = 'PAID', paid_at = NOW(), paid_via = 'MANUAL'
+		WHERE customer_id = $1`, rui.Subscription.CustomerID); err != nil {
+		t.Fatal(err)
+	}
+	var ruiCatalog struct {
+		PlanPriceCents int `json:"planPriceCents"`
+	}
+	_ = json.Unmarshal(env.must(rui.Tokens.AccessToken, http.MethodGet, "/api/catalog", nil, http.StatusOK), &ruiCatalog)
+	if ruiCatalog.PlanPriceCents != price {
+		t.Fatalf("mensalidade do veículo novo de quem tem o cupom para sempre = %d (o plano é %d)", ruiCatalog.PlanPriceCents, price)
+	}
+	clock = time.Date(2027, 6, 15, 12, 0, 0, 0, time.UTC)
+	bs.GenerateInvoices(ctx)
+	var full int
+	_ = env.db.QueryRow(ctx, `SELECT count(*) FROM invoices WHERE subscription_id = $1 AND (amount_cents <> $2
+		OR description NOT LIKE '%cupom SEMPRE%')`, rui.Subscription.ID, always).Scan(&full)
+	var all int
+	_ = env.db.QueryRow(ctx, `SELECT count(*) FROM invoices WHERE subscription_id = $1`, rui.Subscription.ID).Scan(&all)
+	if all < 6 || full != 0 {
+		t.Fatalf("cobranças do para sempre: %d, %d sem o desconto", all, full)
+	}
+	clock = time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
+
 	// Vencido e desligado.
 	yesterday := billing.Date{Time: clock.AddDate(0, 0, -1)}
 	env.must(admin, http.MethodPut, "/api/coupons/"+welcome.ID.String(), map[string]any{
@@ -195,7 +242,8 @@ func TestCheckoutCoupons(t *testing.T) {
 		http.StatusOK)
 	refused("ana@cupom.test", "456.123.789-55", "BEM-VINDO", "", "não está mais valendo")
 	refused("ana@cupom.test", "456.123.789-55", "OUTRO", "", "cupom não encontrado")
-	// Sem nenhum valendo (o VINTE esgotou, o BEM-VINDO desligado), o campo some.
+	// Sem nenhum valendo (o VINTE esgotou, o BEM-VINDO e o SEMPRE desligados), o campo some.
+	env.must(admin, http.MethodPut, "/api/coupons/"+forever.ID.String(), map[string]any{"percent": 20, "active": false}, http.StatusOK)
 	if offer("").Coupons {
 		t.Fatal("o campo do cupom sem nenhum valendo")
 	}
@@ -207,7 +255,7 @@ func TestCheckoutCoupons(t *testing.T) {
 	for _, c := range list {
 		uses[c.Code] = c.Uses
 	}
-	if len(list) != 2 || uses["BEM-VINDO"] != 1 || uses["VINTE"] != 1 {
+	if len(list) != 3 || uses["BEM-VINDO"] != 1 || uses["VINTE"] != 1 || uses["SEMPRE"] != 1 {
 		t.Fatalf("lista dos cupons = %+v", list)
 	}
 	env.must(admin, http.MethodDelete, "/api/coupons/"+welcome.ID.String(), nil, http.StatusConflict)

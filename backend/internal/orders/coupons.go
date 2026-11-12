@@ -17,8 +17,10 @@ import (
 // Cupons de desconto da contratação direta pelo site (sem o link de um
 // representante): a central cria; cada um abate a mensalidade — em
 // porcentagem ou num valor fixo — nas primeiras cobranças da assinatura (no
-// semestral e no anual, cada cobrança é um período). O desconto vira o preço
-// promocional da assinatura, e o valor normal volta sozinho depois.
+// semestral e no anual, cada cobrança é um período) ou para sempre. Nas
+// primeiras, o desconto vira o preço promocional da assinatura, e o valor
+// normal volta sozinho depois; para sempre, vira o valor da assinatura (o
+// reajuste anual segue valendo sobre ele).
 
 // ErrCouponUsed: o cupom já foi usado e não pode ser excluído (desative).
 var ErrCouponUsed = errors.New("o cupom já foi usado: desative em vez de excluir")
@@ -35,8 +37,9 @@ type Coupon struct {
 	// cada cobrança).
 	Percent     *int `json:"percent"`
 	AmountCents *int `json:"amountCents"`
-	// Charges: em quantas das primeiras cobranças o desconto vale.
-	Charges int `json:"charges"`
+	// Charges: em quantas das primeiras cobranças o desconto vale; nulo,
+	// em todas (para sempre).
+	Charges *int `json:"charges"`
 	// ValidUntil: até que dia (inclusive) dá para usar; nulo, sem validade.
 	ValidUntil *billing.Date `json:"validUntil"`
 	// MaxUses: quantas contratações podem usar; nulo, sem limite.
@@ -53,7 +56,7 @@ type CouponInput struct {
 	Description string        `json:"description"`
 	Percent     *int          `json:"percent"`
 	AmountCents *int          `json:"amountCents"`
-	Charges     int           `json:"charges"`
+	Charges     *int          `json:"charges"`
 	ValidUntil  *billing.Date `json:"validUntil"`
 	MaxUses     *int          `json:"maxUses"`
 	Active      bool          `json:"active"`
@@ -66,7 +69,8 @@ type CouponOffer struct {
 	Description string `json:"description"`
 	Percent     *int   `json:"percent,omitempty"`
 	AmountCents *int   `json:"amountCents,omitempty"`
-	Charges     int    `json:"charges"`
+	// Charges nulo: para sempre.
+	Charges *int `json:"charges"`
 }
 
 // Offer é o cupom como o site mostra.
@@ -106,8 +110,8 @@ func (in *CouponInput) check() error {
 		return ValidationError{"a porcentagem do cupom vai de 1 a 100"}
 	case in.AmountCents != nil && (*in.AmountCents < 1 || *in.AmountCents > 100_000_00):
 		return ValidationError{"o valor do cupom vai de R$ 0,01 a R$ 100.000,00"}
-	case in.Charges < 1 || in.Charges > 60:
-		return ValidationError{"o desconto vale de 1 a 60 cobranças"}
+	case in.Charges != nil && (*in.Charges < 1 || *in.Charges > 60):
+		return ValidationError{"o desconto vale de 1 a 60 cobranças (vazio: para sempre)"}
 	case in.MaxUses != nil && (*in.MaxUses < 1 || *in.MaxUses > 1_000_000):
 		return ValidationError{"o limite de usos vai de 1 a 1.000.000 (vazio: sem limite)"}
 	}
@@ -268,17 +272,24 @@ func (s *Service) HasCheckoutCoupons(ctx context.Context) (bool, error) {
 
 // applyCoupon confere o cupom de novo (travado, na transação do pedido: duas
 // contratações ao mesmo tempo não passam do limite) e dá à assinatura o
-// preço com o desconto nas primeiras cobranças. Devolve o cupom, para o uso
-// ser gravado com a assinatura.
-func (s *Service) applyCoupon(ctx context.Context, tx pgx.Tx, code string, sub *billing.Subscription) (*Coupon, error) {
+// desconto: nas primeiras cobranças, o preço promocional; para sempre, o
+// valor da assinatura com o desconto. Devolve o cupom e o desconto de cada
+// cobrança, para o uso ser gravado com a assinatura.
+func (s *Service) applyCoupon(ctx context.Context, tx pgx.Tx, code string, sub *billing.Subscription) (*Coupon, int, error) {
 	c, err := s.checkoutCoupon(ctx, tx, code, true)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	discounted := c.Discounted(sub.PriceCents)
-	until := billing.Date{Time: sub.NextDueDate.AddDate(0, c.Charges*max(sub.PeriodMonths, 1), 0)}
-	sub.PromoPriceCents, sub.PromoUntil, sub.CouponCode = &discounted, &until, c.Code
-	return c, nil
+	discount := sub.PriceCents - discounted
+	sub.CouponCode = c.Code
+	if c.Charges == nil {
+		sub.PriceCents = discounted
+		return c, discount, nil
+	}
+	until := billing.Date{Time: sub.NextDueDate.AddDate(0, *c.Charges*max(sub.PeriodMonths, 1), 0)}
+	sub.PromoPriceCents, sub.PromoUntil = &discounted, &until
+	return c, discount, nil
 }
 
 func dateOrNil(d *billing.Date) *time.Time {

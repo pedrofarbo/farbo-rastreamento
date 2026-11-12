@@ -44,6 +44,11 @@ export function promoName(sub: Priced): string {
   return sub.couponCode ? `cupom ${sub.couponCode}` : 'pré-lançamento';
 }
 
+/** O cupom para sempre: o desconto já está no valor da assinatura (sem o preço promocional). */
+export function foreverCoupon(sub: Priced): boolean {
+  return !!sub.couponCode && sub.promoPriceCents === null;
+}
+
 /** Assinatura grátis (cortesia): mensalidade zero, sem promoção, sem cobrança. */
 export function isFree(sub: Priced): boolean {
   return sub.priceCents === 0 && !promoActive(sub) && !sub.nextPriceCents;
@@ -87,6 +92,7 @@ export function MonthlyPrice({ sub, staff = false }: { sub: Priced; staff?: bool
         <span className={styles.muted}>
           ({formatMoney(Math.floor(price / (sub.periodMonths as number)))} por mês
           {promoActive(sub) ? `; ${promoName(sub)}: a partir de ${formatDateOnly(sub.promoUntil)}, ${formatMoney(sub.priceCents)}` : ''}
+          {foreverCoupon(sub) ? `; com o cupom ${sub.couponCode}, para sempre` : ''}
           {sub.endsOn ? `; encerra em ${formatDateOnly(sub.endsOn)}, no fim do período pago` : ''})
         </span>
         {adjustment}
@@ -109,7 +115,9 @@ export function MonthlyPrice({ sub, staff = false }: { sub: Priced; staff?: bool
   if (!promoActive(sub)) {
     return (
       <span>
-        <span className={styles.amount}>{formatMoney(sub.priceCents)}</span>/mês{adjustment}
+        <span className={styles.amount}>{formatMoney(sub.priceCents)}</span>/mês
+        {foreverCoupon(sub) && <span className={styles.muted}> (com o cupom {sub.couponCode}, para sempre)</span>}
+        {adjustment}
       </span>
     );
   }

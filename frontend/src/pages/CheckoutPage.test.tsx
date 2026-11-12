@@ -44,6 +44,7 @@ vi.mock('@/api/resources', () => ({
       couponCodes.push(code);
       if (code === 'BEMVINDO') return { code, description: '', percent: 10, charges: 3 };
       if (code === 'VINTE') return { code, description: '', amountCents: 2000, charges: 1 };
+      if (code === 'SEMPRE') return { code, description: '', percent: 20, charges: null };
       throw new ApiError(400, 'cupom não encontrado: confira o código');
     },
   },
@@ -508,6 +509,19 @@ describe('a contratação pelo site', () => {
     await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
     await click(button('Pagar R$ 402,90 com Pix'));
     expect(placed[0]).toMatchObject({ coupon: 'VINTE', periodMonths: 12 });
+  });
+
+  it('o cupom para sempre: o desconto também nas mensalidades de depois', async () => {
+    offer = offerWith({ coupons: true });
+    await render('/contratar?cupom=SEMPRE');
+    await fillUntilPayment();
+    expect(text()).toContain('Cupom SEMPRE: 20% de desconto em todas as cobranças, para sempre.');
+    // 20% de 34,90 = 6,98.
+    expect(text()).toContain('Cupom SEMPRE−R$ 6,98');
+    expect(text()).toContain('Depois, R$ 27,92/mês, com o cupom, para sempre, no dia 10.');
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar R$ 50,82 com Pix'));
+    expect(placed[0]).toMatchObject({ coupon: 'SEMPRE' });
   });
 
   it('fechada na central: chama para deixar o contato', async () => {

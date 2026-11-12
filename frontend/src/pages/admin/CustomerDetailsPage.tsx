@@ -1312,6 +1312,11 @@ export function CustomerDetailsPage() {
               value={editSubscription.price}
               onChange={(e) => setEditSubscription({ ...editSubscription, price: e.target.value })}
             />
+            {editSubscription.sub.couponCode && !promoActive(editSubscription.sub) && editSubscription.sub.promoPriceCents === null && (
+              <p className={billing.muted}>
+                Com o cupom {editSubscription.sub.couponCode} para sempre: o valor acima já é o com o desconto.
+              </p>
+            )}
             {promoActive(editSubscription.sub) &&
               (editSubscription.sub.couponCode ? (
                 <p className={billing.muted}>

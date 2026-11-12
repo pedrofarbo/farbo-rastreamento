@@ -206,9 +206,10 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 			}
 		}
 		var coupon *Coupon
+		var couponDiscount int
 		if o.Coupon != "" {
 			var err error
-			if coupon, err = s.applyCoupon(ctx, tx, o.Coupon, sub); err != nil {
+			if coupon, couponDiscount, err = s.applyCoupon(ctx, tx, o.Coupon, sub); err != nil {
 				return err
 			}
 		}
@@ -248,8 +249,7 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 		}
 		if coupon != nil {
 			if _, err := tx.Exec(ctx, `INSERT INTO coupon_redemptions (subscription_id, coupon_id, customer_id, discount_cents)
-				VALUES ($1, $2, $3, $4)`, result.Subscription.ID, coupon.ID, customerID,
-				result.Subscription.PriceCents-*result.Subscription.PromoPriceCents); err != nil {
+				VALUES ($1, $2, $3, $4)`, result.Subscription.ID, coupon.ID, customerID, couponDiscount); err != nil {
 				return err
 			}
 		}
@@ -654,13 +654,18 @@ func (s *Service) customerPlan(ctx context.Context, customerID uuid.UUID) (billi
 		// O semestral e o anual são só na contratação: o veículo novo é mensal
 		// (o valor do período não é mensalidade).
 		if sub.Status == billing.SubscriptionActive && sub.PeriodMonths <= 1 {
-			// Sem a garantia de troca do comodato: ela é do rastreador, não do plano.
-			var guarantee int
-			if err := s.db.QueryRow(ctx, `SELECT guarantee_cents FROM subscriptions WHERE id = $1`, sub.ID).Scan(&guarantee); err != nil {
+			// Sem a garantia de troca do comodato: ela é do rastreador, não do
+			// plano. E sem o desconto do cupom para sempre (que já está no
+			// valor): ele é desta assinatura, não do veículo novo.
+			var guarantee, forever int
+			if err := s.db.QueryRow(ctx, `
+				SELECT s.guarantee_cents, COALESCE((SELECT r.discount_cents FROM coupon_redemptions r
+					WHERE r.subscription_id = s.id AND s.coupon_code IS NOT NULL AND s.promo_price_cents IS NULL), 0)
+				FROM subscriptions s WHERE s.id = $1`, sub.ID).Scan(&guarantee, &forever); err != nil {
 				return billing.SubscriptionInput{}, database.MapError(err)
 			}
 			return billing.SubscriptionInput{PlanName: strings.TrimSuffix(sub.PlanName, GuaranteeName),
-				PriceCents: sub.PriceCents - guarantee, DueDay: sub.DueDay}, nil
+				PriceCents: sub.PriceCents + forever - guarantee, DueDay: sub.DueDay}, nil
 		}
 	}
 	return billing.SubscriptionInput{

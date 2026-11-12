@@ -1211,7 +1211,10 @@ export interface Subscription {
    */
   promoPriceCents: number | null;
   promoUntil: DateOnly | null;
-  /** O cupom de desconto da contratação pelo site: com ele, promoPriceCents é o valor com o desconto (não o do pré-lançamento). */
+  /**
+   * O cupom de desconto da contratação pelo site: com promoPriceCents, o desconto nas primeiras (não o do
+   * pré-lançamento); sem, o cupom para sempre (o desconto já está em priceCents).
+   */
   couponCode?: string;
   /**
    * Reajuste anual já avisado: as faturas que vencem a partir de
@@ -1891,13 +1894,13 @@ export interface CheckoutOffer {
   coupons?: boolean;
 }
 
-/** Um cupom válido, como o site mostra: a porcentagem ou o valor fixo, em quantas das primeiras cobranças. */
+/** Um cupom válido, como o site mostra: a porcentagem ou o valor fixo, em quantas das primeiras cobranças (nulo: para sempre). */
 export interface CouponOffer {
   code: string;
   description: string;
   percent?: number;
   amountCents?: number;
-  charges: number;
+  charges: number | null;
 }
 
 /** Um cupom de desconto da contratação pelo site (central), com quantas contratações já o usaram. */
@@ -1908,8 +1911,11 @@ export interface Coupon {
   /** Um dos dois: a porcentagem ou o valor fixo abatido em cada cobrança. */
   percent: number | null;
   amountCents: number | null;
-  /** Em quantas das primeiras cobranças o desconto vale (no semestral e no anual, cada cobrança é um período). */
-  charges: number;
+  /**
+   * Em quantas das primeiras cobranças o desconto vale (no semestral e no anual, cada cobrança é um período);
+   * nulo, em todas (para sempre: o desconto vai para o valor da assinatura).
+   */
+  charges: number | null;
   /** Até que dia (inclusive) dá para usar; nulo, sem validade. */
   validUntil: DateOnly | null;
   /** Quantas contratações podem usar; nulo, sem limite. */

@@ -913,6 +913,8 @@ function Summary({
   const tracker = offer.tracker;
   // Com o cupom em mais de uma cobrança: as seguintes com o desconto, antes do valor normal.
   const moreDiscounted = coupon && totals.couponCents > 0 ? totals.couponCharges - 1 : 0;
+  // O cupom para sempre: o valor de depois já é o com o desconto.
+  const forever = coupon && totals.couponCents > 0 && totals.couponForever ? ', com o cupom, para sempre,' : '';
   return (
     <div className={styles.summary} aria-label="Resumo do pedido">
       <p className={styles.legend}>Resumo · {vehicle}</p>
@@ -959,8 +961,8 @@ function Summary({
             </>
           ) : (
             <>
-              Depois, <span className={styles.monthly}>{formatMoney(totals.monthlyCents)}</span> a cada {period.months} meses, no
-              dia {offer.dueDay}.{' '}
+              Depois, <span className={styles.monthly}>{formatMoney(totals.monthlyCents)}</span>
+              {forever} a cada {period.months} meses, no dia {offer.dueDay}.{' '}
             </>
           )}
           {loan
@@ -992,7 +994,8 @@ function Summary({
           </>
         ) : (
           <>
-            Depois, <span className={styles.monthly}>{formatMoney(totals.monthlyCents)}/mês</span> no dia {offer.dueDay}
+            Depois, <span className={styles.monthly}>{formatMoney(totals.monthlyCents)}/mês</span>
+            {forever} no dia {offer.dueDay}
           </>
         )}
         {loan && totals.guaranteeCents > 0 && `; ${formatMoney(totals.guaranteeCents)} dela é a garantia de troca do rastreador`}
