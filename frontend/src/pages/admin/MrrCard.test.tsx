@@ -77,9 +77,27 @@ describe('MRR', () => {
         />,
       ),
     );
-    expect(text(host)).toContain('Previsão nov/2026');
+    expect(text(host)).toContain('Projeção nov/2026');
     expect(text(host)).toContain('R$ 295,50');
-    expect(text(host)).toContain('R$ 139,50 em 5 mensalidades + R$ 156,00 parcelas');
+    expect(text(host)).toContain('R$ 139,50 em 5 assinaturas + R$ 156,00 parcelas');
+  });
+
+  it('a projeção do mês que vem pelas assinaturas, com o que vai ser cobrado nele à parte', async () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    await act(async () =>
+      createRoot(host).render(
+        <ForecastTile
+          forecast={{
+            month: '2026-12', monthlyCents: 33300, monthlies: 5, billedCents: 20310, organizationsCents: 0,
+            organizationVehicles: 0, installmentsCents: 0, totalCents: 33300,
+          }}
+        />,
+      ),
+    );
+    expect(text(host)).toContain('Projeção dez/2026');
+    expect(text(host)).toContain('R$ 333,00 em 5 assinaturas · a cobrar no mês: R$ 203,10');
+    expect(host.querySelector('[title]')?.getAttribute('title')).toContain('paga a 2ª mensalidade só no mês seguinte');
   });
 
   it('com as associações, a previsão e o MRR mostram a parte delas', async () => {
@@ -93,7 +111,7 @@ describe('MRR', () => {
       ),
     );
     expect(text(host)).toContain('R$ 199,50');
-    expect(text(host)).toContain('R$ 139,50 em 5 mensalidades + R$ 60,00 associações');
+    expect(text(host)).toContain('R$ 139,50 em 5 assinaturas + R$ 60,00 associações');
     expect(mrrParts({ monthlyCents: 13950, organizationsCents: 6000, installmentsCents: 1200 }).replace(/\u00a0/g, ' ')).toBe(
       'R$ 139,50 mensalidades + R$ 60,00 associações + R$ 12,00 parcelas',
     );

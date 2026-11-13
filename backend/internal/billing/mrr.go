@@ -9,17 +9,19 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 )
 
-// O MRR (receita recorrente mensal), pelo que é cobrado: em cada mês, as
-// mensalidades das faturas que vencem nele — no atual, também as que o
-// gerador ainda vai gerar até o fim do mês, pela mesma regra de datas e
-// preços. A assinatura conta no mês em que a mensalidade dela vence, não
-// antes (a contratada em outubro com a 1ª mensalidade em 20/11 entra em
-// novembro). As grátis (mensalidade zero) não somam nem contam, e as faturas
-// avulsas (o equipamento à vista, o frete) ficam de fora. Ao lado, a
+// O MRR (receita recorrente mensal). Nos meses passados, pelo que foi
+// cobrado: as mensalidades das faturas que venceram em cada um (a do
+// semestral e a do anual, divididas pelos meses que cobrem). No mês atual e
+// na previsão do mês que vem, pelas assinaturas ativas: cada uma pelo valor
+// do mês, também a que não tem fatura nele — quem contrata depois do dia da
+// conta paga a 2ª mensalidade só no mês seguinte, e o semestral e o anual
+// vencem uma vez por período —, para o mês que vem não parecer menor sem
+// ninguém ter saído. As grátis (mensalidade zero) não somam nem contam, e as
+// faturas avulsas (o equipamento à vista, o frete) ficam de fora. Ao lado, a
 // mensalidade das associações e seguradoras (os veículos das faturas delas
 // que vencem no mês; no atual e na previsão, a fatura que ainda não saiu pelos
 // veículos que contam hoje), as parcelas do rastreador que vencem no mês e o
-// total; a previsão do mês que vem segue a mesma conta.
+// total; a previsão traz também o que vai ser cobrado de fato no mês.
 
 // MRRMonth é um mês do resumo.
 type MRRMonth struct {
@@ -192,20 +194,17 @@ func (s *Service) MRR(ctx context.Context, months int) (*MRR, error) {
 	if err != nil {
 		return nil, err
 	}
-	// O mês atual: as mensais pelo que é cobrado nele; o semestral e o anual,
-	// pelo valor do período dividido pelos meses (rendem todo mês).
+	// O mês atual: as parcelas do rastreador pelo que é cobrado nele; as
+	// mensalidades, pelas assinaturas ativas (a receita recorrente de cada
+	// uma no mês, também a que não tem fatura nele; o semestral e o anual
+	// divididos pelos meses).
 	monthlySubs, monthlyInvoices := monthlyOnly(subs, generated)
 	current := computeForecast(monthlySubs, monthlyInvoices, cur, next)
-	periodic, err := s.repo.mrrPeriodic(ctx)
+	active, err := s.repo.recurringData(ctx, cur)
 	if err != nil {
 		return nil, err
 	}
-	for _, p := range periodic {
-		if v := p.mrrOn(today); v > 0 {
-			current.MonthlyCents += int64(v)
-			current.Monthlies++
-		}
-	}
+	current.MonthlyCents, current.Monthlies = recurringMRR(active, cur)
 	if err := s.addOrganizations(ctx, &current, cur, next); err != nil {
 		return nil, err
 	}
@@ -400,17 +399,24 @@ func (r *Repository) mrrCanceled(ctx context.Context, from time.Time) ([]mrrSub,
 	return out, rows.Err()
 }
 
-// MRRForecast é a previsão do mês que vem: o que vai ser cobrado nele, as
-// mensalidades e as parcelas do rastreador das faturas que vencem no mês —
-// as já geradas e as que o gerador ainda vai gerar, pela mesma regra de datas,
-// preços e parcelas. Sem as grátis (mensalidade zero) e sem as faturas
-// avulsas (o equipamento à vista, o frete).
+// MRRForecast é um mês do MRR pelas assinaturas: a receita recorrente das
+// assinaturas ativas (cada uma pelo valor do mês, com a promoção, o reajuste e
+// a parte do rastreador somada; o semestral e o anual divididos pelos meses),
+// também a que não tem fatura no mês — quem contratou depois do dia da conta
+// paga a 2ª mensalidade só no mês seguinte —, mais as associações e as
+// parcelas do rastreador que vencem no mês. Sem as grátis. BilledCents é o
+// que vai ser cobrado de fato no mês (as faturas que vencem nele, já geradas
+// e as que o gerador ainda vai gerar, com o semestral e o anual pelo valor
+// cheio no mês em que vencem).
 type MRRForecast struct {
 	// Month: AAAA-MM.
 	Month string `json:"month"`
-	// MonthlyCents e Monthlies: as mensalidades e quantas são.
+	// MonthlyCents e Monthlies: a receita recorrente das assinaturas e quantas são.
 	MonthlyCents int64 `json:"monthlyCents"`
 	Monthlies    int   `json:"monthlies"`
+	// BilledCents: o que vai ser cobrado no mês (as faturas das assinaturas,
+	// as parcelas e as associações).
+	BilledCents int64 `json:"billedCents"`
 	// A mensalidade das associações e seguradoras e quantos veículos.
 	OrganizationsCents   int64 `json:"organizationsCents"`
 	OrganizationVehicles int   `json:"organizationVehicles"`
@@ -504,11 +510,80 @@ func (s *Service) Forecast(ctx context.Context) (*MRRForecast, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := computeForecast(subs, generated, start, end)
+	// O que vai ser cobrado no mês, e as parcelas dele.
+	billed := computeForecast(subs, generated, start, end)
+	active, err := s.repo.recurringData(ctx, start)
+	if err != nil {
+		return nil, err
+	}
+	out := MRRForecast{Month: billed.Month, InstallmentsCents: billed.InstallmentsCents}
+	out.MonthlyCents, out.Monthlies = recurringMRR(active, start)
 	if err := s.addOrganizations(ctx, &out, start, end); err != nil {
 		return nil, err
 	}
+	out.BilledCents = billed.TotalCents + out.OrganizationsCents
 	return &out, nil
+}
+
+// recurringSub é uma assinatura ativa no MRR pelas assinaturas: o preço e o
+// dia da conta.
+type recurringSub struct {
+	mrrSub
+	dueDay int
+}
+
+// recurringMRR é a receita recorrente das assinaturas no mês que começa em
+// start: cada uma pelo valor do vencimento dela no mês (com a promoção, o
+// reajuste e a parte do rastreador somada), o semestral e o anual divididos
+// pelos meses; as grátis não contam.
+func recurringMRR(subs []recurringSub, start Date) (int64, int) {
+	var cents int64
+	var count int
+	last := NewDate(start.Year(), start.Month()+1, 0).Day()
+	for _, s := range subs {
+		day := NewDate(start.Year(), start.Month(), min(max(s.dueDay, 1), last))
+		if v := s.mrrOn(day); v > 0 {
+			cents += int64(v)
+			count++
+		}
+	}
+	return cents, count
+}
+
+// recurringData: as assinaturas ativas de clientes (sem a contratação pelo
+// site ainda não paga) que seguem ativas no mês que começa em start (o
+// semestral ou o anual encerrado antes dele, não).
+func (r *Repository) recurringData(ctx context.Context, start Date) ([]recurringSub, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT s.price_cents, s.promo_price_cents, s.promo_until, s.next_price_cents, s.next_price_from,
+			s.tracker_cents, s.tracker_until, s.tracker_added, s.period_months, s.due_day
+		FROM subscriptions s JOIN users u ON u.id = s.customer_id
+		WHERE s.status = 'ACTIVE' AND u.role = 'customer' AND NOT checkout_pending(u.id)
+			AND (s.ends_on IS NULL OR s.ends_on > $1::date)`, start.String())
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	defer rows.Close()
+	var out []recurringSub
+	for rows.Next() {
+		var m recurringSub
+		var promoUntil, nextFrom, trackerUntil *time.Time
+		if err := rows.Scan(&m.priceCents, &m.promoCents, &promoUntil, &m.nextCents, &nextFrom,
+			&m.trackerCents, &trackerUntil, &m.trackerAdded, &m.period, &m.dueDay); err != nil {
+			return nil, err
+		}
+		if promoUntil != nil {
+			m.promoUntil = &Date{*promoUntil}
+		}
+		if nextFrom != nil {
+			m.nextFrom = &Date{*nextFrom}
+		}
+		if trackerUntil != nil {
+			m.trackerUntil = &Date{*trackerUntil}
+		}
+		out = append(out, m)
+	}
+	return out, database.MapError(rows.Err())
 }
 
 // forecastData: as assinaturas ativas de clientes com mensalidade a gerar
@@ -575,38 +650,4 @@ func (r *Repository) forecastData(ctx context.Context, start, end Date) ([]forec
 		generated = append(generated, f)
 	}
 	return subs, generated, database.MapError(rows.Err())
-}
-
-// mrrPeriodic: os semestrais e anuais ativos de clientes (rendem todo mês o
-// valor do período dividido pelos meses).
-func (r *Repository) mrrPeriodic(ctx context.Context) ([]mrrSub, error) {
-	rows, err := r.db.Query(ctx, `
-		SELECT s.price_cents, s.promo_price_cents, s.promo_until, s.next_price_cents, s.next_price_from,
-			s.tracker_cents, s.tracker_until, s.tracker_added, s.period_months
-		FROM subscriptions s JOIN users u ON u.id = s.customer_id
-		WHERE s.status = 'ACTIVE' AND s.period_months > 1 AND u.role = 'customer' AND NOT checkout_pending(u.id)`)
-	if err != nil {
-		return nil, database.MapError(err)
-	}
-	defer rows.Close()
-	var out []mrrSub
-	for rows.Next() {
-		var m mrrSub
-		var promoUntil, nextFrom, trackerUntil *time.Time
-		if err := rows.Scan(&m.priceCents, &m.promoCents, &promoUntil, &m.nextCents, &nextFrom,
-			&m.trackerCents, &trackerUntil, &m.trackerAdded, &m.period); err != nil {
-			return nil, err
-		}
-		if promoUntil != nil {
-			m.promoUntil = &Date{*promoUntil}
-		}
-		if nextFrom != nil {
-			m.nextFrom = &Date{*nextFrom}
-		}
-		if trackerUntil != nil {
-			m.trackerUntil = &Date{*trackerUntil}
-		}
-		out = append(out, m)
-	}
-	return out, database.MapError(rows.Err())
 }

@@ -107,7 +107,8 @@ describe('o filtro dos clientes em atraso', () => {
     state.customers = CUSTOMERS;
     await render('/clientes?situacao=atraso');
     expect(rows()).toEqual(['Caio Suspenso', 'Bia Um Atraso']);
-    expect(chip('Todos').textContent).toBe('Todos (4)');
+    expect(chip('Clientes').textContent).toBe('Clientes (4)');
+    expect(chip('Todas as contas').textContent).toBe('Todas as contas (4)');
     expect(chip('Em atraso').textContent).toBe('Em atraso (2)');
     expect(chip('Acesso suspenso').textContent).toBe('Acesso suspenso (1)');
 
@@ -131,5 +132,22 @@ describe('o filtro dos clientes em atraso', () => {
     state.customers = [CUSTOMERS[0], CUSTOMERS[3]];
     await render('/clientes?situacao=atraso');
     expect(text()).toContain('Nenhum cliente em atraso');
+  });
+});
+
+describe('quem conta como cliente', () => {
+  it('só a conta com ao menos 1 assinatura ativa: a sem assinatura fica fora da contagem e da lista, em um filtro dela', async () => {
+    state.customers = [...CUSTOMERS, customer('c5', 'Edu Sem Assinatura', { activeSubscriptions: 0, vehicleCount: 0 })];
+    await render();
+    expect(rows()).toEqual(['Ana Em Dia', 'Bia Um Atraso', 'Caio Suspenso', 'Duda Em Aberto']);
+    expect(text()).toContain('Clientes4sem contar 1 conta sem assinatura ativa');
+    expect(chip('Sem assinatura ativa').textContent).toBe('Sem assinatura ativa (1)');
+    expect(chip('Todas as contas').textContent).toBe('Todas as contas (5)');
+    await act(async () => chip('Sem assinatura ativa').click());
+    expect(rows()).toEqual(['Edu Sem Assinatura']);
+    expect(location).toBe('/clientes?situacao=sem-assinatura');
+    await act(async () => chip('Clientes').click());
+    expect(location).toBe('/clientes');
+    expect(rows()).toHaveLength(4);
   });
 });

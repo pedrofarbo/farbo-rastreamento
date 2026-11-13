@@ -40,14 +40,22 @@ interface CustomerDraft {
   lead?: Lead;
 }
 
-/** Os filtros da lista pela situação (no endereço: ?situacao=atraso). */
-type Situation = 'todos' | 'atraso' | 'suspensos';
+/** Cliente de verdade: com ao menos 1 assinatura ativa (a conta sem nenhuma não conta como cliente). */
+export function isActiveCustomer(c: Pick<CustomerSummary, 'activeSubscriptions'>): boolean {
+  return c.activeSubscriptions > 0;
+}
+
+/** Os filtros da lista pela situação (no endereço: ?situacao=atraso; sem ele, os clientes). */
+type Situation = 'clientes' | 'sem-assinatura' | 'atraso' | 'suspensos' | 'todos';
 
 const SITUATIONS: { id: Situation; label: string; match: (c: CustomerSummary) => boolean }[] = [
-  { id: 'todos', label: 'Todos', match: () => true },
+  { id: 'clientes', label: 'Clientes', match: isActiveCustomer },
+  // As contas sem assinatura ativa: ainda sem veículo, ou todas encerradas.
+  { id: 'sem-assinatura', label: 'Sem assinatura ativa', match: (c) => !isActiveCustomer(c) },
   // Em atraso: com fatura vencida (os suspensos também).
   { id: 'atraso', label: 'Em atraso', match: (c) => c.overdueInvoices > 0 },
   { id: 'suspensos', label: 'Acesso suspenso', match: (c) => c.suspended },
+  { id: 'todos', label: 'Todas as contas', match: () => true },
 ];
 
 const EMPTY: CustomerDraft = {
@@ -110,7 +118,7 @@ export function CustomersPage() {
       ? list.filter((c) => [c.name, c.email, c.document, c.phone].some((value) => value.toLowerCase().includes(term)))
       : list;
     // Em atraso: quem tem mais faturas vencidas (e mais em aberto) primeiro.
-    if (situation.id === 'todos') return found;
+    if (situation.id !== 'atraso' && situation.id !== 'suspensos') return found;
     return [...found].sort((a, b) => b.overdueInvoices - a.overdueInvoices || b.openAmountCents - a.openAmountCents);
   }, [customers.data, search, situation]);
   const paged = usePagedList(filtered, 'customers', [search, situation.id]);
@@ -118,7 +126,7 @@ export function CustomersPage() {
 
   /** Filtra a lista pela situação (o filtro vai para o endereço). */
   const filterBy = (id: Situation, scroll = false) => {
-    setParams(id === 'todos' ? {} : { situacao: id }, { replace: true });
+    setParams(id === 'clientes' ? {} : { situacao: id }, { replace: true });
     // O cartão leva até a lista.
     if (scroll) listRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
   };
@@ -229,7 +237,12 @@ export function CustomersPage() {
             <div className={`${billing.tiles} ${billing.tilesSix}`}>
               <div className={billing.tile}>
                 <span className={billing.tileLabel}>Clientes</span>
-                <span className={billing.tileValue}>{customers.data?.length ?? '—'}</span>
+                <span className={billing.tileValue}>{customers.data ? countOf(SITUATIONS[0]) : '—'}</span>
+                <span className={billing.tileHint}>
+                  {customers.data && countOf(SITUATIONS[1]) > 0
+                    ? `sem contar ${countOf(SITUATIONS[1])} ${countOf(SITUATIONS[1]) === 1 ? 'conta' : 'contas'} sem assinatura ativa`
+                    : 'com assinatura ativa'}
+                </span>
               </div>
               <div className={billing.tile}>
                 <span className={billing.tileLabel}>Assinaturas ativas</span>
@@ -258,11 +271,11 @@ export function CustomersPage() {
               <button
                 type="button"
                 aria-pressed={situation.id === 'atraso'}
-                title={situation.id === 'atraso' ? 'Mostrar todos os clientes' : 'Ver os clientes em atraso'}
+                title={situation.id === 'atraso' ? 'Mostrar os clientes' : 'Ver os clientes em atraso'}
                 className={`${billing.tile} ${billing.tileButton} ${totals.overdue > 0 ? billing.tileDanger : ''} ${
                   situation.id === 'atraso' ? billing.tileActive : ''
                 }`}
-                onClick={() => filterBy(situation.id === 'atraso' ? 'todos' : 'atraso', situation.id !== 'atraso')}
+                onClick={() => filterBy(situation.id === 'atraso' ? 'clientes' : 'atraso', situation.id !== 'atraso')}
               >
                 <span className={billing.tileLabel}>Em atraso</span>
                 <span className={billing.tileValue}>{totals.overdue}</span>
@@ -305,12 +318,20 @@ export function CustomersPage() {
                       title="Nenhum cliente cadastrado"
                       description="Cadastre o primeiro cliente para ele acessar o painel e acompanhar os veículos."
                     />
-                  ) : situation.id !== 'todos' && !search.trim() ? (
+                  ) : (situation.id === 'atraso' || situation.id === 'suspensos') && !search.trim() ? (
                     <EmptyState
                       icon="✅"
                       title={situation.id === 'atraso' ? 'Nenhum cliente em atraso' : 'Nenhum cliente com acesso suspenso'}
                       description="Todos os clientes estão com as faturas em dia."
                     />
+                  ) : situation.id === 'clientes' && !search.trim() ? (
+                    <EmptyState
+                      icon="👤"
+                      title="Nenhum cliente com assinatura ativa"
+                      description="As contas sem assinatura ativa estão em Sem assinatura ativa."
+                    />
+                  ) : situation.id === 'sem-assinatura' && !search.trim() ? (
+                    <EmptyState icon="✅" title="Todas as contas têm assinatura ativa" />
                   ) : (
                     <EmptyState icon="🔎" title="Nada encontrado" description="Ajuste a busca ou a situação para ver outros clientes." />
                   )

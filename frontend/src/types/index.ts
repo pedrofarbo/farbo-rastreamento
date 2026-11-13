@@ -1439,8 +1439,10 @@ export interface MRRForecast {
   /** AAAA-MM. */
   month: string;
   monthlyCents: number;
-  /** Quantas mensalidades (sem as grátis). */
+  /** Quantas assinaturas (sem as grátis). */
   monthlies: number;
+  /** O que vai ser cobrado de fato no mês (as faturas que vencem nele, com o semestral e o anual pelo valor cheio). */
+  billedCents?: number;
   /** A mensalidade das associações e quantos veículos. */
   organizationsCents: number;
   organizationVehicles: number;

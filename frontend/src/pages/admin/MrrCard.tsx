@@ -23,18 +23,27 @@ export function mrrParts(p: { monthlyCents: number; organizationsCents: number; 
   return parts.join(' + ');
 }
 
-/** A previsão do mês que vem, num quadro: o total e a divisão. */
+/**
+ * A projeção do mês que vem, num quadro: o MRR pelas assinaturas ativas (cada uma pelo valor do mês, também a
+ * que não tem fatura nele; o semestral e o anual divididos pelos meses), as associações e as parcelas; e, à
+ * parte, o que vai ser cobrado de fato no mês.
+ */
 export function ForecastTile({ forecast }: { forecast: MRRForecast | null | undefined }) {
+  const billed = forecast?.billedCents;
   return (
-    <div className={billing.tile}>
-      <span className={billing.tileLabel}>Previsão {forecast ? monthLabel(forecast.month) : 'do mês que vem'}</span>
+    <div
+      className={billing.tile}
+      title="A receita recorrente das assinaturas ativas no mês, como o MRR de hoje: só cai com assinatura encerrada, fim de promoção ou da parte do rastreador. O valor a cobrar é o das faturas que vencem no mês: quem contratou depois do dia da conta paga a 2ª mensalidade só no mês seguinte, e o semestral e o anual entram pelo valor cheio no mês em que vencem."
+    >
+      <span className={billing.tileLabel}>Projeção {forecast ? monthLabel(forecast.month) : 'do mês que vem'}</span>
       <span className={billing.tileValue}>{forecast ? formatMoney(forecast.totalCents) : '—'}</span>
       <span className={billing.tileHint}>
         {forecast
-          ? `${formatMoney(forecast.monthlyCents)} em ${forecast.monthlies} ${forecast.monthlies === 1 ? 'mensalidade' : 'mensalidades'}` +
+          ? `${formatMoney(forecast.monthlyCents)} em ${forecast.monthlies} ${forecast.monthlies === 1 ? 'assinatura' : 'assinaturas'}` +
             (forecast.organizationsCents > 0 ? ` + ${formatMoney(forecast.organizationsCents)} associações` : '') +
-            (forecast.installmentsCents > 0 ? ` + ${formatMoney(forecast.installmentsCents)} parcelas` : '')
-          : 'o que vai ser cobrado'}
+            (forecast.installmentsCents > 0 ? ` + ${formatMoney(forecast.installmentsCents)} parcelas` : '') +
+            (billed !== undefined ? ` · a cobrar no mês: ${formatMoney(billed)}` : '')
+          : 'o MRR do mês que vem'}
       </span>
     </div>
   );
@@ -52,7 +61,7 @@ export function MrrCard({ mrr }: { mrr: UseQueryResult<MRR> }) {
     <Card
       flush
       title="MRR mês a mês"
-      subtitle="Pelo que é cobrado: as mensalidades, a mensalidade dos veículos das associações e as parcelas do rastreador das faturas que vencem em cada mês (no atual, também as que ainda vão sair), sem as grátis nem as taxas avulsas. A assinatura entra no mês da 1ª mensalidade. Total: as três."
+      subtitle="Os meses passados pelo que foi cobrado (as mensalidades das faturas que venceram em cada um); este mês, pelas assinaturas ativas, cada uma pelo valor do mês, também a que não tem fatura nele. Ao lado, a mensalidade dos veículos das associações e as parcelas do rastreador do mês, sem as grátis nem as taxas avulsas. Total: as três."
     >
       {mrr.isLoading ? (
         <Spinner label="Calculando o MRR" />

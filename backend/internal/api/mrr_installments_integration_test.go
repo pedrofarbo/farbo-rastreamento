@@ -68,23 +68,25 @@ func TestMRRInstallments(t *testing.T) {
 	if len(mrr.Months) != 6 {
 		t.Fatalf("MRR = %+v", mrr)
 	}
-	// Este mês: a mensalidade já gerada (a fatura paga, menos a parcela) e a
+	// Este mês: a mensalidade pela assinatura ativa (uma só, R$ 34,90, mesmo
+	// com duas faturas no mês); as parcelas pelo que é cobrado — a paga e a
 	// do dia 28, que ainda vai sair; a cancelada não conta. O mês passado só
 	// teve a parcela (a fatura era só ela: nenhuma mensalidade).
 	cur, prev := mrr.Months[0], mrr.Months[1]
-	if cur.MRRCents != 6980 || cur.Subscriptions != 2 || cur.InstallmentsCents != 2200 || cur.InstallmentsPaidCents != 1200 ||
-		cur.TotalCents != 9180 || cur.NewCount != 0 {
+	if cur.MRRCents != 3490 || cur.Subscriptions != 1 || cur.InstallmentsCents != 2200 || cur.InstallmentsPaidCents != 1200 ||
+		cur.TotalCents != 5690 || cur.NewCount != 0 {
 		t.Errorf("este mês = %+v", cur)
 	}
 	if prev.MRRCents != 0 || prev.InstallmentsCents != 1500 || prev.InstallmentsPaidCents != 1500 || prev.TotalCents != 1500 {
 		t.Errorf("mês passado = %+v", prev)
 	}
-	if mrr.CurrentCents != 6980 || mrr.InstallmentsCents != 2200 || mrr.TotalCents != 9180 {
+	if mrr.CurrentCents != 3490 || mrr.InstallmentsCents != 2200 || mrr.TotalCents != 5690 {
 		t.Errorf("hoje = %+v", mrr)
 	}
-	// A previsão do mês que vem: a mensalidade do dia 28 dele, com a parcela
-	// seguinte à que vai na deste mês (a 5ª, de R$ 9,00).
-	if f := mrr.Forecast; f == nil || f.Monthlies != 1 || f.MonthlyCents != 3490 || f.InstallmentsCents != 900 || f.TotalCents != 4390 {
+	// A previsão do mês que vem: a assinatura, com a parcela seguinte à que
+	// vai na deste mês (a 5ª, de R$ 9,00); a cobrar, a fatura do dia 28 dele.
+	if f := mrr.Forecast; f == nil || f.Monthlies != 1 || f.MonthlyCents != 3490 || f.InstallmentsCents != 900 || f.TotalCents != 4390 ||
+		f.BilledCents != 4390 {
 		t.Errorf("previsão = %+v", mrr.Forecast)
 	}
 }
