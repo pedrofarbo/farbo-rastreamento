@@ -79,7 +79,9 @@ func checkoutLinkAudit(l *orders.CheckoutLink) map[string]any {
 	return map[string]any{
 		"checkoutLinkId": l.ID, "label": l.Label, "equipmentMode": l.EquipmentMode, "periodMonths": l.PeriodMonths,
 		"priceCents": l.PriceCents, "farboInstall": l.FarboInstall, "installCents": l.InstallCents,
-		"uninstallCents": l.UninstallCents, "installBlocking": l.InstallBlocking, "validUntil": l.ValidUntil,
-		"maxUses": l.MaxUses, "active": l.Active,
+		"uninstallCents": l.UninstallCents, "installBlocking": l.InstallBlocking, "installDirect": l.InstallDirect,
+		"handDelivery": l.HandDelivery,
+		"validUntil":   l.ValidUntil,
+		"maxUses":      l.MaxUses, "active": l.Active,
 	}
 }

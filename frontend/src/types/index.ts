@@ -1932,6 +1932,10 @@ export interface CheckoutLinkOffer {
   installCents: number;
   uninstallCents: number;
   installBlocking: boolean;
+  /** A instalação é paga direto ao instalador, no dia: o valor aparece, mas não entra na 1ª cobrança. */
+  installDirect: boolean;
+  /** A Farbo entrega o rastreador em mãos e combina o dia com o cliente, sem frete. */
+  handDelivery: boolean;
   validUntil: DateOnly | null;
 }
 

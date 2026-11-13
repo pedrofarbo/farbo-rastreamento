@@ -123,7 +123,8 @@ export function CheckoutPage() {
     queryKey: ['checkout-shipping', address.zipCode, address.city, address.state],
     // Pelo link do representante que entrega em mãos, só a entrega dele.
     queryFn: () => checkoutApi.shipping(address, ref),
-    enabled: step === 3 && addressReady && !!o,
+    // Pelo link de pagamento com a entrega em mãos, não há frete a cotar.
+    enabled: step === 3 && addressReady && !!o && !o.link?.handDelivery,
     staleTime: 10 * 60_000,
   });
   const quotes = quote.data;
@@ -239,7 +240,9 @@ export function CheckoutPage() {
                 : !addressReady
                   ? 'Complete o endereço de entrega.'
                   : '';
-  const shippingReady = !o.shippingEnabled || shipping !== 0;
+  // Pelo link de pagamento com a entrega em mãos pela Farbo: sem frete nem escolha.
+  const inPerson = Boolean(o.link?.handDelivery);
+  const shippingReady = !o.shippingEnabled || inPerson || shipping !== 0;
   const ready = accept && shippingReady && !quote.isFetching && !sending;
 
   const submit = async (e: FormEvent) => {
@@ -263,7 +266,7 @@ export function CheckoutPage() {
         document: cpf,
         password: person.password,
         address,
-        ...(shipping === ARRANGE_DELIVERY ? { arrangeDelivery: true } : shipping > 0 ? { shippingServiceId: shipping } : {}),
+        ...(inPerson ? {} : shipping === ARRANGE_DELIVERY ? { arrangeDelivery: true } : shipping > 0 ? { shippingServiceId: shipping } : {}),
         contractVersion: o.contractVersion,
         accept,
         // Do QR Code de um evento, sem o link de indicação guardado no
@@ -333,7 +336,7 @@ export function CheckoutPage() {
         {step === 0 && o.link && (
           <>
             <LinkOffer link={o.link} offer={o} />
-            <Total totals={totals} shippingPending={o.shippingEnabled} />
+            <Total totals={totals} shippingPending={o.shippingEnabled && !o.link.handDelivery} />
             <button type="button" className={pre.submit} onClick={() => goTo(1)}>
               Continuar
             </button>
@@ -621,13 +624,20 @@ export function CheckoutPage() {
         {step === 3 && (
           <>
             <div className={styles.panel}>
-              <ShippingOptions
-                view={quotes}
-                loading={quote.isFetching}
-                value={shipping}
-                onChange={setShipping}
-                onRetry={() => void quote.refetch()}
-              />
+              {inPerson ? (
+                <>
+                  <p className={styles.legend}>Entrega</p>
+                  <p className={styles.note}>Em mãos: a Farbo entrega o rastreador e combina o dia com você. Sem frete.</p>
+                </>
+              ) : (
+                <ShippingOptions
+                  view={quotes}
+                  loading={quote.isFetching}
+                  value={shipping}
+                  onChange={setShipping}
+                  onRetry={() => void quote.refetch()}
+                />
+              )}
             </div>
 
             {o.coupons && (
@@ -718,12 +728,22 @@ function LinkOffer({ link, offer }: { link: CheckoutLinkOffer; offer: CheckoutOf
             ? `Instalação pelos instaladores da Farbo, ${link.installBlocking ? 'com' : 'sem'} bloqueio`
             : 'Instalação por conta própria'}
         </span>
-        <span>{installed && link.installCents > 0 ? formatMoney(link.installCents) : 'sem custo'}</span>
+        <span>
+          {installed && link.installCents > 0
+            ? `${formatMoney(link.installCents)}${link.installDirect ? ' · direto ao instalador' : ''}`
+            : 'sem custo'}
+        </span>
       </div>
       {loan && link.uninstallCents > 0 && (
         <div className={styles.line}>
           <span>Desinstalação, ao encerrar</span>
           <span>{formatMoney(link.uninstallCents)}</span>
+        </div>
+      )}
+      {link.handDelivery && (
+        <div className={styles.line}>
+          <span>Entrega em mãos pela Farbo</span>
+          <span>sem frete</span>
         </div>
       )}
       <p className={styles.note}>
@@ -734,6 +754,7 @@ function LinkOffer({ link, offer }: { link: CheckoutLinkOffer; offer: CheckoutOf
           : 'O valor vale enquanto a assinatura durar (só o reajuste anual do contrato).'}
         {!installed && ' Com o instalador da sua preferência, pago direto a ele; o guia de instalação vai junto.'}
         {installed && ' A gente agenda o dia com você.'}
+        {installed && link.installDirect && link.installCents > 0 && ' A instalação é paga direto ao instalador, no dia, fora do Pix.'}
       </p>
       {!loan && !period && tracker.cents > 0 && tracker.months > 0 && (
         <p className={styles.note}>
@@ -1024,9 +1045,11 @@ function Summary({
   const loan = choice.equipmentMode === 'loan' && offer.loan !== null;
   const period = chosenPeriod(offer, choice);
   const plan = period ? period.planName : offer.planByKind ? `${offer.planName} · ${KIND_NAMES[kind]}` : offer.planName;
-  // Pelo link de um representante: a instalação e a desinstalação são pagas direto a ele.
+  // Pelo link de um representante: a instalação e a desinstalação são pagas direto a ele. Pelo link de
+  // pagamento: só a instalação, direto ao instalador (a desinstalação, quando há, é cobrada no fim).
   const install = chosenInstall(offer, choice);
   const directInstall = offer.installDirect ? install.cents : 0;
+  const directUninstall = offer.installDirect && !offer.link ? ', paga direto ao representante' : '';
   const tracker = offer.tracker;
   // Com o cupom em mais de uma cobrança: as seguintes com o desconto, antes do valor normal.
   const moreDiscounted = coupon && totals.couponCents > 0 ? totals.couponCharges - 1 : 0;
@@ -1090,7 +1113,7 @@ function Summary({
           {loan &&
             offer.loan &&
             offer.loan.uninstallFeeCents > 0 &&
-            `; no fim, a desinstalação custa ${formatMoney(offer.loan.uninstallFeeCents)}${offer.installDirect ? ', paga direto ao representante' : ''}`}
+            `; no fim, a desinstalação custa ${formatMoney(offer.loan.uninstallFeeCents)}${directUninstall}`}
           .
         </p>
       ) : (
@@ -1119,7 +1142,7 @@ function Summary({
         {loan &&
           offer.loan &&
           offer.loan.uninstallFeeCents > 0 &&
-          `. Ao encerrar, a desinstalação custa ${formatMoney(offer.loan.uninstallFeeCents)}${offer.installDirect ? ', paga direto ao representante' : ''}`}
+          `. Ao encerrar, a desinstalação custa ${formatMoney(offer.loan.uninstallFeeCents)}${directUninstall}`}
         .
       </p>
       )}
@@ -1131,8 +1154,8 @@ function Summary({
       )}
       {directInstall > 0 && (
         <p className={styles.note}>
-          A instalação{install.blocking && ' com bloqueio'} ({formatMoney(directInstall)}) é paga direto ao representante,
-          no dia, fora do Pix.
+          A instalação{install.blocking && ' com bloqueio'} ({formatMoney(directInstall)}) é paga direto ao{' '}
+          {offer.link ? 'instalador' : 'representante'}, no dia, fora do Pix.
         </p>
       )}
     </div>

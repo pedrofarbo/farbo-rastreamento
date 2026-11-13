@@ -110,6 +110,8 @@ func withLink(view *checkoutView, opts *orders.Options, l *orders.CheckoutLink) 
 		if l.InstallBlocking {
 			view.Install.BlockingCents = l.InstallCents
 		}
+		// Paga direto ao instalador: o valor aparece, fora do Pix.
+		view.InstallDirect = l.InstallDirect
 	}
 }
 
@@ -410,9 +412,12 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if handBy != "" {
+	switch {
+	case order.Shipping != nil:
+		// O link de pagamento com a entrega em mãos pela Farbo (sem frete).
+	case handBy != "":
 		order.Shipping = fulfillment.HandDelivery(handBy)
-	} else if s.Fulfillment != nil {
+	case s.Fulfillment != nil:
 		switch {
 		case req.ArrangeDelivery && req.ShippingServiceID > 0:
 			writeError(w, http.StatusBadRequest, "escolha só uma forma de entrega")

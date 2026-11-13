@@ -52,8 +52,8 @@ async function click(el: HTMLElement) {
 
 const base: CheckoutLink = {
   id: 'l1', token: 'abc123defg4567', label: 'Frota do João', equipmentMode: 'loan', periodMonths: 12, priceCents: 60000,
-  farboInstall: true, installCents: 0, uninstallCents: 8500, installBlocking: true, validUntil: null, maxUses: 1, active: true,
-  uses: 0, createdAt: '', updatedAt: '',
+  farboInstall: true, installCents: 0, uninstallCents: 8500, installBlocking: true, installDirect: false, handDelivery: false, validUntil: null, maxUses: 1,
+  active: true, uses: 0, createdAt: '', updatedAt: '',
 };
 
 async function render() {
@@ -84,8 +84,12 @@ describe('os links de pagamento (central)', () => {
   it('a oferta, a instalação e a situação em texto', () => {
     expect(plain(checkoutLinkOffer(base))).toBe('Comodato · anual · R$ 600,00/ano');
     expect(plain(checkoutLinkOffer({ equipmentMode: 'sale', periodMonths: 1, priceCents: 4990 }))).toBe('Incluso · mensal · R$ 49,90/mês');
+    expect(plain(checkoutLinkOffer({ ...base, handDelivery: true }))).toBe('Comodato · anual · R$ 600,00/ano · entrega em mãos');
     expect(plain(checkoutLinkInstall(base))).toBe('Farbo, com bloqueio · sem custo; desinstalação R$ 85,00');
     expect(checkoutLinkInstall({ ...base, equipmentMode: 'sale', farboInstall: false })).toBe('Por conta própria');
+    expect(plain(checkoutLinkInstall({ ...base, installCents: 10000, installDirect: true }))).toBe(
+      'Farbo, com bloqueio · R$ 100,00 direto ao instalador; desinstalação R$ 85,00',
+    );
     expect(checkoutLinkStatus(base, '2026-11-13').label).toBe('Valendo');
     expect(checkoutLinkStatus({ ...base, uses: 1 }, '2026-11-13').label).toBe('Usado');
     expect(checkoutLinkStatus({ ...base, uses: 5, maxUses: 5 }, '2026-11-13').label).toBe('Esgotado');
@@ -111,11 +115,15 @@ describe('os links de pagamento (central)', () => {
     type(field('Valor (R$ por ano)'), '600,00');
     type(field('Bloqueio do motor') as unknown as HTMLSelectElement, 'yes');
     type(field('Desinstalação (R$, opcional)'), '85,00');
+    const handDelivery = Array.from(document.querySelectorAll('label'))
+      .find((l) => l.textContent?.startsWith('Entrega em mãos'))!
+      .querySelector('input') as HTMLInputElement;
+    await click(handDelivery);
     await click(button('Criar link'));
     expect(created).toEqual([
       {
         label: 'Frota do João', equipmentMode: 'loan', periodMonths: 12, priceCents: 60000, farboInstall: true, installCents: 0,
-        uninstallCents: 8500, installBlocking: true, validUntil: null, maxUses: 1, active: true,
+        uninstallCents: 8500, installBlocking: true, installDirect: false, handDelivery: true, validUntil: null, maxUses: 1, active: true,
       },
     ]);
     expect(text()).toContain('Link criado');
@@ -137,6 +145,11 @@ describe('os links de pagamento (central)', () => {
     type(field('Valor (R$ por mês)'), '59,90');
     type(field('Quem instala') as unknown as HTMLSelectElement, 'farbo');
     type(field('Instalação (R$, opcional)'), '120,00');
+    const direct = Array.from(document.querySelectorAll('label'))
+      .find((l) => l.textContent?.startsWith('Instalação paga direto ao instalador'))!
+      .querySelector('input') as HTMLInputElement;
+    await click(direct);
+    expect(text()).toContain('Paga direto ao instalador, no dia.');
     type(field('Limite de usos (opcional)'), '');
     await click(button('Salvar'));
     expect(updated).toEqual([
@@ -144,7 +157,7 @@ describe('os links de pagamento (central)', () => {
         'l1',
         {
           label: 'Frota do João', equipmentMode: 'sale', periodMonths: 1, priceCents: 5990, farboInstall: true, installCents: 12000,
-          uninstallCents: 0, installBlocking: true, validUntil: null, maxUses: null, active: true,
+          uninstallCents: 0, installBlocking: true, installDirect: true, handDelivery: false, validUntil: null, maxUses: null, active: true,
         },
       ],
     ]);

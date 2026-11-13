@@ -69,16 +69,22 @@ func TestCheckoutLinks(t *testing.T) {
 		_ = json.Unmarshal(env.must(admin, http.MethodPost, "/api/checkout-links", in, http.StatusCreated), &l)
 		return l
 	}
-	// O comodato anual, com bloqueio, de um uso só.
+	// O comodato anual, com bloqueio e a instalação paga direto ao instalador,
+	// de um uso só.
 	frota := create(map[string]any{"label": " Frota João ", "equipmentMode": "loan", "periodMonths": 12, "priceCents": 60000,
-		"installCents": 0, "uninstallCents": 8500, "installBlocking": true, "maxUses": 1, "active": true})
-	if len(frota.Token) != 14 || frota.Label != "Frota João" || !frota.FarboInstall || frota.Uses != 0 || !frota.InstallBlocking {
+		"installCents": 10000, "installDirect": true, "uninstallCents": 8500, "installBlocking": true, "maxUses": 1, "active": true})
+	if len(frota.Token) != 14 || frota.Label != "Frota João" || !frota.FarboInstall || frota.Uses != 0 || !frota.InstallBlocking ||
+		!frota.InstallDirect || frota.InstallCents != 10000 {
 		t.Fatalf("link do comodato = %+v", frota)
 	}
-	// O incluso mensal por conta própria: a taxa e o bloqueio mandados não ficam.
+	// O incluso mensal por conta própria, entregue em mãos pela Farbo: a taxa
+	// e o bloqueio mandados não ficam.
 	barato := create(map[string]any{"label": "Indicação do Zé", "equipmentMode": "sale", "priceCents": 4990,
-		"farboInstall": false, "installCents": 5000, "uninstallCents": 3000, "installBlocking": true, "active": true})
-	if barato.FarboInstall || barato.InstallCents != 0 || barato.UninstallCents != 0 || barato.InstallBlocking || barato.PeriodMonths != 1 {
+		"farboInstall": false, "installCents": 5000, "uninstallCents": 3000, "installBlocking": true, "installDirect": true,
+		"handDelivery": true, "active": true})
+	if barato.FarboInstall || barato.InstallCents != 0 || barato.UninstallCents != 0 || barato.InstallBlocking || barato.InstallDirect ||
+		barato.PeriodMonths != 1 ||
+		!barato.HandDelivery || frota.HandDelivery {
 		t.Fatalf("link do incluso = %+v", barato)
 	}
 	vencido := create(map[string]any{"label": "Feira", "equipmentMode": "sale", "priceCents": 5990, "farboInstall": true,
@@ -95,6 +101,7 @@ func TestCheckoutLinks(t *testing.T) {
 		EquipmentModes  string                    `json:"equipmentModes"`
 		Loan            *orders.LoanOffer         `json:"loan"`
 		Install         *orders.InstallService    `json:"install"`
+		InstallDirect   bool                      `json:"installDirect"`
 		Tracker         orders.Tracker            `json:"tracker"`
 		Periods         []periodOffer             `json:"periods"`
 		Link            *orders.CheckoutLinkOffer `json:"link"`
@@ -112,12 +119,12 @@ func TestCheckoutLinks(t *testing.T) {
 	o := offer("link=" + strings.ToUpper(frota.Token) + "&ref=rita")
 	if !o.Enabled || o.Link == nil || o.Link.PeriodMonths != 12 || o.EquipmentModes != "loan" || o.Coupons || o.LinkProblem != "" ||
 		len(o.Periods) != 1 || o.Periods[0].Months != 12 || o.Periods[0].Cents != 60000 || o.Periods[0].LoanCents != 60000 ||
-		o.Loan == nil || o.Loan.SurchargeCents != 0 || o.Loan.UninstallFeeCents != 8500 || o.Loan.InstallFeeCents != 0 ||
-		o.Install == nil || o.Install.PriceCents != 0 {
+		o.Loan == nil || o.Loan.SurchargeCents != 0 || o.Loan.UninstallFeeCents != 8500 || o.Loan.InstallFeeCents != 10000 ||
+		o.Install == nil || o.Install.PriceCents != 10000 || !o.InstallDirect {
 		t.Fatalf("oferta do link do comodato = %+v (link %+v)", o, o.Link)
 	}
 	if o := offer("link=" + barato.Token); o.PlanCents != 4990 || o.EquipmentModes != "sale" || o.Install != nil || o.Loan != nil ||
-		len(o.Periods) != 0 || o.Tracker.Added {
+		len(o.Periods) != 0 || o.Tracker.Added || o.Link == nil || !o.Link.HandDelivery {
 		t.Fatalf("oferta do link do incluso = %+v", o)
 	}
 	if o := offer("link=" + vencido.Token); o.Link != nil || !strings.Contains(o.LinkProblem, "venceu em 10/11/2026") {
@@ -168,6 +175,8 @@ func TestCheckoutLinks(t *testing.T) {
 	_ = json.Unmarshal(env.must("", http.MethodPost, "/api/public/checkout", body("joao@link.test", "321.654.987-91", frota.Token, ""),
 		http.StatusCreated), &joao)
 	sub := joao.Subscription
+	// A instalação paga direto ao instalador não entra na cobrança; a
+	// desinstalação fica para o fim, pela Farbo.
 	if sub.PeriodMonths != 12 || sub.PriceCents != 60000 || sub.PlanName != orders.PeriodPlanName(12) ||
 		sub.EquipmentMode != billing.EquipmentLoan || sub.UninstallFeeCents != 8500 || sub.TrackerCents != 0 ||
 		joao.InstallInvoice != nil || joao.FirstInvoice == nil || joao.FirstInvoice.AmountCents != 60000 {
@@ -200,6 +209,15 @@ func TestCheckoutLinks(t *testing.T) {
 	_ = env.db.QueryRow(ctx, `SELECT farbo_install FROM subscriptions WHERE id = $1`, ze.Subscription.ID).Scan(&farbo)
 	if farbo {
 		t.Fatal("o link por conta própria saiu com a instalação da Farbo")
+	}
+	// A entrega em mãos pela Farbo: combinada, sem frete.
+	var arranged bool
+	var service string
+	var freight int
+	_ = env.db.QueryRow(ctx, `SELECT delivery_arranged, quoted_service, COALESCE(quoted_price_cents, 0) FROM fulfillments
+		WHERE customer_id = $1`, ze.Subscription.CustomerID).Scan(&arranged, &service, &freight)
+	if !arranged || service != "Entrega em mãos" || freight != 0 {
+		t.Fatalf("entrega do Zé: combinada %v, %q, frete %d", arranged, service, freight)
 	}
 	// O próximo veículo do Zé: o preço normal, não o do link.
 	if _, err := env.db.Exec(ctx, `UPDATE invoices SET status = 'PAID', paid_at = NOW(), paid_via = 'MANUAL'

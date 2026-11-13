@@ -541,7 +541,8 @@ describe('a contratação pelo site', () => {
       periods: [{ months: 12, planName: 'Plano Anual', cents: 60000, loanCents: 60000 }],
       link: {
         token: 'abc123defg4567', equipmentMode: 'loan', periodMonths: 12, priceCents: 60000, farboInstall: true,
-        installCents: 10000, uninstallCents: 8500, installBlocking: true, validUntil: '2026-11-30',
+        installCents: 10000, uninstallCents: 8500, installBlocking: true, installDirect: false, handDelivery: false,
+        validUntil: '2026-11-30',
       },
     });
     await render('/contratar?link=abc123defg4567');
@@ -573,7 +574,7 @@ describe('a contratação pelo site', () => {
     localStorage.clear();
   });
 
-  it('pelo link de pagamento do incluso mensal por conta própria: o valor do link e a parte do rastreador dentro dele', async () => {
+  it('pelo link de pagamento do incluso mensal, entregue em mãos: o valor do link, sem frete nem escolha da entrega', async () => {
     offer = offerWith({
       planCents: 4990,
       equipmentModes: 'sale',
@@ -582,7 +583,7 @@ describe('a contratação pelo site', () => {
       periods: [],
       link: {
         token: 'zzz', equipmentMode: 'sale', periodMonths: 1, priceCents: 4990, farboInstall: false, installCents: 0,
-        uninstallCents: 0, installBlocking: false, validUntil: null,
+        uninstallCents: 0, installBlocking: false, installDirect: false, handDelivery: true, validUntil: null,
       },
     });
     await render('/contratar?link=zzz');
@@ -591,13 +592,46 @@ describe('a contratação pelo site', () => {
     expect(text()).toContain('Instalação por conta própriasem custo');
     expect(text()).toContain('a parte do rastreador que falta (R$ 12,00 por mensalidade) vence de uma vez');
     expect(text()).toContain('MensalidadeR$ 49,90/mês');
+    expect(text()).toContain('Entrega em mãos pela Farbosem frete');
+    expect(text()).toContain('Hoje, no PixR$ 49,90');
+    expect(text()).not.toContain('+ frete');
     expect(text()).not.toContain('Condições válidas');
     await fillUntilPayment();
+    // Sem cotar o frete: a entrega em mãos, a única.
+    expect(shippingRefs).toEqual([]);
+    expect(text()).toContain('Em mãos: a Farbo entrega o rastreador e combina o dia com você. Sem frete.');
     await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
-    await click(button('Pagar R$ 72,80 com Pix'));
+    await click(button('Pagar R$ 49,90 com Pix'));
     expect(placed[0]).toMatchObject({ link: 'zzz', equipmentMode: 'sale', farboInstall: false });
+    expect(placed[0].shippingServiceId).toBeUndefined();
+    expect(placed[0].arrangeDelivery).toBeUndefined();
     expect(placed[0].periodMonths).toBeUndefined();
     expect(placed[0].installBlocking).toBeUndefined();
+  });
+
+  it('pelo link de pagamento com a instalação paga direto ao instalador: o valor aparece, fora do Pix', async () => {
+    offer = offerWith({
+      planCents: 5990,
+      equipmentModes: 'sale',
+      loan: null,
+      install: { enabled: true, priceCents: 12000 },
+      installDirect: true,
+      periods: [],
+      link: {
+        token: 'dir', equipmentMode: 'sale', periodMonths: 1, priceCents: 5990, farboInstall: true, installCents: 12000,
+        uninstallCents: 0, installBlocking: false, installDirect: true, handDelivery: false, validUntil: null,
+      },
+    });
+    await render('/contratar?link=dir');
+    expect(text()).toContain('Instalação pelos instaladores da Farbo, sem bloqueioR$ 120,00 · direto ao instalador');
+    expect(text()).toContain('A instalação é paga direto ao instalador, no dia, fora do Pix.');
+    expect(text()).toContain('Hoje, no PixR$ 59,90 + frete');
+    await fillUntilPayment();
+    expect(text()).not.toContain('Instalação pelos instaladores da FarboR$');
+    expect(text()).toContain('A instalação (R$ 120,00) é paga direto ao instalador, no dia, fora do Pix.');
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar R$ 82,80 com Pix'));
+    expect(placed[0]).toMatchObject({ link: 'dir', equipmentMode: 'sale', farboInstall: true });
   });
 
   it('o link de pagamento que não vale: o motivo, e os planos do site quando a contratação está aberta', async () => {

@@ -104,6 +104,15 @@ const ArrangedService = "Entrega combinada"
 
 // HandDelivery é a entrega em mãos pelo representante (ele tem os kits):
 // sem frete nem etiqueta.
+// InPersonService é a entrega em mãos pela Farbo (o link de pagamento): sem
+// frete, combinada com o cliente.
+const InPersonService = "Entrega em mãos"
+
+// InPerson é a entrega em mãos pela Farbo: combinada com o cliente, sem frete.
+func InPerson() *Choice {
+	return &Choice{Name: InPersonService, Arranged: true}
+}
+
 func HandDelivery(representative string) *Choice {
 	return &Choice{Name: "Em mãos com o representante " + representative, Arranged: true, HandBy: representative}
 }

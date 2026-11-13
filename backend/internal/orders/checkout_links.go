@@ -12,13 +12,16 @@ import (
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fulfillment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/vehicles"
 )
 
 // Os links de pagamento: a central gera um link com uma oferta fechada — o
 // rastreador incluso ou em comodato, o mensal, o semestral ou o anual, o
 // valor de cada cobrança (com tudo dentro), quem instala, com ou sem o relé
-// do bloqueio, e as taxas — e manda a quem vai contratar. Quem abre
+// do bloqueio, as taxas (a instalação na 1ª cobrança ou paga direto ao
+// instalador) e, se quiser, a entrega em mãos pela Farbo (sem frete) — e
+// manda a quem vai contratar. Quem abre
 // /contratar?link=<token> vê só essa oferta, informa o veículo e os dados e
 // paga. Vale com a contratação pelo site fechada e sem o link de um
 // representante; o cupom não vai junto. O próximo veículo do cliente sai
@@ -44,6 +47,12 @@ type CheckoutLink struct {
 	InstallCents    int  `json:"installCents"`
 	UninstallCents  int  `json:"uninstallCents"`
 	InstallBlocking bool `json:"installBlocking"`
+	// InstallDirect: a instalação é paga direto ao instalador, no dia — o
+	// valor aparece para o cliente, mas não entra na 1ª cobrança.
+	InstallDirect bool `json:"installDirect"`
+	// HandDelivery: a Farbo entrega o rastreador em mãos e combina o dia com
+	// o cliente, sem frete.
+	HandDelivery bool `json:"handDelivery"`
 	// ValidUntil: até que dia (inclusive) dá para usar; nulo, sem validade.
 	ValidUntil *billing.Date `json:"validUntil"`
 	// MaxUses: quantas contratações podem usar; nulo, sem limite.
@@ -64,6 +73,8 @@ type CheckoutLinkInput struct {
 	InstallCents    int           `json:"installCents"`
 	UninstallCents  int           `json:"uninstallCents"`
 	InstallBlocking bool          `json:"installBlocking"`
+	InstallDirect   bool          `json:"installDirect"`
+	HandDelivery    bool          `json:"handDelivery"`
 	ValidUntil      *billing.Date `json:"validUntil"`
 	MaxUses         *int          `json:"maxUses"`
 	Active          bool          `json:"active"`
@@ -80,6 +91,8 @@ type CheckoutLinkOffer struct {
 	InstallCents    int           `json:"installCents"`
 	UninstallCents  int           `json:"uninstallCents"`
 	InstallBlocking bool          `json:"installBlocking"`
+	InstallDirect   bool          `json:"installDirect"`
+	HandDelivery    bool          `json:"handDelivery"`
 	ValidUntil      *billing.Date `json:"validUntil"`
 }
 
@@ -87,7 +100,8 @@ type CheckoutLinkOffer struct {
 func (l *CheckoutLink) Offer() CheckoutLinkOffer {
 	return CheckoutLinkOffer{Token: l.Token, EquipmentMode: l.EquipmentMode, PeriodMonths: l.PeriodMonths,
 		PriceCents: l.PriceCents, FarboInstall: l.FarboInstall, InstallCents: l.InstallCents,
-		UninstallCents: l.UninstallCents, InstallBlocking: l.InstallBlocking, ValidUntil: l.ValidUntil}
+		UninstallCents: l.UninstallCents, InstallBlocking: l.InstallBlocking, InstallDirect: l.InstallDirect,
+		HandDelivery: l.HandDelivery, ValidUntil: l.ValidUntil}
 }
 
 // check confere a oferta e acerta o que não se aplica: no comodato, quem
@@ -104,7 +118,7 @@ func (in *CheckoutLinkInput) check() error {
 	case billing.EquipmentSale:
 		in.UninstallCents = 0
 		if !in.FarboInstall {
-			in.InstallCents, in.InstallBlocking = 0, false
+			in.InstallCents, in.InstallBlocking, in.InstallDirect = 0, false, false
 		}
 	}
 	inRange := func(cents int) bool { return cents >= 0 && cents <= vehicles.MaxPlanCents }
@@ -148,14 +162,14 @@ func NormalizeLinkToken(token string) string {
 }
 
 const checkoutLinkColumns = `l.id, l.token, l.label, l.equipment_mode, l.period_months, l.price_cents, l.farbo_install,
-	l.install_cents, l.uninstall_cents, l.install_blocking, l.valid_until, l.max_uses, l.active,
+	l.install_cents, l.uninstall_cents, l.install_blocking, l.install_direct, l.hand_delivery, l.valid_until, l.max_uses, l.active,
 	(SELECT count(*) FROM checkout_link_uses u WHERE u.link_id = l.id), l.created_at, l.updated_at`
 
 func scanCheckoutLink(row database.Scanner) (*CheckoutLink, error) {
 	var l CheckoutLink
 	var until *time.Time
 	if err := row.Scan(&l.ID, &l.Token, &l.Label, &l.EquipmentMode, &l.PeriodMonths, &l.PriceCents, &l.FarboInstall,
-		&l.InstallCents, &l.UninstallCents, &l.InstallBlocking, &until, &l.MaxUses, &l.Active, &l.Uses,
+		&l.InstallCents, &l.UninstallCents, &l.InstallBlocking, &l.InstallDirect, &l.HandDelivery, &until, &l.MaxUses, &l.Active, &l.Uses,
 		&l.CreatedAt, &l.UpdatedAt); err != nil {
 		return nil, database.MapError(err)
 	}
@@ -197,10 +211,12 @@ func (s *Service) CreateCheckoutLink(ctx context.Context, in CheckoutLinkInput, 
 		var id uuid.UUID
 		err = s.db.QueryRow(ctx, `
 			INSERT INTO checkout_links (token, label, equipment_mode, period_months, price_cents, farbo_install,
-				install_cents, uninstall_cents, install_blocking, valid_until, max_uses, active, created_by)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+				install_cents, uninstall_cents, install_blocking, install_direct, hand_delivery, valid_until, max_uses, active,
+				created_by)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
 			token, in.Label, in.EquipmentMode, in.PeriodMonths, in.PriceCents, in.FarboInstall, in.InstallCents,
-			in.UninstallCents, in.InstallBlocking, dateOrNil(in.ValidUntil), in.MaxUses, in.Active, by).Scan(&id)
+			in.UninstallCents, in.InstallBlocking, in.InstallDirect, in.HandDelivery, dateOrNil(in.ValidUntil), in.MaxUses,
+			in.Active, by).Scan(&id)
 		if errors.Is(database.MapError(err), database.ErrConflict) && attempt < 3 {
 			continue
 		}
@@ -219,10 +235,10 @@ func (s *Service) UpdateCheckoutLink(ctx context.Context, id uuid.UUID, in Check
 	}
 	tag, err := s.db.Exec(ctx, `
 		UPDATE checkout_links SET label = $2, equipment_mode = $3, period_months = $4, price_cents = $5,
-			farbo_install = $6, install_cents = $7, uninstall_cents = $8, install_blocking = $9, valid_until = $10,
-			max_uses = $11, active = $12, updated_at = NOW()
+			farbo_install = $6, install_cents = $7, uninstall_cents = $8, install_blocking = $9, install_direct = $10,
+			hand_delivery = $11, valid_until = $12, max_uses = $13, active = $14, updated_at = NOW()
 		WHERE id = $1`, id, in.Label, in.EquipmentMode, in.PeriodMonths, in.PriceCents, in.FarboInstall, in.InstallCents,
-		in.UninstallCents, in.InstallBlocking, dateOrNil(in.ValidUntil), in.MaxUses, in.Active)
+		in.UninstallCents, in.InstallBlocking, in.InstallDirect, in.HandDelivery, dateOrNil(in.ValidUntil), in.MaxUses, in.Active)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
@@ -312,16 +328,25 @@ func (s *Service) linkOrder(opts *Options, l *CheckoutLink, vehicle vehicles.Inp
 		plan.PlanName, plan.PeriodMonths = PeriodPlanName(l.PeriodMonths), l.PeriodMonths
 	}
 	order := Order{Vehicle: vehicle, Plan: plan, RequireAddress: true, Link: l.Token}
+	// A instalação paga direto ao instalador: fora da 1ª cobrança.
+	install := l.InstallCents
+	if l.InstallDirect {
+		install = 0
+	}
 	if l.EquipmentMode == billing.EquipmentLoan {
-		order.Terms = Terms{EquipmentMode: billing.EquipmentLoan, InstallFeeCents: l.InstallCents, UninstallFeeCents: l.UninstallCents}
+		order.Terms = Terms{EquipmentMode: billing.EquipmentLoan, InstallFeeCents: install, UninstallFeeCents: l.UninstallCents}
 	} else {
 		order.Terms = Terms{EquipmentMode: billing.EquipmentSale}
 		if l.PeriodMonths <= 1 {
 			order.Tracker = Tracker{Cents: opts.Tracker.Cents, Months: opts.Tracker.Months}
 		}
-		order.FarboInstall, order.InstallCents = l.FarboInstall, l.InstallCents
+		order.FarboInstall, order.InstallCents = l.FarboInstall, install
 	}
 	order.InstallBlocking = l.InstallBlocking && (l.EquipmentMode == billing.EquipmentLoan || l.FarboInstall)
+	// A entrega em mãos pela Farbo: sem frete, combinada com o cliente.
+	if l.HandDelivery {
+		order.Shipping = fulfillment.InPerson()
+	}
 	return order
 }
 

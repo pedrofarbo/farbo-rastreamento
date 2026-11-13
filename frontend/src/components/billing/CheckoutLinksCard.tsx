@@ -24,19 +24,25 @@ export function checkoutLinkUrl(token: string): string {
   return `${SITE_URL}/contratar?link=${token}`;
 }
 
-/** "Comodato · anual · R$ 600,00/ano" ou "Incluso · mensal · R$ 49,90/mês". */
-export function checkoutLinkOffer(l: Pick<CheckoutLink, 'equipmentMode' | 'periodMonths' | 'priceCents'>): string {
+/** "Comodato · anual · R$ 600,00/ano" ou "Incluso · mensal · R$ 49,90/mês" (e "· entrega em mãos"). */
+export function checkoutLinkOffer(
+  l: Pick<CheckoutLink, 'equipmentMode' | 'periodMonths' | 'priceCents'> & { handDelivery?: boolean },
+): string {
   const period = l.periodMonths === 12 ? 'anual' : l.periodMonths === 6 ? 'semestral' : 'mensal';
   const per = l.periodMonths === 12 ? '/ano' : l.periodMonths === 6 ? '/semestre' : '/mês';
-  return `${l.equipmentMode === 'loan' ? 'Comodato' : 'Incluso'} · ${period} · ${formatMoney(l.priceCents)}${per}`;
+  const offer = `${l.equipmentMode === 'loan' ? 'Comodato' : 'Incluso'} · ${period} · ${formatMoney(l.priceCents)}${per}`;
+  return l.handDelivery ? `${offer} · entrega em mãos` : offer;
 }
 
 /** "Farbo, com bloqueio · R$ 100,00", "Farbo, sem bloqueio · sem custo" ou "Por conta própria". */
 export function checkoutLinkInstall(
-  l: Pick<CheckoutLink, 'equipmentMode' | 'farboInstall' | 'installCents' | 'installBlocking' | 'uninstallCents'>,
+  l: Pick<CheckoutLink, 'equipmentMode' | 'farboInstall' | 'installCents' | 'installBlocking' | 'uninstallCents'> & {
+    installDirect?: boolean;
+  },
 ): string {
   if (l.equipmentMode === 'sale' && !l.farboInstall) return 'Por conta própria';
-  const install = `Farbo, ${l.installBlocking ? 'com' : 'sem'} bloqueio · ${l.installCents > 0 ? formatMoney(l.installCents) : 'sem custo'}`;
+  const price = l.installCents > 0 ? `${formatMoney(l.installCents)}${l.installDirect ? ' direto ao instalador' : ''}` : 'sem custo';
+  const install = `Farbo, ${l.installBlocking ? 'com' : 'sem'} bloqueio · ${price}`;
   return l.equipmentMode === 'loan' && l.uninstallCents > 0 ? `${install}; desinstalação ${formatMoney(l.uninstallCents)}` : install;
 }
 
@@ -148,6 +154,10 @@ interface Draft {
   install: string;
   uninstall: string;
   installBlocking: boolean;
+  /** A instalação paga direto ao instalador, fora da 1ª cobrança. */
+  installDirect: boolean;
+  /** A Farbo entrega em mãos, sem frete. */
+  handDelivery: boolean;
   validUntil: string;
   maxUses: string;
   active: boolean;
@@ -157,7 +167,7 @@ function draftOf(l: CheckoutLink | null): Draft {
   if (!l) {
     return {
       label: '', equipmentMode: 'sale', periodMonths: '1', price: '', farboInstall: false, install: '', uninstall: '',
-      installBlocking: false, validUntil: '', maxUses: '1', active: true,
+      installBlocking: false, installDirect: false, handDelivery: false, validUntil: '', maxUses: '1', active: true,
     };
   }
   return {
@@ -169,6 +179,8 @@ function draftOf(l: CheckoutLink | null): Draft {
     install: l.installCents > 0 ? centsToInput(l.installCents) : '',
     uninstall: l.uninstallCents > 0 ? centsToInput(l.uninstallCents) : '',
     installBlocking: l.installBlocking,
+    installDirect: l.installDirect,
+    handDelivery: l.handDelivery,
     validUntil: l.validUntil ?? '',
     maxUses: l.maxUses !== null ? String(l.maxUses) : '',
     active: l.active,
@@ -201,6 +213,8 @@ export function checkoutLinkInput(d: Draft): CheckoutLinkInput | string {
     installCents,
     uninstallCents,
     installBlocking: installed && d.installBlocking,
+    installDirect: installed && d.installDirect,
+    handDelivery: d.handDelivery,
     validUntil: d.validUntil || null,
     maxUses,
     active: d.active,
@@ -365,7 +379,7 @@ function CheckoutLinkModal({
               label="Instalação (R$, opcional)"
               inputMode="decimal"
               placeholder="0,00"
-              hint="Cobrada junto com a 1ª cobrança. Vazio: sem custo."
+              hint={draft.installDirect ? 'Paga direto ao instalador, no dia. Vazio: sem custo.' : 'Cobrada junto com a 1ª cobrança. Vazio: sem custo.'}
               value={draft.install}
               onChange={(e) => set('install', e.target.value)}
             />
@@ -413,6 +427,26 @@ function CheckoutLinkModal({
             onChange={(e) => set('maxUses', e.target.value.replace(/\D/g, '').slice(0, 6))}
           />
         </div>
+        {installed && (
+          <label className={styles.promoOption}>
+            <input type="checkbox" checked={draft.installDirect} onChange={(e) => set('installDirect', e.target.checked)} />
+            <span>
+              <strong>Instalação paga direto ao instalador</strong>
+              <br />
+              O valor da instalação aparece para o cliente, mas não entra na 1ª cobrança: o instalador recebe dele no dia.
+              {loan && ' A desinstalação, quando houver, continua cobrada pelo sistema no fim.'}
+            </span>
+          </label>
+        )}
+        <label className={styles.promoOption}>
+          <input type="checkbox" checked={draft.handDelivery} onChange={(e) => set('handDelivery', e.target.checked)} />
+          <span>
+            <strong>Entrega em mãos</strong>
+            <br />
+            Sem frete: a Farbo entrega o rastreador e combina o dia com o cliente (no pedido, a entrega fica como
+            combinada). Sem marcar, o cliente escolhe a entrega e paga o frete.
+          </span>
+        </label>
         <label className={styles.promoOption}>
           <input type="checkbox" checked={draft.active} onChange={(e) => set('active', e.target.checked)} />
           <span>
