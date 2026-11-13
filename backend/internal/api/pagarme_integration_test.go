@@ -15,6 +15,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/auth"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/dunning"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/payments/pagarme"
 )
@@ -120,6 +121,10 @@ func TestPagarmeGateway(t *testing.T) {
 			t.Fatal(err)
 		}
 		d.Payments = svc
+		// Os links de pagamento (sem login), para o cartão neles.
+		d.Dunning = dunning.NewService(d.DB, d.Billing, &recordingInvoiceMailer{}, dunning.Config{
+			Location: time.UTC, FromHour: 9, ToHour: 20, AppURL: "https://painel.farbo.test", LinkSecret: d.Config.Auth.JWTSecret,
+		}, d.Log)
 	})
 	ctx := context.Background()
 	admin := env.login(auth.RoleAdmin + "@leads.test")
@@ -267,4 +272,51 @@ func TestPagarmeGateway(t *testing.T) {
 		http.StatusPaymentRequired); !strings.Contains(raw, "Saldo insuficiente") {
 		t.Fatalf("recusa = %s", raw)
 	}
+	pm.cardMode = ""
+
+	// O cartão nos links sem login (o da fatura e o de todas em aberto): a
+	// chave pública, sem os dados do pagador na página; paga com os do
+	// cadastro, sem salvar o cartão.
+	var detail struct {
+		PaymentLinks map[string]string `json:"paymentLinks"`
+		PayAllURL    string            `json:"payAllUrl"`
+	}
+	linked := invoice(ana, 4990)
+	other := invoice(ana, 3000)
+	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/customers/"+ana.String(), nil, http.StatusOK), &detail)
+	invoiceToken := strings.TrimPrefix(detail.PaymentLinks[linked.String()], "https://painel.farbo.test/pagar/")
+	raw := env.must("", http.MethodGet, "/api/public/invoices/"+invoiceToken+"/card", nil, http.StatusOK)
+	var pub struct {
+		Enabled    bool   `json:"enabled"`
+		Provider   string `json:"provider"`
+		PublicKey  string `json:"publicKey"`
+		PayerReady bool   `json:"payerReady"`
+		PublicLink bool   `json:"publicLink"`
+	}
+	_ = json.Unmarshal(raw, &pub)
+	if !pub.Enabled || pub.Provider != "pagarme" || pub.PublicKey != "pk_test_x" || !pub.PayerReady || !pub.PublicLink {
+		t.Fatalf("cartão do link = %s", raw)
+	}
+	for _, leak := range []string{"529", "@pagarme.test", "Praça", "01001000"} {
+		if strings.Contains(string(raw), leak) {
+			t.Errorf("o cartão do link mostra %q: %s", leak, raw)
+		}
+	}
+	byLink, _ := post("", "/api/public/invoices/"+invoiceToken+"/card", map[string]any{"token": "token_link"}, http.StatusOK)
+	if byLink.Status != "PAID" || invoiceState(linked) != "PAID/CARD" || invoiceState(other) == "PAID/CARD" {
+		t.Fatalf("cartão pelo link = %+v (%s / %s)", byLink, invoiceState(linked), invoiceState(other))
+	}
+	if o := pm.last(); o.CardToken != "token_link" || o.BillingAddress == nil || (o.Customer == nil && o.CustomerID == "") {
+		t.Fatalf("pedido do cartão pelo link = %+v", o)
+	}
+	// O link de todas: as em aberto que sobraram, num cartão só.
+	accountToken := strings.TrimPrefix(detail.PayAllURL, "https://painel.farbo.test/pagar/conta/")
+	env.must("", http.MethodGet, "/api/public/accounts/"+accountToken+"/card", nil, http.StatusOK)
+	all, _ := post("", "/api/public/accounts/"+accountToken+"/card", map[string]any{"token": "token_todas"}, http.StatusOK)
+	if all.Status != "PAID" || invoiceState(other) != "PAID/CARD" {
+		t.Fatalf("cartão de todas = %+v (%s)", all, invoiceState(other))
+	}
+	env.must("", http.MethodPost, "/api/public/accounts/"+accountToken+"/card", map[string]any{"token": "token_x"}, http.StatusConflict)
+	// O link errado não paga.
+	env.must("", http.MethodPost, "/api/public/invoices/inventado/card", map[string]any{"token": "token_x"}, http.StatusNotFound)
 }

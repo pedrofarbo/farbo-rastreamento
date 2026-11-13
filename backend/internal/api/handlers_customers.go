@@ -47,6 +47,9 @@ type customerDetail struct {
 	// o link de pagamento sem login das faturas em aberto.
 	Reminders    map[string]dunning.Reminder `json:"reminders"`
 	PaymentLinks map[string]string           `json:"paymentLinks"`
+	// PayAllURL: o link (sem login) que paga todas as faturas em aberto do
+	// cliente de uma vez, de qualquer vencimento.
+	PayAllURL string `json:"payAllUrl,omitempty"`
 	// Fulfillments é o acompanhamento de cada veículo (chip e rastreador).
 	Fulfillments []*fulfillment.Fulfillment `json:"fulfillments"`
 	// HistoryRetentionDays é o prazo do cliente (nulo = padrão da central,
@@ -120,7 +123,9 @@ func (s *Server) customerDetail(ctx context.Context, id uuid.UUID) (*customerDet
 		version = s.Contract.Current().Version
 	}
 	reminders, links := map[string]dunning.Reminder{}, map[string]string{}
+	payAll := ""
 	if s.Dunning != nil {
+		payAll = s.Dunning.AccountPayURL(id)
 		ids := make([]uuid.UUID, 0, len(invoices))
 		for _, inv := range invoices {
 			ids = append(ids, inv.ID)
@@ -166,7 +171,7 @@ func (s *Server) customerDetail(ctx context.Context, id uuid.UUID) (*customerDet
 		CustomerSummary: summary, Subscriptions: subscriptions, Invoices: invoices, Vehicles: views, Fiscal: notes,
 		OnlinePayment: s.Payments.Enabled(), Payments: paid, DeliveryAddress: address, Fulfillments: tracking,
 		HistoryRetentionDays: retentionDays, DefaultHistoryDays: s.Retention.Default(), Affiliate: referral,
-		Reminders: reminders, PaymentLinks: links, Contract: accepted, ContractVersion: version, TwoFactor: security,
+		Reminders: reminders, PaymentLinks: links, PayAllURL: payAll, Contract: accepted, ContractVersion: version, TwoFactor: security,
 		Plan: plan, Card: card,
 	}, nil
 }

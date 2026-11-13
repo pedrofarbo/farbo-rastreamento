@@ -1687,6 +1687,8 @@ export interface CustomerDetail extends CustomerSummary {
   reminders: Record<string, InvoiceReminder>;
   /** O link de pagamento sem login das faturas em aberto (pelo id). */
   paymentLinks: Record<string, string>;
+  /** O link (sem login) que paga todas as faturas em aberto do cliente de uma vez, de qualquer vencimento. */
+  payAllUrl?: string;
 }
 
 /** Um parágrafo (text) ou uma lista (items) do contrato. */
@@ -1775,6 +1777,14 @@ export interface InvoiceReminder {
   /** Em quantos aparelhos o push chegou. */
   pushed: number;
   createdAt: string;
+}
+
+/** O link de todas as faturas em aberto do cliente (sem login): o primeiro nome, as faturas e o total. */
+export interface PublicAccountPay {
+  firstName: string;
+  amountCents: number;
+  items: { description: string; amountCents: number; dueDate: DateOnly; overdue: boolean; daysOverdue: number }[];
+  onlinePayment: boolean;
 }
 
 /** A fatura no link de pagamento (sem login): só o necessário para pagar. */
@@ -1915,6 +1925,8 @@ export interface CheckoutOffer {
   periods?: PeriodOffer[];
   /** O campo do cupom de desconto: há cupom valendo, e a contratação é direta (sem o link de um representante). */
   coupons?: boolean;
+  /** O cartão de crédito (pela Pagar.me) está ligado: a página de pagamento oferece Pix, boleto e cartão. */
+  card?: boolean;
   /** Pelo link de pagamento (?link=): a oferta fechada dele; os campos acima já vêm com ela, sem escolha. */
   link?: CheckoutLinkOffer | null;
   /** O link de pagamento não vale (o motivo); o resto é a oferta do site. */
@@ -3547,6 +3559,10 @@ export interface CardView {
   saved: SavedCard | null;
   /** Nulo: falta CPF/CNPJ, e-mail ou celular no cadastro. */
   payer: CardPayer | null;
+  /** No link sem login: o cadastro tem o que o cartão pede (os dados não vêm para a página). */
+  payerReady?: boolean;
+  /** No link sem login: sem salvar o cartão nem o débito automático. */
+  publicLink?: boolean;
 }
 
 /** Pagar no cartão: o token do formulário (ou o cartão salvo) e se guarda o cartão com o débito automático. */

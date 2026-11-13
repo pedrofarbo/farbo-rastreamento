@@ -67,7 +67,10 @@ export function PublicPayPage() {
     setJustPaid(true);
     load();
   }, [load]);
-  const checkout = usePixCheckout(open ? (whole ? token + GROUP_SUFFIX : token) : null, api, onPaid);
+  // O cartão (pela Pagar.me) precisa do valor: o do grupo ou o desta fatura.
+  const checkout = usePixCheckout(open ? (whole ? token + GROUP_SUFFIX : token) : null, api, onPaid, {
+    amountCents: whole && group ? group.amountCents : (invoice?.amountCents ?? 0),
+  });
 
   const copyManual = async () => {
     try {
@@ -210,7 +213,7 @@ export function PublicPayPage() {
           )}
 
           <p className={styles.muted}>
-            Pagamento por Pix ou boleto processado pela AbacatePay ou pela Pagar.me. A baixa é automática: não precisa mandar
+            Pagamento por Pix, boleto ou cartão processado pela AbacatePay ou pela Pagar.me. A baixa é automática: não precisa mandar
             comprovante.
           </p>
         </>

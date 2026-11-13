@@ -46,6 +46,7 @@ const OrgInstallationsPage = page(() => import('@/pages/org/OrgInstallationsPage
 const TheftReportPage = page(() => import('@/pages/TheftReportPage'), 'TheftReportPage');
 const ClaimReportPage = page(() => import('@/pages/ClaimReportPage'), 'ClaimReportPage');
 const PublicPayPage = page(() => import('@/pages/PublicPayPage'), 'PublicPayPage');
+const PublicAccountPayPage = page(() => import('@/pages/PublicAccountPayPage'), 'PublicAccountPayPage');
 const CheckoutPage = page(() => import('@/pages/CheckoutPage'), 'CheckoutPage');
 const InstallGuidePage = page(() => import('@/pages/InstallGuidePage'), 'InstallGuidePage');
 const ContractPage = page(() => import('@/pages/legal/ContractPage'), 'ContractPage');
@@ -133,6 +134,7 @@ export function App() {
                 {/* O link da instalação avulsa: o teste do sinal e a conclusão (sem login). */}
                 <Route path="/instalador/avulsa/:token" element={<StandaloneInstallPage />} />
                 {/* O link de pagamento dos lembretes de fatura (sem login). */}
+                <Route path="/pagar/conta/:token" element={<PublicAccountPayPage />} />
                 <Route path="/pagar/:token" element={<PublicPayPage />} />
                 {/* A contratação rápida pela landing, com Pix. */}
                 <Route path="/contratar" element={<CheckoutPage />} />

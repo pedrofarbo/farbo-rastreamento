@@ -368,8 +368,23 @@ func (s *Server) routes() chi.Router {
 				r.Post("/pix-group", s.handlePublicInvoiceGroupPix)
 				r.Post("/boleto", s.handlePublicInvoiceBoleto)
 				r.Post("/boleto-group", s.handlePublicInvoiceGroupBoleto)
+				// O cartão pela Pagar.me (sem salvar nem débito automático).
+				r.Get("/card", s.handlePublicInvoiceCard)
+				r.Post("/card", s.handlePublicInvoicePayCard)
+				r.Post("/card-group", s.handlePublicInvoicePayCardGroup)
 				r.Get("/charges/{chargeId}", s.handlePublicCharge)
 				r.Post("/charges/{chargeId}/simulate", s.handlePublicChargeSimulate)
+			})
+			// O link de todas as faturas em aberto do cliente (a central manda).
+			r.Route("/public/accounts/{token}", func(r chi.Router) {
+				r.Use(payLinkLimiter.middleware)
+				r.Get("/", s.handlePublicAccount)
+				r.Post("/pix", s.handlePublicAccountPix)
+				r.Post("/boleto", s.handlePublicAccountBoleto)
+				r.Get("/card", s.handlePublicAccountCard)
+				r.Post("/card", s.handlePublicAccountPayCard)
+				r.Get("/charges/{chargeId}", s.handlePublicAccountCharge)
+				r.Post("/charges/{chargeId}/simulate", s.handlePublicAccountChargeSimulate)
 			})
 		}
 		// Modo roubo: a posição ao vivo pelo link secreto (a tela atualiza a

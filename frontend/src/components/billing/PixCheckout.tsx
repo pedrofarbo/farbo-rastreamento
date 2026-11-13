@@ -73,7 +73,7 @@ export function usePixCheckout(invoiceId: string | null, api: PixApi, onPaid: ()
   };
   const amount = options.amountCents ?? 0;
   const card = useQuery({
-    queryKey: ['me', 'card'],
+    queryKey: api.cardKey ? ['public-card', api.cardKey] : ['me', 'card'],
     queryFn: () => api.card!(),
     enabled: Boolean(invoiceId && api.card && api.invoiceCard && amount >= 100),
   });
@@ -380,7 +380,10 @@ function CardPay({ state, description }: { state: PixCheckoutState; description?
   const checkout = useRef<AbacateCheckout | null>(null);
   const pagarme = card?.provider === 'pagarme';
   const waiting = Boolean(charge && (charge.status === 'CREATING' || charge.status === 'PENDING'));
-  const showForm = Boolean(card?.payer) && !card?.addressMissing && !useSaved && !waiting;
+  // No link sem login, o cadastro dá o pagador (os dados não vêm para a página).
+  const payerOk = Boolean(card?.payer) || Boolean(card?.payerReady);
+  const publicLink = Boolean(card?.publicLink);
+  const showForm = payerOk && !card?.addressMissing && !useSaved && !waiting;
   const filled = Boolean(fields.number && fields.holderName && fields.expiry && fields.cvv);
 
   useEffect(() => {
@@ -414,7 +417,17 @@ function CardPay({ state, description }: { state: PixCheckoutState; description?
   }, [showForm, pagarme, card?.publicKey, amountCents]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!card) return <Spinner label="Carregando o cartão…" />;
-  if (!card.payer) {
+  if (publicLink && !payerOk) {
+    return (
+      <div className={styles.pix}>
+        <p>
+          Para pagar com cartão por este link, o cadastro da conta precisa do CPF ou CNPJ, do e-mail, do celular e do
+          endereço. Pague com Pix ou boleto, ou complete o cadastro no app (em Conta) e tente de novo.
+        </p>
+      </div>
+    );
+  }
+  if (!payerOk) {
     return (
       <div className={styles.pix}>
         <p>
@@ -462,7 +475,8 @@ function CardPay({ state, description }: { state: PixCheckoutState; description?
         const { token } = await tokenizePagarmeCard(card.publicKey, fields);
         // O número e o CVV saem da tela assim que viram token.
         setFields(EMPTY_CARD);
-        payCard.mutate({ token, save: autoDebit, autoDebit });
+        // No link sem login, não salva o cartão nem liga o débito automático.
+        payCard.mutate(publicLink ? { token } : { token, save: autoDebit, autoDebit });
       } catch (err) {
         setFormError(err instanceof Error ? err.message : 'Não deu para validar o cartão.');
       } finally {
@@ -558,6 +572,7 @@ function CardPay({ state, description }: { state: PixCheckoutState; description?
               {!ready && !formError && <Spinner label="Abrindo o formulário do cartão…" />}
             </>
           )}
+          {!publicLink && (
           <label className={styles.cardConsent}>
             <input type="checkbox" checked={autoDebit} onChange={(e) => setAutoDebit(e.target.checked)} />
             <span>
@@ -566,6 +581,7 @@ function CardPay({ state, description }: { state: PixCheckoutState; description?
               Faturas.
             </span>
           </label>
+          )}
         </>
       )}
 

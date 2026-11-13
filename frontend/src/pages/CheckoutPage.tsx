@@ -307,14 +307,16 @@ export function CheckoutPage() {
           <>
             <h1 className={pre.title}>A sua proposta</h1>
             <p className={pre.lead}>
-              As condições abaixo foram preparadas para você. Informe o veículo e os seus dados e pague com Pix.
+              As condições abaixo foram preparadas para você. Informe o veículo e os seus dados e pague com{' '}
+              {o.card ? 'Pix, boleto ou cartão de crédito' : 'Pix'}.
             </p>
           </>
         ) : (
           <>
             <h1 className={pre.title}>Contrate em poucos minutos</h1>
             <p className={pre.lead}>
-              Escolha o plano, informe o veículo e pague com Pix. O rastreador vem incluso e vai para o seu endereço.
+              Escolha o plano, informe o veículo e pague com {o.card ? 'Pix, boleto ou cartão de crédito' : 'Pix'}. O
+              rastreador vem incluso e vai para o seu endereço.
             </p>
           </>
         )}
@@ -336,7 +338,7 @@ export function CheckoutPage() {
         {step === 0 && o.link && (
           <>
             <LinkOffer link={o.link} offer={o} />
-            <Total totals={totals} shippingPending={o.shippingEnabled && !o.link.handDelivery} />
+            <Total totals={totals} shippingPending={o.shippingEnabled && !o.link.handDelivery} card={o.card} />
             <button type="button" className={pre.submit} onClick={() => goTo(1)}>
               Continuar
             </button>
@@ -496,7 +498,7 @@ export function CheckoutPage() {
               </fieldset>
             )}
 
-            <Total totals={totals} shippingPending={o.shippingEnabled && !o.handDelivery} />
+            <Total totals={totals} shippingPending={o.shippingEnabled && !o.handDelivery} card={o.card} />
             <button type="button" className={pre.submit} onClick={() => goTo(1)}>
               Continuar
             </button>
@@ -681,15 +683,22 @@ export function CheckoutPage() {
 
             <div className={styles.actions}>
               <button type="submit" className={pre.submit} disabled={!ready}>
-                {sending ? 'Preparando o Pix…' : `Pagar ${formatMoney(totals.totalNowCents)} com Pix`}
+                {sending
+                  ? o.card
+                    ? 'Preparando o pagamento…'
+                    : 'Preparando o Pix…'
+                  : o.card
+                    ? `Pagar ${formatMoney(totals.totalNowCents)}`
+                    : `Pagar ${formatMoney(totals.totalNowCents)} com Pix`}
               </button>
               <button type="button" className={pre.ghost} onClick={() => goTo(2)} disabled={sending}>
                 Voltar
               </button>
             </div>
             <p className={pre.small}>
-              O Pix abre em seguida e vale para todo o pedido. A contratação só fica valendo com o pagamento: se o Pix
-              vencer sem ser pago, o cadastro é cancelado (e dá para contratar de novo).
+              {o.card
+                ? 'Em seguida, você escolhe Pix, boleto ou cartão de crédito, para todo o pedido. A contratação só fica valendo com o pagamento: se ele não for feito até o vencimento, o cadastro é cancelado (e dá para contratar de novo).'
+                : 'O Pix abre em seguida e vale para todo o pedido. A contratação só fica valendo com o pagamento: se o Pix vencer sem ser pago, o cadastro é cancelado (e dá para contratar de novo).'}
             </p>
           </>
         )}
@@ -978,7 +987,17 @@ function CouponLine({ totals }: { totals: ReturnType<typeof checkoutTotals> }) {
 }
 
 /** O total de agora, no pé das etapas antes do resumo. */
-function Total({ totals, shippingPending }: { totals: ReturnType<typeof checkoutTotals>; shippingPending: boolean }) {
+function Total({
+  totals,
+  shippingPending,
+  card = false,
+}: {
+  totals: ReturnType<typeof checkoutTotals>;
+  shippingPending: boolean;
+  /** Com o cartão ligado, o pagamento de hoje não é só Pix. */
+  card?: boolean;
+}) {
+  const today = card ? 'Hoje' : 'Hoje, no Pix';
   if (totals.periodMonths > 1) {
     return (
       <div className={styles.summary}>
@@ -991,7 +1010,7 @@ function Total({ totals, shippingPending }: { totals: ReturnType<typeof checkout
         </div>
         <CouponLine totals={totals} />
         <div className={`${styles.line} ${styles.total}`}>
-          <span>Hoje, no Pix</span>
+          <span>{today}</span>
           <span>
             {formatMoney(totals.totalNowCents)}
             {shippingPending ? ' + frete' : ''}
@@ -1014,7 +1033,7 @@ function Total({ totals, shippingPending }: { totals: ReturnType<typeof checkout
         </div>
       )}
       <div className={`${styles.line} ${styles.total}`}>
-        <span>Hoje, no Pix</span>
+        <span>{today}</span>
         <span>
           {formatMoney(totals.totalNowCents)}
           {shippingPending ? ' + frete' : ''}
@@ -1087,7 +1106,7 @@ function Summary({
         </div>
       )}
       <div className={`${styles.line} ${styles.total}`}>
-        <span>Hoje, no Pix</span>
+        <span>{offer.card ? 'Hoje' : 'Hoje, no Pix'}</span>
         <span>{freightPending ? '—' : formatMoney(totals.totalNowCents)}</span>
       </div>
       {period ? (

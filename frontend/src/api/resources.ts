@@ -79,6 +79,7 @@ import type {
   LiveLinksView,
   PublicLiveView,
   InvoiceReminder,
+  PublicAccountPay,
   PublicInvoice,
   ContractDocument,
   ContractStatus,
@@ -1402,6 +1403,33 @@ export const payLinkApi = {
         request<PixCharge>(key.endsWith(GROUP_SUFFIX) ? `${base}/pix-group` : `${base}/pix`, { method: 'POST', anonymous: true }),
       invoiceBoleto: (key: string) =>
         request<PixCharge>(key.endsWith(GROUP_SUFFIX) ? `${base}/boleto-group` : `${base}/boleto`, { method: 'POST', anonymous: true }),
+      // O cartão pela Pagar.me (sem login: só o token; o cadastro dá o pagador).
+      card: () => request<CardView>(`${base}/card`, { anonymous: true }),
+      invoiceCard: (key: string, input: CardPayInput) =>
+        request<PixCharge>(key.endsWith(GROUP_SUFFIX) ? `${base}/card-group` : `${base}/card`, {
+          method: 'POST',
+          body: { token: input.token },
+          anonymous: true,
+        }),
+      cardKey: `fatura:${token}`,
+      charge: (id: string) => request<PixCharge>(`${base}/charges/${id}`, { anonymous: true }),
+      simulateCharge: (id: string) => request<PixCharge>(`${base}/charges/${id}/simulate`, { method: 'POST', anonymous: true }),
+    };
+  },
+};
+
+/** O link de todas as faturas em aberto do cliente (sem login): um Pix, um boleto ou um cartão só para todas. */
+export const accountPayApi = {
+  view: (token: string) => request<PublicAccountPay>(`/api/public/accounts/${encodeURIComponent(token)}`, { anonymous: true }),
+  pix: (token: string): PixApi => {
+    const base = `/api/public/accounts/${encodeURIComponent(token)}`;
+    return {
+      invoicePix: () => request<PixCharge>(`${base}/pix`, { method: 'POST', anonymous: true }),
+      invoiceBoleto: () => request<PixCharge>(`${base}/boleto`, { method: 'POST', anonymous: true }),
+      card: () => request<CardView>(`${base}/card`, { anonymous: true }),
+      invoiceCard: (_key: string, input: CardPayInput) =>
+        request<PixCharge>(`${base}/card`, { method: 'POST', body: { token: input.token }, anonymous: true }),
+      cardKey: `conta:${token}`,
       charge: (id: string) => request<PixCharge>(`${base}/charges/${id}`, { anonymous: true }),
       simulateCharge: (id: string) => request<PixCharge>(`${base}/charges/${id}/simulate`, { method: 'POST', anonymous: true }),
     };
@@ -1798,6 +1826,8 @@ export interface PixApi {
   /** O cartão (só o cliente logado: o formulário pede os dados do pagador). */
   invoiceCard?: (invoiceId: string, input: CardPayInput) => Promise<PixCharge>;
   card?: () => Promise<CardView>;
+  /** O cartão de um link sem login (a chave do cache dele, separada da do cliente logado). */
+  cardKey?: string;
   charge: (id: string) => Promise<PixCharge>;
   simulateCharge: (id: string) => Promise<PixCharge>;
 }

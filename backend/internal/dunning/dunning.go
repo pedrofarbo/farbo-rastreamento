@@ -153,6 +153,39 @@ func (s *Service) PayURL(invoiceID uuid.UUID) string {
 	return s.cfg.AppURL + "/pagar/" + s.Token(invoiceID)
 }
 
+// accountDomain separa a assinatura do link da conta da do link da fatura: um
+// não vale no lugar do outro.
+var accountDomain = []byte("conta:")
+
+// AccountToken é a parte secreta do link de todas as faturas em aberto do
+// cliente: o id dele e a assinatura. Vale enquanto a conta existir; a página
+// mostra o que estiver em aberto na hora.
+func (s *Service) AccountToken(customerID uuid.UUID) string {
+	mac := hmac.New(sha256.New, s.key)
+	mac.Write(accountDomain)
+	mac.Write(customerID[:])
+	return linkEncoding.EncodeToString(append(customerID[:], mac.Sum(nil)[:16]...))
+}
+
+// AccountPayURL é o link que paga todas as faturas em aberto do cliente de uma vez.
+func (s *Service) AccountPayURL(customerID uuid.UUID) string {
+	return s.cfg.AppURL + "/pagar/conta/" + s.AccountToken(customerID)
+}
+
+// AccountCustomerID confere o link da conta e devolve o cliente dele.
+func (s *Service) AccountCustomerID(token string) (uuid.UUID, bool) {
+	token = strings.TrimSpace(token)
+	raw, err := linkEncoding.DecodeString(token)
+	if err != nil || len(raw) != 32 {
+		return uuid.Nil, false
+	}
+	id, err := uuid.FromBytes(raw[:16])
+	if err != nil || !hmac.Equal([]byte(s.AccountToken(id)), []byte(token)) {
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
 // InvoiceID confere o link e devolve a fatura dele.
 func (s *Service) InvoiceID(token string) (uuid.UUID, bool) {
 	token = strings.TrimSpace(token)

@@ -648,6 +648,17 @@ describe('a contratação pelo site', () => {
     expect(document.querySelector('a[href="/contratar"]')).toBeNull();
   });
 
+  it('com o cartão ligado: o pagamento em seguida por Pix, boleto ou cartão', async () => {
+    offer = offerWith({ card: true });
+    await render();
+    expect(text()).toContain('pague com Pix, boleto ou cartão de crédito');
+    expect(text()).not.toContain('Hoje, no Pix');
+    await fillUntilPayment();
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    expect(button('Pagar R$')?.textContent).not.toContain('com Pix');
+    expect(text()).toContain('Em seguida, você escolhe Pix, boleto ou cartão de crédito, para todo o pedido.');
+  });
+
   it('fechada na central: chama para deixar o contato', async () => {
     offer = { ...offer, enabled: false };
     await render();

@@ -70,6 +70,9 @@ type checkoutView struct {
 	// Coupons: o campo do cupom de desconto aparece (há cupom valendo, e a
 	// contratação é direta, sem o link de um representante).
 	Coupons bool `json:"coupons"`
+	// Card: o pagamento no cartão de crédito (pela Pagar.me) está ligado: a
+	// página de pagamento que abre depois oferece Pix, boleto e cartão.
+	Card bool `json:"card"`
 	// Link: pelo link de pagamento (?link=), a oferta fechada dele; os campos
 	// acima vêm com ela (sem escolha). LinkProblem: o link não vale (o
 	// motivo), e o resto é a oferta do site.
@@ -153,6 +156,7 @@ func (s *Server) handleCheckoutOffer(w http.ResponseWriter, r *http.Request) {
 		EquipmentName: c.EquipmentName, PlanRegularCents: c.PlanPriceCents, DueDay: c.DefaultDueDay,
 		Tracker:         orders.Tracker{Cents: opts.Tracker.Cents, Months: opts.Tracker.Months},
 		ShippingEnabled: s.Fulfillment != nil && s.Fulfillment.ShippingEnabled(),
+		Card:            s.publicCardEnabled(),
 	}
 	if opts.Loan.Enabled {
 		view.Loan = &opts.Loan

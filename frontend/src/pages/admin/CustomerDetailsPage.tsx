@@ -134,6 +134,19 @@ export function CustomerDetailsPage() {
     onError: (err: Error) => notify({ tone: 'error', title: 'Link não gerado', description: err.message }),
   });
 
+  // O link de todas as faturas em aberto, de qualquer vencimento, num pagamento só.
+  const copyPayAll = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      notify({
+        tone: 'success',
+        title: 'Link de todas em aberto copiado',
+        description: 'Abre sem login, com as faturas em aberto e o total, num Pix ou boleto só.',
+      });
+    } catch {
+      notify({ tone: 'error', title: 'Não deu para copiar', description: url });
+    }
+  };
   // A régua de cobrança: o link de pagamento (sem login) e o lembrete na hora.
   const copyPayLink = async (url: string) => {
     try {
@@ -203,6 +216,11 @@ export function CustomerDetailsPage() {
   const byVehicle = subscriptionsByVehicle(data.subscriptions);
   const withoutVehicle = subscriptionsWithoutVehicle(data.subscriptions);
   const awaitingInstall = data.vehicles.filter((v) => !v.device?.lastSeenAt).length;
+  // As faturas em aberto (de qualquer vencimento): o link de todas paga elas num pagamento só.
+  const openToPay = data.invoices.reduce(
+    (acc, inv) => (inv.status === 'OPEN' && inv.amountCents > 0 ? { count: acc.count + 1, cents: acc.cents + inv.amountCents } : acc),
+    { count: 0, cents: 0 },
+  );
   // O pedido mais recente de cada veículo (a lista vem do mais novo).
   const orderOf = new Map<string, (typeof data.fulfillments)[number]>();
   for (const f of data.fulfillments) if (!orderOf.has(f.vehicleId)) orderOf.set(f.vehicleId, f);
@@ -848,15 +866,27 @@ export function CustomerDetailsPage() {
           title="Faturas"
           subtitle="As mensalidades saem sozinhas antes do vencimento. Lance aqui cobranças avulsas, como a troca de um equipamento."
           actions={
-            <Button
-              size="small"
-              variant="primary"
-              onClick={() =>
-                openModal(() => setNewInvoice({ description: '', amount: '', dueDate: todayISO(), paymentUrl: '', pixCode: '' }))
-              }
-            >
-              Nova fatura avulsa
-            </Button>
+            <>
+              {data.payAllUrl && openToPay.count > 0 && (
+                <Button
+                  size="small"
+                  variant="secondary"
+                  title="Copia o link (sem login) que paga todas as faturas em aberto do cliente de uma vez, num Pix ou boleto só. O link continua valendo: mostra o que estiver em aberto quando for aberto."
+                  onClick={() => void copyPayAll(data.payAllUrl!)}
+                >
+                  Link de todas em aberto ({openToPay.count} · {formatMoney(openToPay.cents)})
+                </Button>
+              )}
+              <Button
+                size="small"
+                variant="primary"
+                onClick={() =>
+                  openModal(() => setNewInvoice({ description: '', amount: '', dueDate: todayISO(), paymentUrl: '', pixCode: '' }))
+                }
+              >
+                Nova fatura avulsa
+              </Button>
+            </>
           }
           flush
         >

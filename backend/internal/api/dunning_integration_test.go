@@ -338,4 +338,65 @@ func TestDunningEndToEnd(t *testing.T) {
 	if err := env.db.QueryRow(ctx, `SELECT COUNT(*) FROM audit_logs WHERE action = $1`, audit.ActionInvoiceReminded).Scan(&audited); err != nil || audited != 1 {
 		t.Errorf("auditoria = %d (%v)", audited, err)
 	}
+
+	// O link de todas as em aberto: na ficha; sem login, só o primeiro nome,
+	// cada fatura em aberto (de qualquer vencimento) e o total; um Pix só
+	// quita todas; depois, nada a pagar.
+	var account struct {
+		PayAllURL string `json:"payAllUrl"`
+	}
+	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/customers/"+lia.ID.String(), nil, http.StatusOK), &account)
+	const accountPrefix = "https://painel.farbo.test/pagar/conta/"
+	if !strings.HasPrefix(account.PayAllURL, accountPrefix) {
+		t.Fatalf("link da conta = %q", account.PayAllURL)
+	}
+	accountToken := strings.TrimPrefix(account.PayAllURL, accountPrefix)
+	var openCount, openCents int
+	if err := env.db.QueryRow(ctx, `SELECT count(*), COALESCE(sum(amount_cents), 0) FROM invoices
+		WHERE customer_id = $1 AND status = 'OPEN' AND amount_cents > 0`, lia.ID).Scan(&openCount, &openCents); err != nil {
+		t.Fatal(err)
+	}
+	var dues int
+	_ = env.db.QueryRow(ctx, `SELECT count(DISTINCT due_date) FROM invoices WHERE customer_id = $1 AND status = 'OPEN' AND amount_cents > 0`,
+		lia.ID).Scan(&dues)
+	type accountView struct {
+		FirstName   string `json:"firstName"`
+		AmountCents int    `json:"amountCents"`
+		Items       []struct {
+			AmountCents int  `json:"amountCents"`
+			Overdue     bool `json:"overdue"`
+		} `json:"items"`
+	}
+	raw := env.must("", http.MethodGet, "/api/public/accounts/"+accountToken, nil, http.StatusOK)
+	var av accountView
+	_ = json.Unmarshal(raw, &av)
+	if av.FirstName != "Lia" || len(av.Items) != openCount || av.AmountCents != openCents || openCount < 2 || dues < 2 {
+		t.Fatalf("link da conta = %s (em aberto: %d, %d centavos, %d vencimentos)", raw, openCount, openCents, dues)
+	}
+	for _, leak := range []string{"Souza", "lia@", lia.ID.String()} {
+		if strings.Contains(string(raw), leak) {
+			t.Errorf("o link da conta mostra %q: %s", leak, raw)
+		}
+	}
+	// O link da fatura não abre a conta, nem o da conta abre uma fatura.
+	env.must("", http.MethodGet, "/api/public/accounts/"+lateToken, nil, http.StatusNotFound)
+	env.must("", http.MethodGet, "/api/public/invoices/"+accountToken, nil, http.StatusNotFound)
+	env.must("", http.MethodGet, "/api/public/accounts/inventado", nil, http.StatusNotFound)
+	var all struct {
+		ID          string   `json:"id"`
+		AmountCents int      `json:"amountCents"`
+		InvoiceIDs  []string `json:"invoiceIds"`
+	}
+	_ = json.Unmarshal(env.must("", http.MethodPost, "/api/public/accounts/"+accountToken+"/pix", nil, http.StatusOK), &all)
+	if all.ID == "" || all.AmountCents != openCents || len(all.InvoiceIDs) != openCount {
+		t.Fatalf("pix de todas = %+v", all)
+	}
+	// O Pix de uma fatura dela também aparece pelo link da conta.
+	env.must("", http.MethodGet, "/api/public/accounts/"+accountToken+"/charges/"+charge.ID, nil, http.StatusOK)
+	env.must("", http.MethodPost, "/api/public/accounts/"+accountToken+"/charges/"+all.ID+"/simulate", nil, http.StatusOK)
+	_ = json.Unmarshal(env.must("", http.MethodGet, "/api/public/accounts/"+accountToken, nil, http.StatusOK), &av)
+	if len(av.Items) != 0 || av.AmountCents != 0 {
+		t.Fatalf("depois do Pix de todas = %+v", av)
+	}
+	env.must("", http.MethodPost, "/api/public/accounts/"+accountToken+"/pix", nil, http.StatusConflict)
 }
