@@ -203,12 +203,13 @@ func (s *Service) Touch(ctx context.Context, providerID string) error {
 	return database.MapError(err)
 }
 
-// eligible são as faturas que dão NFS-e: a mensalidade (com a parte do
+// Eligible são as faturas que dão NFS-e: a mensalidade (com a parte do
 // rastreador incluso), o proporcional, a instalação, a desinstalação, o saldo
 // do rastreador incluso no encerramento antecipado e a fatura do mês da
 // organização (o frete, o rastreador vendido antes e as avulsas da central,
-// não).
-const eligible = `(i.subscription_id IS NOT NULL OR i.description LIKE '% — proporcional de %'
+// não). O fechamento do mês usa a mesma regra para saber o que não pede a
+// nota registrada à mão.
+const Eligible = `(i.subscription_id IS NOT NULL OR i.description LIKE '% — proporcional de %'
 	OR i.description LIKE 'Instalação do rastreador%' OR i.description LIKE 'Desinstalação do rastreador%'
 	OR i.description LIKE '` + billing.TrackerBalancePrefix + `%'
 	OR EXISTS (SELECT 1 FROM organization_invoices oi WHERE oi.invoice_id = i.id))`
@@ -249,7 +250,7 @@ func (s *Service) enqueue(ctx context.Context, since time.Time) error {
 		INSERT INTO fiscal_documents (invoice_id, customer_id, amount_cents, next_try_at)
 		SELECT i.id, i.customer_id, i.amount_cents, $2
 		FROM invoices i
-		WHERE i.status = 'PAID' AND i.paid_at >= $1 AND i.amount_cents > 0 AND `+eligible+`
+		WHERE i.status = 'PAID' AND i.paid_at >= $1 AND i.amount_cents > 0 AND `+Eligible+`
 			AND NOT EXISTS (SELECT 1 FROM fiscal_documents f WHERE f.invoice_id = i.id)
 		ORDER BY i.paid_at LIMIT 200
 		ON CONFLICT (invoice_id) DO NOTHING`, since, s.now())

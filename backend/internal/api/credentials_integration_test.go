@@ -216,6 +216,7 @@ type credEnv struct {
 	installs  *appointments.Service
 	routes    *busroutes.Service
 	sms       *smssetup.Service
+	closing   *closing.Service
 
 	fwdMu     sync.Mutex
 	forwarded [][]byte // o que iria para o Redis (outras instâncias)
@@ -392,10 +393,11 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 		reportsSvc = reports.NewService(db, "UTC")
 		reportMail = reportmail.NewService(db, reportsSvc, env.vehicles, nil, nil, log)
 	}
+	env.closing = closing.NewService(db)
 	server := NewServer(Deps{
 		Geofences: fences, Reports: reportsSvc, ReportMail: reportMail, Maintenance: maintenanceSvc,
 		StepUp: stepUpSvc, Shares: sharesSvc, Theft: env.theft, Accounts: accountsSvc, Organizations: env.orgs,
-		Closing: closing.NewService(db), LiveLinks: env.liveLinks, Claims: env.claims, Inspections: env.inspects,
+		Closing: env.closing, LiveLinks: env.liveLinks, Claims: env.claims, Inspections: env.inspects,
 		Fleet: env.fleetOps, APIKeys: env.apiKeys, Webhooks: env.webhooks, Appointments: env.installs, BusRoutes: env.routes,
 		SMSSetup: env.sms, Config: cfg, Log: log, Metrics: metrics, DB: db, Auth: authSvc,
 		Devices: env.devices, Vehicles: env.vehicles, Events: eventSvc, Commands: env.commands,

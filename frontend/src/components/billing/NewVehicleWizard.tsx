@@ -155,7 +155,10 @@ function isPromoUnavailable(error: unknown): boolean {
  *
  * Sem `admin`, é o próprio cliente: preços e plano vêm do servidor e o
  * endereço de entrega é obrigatório. Com `admin`, a central escolhe valores,
- * plano e pode vincular um aparelho já instalado.
+ * plano e pode vincular um aparelho já instalado — menos para o cliente que
+ * veio por um representante (sem plano da central): aí o pedido sai nas
+ * condições dele, como o cliente veria, e a central só escolhe o que ele
+ * escolheria.
  */
 export function NewVehicleWizard({
   open,
@@ -201,6 +204,17 @@ export function NewVehicleWizard({
   const [installBlocking, setInstallBlocking] = useState(false);
 
   const catalog = useQuery({ queryKey: ['catalog'], queryFn: catalogApi.get, enabled: open });
+  // Para a central: as condições do cliente, como ele veria (as do representante que o indicou).
+  const customerCatalog = useQuery({
+    queryKey: ['customer', admin?.customerId, 'catalog'],
+    queryFn: () => customersApi.catalog(admin!.customerId),
+    enabled: open && isAdmin,
+  });
+  // O cliente de um representante: a central não escolhe valor nem plano.
+  const representative = isAdmin ? (customerCatalog.data?.representative ?? '') : '';
+  const referred = representative !== '';
+  // Os preços e as escolhas vêm do servidor: o cliente, ou a central pelo cliente do representante.
+  const priced = !isAdmin || referred;
   // Para a central: se o cliente pode contratar com a promoção de pré-lançamento.
   const promoStatus = useQuery({
     queryKey: ['customer', admin?.customerId, 'launch-promo'],
@@ -220,9 +234,8 @@ export function NewVehicleWizard({
   });
   // O cliente indicado por um afiliado com tabela: a mensalidade é a do tipo
   // do veículo escolhido.
-  const c = catalog.data?.planByKind
-    ? { ...catalog.data, planPriceCents: kindPrice(catalog.data.planByKind, vehicle.kind) }
-    : catalog.data;
+  const base = referred ? customerCatalog.data : catalog.data;
+  const c = base?.planByKind ? { ...base, planPriceCents: kindPrice(base.planByKind, vehicle.kind) } : base;
   const address = isAdmin ? (admin?.deliveryAddress ?? null) : (account.data?.deliveryAddress ?? null);
 
   useEffect(() => {
@@ -290,6 +303,19 @@ export function NewVehicleWizard({
         });
       }
       const d = adminDraft as AdminDraft;
+      if (referred && monthly) {
+        // O cliente do representante: o pedido sai nas condições dele (o servidor confere).
+        return customersApi.orderTracker(admin.customerId, {
+          vehicle: { ...vehicle, deviceId: d.deviceId || null },
+          plan: { planName: monthly.name, priceCents: monthly.cents ?? 0, dueDay: monthly.dueDay },
+          launchPromo: Boolean(customerPromo),
+          shippingServiceId: freight?.serviceId ?? 0,
+          ...(loanOffer ? { equipmentMode: mode } : {}),
+          ...(farbo ? { farboInstall: true } : {}),
+          ...(blocking ? { installBlocking: true } : {}),
+          ...(period ? { periodMonths: period.months } : {}),
+        });
+      }
       const plan = subscriptionFromDraft(d.plan);
       if (typeof plan === 'string') throw new Error(plan);
       if (typeof adminTracker === 'string') throw new Error(adminTracker);
@@ -331,16 +357,16 @@ export function NewVehicleWizard({
     },
   });
 
-  const loading = !c || (!isAdmin && account.isLoading) || (isAdmin && !adminDraft);
+  const loading = !c || (!isAdmin && account.isLoading) || (isAdmin && (!adminDraft || customerCatalog.isLoading));
   // O rastreador do cliente: o do plano definido pela central; sem ele, o que
   // ele escolhe — incluso, ou em comodato quando a central oferece.
-  const loanOffer: LoanOffer | null = !isAdmin && c && !c.planTerms ? (c.loan ?? null) : null;
+  const loanOffer: LoanOffer | null = priced && c && !c.planTerms ? (c.loan ?? null) : null;
   // Pelo link de um afiliado só de comodato: o comodato, sem a escolha.
   const onlyLoan = loanOffer !== null && c?.equipmentModes === 'loan';
   useEffect(() => {
     if (onlyLoan && mode !== 'loan') setMode('loan');
   }, [onlyLoan, mode]);
-  const terms: EquipmentTerms | null = isAdmin
+  const terms: EquipmentTerms | null = !priced
     ? (admin?.accountPlan ?? null)
     : c
       ? loanOffer && mode === 'loan'
@@ -350,31 +376,31 @@ export function NewVehicleWizard({
   const loan = terms?.equipmentMode === 'loan';
   // O cliente veio pelo link de um representante: ele instala, desinstala e
   // recebe direto (os preços aparecem, mas não entram na cobrança).
-  const direct = !isAdmin && Boolean(c?.installDirect);
+  const direct = priced && Boolean(c?.installDirect);
   // A instalação pelos instaladores da Farbo no rastreador incluso (no
   // comodato, ela já é da Farbo, com a taxa dele).
   const installService = c?.install ?? null;
   const farbo = !loan && farboInstall && installService !== null;
   // A instalação com o relé do bloqueio: pelo representante que oferece a
   // escolha, no comodato ou com a instalação contratada.
-  const blockingCents = !isAdmin ? (installService?.blockingCents ?? 0) : 0;
+  const blockingCents = priced ? (installService?.blockingCents ?? 0) : 0;
   const blocking = installBlocking && blockingCents > 0 && (loan || farbo);
   const installFee = loan && !direct ? (blocking ? blockingCents : (terms?.installFeeCents ?? 0)) : 0;
   const farboCents = farbo && !direct ? (blocking ? blockingCents : (installService?.priceCents ?? 0)) : 0;
   // O semestral ou o anual do representante que indicou o cliente (pessoa
   // física): o valor do período, sem a parte do rastreador nem a promoção.
-  const periods = !isAdmin ? (c?.periods ?? []) : [];
+  const periods = priced ? (c?.periods ?? []) : [];
   const period = periodMonths > 1 ? (periods.find((p) => p.months === periodMonths) ?? null) : null;
   // A promoção do cliente vem do catálogo (só com o rastreador incluso, no
   // mensal); a da central, da opção marcada.
-  const customerPromo = !isAdmin && !loan && !period ? (c?.launchPromo ?? null) : null;
-  const adminPromo = isAdmin && adminDraft?.promo && promoStatus.data?.eligible ? promoStatus.data.offer : null;
+  const customerPromo = priced && !loan && !period ? (c?.launchPromo ?? null) : null;
+  const adminPromo = !priced && adminDraft?.promo && promoStatus.data?.eligible ? promoStatus.data.offer : null;
   const promo = customerPromo ?? adminPromo;
   // A do cliente já vem no plano dele; a da central depende do plano escolhido.
   const promoMonthly = adminPromo && adminDraft ? promoMonthlyFor(adminPromo, adminDraft.plan.planName) : promo?.monthlyCents;
   // O cliente sem endereço salvo cai direto no formulário.
   const editingAddress = !isAdmin && (addressDraft !== null || !address);
-  const monthly = isAdmin
+  const monthly = !priced
     ? adminDraft
       ? { name: adminDraft.plan.planName, cents: parseMoney(adminDraft.plan.price), dueDay: adminDraft.plan.dueDay }
       : null
@@ -393,9 +419,9 @@ export function NewVehicleWizard({
   // cliente; o da central, como ela definiu (pela regra, a parte é somada
   // abaixo do preço do site). No comodato, nenhum.
   const sitePlanCents = c?.sitePlanCents ?? 0;
-  const adminMode = isAdmin && adminDraft ? trackerMode(adminDraft.tracker, monthly?.cents ?? null, sitePlanCents) : null;
-  const adminTracker = isAdmin && adminDraft && adminMode ? trackerFromDraft(adminDraft.tracker, adminMode) : null;
-  const tracker = loan || period ? null : isAdmin ? (adminTracker && typeof adminTracker !== 'string' ? adminTracker : null) : (c?.tracker ?? null);
+  const adminMode = !priced && adminDraft ? trackerMode(adminDraft.tracker, monthly?.cents ?? null, sitePlanCents) : null;
+  const adminTracker = !priced && adminDraft && adminMode ? trackerFromDraft(adminDraft.tracker, adminMode) : null;
+  const tracker = loan || period ? null : !priced ? (adminTracker && typeof adminTracker !== 'string' ? adminTracker : null) : (c?.tracker ?? null);
   const trackerAdd = tracker && tracker.added && tracker.cents > 0 && tracker.months > 0 ? tracker : null;
 
   // O frete: as formas de entrega até o endereço salvo, na última etapa.
@@ -426,7 +452,7 @@ export function NewVehicleWizard({
   const payNow = isAdmin ? Boolean(admin?.payNow) : Boolean(c?.payNow);
   const today = todayISO();
   const chargeDate =
-    !isAdmin && c?.chargeDate
+    priced && c?.chargeDate
       ? c.chargeDate
       : payNow
         ? addDays(today, c?.setupDueDays ?? 0)
@@ -451,7 +477,7 @@ export function NewVehicleWizard({
   const next = () => {
     if (step === 0) return goTo(1);
     if (step === 1) {
-      if (isAdmin && !loan && typeof adminTracker === 'string') return setError(adminTracker);
+      if (!priced && !loan && typeof adminTracker === 'string') return setError(adminTracker);
       if (editingAddress) {
         setError('');
         return saveAddress.mutate(addressDraft ?? EMPTY_ADDRESS);
@@ -479,6 +505,81 @@ export function NewVehicleWizard({
         : isAdmin
           ? 'Confirmar'
           : 'Confirmar pedido';
+
+  // As escolhas do pedido nas condições do cliente (o rastreador, o período, a promoção e a instalação):
+  // o próprio cliente, ou a central pelo cliente do representante.
+  const choices = c ? (
+    <>
+      {loanOffer && !onlyLoan && (
+        <EquipmentChoice
+          mode={mode}
+          onChange={setMode}
+          offer={loanOffer}
+          catalog={c}
+          direct={direct}
+        />
+      )}
+      {periods.length > 0 && (
+        <PeriodChoice
+          periods={periods}
+          value={period?.months ?? 1}
+          onChange={setPeriodMonths}
+          loan={loan}
+          monthlyCents={c.planPriceCents + (loan ? (loanOffer?.surchargeCents ?? 0) : 0)}
+        />
+      )}
+      {customerPromo && (
+        <div className={styles.promoBanner}>
+          <strong>Promoção de pré-lançamento</strong> — {isAdmin ? 'o cliente está' : 'você está'} na lista de lançamento: mensalidade de{' '}
+          {formatMoney(customerPromo.monthlyCents)} nos {customerPromo.months} primeiros meses.
+        </div>
+      )}
+      {loan ? (
+        <>
+          <LoanNote terms={terms!} payNow={payNow} direct={direct} />
+          {blockingCents > 0 && (
+            <BlockingChoice
+              blocking={installBlocking}
+              onChange={setInstallBlocking}
+              plainCents={terms?.installFeeCents ?? 0}
+              blockingCents={blockingCents}
+              direct={direct}
+              when={when}
+            />
+          )}
+        </>
+      ) : (
+        <>
+          <IncludedNote equipmentName={c.equipmentName} tracker={tracker} />
+          {installService ? (
+            <InstallChoice
+              farbo={farboInstall}
+              onChange={(on, relay) => {
+                setFarboInstall(on);
+                setInstallBlocking(relay);
+              }}
+              priceCents={installService.priceCents}
+              blockingCents={blockingCents}
+              blocking={installBlocking}
+              when={when}
+              direct={direct}
+              onInstallers={() => setShowInstallers(true)}
+            />
+          ) : (
+            <div className={styles.installNote}>
+              <span>
+                <strong>Instalação:</strong> é feita por um prestador parceiro e paga direto a ele —
+                não entra na fatura.
+              </span>
+              <Button size="small" variant="secondary" onClick={() => setShowInstallers(true)}>
+                Ver prestadores
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  ) : null;
 
   return (
     <>
@@ -550,7 +651,14 @@ export function NewVehicleWizard({
                   optionLabel={(device) => `Já instalado: ${deviceOptionLabel(device)}`}
                   onChange={(deviceId) => setAdminDraft({ ...adminDraft, deviceId })}
                 />
-                {promoStatus.data?.eligible ? (
+                {referred && (
+                  <div className={styles.promoBanner} role="note">
+                    <strong>Cliente do representante {representative}</strong> — o veículo sai nas condições dele: a
+                    mensalidade, o rastreador, a instalação, as taxas e o semestral ou o anual. Para outro valor, defina
+                    um plano para a conta na ficha do cliente.
+                  </div>
+                )}
+                {referred ? null : promoStatus.data?.eligible ? (
                   <label className={styles.promoOption}>
                     <input
                       type="checkbox"
@@ -582,7 +690,9 @@ export function NewVehicleWizard({
                     </div>
                   )
                 )}
-                {loan ? (
+                {referred ? (
+                  choices
+                ) : loan ? (
                   <LoanNote terms={terms!} payNow={payNow} direct={direct} />
                 ) : (
                   <TrackerFields
@@ -606,7 +716,8 @@ export function NewVehicleWizard({
                       </div>
                     </div>
                   ))}
-                {!loan &&
+                {!referred &&
+                  !loan &&
                   (installService ? (
                     <label className={styles.promoOption}>
                       <input type="checkbox" checked={farboInstall} onChange={(e) => setFarboInstall(e.target.checked)} />
@@ -640,85 +751,25 @@ export function NewVehicleWizard({
                 ) : (
                   address && <DeliveryBox address={address} onChange={() => setAddressDraft(address)} />
                 )}
-                {loanOffer && !onlyLoan && (
-                  <EquipmentChoice
-                    mode={mode}
-                    onChange={setMode}
-                    offer={loanOffer}
-                    catalog={c}
-                    direct={direct}
-                  />
-                )}
-                {periods.length > 0 && (
-                  <PeriodChoice
-                    periods={periods}
-                    value={period?.months ?? 1}
-                    onChange={setPeriodMonths}
-                    loan={loan}
-                    monthlyCents={c.planPriceCents + (loan ? (loanOffer?.surchargeCents ?? 0) : 0)}
-                  />
-                )}
-                {customerPromo && (
-                  <div className={styles.promoBanner}>
-                    <strong>Promoção de pré-lançamento</strong> — você está na lista de lançamento: mensalidade de{' '}
-                    {formatMoney(customerPromo.monthlyCents)} nos {customerPromo.months} primeiros meses.
-                  </div>
-                )}
-                {loan ? (
-                  <>
-                    <LoanNote terms={terms!} payNow={payNow} direct={direct} />
-                    {blockingCents > 0 && (
-                      <BlockingChoice
-                        blocking={installBlocking}
-                        onChange={setInstallBlocking}
-                        plainCents={terms?.installFeeCents ?? 0}
-                        blockingCents={blockingCents}
-                        direct={direct}
-                        when={when}
-                      />
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <IncludedNote equipmentName={c.equipmentName} tracker={tracker} />
-                    {installService ? (
-                      <InstallChoice
-                        farbo={farboInstall}
-                        onChange={(on, relay) => {
-                          setFarboInstall(on);
-                          setInstallBlocking(relay);
-                        }}
-                        priceCents={installService.priceCents}
-                        blockingCents={blockingCents}
-                        blocking={installBlocking}
-                        when={when}
-                        direct={direct}
-                        onInstallers={() => setShowInstallers(true)}
-                      />
-                    ) : (
-                      <div className={styles.installNote}>
-                        <span>
-                          <strong>Instalação:</strong> é feita por um prestador parceiro e paga direto a ele —
-                          não entra na fatura.
-                        </span>
-                        <Button size="small" variant="secondary" onClick={() => setShowInstallers(true)}>
-                          Ver prestadores
-                        </Button>
-                      </div>
-                    )}
-                  </>
-                )}
+                {choices}
               </>
             )}
 
             {step === 2 && (
               <>
-                {admin && adminDraft ? (
+                {admin && adminDraft && !referred ? (
                   <SubscriptionFields
                     draft={adminDraft.plan}
                     onChange={(plan) => setAdminDraft({ ...adminDraft, plan })}
                     lockedDueDay={admin.accountDueDay ?? null}
                   />
+                ) : referred && monthly ? (
+                  <p className={pageStyles.description}>
+                    {period
+                      ? `A assinatura sai no ${period.planName} do representante ${representative}: ${formatMoney(monthly.cents ?? 0)} a cada ${period.months} meses, no dia ${monthly.dueDay}.`
+                      : `A assinatura sai no ${monthly.name} do representante ${representative}: ${formatMoney(monthly.cents ?? 0)} por mês${trackerAdd ? `, mais ${formatMoney(trackerAdd.cents)} nas ${trackerAdd.months} primeiras (a parte do rastreador incluso)` : ''}, no dia ${monthly.dueDay}.`}{' '}
+                    {payNow ? 'O pedido vence no ato.' : `Tudo entra na fatura de ${formatDateOnly(chargeDate)}.`}
+                  </p>
                 ) : (
                   <p className={pageStyles.description}>
                     {period

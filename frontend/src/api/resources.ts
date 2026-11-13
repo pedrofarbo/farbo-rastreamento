@@ -12,6 +12,8 @@ import type {
   AwaitingInstall,
   AwaitingUninstall,
   CheckoutInput,
+  CheckoutLink,
+  CheckoutLinkInput,
   CheckoutOffer,
   Coupon,
   CouponInput,
@@ -649,9 +651,11 @@ export const organizationsApi = {
 
 /** A contratação rápida pelo site (sem login): a oferta, o frete até o CEP e o pedido com Pix. */
 export const checkoutApi = {
-  /** A oferta; pelo link de um afiliado (ref), com a tabela dele por tipo de veículo. */
-  offer: (ref = '') =>
-    request<CheckoutOffer>(`/api/public/checkout${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`, { anonymous: true }),
+  /** A oferta; pelo link de um afiliado (ref), com a tabela dele por tipo de veículo; pelo link de pagamento, a dele. */
+  offer: (ref = '', link = '') => {
+    const query = new URLSearchParams(link ? { link } : ref ? { ref } : {}).toString();
+    return request<CheckoutOffer>(`/api/public/checkout${query ? `?${query}` : ''}`, { anonymous: true });
+  },
   /** As formas de entrega; pelo link do representante que entrega em mãos (ref), só ela, sem frete. */
   shipping: (address: DeliveryAddress, ref = '') =>
     request<ShippingQuoteView>(`/api/public/checkout/shipping${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`, {
@@ -664,6 +668,14 @@ export const checkoutApi = {
   /** Confere o cupom: o desconto e em quantas cobranças, ou o motivo de não valer. */
   coupon: (code: string) =>
     request<CouponOffer>(`/api/public/checkout/coupon?${new URLSearchParams({ code })}`, { anonymous: true }),
+};
+
+/** Os links de pagamento, cada um com uma oferta fechada (central). */
+export const checkoutLinksApi = {
+  list: () => api.get<CheckoutLink[]>('/api/checkout-links'),
+  create: (input: CheckoutLinkInput) => api.post<CheckoutLink>('/api/checkout-links', input),
+  update: (id: string, input: CheckoutLinkInput) => api.put<CheckoutLink>(`/api/checkout-links/${id}`, input),
+  remove: (id: string) => api.delete<void>(`/api/checkout-links/${id}`),
 };
 
 /** Os cupons de desconto da contratação direta pelo site (central). */
@@ -1258,6 +1270,8 @@ export const customersApi = {
   /** Assinatura antiga sem veículo: informa qual veículo ela cobre. */
   attachVehicle: (customerId: string, subscriptionId: string, input: VehicleInput) =>
     api.post<Vehicle>(`/api/customers/${customerId}/subscriptions/${subscriptionId}/vehicle`, input),
+  /** Os preços e as condições de um veículo novo do cliente, como ele veria (as do representante que o indicou). */
+  catalog: (customerId: string) => api.get<Catalog>(`/api/customers/${customerId}/catalog`),
   /** Nova assinatura para um veículo que ficou sem nenhuma ativa. */
   reactivate: (customerId: string, vehicleId: string, plan: SubscriptionInput) =>
     api.post<Subscription>(`/api/customers/${customerId}/vehicles/${vehicleId}/subscription`, plan),
@@ -1277,6 +1291,13 @@ export interface AdminTrackerOrder {
   shippingServiceId?: number;
   /** O rastreador incluso instalado pelos instaladores da Farbo, no preço das opções do pedido. */
   farboInstall?: boolean;
+  /**
+   * Do cliente que veio por um representante (sem plano da central), o pedido sai nas condições dele (plan e
+   * tracker não contam): o rastreador que ele oferece, a instalação com bloqueio e o semestral ou o anual dele.
+   */
+  equipmentMode?: 'sale' | 'loan';
+  installBlocking?: boolean;
+  periodMonths?: number;
 }
 
 export interface FleetImportRequest {

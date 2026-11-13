@@ -82,6 +82,11 @@ const (
 	ActionCouponCreated = "COUPON_CREATED"
 	ActionCouponUpdated = "COUPON_UPDATED"
 	ActionCouponDeleted = "COUPON_DELETED"
+	// ActionCheckoutLinkCreated / Updated / Deleted: a central mexeu num link
+	// de pagamento (a oferta fechada da contratação).
+	ActionCheckoutLinkCreated = "CHECKOUT_LINK_CREATED"
+	ActionCheckoutLinkUpdated = "CHECKOUT_LINK_UPDATED"
+	ActionCheckoutLinkDeleted = "CHECKOUT_LINK_DELETED"
 	// ActionOrderCanceled: a central cancelou o pedido de um veículo (antes do
 	// envio), com o motivo e o que foi pago a devolver.
 	ActionOrderCanceled        = "ORDER_CANCELED"

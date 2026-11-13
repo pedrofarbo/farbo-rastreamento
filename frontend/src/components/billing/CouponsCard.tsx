@@ -50,7 +50,7 @@ export function CouponsCard() {
   return (
     <Card
       title="Cupons de desconto"
-      subtitle="Na contratação direta pelo site (/contratar), sem o link de um representante: o desconto sai da mensalidade nas primeiras cobranças e o valor normal volta sozinho. Sem nenhum cupom valendo, o site não mostra o campo."
+      subtitle="Na contratação direta pelo site (/contratar), sem o link de um representante: o desconto sai da mensalidade nas primeiras cobranças (e o valor normal volta sozinho) ou em todas, para sempre. Sem nenhum cupom valendo, o site não mostra o campo."
       actions={
         <Button variant="primary" size="small" onClick={() => setOpen('new')}>
           Novo cupom

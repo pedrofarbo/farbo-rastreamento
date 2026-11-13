@@ -1,9 +1,11 @@
 // Package closing é o fechamento do mês: para cada pagador — o cliente ou a
 // associação/seguradora — o que foi faturado no mês (as faturas que vencem
-// nele, pagas ou não: competência) e a nota fiscal dele. A nota é emitida
-// fora (no emissor da empresa); aqui a central registra o número, a data, o
-// valor e o arquivo (PDF ou XML), e o cliente e a organização baixam na tela
-// de faturas.
+// nele, pagas ou não: competência) e a nota fiscal dele. Com a Notaas ligada,
+// a NFS-e de cada fatura paga sai sozinha (pacote fiscal) e o fechamento só
+// mostra; a nota registrada aqui é a que a Notaas não emite (as faturas pagas
+// antes de ela começar, ou tudo, com ela desligada): emitida fora (no emissor
+// da empresa), a central registra o número, a data, o valor e o arquivo (PDF
+// ou XML), e o cliente e a organização baixam na tela de faturas.
 package closing
 
 import (
@@ -20,6 +22,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/finance"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fiscal"
 )
 
 // MaxFileBytes: o PDF ou o XML de uma nota cabem com folga.
@@ -44,6 +47,17 @@ type Note struct {
 	UpdatedAt   time.Time    `json:"updatedAt"`
 }
 
+// AutoNote é a NFS-e que a Notaas emite sozinha para uma fatura paga do mês:
+// a emitida, a que está saindo e a recusada (a cancelada, da fatura
+// estornada, não entra).
+type AutoNote struct {
+	ID          uuid.UUID `json:"id"`
+	InvoiceID   uuid.UUID `json:"invoiceId"`
+	Status      string    `json:"status"`
+	Number      string    `json:"number"`
+	AmountCents int       `json:"amountCents"`
+}
+
 // Line é um pagador no fechamento do mês.
 type Line struct {
 	PayerID uuid.UUID `json:"payerId"`
@@ -58,22 +72,40 @@ type Line struct {
 	AmountCents int   `json:"amountCents"`
 	PaidCents   int   `json:"paidCents"`
 	Note        *Note `json:"note"`
+	// AutoNotes: as notas da Notaas das faturas do mês.
+	AutoNotes []*AutoNote `json:"autoNotes"`
+	// Upcoming: as faturas do mês que ganham a nota da Notaas quando pagas.
+	Upcoming int `json:"upcoming"`
+	// NeedsNote: alguma fatura do mês precisa da nota registrada aqui, porque
+	// a Notaas não emite: desligada, ou a fatura paga antes de ela começar.
+	// Com ela ligada, o frete, o rastreador vendido e as avulsas não dão nota
+	// de serviço (como no pacote fiscal).
+	NeedsNote bool `json:"needsNote"`
 }
 
 // Month é o fechamento de um mês.
 type Month struct {
 	Month string  `json:"month"`
 	Lines []*Line `json:"lines"`
-	// Os totais: o faturado, o pago e quantas notas faltam.
+	// Os totais: o faturado, o pago, as notas registradas aqui, quantas
+	// faltam registrar e as emitidas pela Notaas.
 	AmountCents  int `json:"amountCents"`
 	PaidCents    int `json:"paidCents"`
 	Notes        int `json:"notes"`
 	MissingNotes int `json:"missingNotes"`
+	AutoNotes    int `json:"autoNotes"`
 }
 
-type Service struct{ db *database.DB }
+type Service struct {
+	db *database.DB
+	// auto: a NFS-e sai sozinha pela Notaas (config.Fiscal.Enabled).
+	auto bool
+}
 
 func NewService(db *database.DB) *Service { return &Service{db: db} }
+
+// SetAutoNotes diz se a Notaas emite a nota das faturas pagas sozinha.
+func (s *Service) SetAutoNotes(on bool) { s.auto = on }
 
 // ParseMonth lê "AAAA-MM" e devolve o primeiro dia do mês.
 func ParseMonth(raw string) (time.Time, error) {
@@ -101,23 +133,43 @@ func scanNote(row database.Scanner) (*Note, error) {
 // Close é o fechamento do mês: cada pagador com o que foi faturado e a nota.
 func (s *Service) Close(ctx context.Context, month time.Time) (*Month, error) {
 	end := month.AddDate(0, 1, 0)
+	// Desde quando a Notaas emite (nulo: a rotina ainda não começou).
+	var since *time.Time
+	if s.auto {
+		if err := s.db.QueryRow(ctx, `SELECT started_at FROM fiscal_settings`).Scan(&since); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, database.MapError(err)
+		}
+	}
+	var start time.Time
+	if since != nil {
+		start = *since
+	}
+	// A fatura sem nota da Notaas pede a nota registrada aqui: todas, com
+	// ela desligada; com ela ligada, só a que dá nota de serviço e foi paga
+	// antes de ela começar. A que ainda vai ser paga ganha a nota da Notaas.
 	rows, err := s.db.Query(ctx, `
 		SELECT u.id, u.role, u.name, u.document, u.email, count(*),
 			COALESCE(sum(i.amount_cents), 0),
-			COALESCE(sum(i.amount_cents) FILTER (WHERE i.status = 'PAID'), 0)
+			COALESCE(sum(i.amount_cents) FILTER (WHERE i.status = 'PAID'), 0),
+			count(*) FILTER (WHERE i.amount_cents > 0 AND NOT EXISTS (SELECT 1 FROM fiscal_documents f WHERE f.invoice_id = i.id)
+				AND (NOT $3 OR (`+fiscal.Eligible+` AND i.status = 'PAID' AND (i.paid_at IS NULL OR i.paid_at < $4)))),
+			count(*) FILTER (WHERE $3 AND i.amount_cents > 0 AND NOT EXISTS (SELECT 1 FROM fiscal_documents f WHERE f.invoice_id = i.id)
+				AND `+fiscal.Eligible+` AND NOT (i.status = 'PAID' AND (i.paid_at IS NULL OR i.paid_at < $4)))
 		FROM invoices i JOIN users u ON u.id = i.customer_id
 		WHERE i.status <> 'CANCELED' AND i.due_date >= $1 AND i.due_date < $2
 		GROUP BY u.id
-		ORDER BY lower(u.name), u.id`, month, end)
+		ORDER BY lower(u.name), u.id`, month, end, since != nil, start)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
 	out := &Month{Month: month.Format("2006-01"), Lines: []*Line{}}
 	byPayer := map[uuid.UUID]*Line{}
 	for rows.Next() {
-		var l Line
+		l := Line{AutoNotes: []*AutoNote{}}
 		var role string
-		if err := rows.Scan(&l.PayerID, &role, &l.Name, &l.Document, &l.Email, &l.Invoices, &l.AmountCents, &l.PaidCents); err != nil {
+		var needs int
+		if err := rows.Scan(&l.PayerID, &role, &l.Name, &l.Document, &l.Email, &l.Invoices, &l.AmountCents, &l.PaidCents,
+			&needs, &l.Upcoming); err != nil {
 			rows.Close()
 			return nil, database.MapError(err)
 		}
@@ -125,6 +177,7 @@ func (s *Service) Close(ctx context.Context, month time.Time) (*Month, error) {
 		if role == "organization" {
 			l.Kind = "organization"
 		}
+		l.NeedsNote = needs > 0
 		out.Lines = append(out.Lines, &l)
 		byPayer[l.PayerID] = &l
 		out.AmountCents += l.AmountCents
@@ -132,6 +185,34 @@ func (s *Service) Close(ctx context.Context, month time.Time) (*Month, error) {
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
+		return nil, database.MapError(err)
+	}
+
+	// As notas da Notaas das faturas do mês (pelo pagador da fatura).
+	auto, err := s.db.Query(ctx, `
+		SELECT f.id, f.invoice_id, i.customer_id, f.status, f.number, f.amount_cents
+		FROM fiscal_documents f JOIN invoices i ON i.id = f.invoice_id
+		WHERE i.status <> 'CANCELED' AND i.due_date >= $1 AND i.due_date < $2 AND f.status NOT IN ('cancel_pending', 'cancelled')
+		ORDER BY f.issued_at NULLS LAST, f.created_at, f.id`, month, end)
+	if err != nil {
+		return nil, database.MapError(err)
+	}
+	for auto.Next() {
+		var n AutoNote
+		var payer uuid.UUID
+		if err := auto.Scan(&n.ID, &n.InvoiceID, &payer, &n.Status, &n.Number, &n.AmountCents); err != nil {
+			auto.Close()
+			return nil, database.MapError(err)
+		}
+		if l := byPayer[payer]; l != nil {
+			l.AutoNotes = append(l.AutoNotes, &n)
+			if n.Status == fiscal.StatusIssued {
+				out.AutoNotes++
+			}
+		}
+	}
+	auto.Close()
+	if err := auto.Err(); err != nil {
 		return nil, database.MapError(err)
 	}
 
@@ -155,7 +236,7 @@ func (s *Service) Close(ctx context.Context, month time.Time) (*Month, error) {
 	for _, l := range out.Lines {
 		if l.Note != nil {
 			out.Notes++
-		} else if l.AmountCents > 0 {
+		} else if l.NeedsNote {
 			out.MissingNotes++
 		}
 	}

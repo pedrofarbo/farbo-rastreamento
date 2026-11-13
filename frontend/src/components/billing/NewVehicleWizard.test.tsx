@@ -18,6 +18,9 @@ const accepted: unknown[] = [];
 // Os pedidos que o assistente concluiu; o rastreador do cliente (incluso ou comodato).
 const done: unknown[] = [];
 let terms: Record<string, unknown> = {};
+// Para a central: as condições do cliente como ele veria (as do representante, quando é o caso).
+let customerCatalog: Record<string, unknown> | null = null;
+const adminOrdered: unknown[] = [];
 vi.mock('@/api/resources', () => ({
   catalogApi: {
     get: async () => ({
@@ -44,6 +47,15 @@ vi.mock('@/api/resources', () => ({
     saveAddress: async () => ({}),
   },
   customersApi: {
+    catalog: async () =>
+      customerCatalog ?? {
+        planName: 'Plano Mensal', planPriceCents: 6990, defaultDueDay: 10, equipmentName: 'Rastreador J16', setupDueDays: 3,
+        tracker: { cents: 1200, months: 10, added: false }, sitePlanCents: 6990, launchPromo: null,
+      },
+    orderTracker: async (id: string, input: unknown) => {
+      adminOrdered.push([id, input]);
+      return { vehicle: {}, subscription: {}, chargeDate: '2026-10-26', setupInvoice: null, shipping: null };
+    },
     launchPromo: async () => promoStatus,
     grantLaunchPromo: async () => {
       promoStatus = { ...promoStatus, eligible: true, reason: '', code: '', grantedAt: '2026-10-09T12:00:00Z' };
@@ -122,6 +134,8 @@ afterEach(() => {
   done.length = 0;
   needsContract = false;
   terms = {};
+  customerCatalog = null;
+  adminOrdered.length = 0;
 });
 
 describe('a fatura do mês', () => {
@@ -557,5 +571,65 @@ describe('frete no pedido', () => {
     await flush();
     expect(accepted).toEqual([['1', '529.982.247-25']]);
     expect(ordered).toEqual([{ vehicle: expect.objectContaining({ name: 'Moto do trabalho' }), launchPromo: false }]);
+  });
+});
+
+describe('o cliente de um representante no Novo veículo da central', () => {
+  it('as condições dele, como o cliente veria: sem valor nem plano para digitar, e o pedido vai com as escolhas', async () => {
+    promoStatus = {
+      eligible: false, reason: 'o e-mail da conta não está na lista de lançamento', code: 'NOT_ON_LIST',
+      offer: { equipmentCents: 12000, monthlyCents: 3490, insanosMonthlyCents: 2790, insanosPlanName: 'Especial Insanos MC', months: 12 },
+      onList: false, grantedAt: null, claimed: false,
+    };
+    customerCatalog = {
+      planName: 'Plano Mensal', planPriceCents: 4990, defaultDueDay: 10, equipmentName: 'Rastreador J16', setupDueDays: 3,
+      planByKind: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 }, tracker: { cents: 1200, months: 10, added: true },
+      sitePlanCents: 6990, launchPromo: null, payNow: true, chargeDate: '2026-10-26',
+      install: { enabled: true, priceCents: 9000, blockingCents: 16000 },
+      representative: 'Rui Representante',
+    };
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    await act(async () =>
+      createRoot(host).render(
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <MemoryRouter>
+            <ToastProvider>
+              <NewVehicleWizard
+                open
+                admin={{ customerId: 'c1', devices: [], deliveryAddress: null, currentPlan: null, payNow: true }}
+                onClose={() => undefined}
+                onDone={() => undefined}
+              />
+            </ToastProvider>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      ),
+    );
+    await flush();
+    const name = Array.from(document.querySelectorAll('input')).find((i) => i.closest('div')?.textContent?.includes('Apelido')) as HTMLInputElement;
+    await act(async () => type(name, 'Carro da Bia'));
+    await act(async () => button('Continuar').click());
+    await flush();
+    expect(text()).toContain('Cliente do representante Rui Representante');
+    // Sem a promoção nem a parte do rastreador para a central definir: as escolhas do cliente.
+    expect(text()).not.toContain('Promoção de pré-lançamento:');
+    const options = () => Array.from(document.querySelectorAll<HTMLInputElement>('input[name="install-choice"]'));
+    expect(options()).toHaveLength(3);
+    expect(text()).toContain('Com os instaladores da Farbo, com bloqueio');
+    await act(async () => options()[2].click());
+    await act(async () => button('Continuar').click());
+    await flush();
+    expect(document.body.textContent).not.toContain('Valor mensal (R$)');
+    expect(text()).toContain('A assinatura sai no Plano Mensal do representante Rui Representante: R$ 49,90 por mês, mais R$ 12,00 nas 10 primeiras');
+    await act(async () => button('Confirmar').click());
+    await flush();
+    expect(adminOrdered).toHaveLength(1);
+    const [id, input] = adminOrdered[0] as [string, Record<string, unknown>];
+    expect(id).toBe('c1');
+    expect(input).toMatchObject({
+      plan: { planName: 'Plano Mensal', priceCents: 4990, dueDay: 10 }, farboInstall: true, installBlocking: true, launchPromo: false,
+    });
+    expect(input).not.toHaveProperty('tracker');
   });
 });

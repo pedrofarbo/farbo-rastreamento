@@ -51,6 +51,7 @@ import { formatTaxId } from '@/services/taxid';
 import { stepOf, trackerTone } from '@/services/fulfillment';
 import { useFleet } from '@/hooks/useFleet';
 import { historyRows } from '@/services/invoiceGroups';
+import { kindPrice } from '@/services/kindPrices';
 import { accountDueDay, activeDueDays, subscriptionsByVehicle, subscriptionsWithoutVehicle } from '@/services/subscriptions';
 import { HISTORY_RETENTION_OPTIONS, retentionLabel } from '@/types';
 import type { HistoryRetention, Invoice, PixPayment, ReminderKind, Subscription, VehicleView } from '@/types';
@@ -92,6 +93,19 @@ export function CustomerDetailsPage() {
   const [profile, setProfile] = useState<{ name: string; phone: string; document: string } | null>(null);
   // Veículo sem assinatura ativa: nova assinatura para ele.
   const [reactivate, setReactivate] = useState<{ vehicle: VehicleView; draft: SubscriptionDraft } | null>(null);
+  // A reativação do cliente de um representante: a mensalidade dele para o tipo do veículo.
+  const reactivateCatalog = useQuery({
+    queryKey: ['customer', id, 'catalog'],
+    queryFn: () => customersApi.catalog(id),
+    enabled: reactivate !== null,
+  });
+  const reactivateRep = reactivate && reactivateCatalog.data?.representative ? reactivateCatalog.data : null;
+  const reactivateRepCents =
+    reactivateRep && reactivate
+      ? reactivateRep.planByKind
+        ? kindPrice(reactivateRep.planByKind, reactivate.vehicle.kind)
+        : reactivateRep.planPriceCents
+      : 0;
   const [editSubscription, setEditSubscription] = useState<{ sub: Subscription; planName: string; price: string; dueDay: number } | null>(null);
   // A fatura em aberto que a central está alterando (vencimento, parcelamento).
   const [adjusting, setAdjusting] = useState<Invoice | null>(null);
@@ -1144,7 +1158,9 @@ export function CustomerDetailsPage() {
               loading={action.isPending}
               onClick={() => {
                 if (!reactivate) return;
-                const plan = subscriptionFromDraft(reactivate.draft);
+                const plan = reactivateRep
+                  ? { planName: reactivateRep.planName, priceCents: reactivateRepCents, dueDay: reactivate.draft.dueDay }
+                  : subscriptionFromDraft(reactivate.draft);
                 if (typeof plan === 'string') return setFormError(plan);
                 run('Assinatura reativada', () => customersApi.reactivate(id, reactivate.vehicle.id, plan));
               }}
@@ -1157,10 +1173,18 @@ export function CustomerDetailsPage() {
         {reactivate && (
           <div className={styles.form}>
             {formError && <div className={styles.note}>{formError}</div>}
-            <SubscriptionFields
-              draft={reactivate.draft}
-              onChange={(draft) => setReactivate({ ...reactivate, draft })}
-            />
+            {reactivateRep ? (
+              <p className={styles.note} role="note">
+                Cliente do representante {reactivateRep.representative}: a assinatura sai no {reactivateRep.planName}, por{' '}
+                {formatMoney(reactivateRepCents)} por mês (a condição dele para o tipo do veículo), no dia {reactivate.draft.dueDay}.
+                Para outro valor, defina um plano para a conta.
+              </p>
+            ) : (
+              <SubscriptionFields
+                draft={reactivate.draft}
+                onChange={(draft) => setReactivate({ ...reactivate, draft })}
+              />
+            )}
             <p className={billing.muted}>
               Sem fatura de equipamento: o rastreador já está com o cliente. A primeira mensalidade já sai em
               aberto, com vencimento no próximo dia escolhido.

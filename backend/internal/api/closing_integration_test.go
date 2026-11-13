@@ -160,3 +160,116 @@ func TestMonthlyClosing(t *testing.T) {
 		t.Errorf("depois de tirar = %+v", mine)
 	}
 }
+
+// Com a Notaas ligada, a fatura com a nota dela (a da contratação, paga na
+// hora) não pede a nota registrada à mão; nem a que ainda vai ser paga, nem
+// a que não dá nota de serviço (o frete, a avulsa). Só a paga antes de a
+// Notaas começar fica por emitir. Precisa de FARBO_TEST_DATABASE_URL.
+func TestMonthlyClosingWithNotaas(t *testing.T) {
+	env := newCredEnv(t)
+	ctx := context.Background()
+	user := func(email, name, role string) *auth.User {
+		t.Helper()
+		u, err := env.auth.CreateUser(ctx, email, name, role, userPassword)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return u
+	}
+	user("admin@notaas.test", "Central", auth.RoleAdmin)
+	central := env.tokenFor("admin@notaas.test")
+	cris := user("cris@notaas.test", "Cris", auth.RoleCustomer)
+	davi := user("davi@notaas.test", "Davi", auth.RoleCustomer)
+	eva := user("eva@notaas.test", "Eva", auth.RoleCustomer)
+	fabio := user("fabio@notaas.test", "Fabio", auth.RoleCustomer)
+	gil := user("gil@notaas.test", "Gil", auth.RoleCustomer)
+
+	if _, err := env.db.Exec(ctx, `UPDATE fiscal_settings SET started_at = '2026-11-01 10:00:00+00'`); err != nil {
+		t.Fatal(err)
+	}
+	invoice := func(customer uuid.UUID, description string, cents int, due, status, paidAt string) uuid.UUID {
+		t.Helper()
+		var id uuid.UUID
+		if err := env.db.QueryRow(ctx, `INSERT INTO invoices (customer_id, description, amount_cents, due_date, status, paid_at)
+			VALUES ($1, $2, $3, $4, $5, NULLIF($6, '')::timestamptz) RETURNING id`, customer, description, cents, due, status, paidAt).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	document := func(invoiceID, customer uuid.UUID, status, number string, cents int) {
+		t.Helper()
+		if _, err := env.db.Exec(ctx, `INSERT INTO fiscal_documents (invoice_id, customer_id, status, number, amount_cents, issued_at)
+			VALUES ($1, $2, $3, $4, $5, CASE WHEN $3 = 'issued' THEN NOW() END)`, invoiceID, customer, status, number, cents); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A Cris contratou e pagou na hora: o frete (sem nota), a instalação
+	// (nota emitida) e o proporcional (nota na prefeitura).
+	invoice(cris.ID, "Frete do rastreador: PAC", 2500, "2026-11-12", "PAID", "2026-11-12 15:00:00+00")
+	document(invoice(cris.ID, "Instalação do rastreador (comodato): Gol", 15000, "2026-11-12", "PAID", "2026-11-12 15:00:00+00"),
+		cris.ID, "issued", "1001", 15000)
+	document(invoice(cris.ID, "Plano Mensal — proporcional de 12/11 a 10/12: Gol", 6000, "2026-11-12", "PAID", "2026-11-12 15:00:00+00"),
+		cris.ID, "processing", "", 6000)
+	// O Davi ainda não pagou: a nota sai quando pagar.
+	invoice(davi.ID, "Instalação do rastreador (instaladores Farbo): Uno", 9000, "2026-11-20", "OPEN", "")
+	// A Eva pagou antes de a Notaas começar: fica por emitir.
+	invoice(eva.ID, "Desinstalação do rastreador: Fusca", 8000, "2026-11-05", "PAID", "2026-10-30 12:00:00+00")
+	// A nota do Fabio foi recusada (a central manda de novo pela ficha).
+	document(invoice(fabio.ID, "Instalação do rastreador (comodato): Kombi", 15000, "2026-11-10", "PAID", "2026-11-10 12:00:00+00"),
+		fabio.ID, "error", "", 15000)
+	// O Gil pagou uma avulsa: não dá nota de serviço.
+	invoice(gil.ID, "Segunda via do chip", 3000, "2026-11-08", "PAID", "2026-11-08 12:00:00+00")
+
+	closeMonth := func() (closing.Month, map[string]*closing.Line) {
+		t.Helper()
+		var month closing.Month
+		_ = json.Unmarshal(env.must(central, http.MethodGet, "/api/closing/?mes=2026-11", nil, http.StatusOK), &month)
+		byName := map[string]*closing.Line{}
+		for _, l := range month.Lines {
+			byName[l.Name] = l
+		}
+		return month, byName
+	}
+
+	// Sem a Notaas ligada, tudo o que não tem nota dela pede a nota à mão.
+	if month, _ := closeMonth(); month.MissingNotes != 4 {
+		t.Fatalf("sem a Notaas: faltam %d notas, esperava 4 (Cris, Davi, Eva e Gil): %+v", month.MissingNotes, month)
+	}
+
+	env.closing.SetAutoNotes(true)
+	month, byName := closeMonth()
+	if len(month.Lines) != 5 || month.MissingNotes != 1 || month.AutoNotes != 1 || month.Notes != 0 {
+		t.Fatalf("com a Notaas = %+v", month)
+	}
+	if c := byName["Cris"]; c == nil || c.NeedsNote || c.Invoices != 3 || len(c.AutoNotes) != 2 || c.AutoNotes[0].Number != "1001" ||
+		c.AutoNotes[0].Status != "issued" || c.AutoNotes[1].Status != "processing" || c.Upcoming != 0 {
+		t.Errorf("Cris = %+v", c)
+	}
+	if d := byName["Davi"]; d == nil || d.NeedsNote || d.Upcoming != 1 || len(d.AutoNotes) != 0 {
+		t.Errorf("Davi = %+v", d)
+	}
+	if e := byName["Eva"]; e == nil || !e.NeedsNote || len(e.AutoNotes) != 0 || e.Upcoming != 0 {
+		t.Errorf("Eva = %+v", e)
+	}
+	if f := byName["Fabio"]; f == nil || f.NeedsNote || len(f.AutoNotes) != 1 || f.AutoNotes[0].Status != "error" {
+		t.Errorf("Fabio = %+v", f)
+	}
+	if g := byName["Gil"]; g == nil || g.NeedsNote || g.Upcoming != 0 || len(g.AutoNotes) != 0 {
+		t.Errorf("Gil = %+v", g)
+	}
+	csv := string(env.must(central, http.MethodGet, "/api/closing/export.csv?mes=2026-11", nil, http.StatusOK))
+	for _, want := range []string{";;;;1001;150,00;Saindo pela Notaas", "Davi;Cliente;", ";Saindo pela Notaas", ";Por emitir",
+		";Nota da Notaas recusada", ";Sem nota de serviço"} {
+		if !strings.Contains(csv, want) {
+			t.Errorf("planilha sem %q:\n%s", want, csv)
+		}
+	}
+
+	// A rotina da Notaas ainda não começou: como desligada.
+	if _, err := env.db.Exec(ctx, `UPDATE fiscal_settings SET started_at = NULL`); err != nil {
+		t.Fatal(err)
+	}
+	if month, _ := closeMonth(); month.MissingNotes != 4 || month.AutoNotes != 1 {
+		t.Errorf("antes de a rotina começar = %+v", month)
+	}
+}

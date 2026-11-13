@@ -2,6 +2,7 @@ package orders
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -30,6 +31,9 @@ type CheckoutChoice struct {
 	// Coupon: o cupom de desconto, só na contratação direta (sem o link de
 	// um representante).
 	Coupon string
+	// Link: o código do link de pagamento: o pedido sai com a oferta dele,
+	// e as escolhas acima (menos o veículo) não contam.
+	Link string
 }
 
 // CheckoutOrder monta o pedido da contratação rápida pela landing (a pessoa
@@ -45,6 +49,24 @@ func (s *Service) CheckoutOrder(ctx context.Context, in CheckoutChoice) (Order, 
 	opts, err := s.Options(ctx)
 	if err != nil {
 		return Order{}, err
+	}
+	// Pelo link de pagamento: a oferta dele, também com a contratação pelo
+	// site fechada. Conferido aqui (a pessoa vê o motivo antes de criar a
+	// conta) e de novo, travado, na gravação do pedido.
+	if strings.TrimSpace(in.Link) != "" {
+		switch {
+		case in.Affiliate != nil:
+			return Order{}, ValidationError{"o link de pagamento não vale junto com o link de um representante"}
+		case NormalizeCouponCode(in.Coupon) != "":
+			return Order{}, ValidationError{"o link de pagamento já tem o valor dele: não vale junto com cupom"}
+		}
+		link, err := s.CheckoutLinkFor(ctx, in.Link)
+		if err != nil {
+			return Order{}, err
+		}
+		vehicle := in.Vehicle
+		vehicle.DeviceID, vehicle.OwnerID = nil, nil
+		return s.linkOrder(opts, link, vehicle), nil
 	}
 	if !opts.Checkout.Enabled {
 		return Order{}, ValidationError{"a contratação pelo site está fechada agora: deixe o seu contato que a gente fala com você"}

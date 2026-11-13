@@ -65,6 +65,13 @@ export function FleetImportModal({
   onDone: (result: FleetImportResult) => void;
 }) {
   const catalog = useQuery({ queryKey: ['catalog'], queryFn: catalogApi.get, enabled: open });
+  // O cliente de um representante (sem plano da central): a frota sai nas condições dele, pelo servidor.
+  const customerCatalog = useQuery({
+    queryKey: ['customer', admin.customerId, 'catalog'],
+    queryFn: () => customersApi.catalog(admin.customerId),
+    enabled: open,
+  });
+  const referral = customerCatalog.data?.representative ? customerCatalog.data : null;
   const fileRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState(0);
   const [fileName, setFileName] = useState('');
@@ -387,7 +394,42 @@ export function FleetImportModal({
             </>
           )}
 
-          {step === 2 && check && planDraft && (
+          {step === 2 && check && planDraft && referral && (
+            <>
+              <p className={pageStyles.note} role="note">
+                Cliente do representante {referral.representative}: cada veículo sai nas condições dele — a mensalidade
+                pelo tipo do veículo, o rastreador e as taxas. Para outro valor, defina um plano para a conta na ficha do
+                cliente.
+              </p>
+              <div className={styles.orderSummary}>
+                <div className={styles.orderLine}>
+                  <span>Veículos</span>
+                  <strong>{count}</strong>
+                </div>
+                <div className={styles.orderLine}>
+                  <span>
+                    {referral.tracker.added && referral.tracker.cents > 0
+                      ? `Rastreador incluso: + ${formatMoney(referral.tracker.cents)} nas ${referral.tracker.months} primeiras mensalidades de cada veículo`
+                      : 'Rastreador incluso, já no preço da mensalidade'}
+                  </span>
+                  <span>sem cobrança</span>
+                </div>
+                <div className={styles.orderLine}>
+                  <span>
+                    Mensalidade de cada veículo, todo dia {referral.defaultDueDay} (a 1ª na fatura de{' '}
+                    {formatDateOnly(nextChargeDate(referral.defaultDueDay, todayISO()))}, com o proporcional dos dias até lá)
+                  </span>
+                  <span>
+                    {referral.planByKind
+                      ? `moto ${formatMoney(referral.planByKind.motorcycleCents)} · carro ${formatMoney(referral.planByKind.carCents)} · caminhão ${formatMoney(referral.planByKind.truckCents)}`
+                      : formatMoney(referral.planPriceCents)}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
+
+          {step === 2 && check && planDraft && !referral && (
             <>
               {loan ? (
                 <p className={pageStyles.note}>

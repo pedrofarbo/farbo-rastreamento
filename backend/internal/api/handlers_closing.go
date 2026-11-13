@@ -16,13 +16,15 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/billing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/closing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/fiscal"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/reports"
 )
 
 // O fechamento do mês e a nota fiscal: a central vê o que cada pagador (o
-// cliente ou a associação/seguradora) teve faturado no mês, registra a nota
-// emitida (número, data, valor e o PDF ou XML) e exporta a planilha para a
-// contabilidade; o cliente e a organização baixam as notas deles.
+// cliente ou a associação/seguradora) teve faturado no mês e as notas da
+// Notaas, registra a nota que a Notaas não emite (número, data, valor e o
+// PDF ou XML) e exporta a planilha para a contabilidade; o cliente e a
+// organização baixam as notas deles.
 
 func writeClosingError(w http.ResponseWriter, err error, notFound string) bool {
 	var input *closing.InputError
@@ -77,15 +79,27 @@ func (s *Server) handleClosingCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows := [][]string{{"Pagador", "Tipo", "CPF/CNPJ", "E-mail", "Linhas de fatura", "Faturado (R$)", "Pago (R$)",
-		"Nota", "Emitida em", "Valor da nota (R$)"}}
+		"Nota", "Emitida em", "Valor da nota (R$)", "Notas da Notaas", "Valor das notas da Notaas (R$)", "Situação da nota"}}
 	for _, l := range out.Lines {
 		kind := "Cliente"
 		if l.Kind == "organization" {
 			kind = "Associação/seguradora"
 		}
-		row := []string{l.Name, kind, l.Document, l.Email, strconv.Itoa(l.Invoices), reais(l.AmountCents), reais(l.PaidCents), "", "", ""}
+		row := []string{l.Name, kind, l.Document, l.Email, strconv.Itoa(l.Invoices), reais(l.AmountCents), reais(l.PaidCents),
+			"", "", "", "", "", closingNoteStatus(l)}
 		if l.Note != nil {
 			row[7], row[8], row[9] = l.Note.Number, l.Note.IssuedOn.Format("02/01/2006"), reais(l.Note.AmountCents)
+		}
+		var numbers []string
+		issuedCents := 0
+		for _, n := range l.AutoNotes {
+			if n.Status == fiscal.StatusIssued {
+				numbers = append(numbers, n.Number)
+				issuedCents += n.AmountCents
+			}
+		}
+		if len(numbers) > 0 {
+			row[10], row[11] = strings.Join(numbers, ", "), reais(issuedCents)
 		}
 		rows = append(rows, row)
 	}
@@ -93,6 +107,33 @@ func (s *Server) handleClosingCSV(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="farbo-fechamento-`+out.Month+`.csv"`)
 	w.Header().Set("Cache-Control", "no-store")
 	_ = reports.WriteCSV(w, rows)
+}
+
+// closingNoteStatus é a situação da nota do pagador no mês, para a planilha.
+func closingNoteStatus(l *closing.Line) string {
+	pending, refused := 0, 0
+	for _, n := range l.AutoNotes {
+		switch n.Status {
+		case fiscal.StatusError:
+			refused++
+		case fiscal.StatusPending, fiscal.StatusProcessing, fiscal.StatusBlocked:
+			pending++
+		}
+	}
+	switch {
+	case l.NeedsNote && l.Note == nil:
+		return "Por emitir"
+	case refused > 0:
+		return "Nota da Notaas recusada"
+	case pending > 0 || l.Upcoming > 0:
+		return "Saindo pela Notaas"
+	case l.Note != nil:
+		return "Registrada"
+	case len(l.AutoNotes) > 0:
+		return "Emitida pela Notaas"
+	default:
+		return "Sem nota de serviço"
+	}
 }
 
 // handleSaveFiscalNote registra a nota emitida (formulário com o arquivo):

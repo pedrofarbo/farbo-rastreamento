@@ -210,7 +210,23 @@ export interface ClosingLine {
   invoices: number;
   amountCents: number;
   paidCents: number;
+  /** A nota registrada à mão (a que a Notaas não emite). */
   note: FiscalNote | null;
+  /** As notas da Notaas das faturas do mês (sem as canceladas). */
+  autoNotes?: ClosingAutoNote[];
+  /** As faturas do mês que ganham a nota da Notaas quando pagas. */
+  upcoming?: number;
+  /** Alguma fatura do mês precisa da nota registrada à mão. */
+  needsNote?: boolean;
+}
+
+/** A nota que a Notaas emite sozinha para uma fatura paga. */
+export interface ClosingAutoNote {
+  id: string;
+  invoiceId: string;
+  status: FiscalDocument['status'];
+  number: string;
+  amountCents: number;
 }
 
 /** O fechamento de um mês: o faturado de cada pagador e as notas. */
@@ -219,8 +235,11 @@ export interface ClosingMonth {
   lines: ClosingLine[];
   amountCents: number;
   paidCents: number;
+  /** As notas registradas à mão e quantas faltam registrar. */
   notes: number;
   missingNotes: number;
+  /** As notas emitidas pela Notaas. */
+  autoNotes?: number;
 }
 
 /** O começo do painel da organização. */
@@ -1819,6 +1838,8 @@ export interface Catalog {
    * física), com o valor no comodato; ausente, só o mensal.
    */
   periods?: PeriodOffer[];
+  /** O representante cujas condições valem na contratação do cliente (sem plano da central para a conta). */
+  representative?: string;
 }
 
 /**
@@ -1892,7 +1913,43 @@ export interface CheckoutOffer {
   periods?: PeriodOffer[];
   /** O campo do cupom de desconto: há cupom valendo, e a contratação é direta (sem o link de um representante). */
   coupons?: boolean;
+  /** Pelo link de pagamento (?link=): a oferta fechada dele; os campos acima já vêm com ela, sem escolha. */
+  link?: CheckoutLinkOffer | null;
+  /** O link de pagamento não vale (o motivo); o resto é a oferta do site. */
+  linkProblem?: string;
 }
+
+/** A oferta fechada de um link de pagamento, como o site mostra. */
+export interface CheckoutLinkOffer {
+  token: string;
+  equipmentMode: 'sale' | 'loan';
+  /** 1: o mensal; 6: o semestral; 12: o anual. */
+  periodMonths: number;
+  /** O valor de cada cobrança (o mês, o semestre ou o ano), com tudo dentro. */
+  priceCents: number;
+  /** A Farbo instala (no comodato, sempre); sem isso, por conta própria. */
+  farboInstall: boolean;
+  installCents: number;
+  uninstallCents: number;
+  installBlocking: boolean;
+  validUntil: DateOnly | null;
+}
+
+/** Um link de pagamento (central): a oferta fechada, para quem é e quantas contratações já o usaram. */
+export interface CheckoutLink extends Omit<CheckoutLinkOffer, 'validUntil'> {
+  id: string;
+  /** Para quem ou para quê (só a central vê). */
+  label: string;
+  validUntil: DateOnly | null;
+  maxUses: number | null;
+  active: boolean;
+  uses: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** O que a central informa para criar ou mudar um link (o código sai sozinho). */
+export type CheckoutLinkInput = Omit<CheckoutLink, 'id' | 'token' | 'uses' | 'createdAt' | 'updatedAt'>;
 
 /** Um cupom válido, como o site mostra: a porcentagem ou o valor fixo, em quantas das primeiras cobranças (nulo: para sempre). */
 export interface CouponOffer {
@@ -1956,6 +2013,8 @@ export interface CheckoutInput {
   installBlocking?: boolean;
   /** O cupom de desconto (só sem o link de um representante). */
   coupon?: string;
+  /** O código do link de pagamento: o pedido sai com a oferta dele. */
+  link?: string;
   vehicle: { kind: VehicleKind; name: string; brand: string; model: string; plate: string };
   name: string;
   email: string;

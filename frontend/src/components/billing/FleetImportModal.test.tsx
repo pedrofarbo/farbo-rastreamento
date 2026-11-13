@@ -10,6 +10,8 @@ import type { FleetImportResult, FleetSettings } from '@/types';
 const calls: FleetImportRequest[] = [];
 // A conferência do servidor recusa a placa da 2ª linha na primeira vez.
 let refuse = true;
+// As condições do cliente (as do representante que o indicou, quando é o caso).
+let customerCatalog: Record<string, unknown> | null = null;
 vi.mock('@/api/resources', () => ({
   catalogApi: {
     get: async () => ({
@@ -18,6 +20,11 @@ vi.mock('@/api/resources', () => ({
     }),
   },
   customersApi: {
+    catalog: async () =>
+      customerCatalog ?? {
+        planName: 'Plano Mensal', planPriceCents: 6990, defaultDueDay: 10, equipmentName: 'Rastreador J16', setupDueDays: 3,
+        tracker: { cents: 1200, months: 10, added: false }, sitePlanCents: 6990, launchPromo: null,
+      },
     importFleet: async (_customerId: string, input: FleetImportRequest) => {
       calls.push(input);
       if (refuse) {
@@ -38,7 +45,7 @@ import { FleetImportModal } from './FleetImportModal';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const flush = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
-const text = () => (document.body.textContent ?? '').replace(/ /g, ' ');
+const text = () => (document.body.textContent ?? '').replace(/\u00a0/g, ' ');
 const button = (label: string | RegExp) =>
   Array.from(document.querySelectorAll('button')).find((b) =>
     typeof label === 'string' ? b.textContent === label : label.test(b.textContent ?? ''),
@@ -65,6 +72,7 @@ afterEach(() => {
   document.body.innerHTML = '';
   calls.length = 0;
   refuse = true;
+  customerCatalog = null;
 });
 
 describe('a frota por planilha', () => {
@@ -125,5 +133,39 @@ describe('a frota por planilha', () => {
       { vehicle: { name: 'Van 02', plate: 'XYZ9A99' }, group: 'Norte', imei: '' },
     ]);
     expect(done).toHaveLength(1);
+  });
+
+  it('o cliente de um representante: a frota nas condições dele, sem plano nem rastreador para definir', async () => {
+    refuse = false;
+    customerCatalog = {
+      planName: 'Plano Mensal', planPriceCents: 4990, defaultDueDay: 10, equipmentName: 'Rastreador J16', setupDueDays: 3,
+      planByKind: { motorcycleCents: 3990, carCents: 4990, truckCents: 5990 }, tracker: { cents: 1200, months: 10, added: true },
+      sitePlanCents: 6990, launchPromo: null, representative: 'Rui Representante',
+    };
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    await act(async () =>
+      createRoot(host).render(
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <FleetImportModal
+            open
+            fleet={fleet}
+            admin={{ customerId: 'c1', devices: [], deliveryAddress: null, currentPlan: null, accountPlan: null }}
+            onClose={() => undefined}
+            onDone={() => undefined}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    await flush();
+    await upload('Nome;Placa\nVan 01;ABC1D23\n');
+    await act(async () => button('Continuar').click());
+    expect(text()).toContain('Cliente do representante Rui Representante');
+    expect(text()).toContain('moto R$ 39,90 · carro R$ 49,90 · caminhão R$ 59,90');
+    expect(text()).toContain('Rastreador incluso: + R$ 12,00 nas 10 primeiras mensalidades de cada veículo');
+    expect(document.body.textContent).not.toContain('Valor mensal (R$)');
+    await act(async () => button('Importar 1 veículo').click());
+    await flush();
+    expect(calls[calls.length - 1].dryRun).toBe(false);
   });
 });

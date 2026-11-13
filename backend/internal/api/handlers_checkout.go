@@ -70,6 +70,47 @@ type checkoutView struct {
 	// Coupons: o campo do cupom de desconto aparece (há cupom valendo, e a
 	// contratação é direta, sem o link de um representante).
 	Coupons bool `json:"coupons"`
+	// Link: pelo link de pagamento (?link=), a oferta fechada dele; os campos
+	// acima vêm com ela (sem escolha). LinkProblem: o link não vale (o
+	// motivo), e o resto é a oferta do site.
+	Link        *orders.CheckoutLinkOffer `json:"link,omitempty"`
+	LinkProblem string                    `json:"linkProblem,omitempty"`
+}
+
+// withLink troca a oferta pela do link de pagamento: o rastreador, a
+// recorrência e o valor dele, a instalação (com ou sem bloqueio) e as taxas,
+// sem escolha, sem cupom e sem o link de um representante; vale também com a
+// contratação pelo site fechada.
+func withLink(view *checkoutView, opts *orders.Options, l *orders.CheckoutLink) {
+	offer := l.Offer()
+	loan := l.EquipmentMode == billing.EquipmentLoan
+	view.Link, view.Enabled, view.Coupons = &offer, true, false
+	view.PlanByKind, view.InstallDirect, view.HandDelivery = nil, false, ""
+	view.EquipmentModes, view.Tracker, view.Periods = l.EquipmentMode, orders.Tracker{}, nil
+	view.Loan, view.Install = nil, nil
+	if l.PeriodMonths > 1 {
+		p := periodOffer{Months: l.PeriodMonths, PlanName: orders.PeriodPlanName(l.PeriodMonths), Cents: l.PriceCents}
+		if loan {
+			p.LoanCents = l.PriceCents
+		}
+		view.Periods = []periodOffer{p}
+	} else {
+		view.PlanCents = l.PriceCents
+		if !loan {
+			// A parte do rastreador incluso já está no valor (encerrado antes,
+			// o que falta vence de uma vez).
+			view.Tracker = orders.Tracker{Cents: opts.Tracker.Cents, Months: opts.Tracker.Months}
+		}
+	}
+	if loan {
+		view.Loan = &orders.LoanOffer{Enabled: true, InstallFeeCents: l.InstallCents, UninstallFeeCents: l.UninstallCents}
+	}
+	if loan || l.FarboInstall {
+		view.Install = &orders.InstallService{Enabled: true, PriceCents: l.InstallCents}
+		if l.InstallBlocking {
+			view.Install.BlockingCents = l.InstallCents
+		}
+	}
 }
 
 // periodOffers são o semestral e o anual ligados (vazio: só o mensal); com o
@@ -119,6 +160,23 @@ func (s *Server) handleCheckoutOffer(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Contract != nil {
 		view.ContractVersion = s.Contract.Current().Version
+	}
+	// Pelo link de pagamento: a oferta dele (sem o representante e sem cupom).
+	if token := r.URL.Query().Get("link"); token != "" {
+		link, err := s.Orders.CheckoutLinkFor(r.Context(), token)
+		var invalid orders.ValidationError
+		switch {
+		case errors.As(err, &invalid):
+			view.LinkProblem = invalid.Message
+		case err != nil:
+			handleStoreError(w, err, "contratação indisponível")
+			return
+		default:
+			withLink(&view, opts, link)
+			w.Header().Set("Cache-Control", "no-store")
+			writeJSON(w, http.StatusOK, view)
+			return
+		}
 	}
 	if affiliate := s.referralFor(r, r.URL.Query().Get("ref")); affiliate != nil {
 		if view.PlanByKind, err = s.Orders.AffiliatePrices(r.Context(), *affiliate); err != nil {
@@ -240,7 +298,10 @@ type checkoutRequest struct {
 	// do representante oferece a escolha.
 	InstallBlocking bool `json:"installBlocking"`
 	// Coupon: o cupom de desconto (só sem o link de um representante).
-	Coupon  string         `json:"coupon"`
+	Coupon string `json:"coupon"`
+	// Link: o código do link de pagamento (a oferta fechada dele; o
+	// representante do aparelho não conta).
+	Link    string         `json:"link"`
 	Vehicle vehicles.Input `json:"vehicle"`
 	Name    string         `json:"name"`
 	Email   string         `json:"email"`
@@ -283,6 +344,15 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	// Pelo link de pagamento, a contratação sai na oferta dele (sem a tabela,
+	// a instalação e a entrega do representante), mas a conta fica com o
+	// representante guardado no aparelho: os próximos veículos seguem as
+	// condições dele.
+	byLink := strings.TrimSpace(req.Link) != ""
+	affiliate := s.referralFor(r, req.Ref)
+	if byLink {
+		affiliate = nil
+	}
 	document := payments.Digits(req.Document)
 	switch {
 	case req.Insanos:
@@ -316,8 +386,8 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	// não deixa conta pela metade.
 	order, err := s.Orders.CheckoutOrder(ctx, orders.CheckoutChoice{
 		EquipmentMode: req.EquipmentMode, FarboInstall: req.FarboInstall, Vehicle: req.Vehicle,
-		Affiliate: s.referralFor(r, req.Ref), PeriodMonths: req.PeriodMonths, InstallBlocking: req.InstallBlocking,
-		Coupon: req.Coupon,
+		Affiliate: affiliate, PeriodMonths: req.PeriodMonths, InstallBlocking: req.InstallBlocking,
+		Coupon: req.Coupon, Link: req.Link,
 	})
 	if err != nil {
 		writeOrderError(w, r, err, "contratação indisponível")
@@ -330,11 +400,15 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "informe o veículo")
 		return
 	}
-	// Pelo link do representante que entrega em mãos: sem frete.
-	handBy, err := s.linkHandDelivery(r, req.Ref)
-	if err != nil {
-		handleStoreError(w, err, "contratação indisponível")
-		return
+	// Pelo link do representante que entrega em mãos: sem frete (pelo link
+	// de pagamento, a entrega de sempre).
+	handBy := ""
+	if !byLink {
+		var err error
+		if handBy, err = s.linkHandDelivery(r, req.Ref); err != nil {
+			handleStoreError(w, err, "contratação indisponível")
+			return
+		}
 	}
 	if handBy != "" {
 		order.Shipping = fulfillment.HandDelivery(handBy)
@@ -485,6 +559,9 @@ func (s *Server) checkoutLead(r *http.Request, user *auth.User, address addresse
 		vehicleType = "caminhao"
 	}
 	message := "Contratou pelo site, com Pix."
+	if strings.TrimSpace(req.Link) != "" {
+		plan, message = "Link de pagamento", "Contratou pelo link de pagamento da central, com Pix."
+	}
 	if event := leads.EventSlug(req.Event); event != "" {
 		message = "Contratou pelo site, com Pix, vindo do evento " + event + "."
 	}

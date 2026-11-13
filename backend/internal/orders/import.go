@@ -42,6 +42,10 @@ type Import struct {
 	// Terms: incluso ou comodato e as taxas (os do plano do cliente).
 	Terms Terms
 	Plan  billing.SubscriptionInput
+	// KindPrices: a tabela do representante que indicou o cliente — a
+	// mensalidade de cada veículo pelo tipo dele (mais a garantia de troca
+	// dos Terms); nula, a do plano para todos.
+	KindPrices *vehicles.KindPrices
 	// DryRun só confere a planilha: nada é gravado.
 	DryRun bool
 }
@@ -158,6 +162,8 @@ func (s *Service) ImportFleet(ctx context.Context, customerID uuid.UUID, in Impo
 		if err != nil {
 			return err
 		}
+		// O proporcional de cada veículo (pela tabela, cada tipo tem o seu).
+		prorataCents, prorataDays := 0, 0
 		for i, row := range in.Rows {
 			v := row.Vehicle
 			v.OwnerID, v.DeviceID = &customerID, plan.devices[i]
@@ -171,6 +177,11 @@ func (s *Service) ImportFleet(ctx context.Context, customerID uuid.UUID, in Impo
 				return fmt.Errorf("linha %d: %w", i+1, err)
 			}
 			sub := *template
+			if in.KindPrices != nil {
+				sub.PriceCents = in.KindPrices.For(vehicle.Kind) + in.Terms.GuaranteeCents
+			}
+			cents, days := billing.Prorata(sub.PriceOn(due), today, due)
+			prorataCents, prorataDays = prorataCents+cents, days
 			sub.VehicleID = &vehicle.ID
 			if vehicle.DeviceID == nil {
 				sub.DeliveryAddress = address
@@ -197,11 +208,11 @@ func (s *Service) ImportFleet(ctx context.Context, customerID uuid.UUID, in Impo
 				return err
 			}
 		}
-		if cents, days := billing.Prorata(template.PriceOn(due), today, due); cents > 0 {
+		if prorataCents > 0 {
 			if result.ProrataInvoice, err = billing.InsertInvoice(ctx, tx, &billing.Invoice{
 				CustomerID:  customerID,
-				Description: fmt.Sprintf("%s × %d", billing.ProrataDescription(template.PlanName, today, due, days), n),
-				AmountCents: cents * n, DueDate: due,
+				Description: fmt.Sprintf("%s × %d", billing.ProrataDescription(template.PlanName, today, due, prorataDays), n),
+				AmountCents: prorataCents, DueDate: due,
 			}); err != nil {
 				return err
 			}

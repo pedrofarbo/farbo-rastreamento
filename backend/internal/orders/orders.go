@@ -88,6 +88,10 @@ type Order struct {
 	// site): a mensalidade com o desconto nas primeiras cobranças. Não vai
 	// junto com a promoção de pré-lançamento.
 	Coupon string
+	// Link: o código do link de pagamento de onde veio o pedido (montado
+	// pela oferta dele em linkOrder); conferido de novo, travado, na
+	// gravação, e o uso fica com a assinatura.
+	Link string
 }
 
 // Result é o que a contratação criou. Tudo vence em ChargeDate: no ato, para
@@ -110,6 +114,8 @@ type Result struct {
 	FirstInvoice *billing.Invoice `json:"firstInvoice"`
 	// Shipping é a entrega escolhida (nula: sem frete).
 	Shipping *fulfillment.Choice `json:"shipping"`
+	// CheckoutLinkID é o link de pagamento de onde veio o pedido (nulo: nenhum).
+	CheckoutLinkID *uuid.UUID `json:"checkoutLinkId,omitempty"`
 }
 
 type Service struct {
@@ -154,6 +160,9 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 	}
 	if o.Coupon != "" && o.LaunchPromo {
 		return nil, ValidationError{"o cupom não vale junto com a promoção de pré-lançamento"}
+	}
+	if o.Link != "" && (o.Coupon != "" || o.LaunchPromo) {
+		return nil, ValidationError{"o link de pagamento já tem o valor dele: não vale junto com cupom ou promoção"}
 	}
 	loan := o.Terms.EquipmentMode == billing.EquipmentLoan
 	if loan {
@@ -205,6 +214,13 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 				return err
 			}
 		}
+		var link *CheckoutLink
+		if o.Link != "" {
+			var err error
+			if link, err = s.useCheckoutLink(ctx, tx, o.Link); err != nil {
+				return err
+			}
+		}
 		var coupon *Coupon
 		var couponDiscount int
 		if o.Coupon != "" {
@@ -252,6 +268,13 @@ func (s *Service) Place(ctx context.Context, customerID uuid.UUID, o Order) (*Re
 				VALUES ($1, $2, $3, $4)`, result.Subscription.ID, coupon.ID, customerID, couponDiscount); err != nil {
 				return err
 			}
+		}
+		if link != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO checkout_link_uses (subscription_id, link_id, customer_id) VALUES ($1, $2, $3)`,
+				result.Subscription.ID, link.ID, customerID); err != nil {
+				return err
+			}
+			result.CheckoutLinkID = &link.ID
 		}
 		if o.LaunchPromo {
 			// A vaga fica com o cliente; a linha, com esta assinatura (a
@@ -466,7 +489,6 @@ type CustomerChoice struct {
 // CustomerOrder monta o pedido feito pelo próprio cliente, com os preços dele
 // (CustomerPrices) — ele não escolhe valor.
 func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehicle vehicles.Input, choice CustomerChoice) (Order, error) {
-	launchPromo, equipmentMode, farboInstall := choice.LaunchPromo, choice.EquipmentMode, choice.FarboInstall
 	summary, err := s.billing.GetCustomer(ctx, customerID)
 	if err != nil {
 		return Order{}, err
@@ -481,7 +503,28 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehic
 	if awaiting >= maxPending {
 		return Order{}, ErrTooManyPending
 	}
+	// O cliente não vincula aparelho nem escolhe dono.
+	vehicle.DeviceID, vehicle.OwnerID = nil, nil
+	return s.conditionsOrder(ctx, customerID, vehicle, choice, false)
+}
 
+// ReferralOrder monta o veículo que a central lança para o cliente que veio
+// por um representante, nas condições dele, como o cliente pediria pelo app
+// (a tabela pelo tipo, o rastreador que ele oferece, a instalação e o
+// bloqueio no preço dele, o semestral e o anual): a central não escolhe
+// valor. Ela pode vincular o aparelho já instalado, lançar sem o endereço e
+// contratar a instalação da Farbo mesmo desligada nas opções do pedido.
+func (s *Service) ReferralOrder(ctx context.Context, customerID uuid.UUID, vehicle vehicles.Input, choice CustomerChoice) (Order, error) {
+	vehicle.OwnerID = nil
+	return s.conditionsOrder(ctx, customerID, vehicle, choice, true)
+}
+
+// conditionsOrder é o pedido nos preços e nas condições do cliente
+// (CustomerPrices e as do representante que o indicou); central: o pedido
+// feito pela central.
+func (s *Service) conditionsOrder(ctx context.Context, customerID uuid.UUID, vehicle vehicles.Input, choice CustomerChoice,
+	central bool) (Order, error) {
+	launchPromo, equipmentMode, farboInstall := choice.LaunchPromo, choice.EquipmentMode, choice.FarboInstall
 	plan, tracker, err := s.CustomerPrices(ctx, customerID, vehicle.Kind)
 	if err != nil {
 		return Order{}, err
@@ -498,11 +541,8 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehic
 		return Order{}, ValidationError{"a promoção de pré-lançamento vale para o rastreador incluso"}
 	}
 
-	// O cliente não vincula aparelho nem escolhe dono.
-	vehicle.DeviceID, vehicle.OwnerID = nil, nil
-
 	order := Order{
-		Vehicle: vehicle, Tracker: tracker, Terms: terms, RequireAddress: true, Plan: plan,
+		Vehicle: vehicle, Tracker: tracker, Terms: terms, RequireAddress: !central, Plan: plan,
 		LaunchPromo: launchPromo,
 	}
 	// A instalação do afiliado que indicou o cliente (sem plano da central):
@@ -514,17 +554,18 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID uuid.UUID, vehic
 	// O rastreador incluso: instalar por conta própria ou com os
 	// instaladores da Farbo (pelo preço das opções do pedido).
 	if farboInstall && terms.EquipmentMode == billing.EquipmentSale {
-		if err := s.withFarboInstall(ctx, &order, install == nil); err != nil {
+		if err := s.withFarboInstall(ctx, &order, install == nil && !central); err != nil {
 			return Order{}, err
 		}
 	}
 	if err := withBlocking(install, choice.InstallBlocking, &order); err != nil {
 		return Order{}, err
 	}
-	// O semestral ou o anual do representante que o indicou: só a pessoa
-	// física (paga no ato, como no site) e sem a promoção (que é mensal).
+	// O semestral ou o anual do representante que o indicou: pelo app, só a
+	// pessoa física (paga no ato, como no site); pela central, também a
+	// empresa. Sem a promoção (que é mensal).
 	if choice.PeriodMonths > 1 {
-		if err := s.customerPeriod(ctx, customerID, individual, choice.PeriodMonths, &order); err != nil {
+		if err := s.customerPeriod(ctx, customerID, individual || central, choice.PeriodMonths, &order); err != nil {
 			return Order{}, err
 		}
 	}
@@ -656,13 +697,19 @@ func (s *Service) customerPlan(ctx context.Context, customerID uuid.UUID) (billi
 		if sub.Status == billing.SubscriptionActive && sub.PeriodMonths <= 1 {
 			// Sem a garantia de troca do comodato: ela é do rastreador, não do
 			// plano. E sem o desconto do cupom para sempre (que já está no
-			// valor): ele é desta assinatura, não do veículo novo.
+			// valor): ele é desta assinatura, não do veículo novo. A do link
+			// de pagamento não conta: o valor dela é só daquela contratação.
 			var guarantee, forever int
+			var fromLink bool
 			if err := s.db.QueryRow(ctx, `
 				SELECT s.guarantee_cents, COALESCE((SELECT r.discount_cents FROM coupon_redemptions r
-					WHERE r.subscription_id = s.id AND s.coupon_code IS NOT NULL AND s.promo_price_cents IS NULL), 0)
-				FROM subscriptions s WHERE s.id = $1`, sub.ID).Scan(&guarantee, &forever); err != nil {
+					WHERE r.subscription_id = s.id AND s.coupon_code IS NOT NULL AND s.promo_price_cents IS NULL), 0),
+					EXISTS (SELECT 1 FROM checkout_link_uses u WHERE u.subscription_id = s.id)
+				FROM subscriptions s WHERE s.id = $1`, sub.ID).Scan(&guarantee, &forever, &fromLink); err != nil {
 				return billing.SubscriptionInput{}, database.MapError(err)
+			}
+			if fromLink {
+				continue
 			}
 			return billing.SubscriptionInput{PlanName: strings.TrimSuffix(sub.PlanName, GuaranteeName),
 				PriceCents: sub.PriceCents + forever - guarantee, DueDay: sub.DueDay}, nil

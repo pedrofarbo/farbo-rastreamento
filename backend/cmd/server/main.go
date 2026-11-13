@@ -403,6 +403,10 @@ func run() error {
 		}
 	}
 	fiscalSvc := fiscal.NewService(db, notaas, cfg.Fiscal, mail.NewFiscalMailer(mailer, cfg.Mail.AppURL), log)
+	// O fechamento do mês: com a Notaas ligada, a fatura com a nota dela não
+	// pede a nota registrada à mão.
+	closingSvc := closing.NewService(db)
+	closingSvc.SetAutoNotes(cfg.Fiscal.Enabled())
 	affiliatesSvc := affiliates.NewService(db, log)
 	// As sessões da página do afiliado com senha (sobrevivem ao reinício).
 	affiliatesSvc.SetSessionKey([]byte(cfg.Auth.JWTSecret))
@@ -551,7 +555,7 @@ func run() error {
 		Leads: leads.NewService(leads.NewRepository(db),
 			leads.MailNotifier{Mailer: mail.NewLeadMailer(mailer, cfg.Mail.AppURL), To: cfg.Leads.NotifyEmails}, log),
 		Alerts: alertEngine, AlertStore: alertStore, Push: pushSvc, Shares: sharesSvc, Accounts: accountsSvc,
-		Organizations: orgSvc, Closing: closing.NewService(db),
+		Organizations: orgSvc, Closing: closingSvc,
 		Analytics: analyticsSvc,
 		Infra:     infraSvc, Finance: financeSvc, Affiliates: affiliatesSvc, SMSSetup: smsSvc, Theft: theftSvc,
 		Kits:      kits.NewService(db),

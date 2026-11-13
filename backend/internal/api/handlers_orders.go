@@ -69,12 +69,31 @@ type catalogView struct {
 	// Periods: o semestral e o anual do representante que indicou o cliente
 	// (pessoa física), com o valor no comodato; vazio, só o mensal.
 	Periods []periodOffer `json:"periods,omitempty"`
+	// Representative: o representante cujas condições valem na contratação
+	// do cliente (vazio: nenhum, ou a central definiu um plano para a conta).
+	Representative string `json:"representative,omitempty"`
 }
 
 // handleCatalog devolve os preços de um rastreador novo. Para o cliente, o
 // plano e o rastreador incluso mostrados são os que ele pagaria
 // (CustomerPrices).
 func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
+	customerID, isCustomer := customerOf(r)
+	s.writeCatalog(w, r, customerID, isCustomer)
+}
+
+// handleCustomerCatalog: a central vê os preços e as condições de um veículo
+// novo do cliente como ele veria (as do representante que o indicou, se for
+// o caso) — o Novo veículo da central segue com elas.
+func (s *Server) handleCustomerCatalog(w http.ResponseWriter, r *http.Request) {
+	customerID, ok := s.customerFromURL(w, r)
+	if !ok {
+		return
+	}
+	s.writeCatalog(w, r, customerID, true)
+}
+
+func (s *Server) writeCatalog(w http.ResponseWriter, r *http.Request, customerID uuid.UUID, isCustomer bool) {
 	c := s.Orders.Catalog()
 	view := catalogView{
 		PlanName: c.PlanName, PlanPriceCents: c.PlanPriceCents, DefaultDueDay: c.DefaultDueDay,
@@ -88,7 +107,10 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	view.Install = &opts.Install
 	view.SitePlanCents = s.Orders.SitePlanCents(opts)
 	view.Tracker = s.Orders.TrackerFor(opts, billing.SubscriptionInput{PriceCents: c.PlanPriceCents}, false)
-	if customerID, isCustomer := customerOf(r); isCustomer {
+	if isCustomer {
+		if rep, err := s.Orders.Representative(r.Context(), customerID); err == nil {
+			view.Representative = rep
+		}
 		// Os preços dele: a pessoa física paga no app o mesmo que no site.
 		if plan, tracker, err := s.Orders.CustomerPrices(r.Context(), customerID, vehicles.KindCar); err == nil {
 			view.PlanName, view.PlanPriceCents, view.DefaultDueDay = plan.PlanName, plan.PriceCents, plan.DueDay
@@ -187,6 +209,14 @@ type adminTrackerOrderRequest struct {
 	// FarboInstall: o rastreador incluso instalado pelos instaladores da
 	// Farbo, pelo preço das opções do pedido (no comodato, já é da Farbo).
 	FarboInstall bool `json:"farboInstall"`
+	// Do cliente que veio por um representante (sem plano da central), o
+	// pedido sai nas condições dele: Plan, Terms e Tracker não contam, e a
+	// central escolhe como o cliente — o rastreador que ele oferece
+	// (EquipmentMode), a instalação com o relé do bloqueio (quando ele
+	// oferece) e o semestral ou o anual dele (PeriodMonths).
+	EquipmentMode   string `json:"equipmentMode"`
+	InstallBlocking bool   `json:"installBlocking"`
+	PeriodMonths    int    `json:"periodMonths"`
 }
 
 func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request) {
@@ -216,6 +246,31 @@ func (s *Server) handleAdminOrderTracker(w http.ResponseWriter, r *http.Request)
 			writeShippingError(w, err)
 			return
 		}
+	}
+	// O cliente de um representante: as condições dele, sem escolher valor.
+	rep, err := s.Orders.Representative(r.Context(), customerID)
+	if err != nil {
+		handleStoreError(w, err, "cliente não encontrado")
+		return
+	}
+	if rep != "" {
+		order, err := s.Orders.ReferralOrder(r.Context(), customerID, req.Vehicle, orders.CustomerChoice{
+			LaunchPromo: req.LaunchPromo, EquipmentMode: req.EquipmentMode, FarboInstall: req.FarboInstall,
+			InstallBlocking: req.InstallBlocking, PeriodMonths: req.PeriodMonths,
+		})
+		if err != nil {
+			writeOrderError(w, r, err, "cliente não encontrado")
+			return
+		}
+		order.Shipping = shipping
+		result, err := s.Orders.Place(r.Context(), customerID, order)
+		if err != nil {
+			writeOrderError(w, r, err, "cliente não encontrado")
+			return
+		}
+		s.orderPlaced(r, customerID.String(), result, "CENTRAL")
+		writeJSON(w, http.StatusCreated, result)
+		return
 	}
 	terms := req.Terms
 	if terms == nil {
@@ -286,8 +341,20 @@ func (s *Server) handleAdminImportFleet(w http.ResponseWriter, r *http.Request) 
 		handleStoreError(w, err, "cliente não encontrado")
 		return
 	}
+	// O cliente de um representante: a frota nas condições dele (a
+	// mensalidade de cada veículo pela tabela, o rastreador e as taxas).
+	referral, err := s.Orders.ReferralImportFor(r.Context(), customerID)
+	if err != nil {
+		writeOrderError(w, r, err, "cliente não encontrado")
+		return
+	}
 	in := orders.Import{Rows: req.Rows, Terms: terms, Plan: req.Plan, DryRun: req.DryRun}
-	if req.Tracker != nil {
+	if referral != nil {
+		plan := referral.Plan
+		plan.FirstDueDate = req.Plan.FirstDueDate
+		in.Plan, in.Terms, in.Tracker, in.KindPrices = plan, referral.Terms, referral.Tracker, referral.KindPrices
+		req.Plan = plan
+	} else if req.Tracker != nil {
 		in.Tracker = *req.Tracker
 	} else {
 		opts, err := s.Orders.Options(r.Context())
@@ -317,6 +384,9 @@ func (s *Server) handleAdminImportFleet(w http.ResponseWriter, r *http.Request) 
 	meta := map[string]any{
 		"customerId": customerID.String(), "vehicles": result.Vehicles, "installed": result.Installed,
 		"newGroups": result.NewGroups, "plan": req.Plan.PlanName, "priceCents": req.Plan.PriceCents,
+	}
+	if referral != nil {
+		meta["representative"] = referral.Representative
 	}
 	meta["trackerCents"], meta["trackerMonths"], meta["trackerAdded"] = in.Tracker.Cents, in.Tracker.Months, in.Tracker.Added
 	s.recordAudit(r, audit.ActionFleetImported, nil, nil, meta)
@@ -571,6 +641,9 @@ func (s *Server) orderPlaced(r *http.Request, customerID string, result *orders.
 	case sub.PromoPriceCents != nil:
 		meta["launchPromo"] = true
 	}
+	if result.CheckoutLinkID != nil {
+		meta["checkoutLinkId"] = *result.CheckoutLinkID
+	}
 	if sub := result.Subscription; sub.TrackerCents > 0 {
 		meta["trackerCents"], meta["trackerMonths"], meta["trackerAdded"] = sub.TrackerCents, sub.TrackerMonths, sub.TrackerAdded
 	}
@@ -652,6 +725,19 @@ func (s *Server) handleReactivateSubscription(w http.ResponseWriter, r *http.Req
 	if err := decodeJSON(w, r, &plan); err != nil {
 		writeError(w, http.StatusBadRequest, "corpo inválido")
 		return
+	}
+	// O cliente de um representante: a mensalidade dele para o tipo do veículo.
+	var kind string
+	if err := s.DB.QueryRow(r.Context(), `SELECT kind FROM vehicles WHERE id = $1 AND owner_id = $2`, vehicleID, customerID).
+		Scan(&kind); err != nil {
+		handleStoreError(w, database.MapError(err), "veículo não encontrado")
+		return
+	}
+	if referral, err := s.Orders.ReferralPlan(r.Context(), customerID, kind); err != nil {
+		handleStoreError(w, err, "cliente não encontrado")
+		return
+	} else if referral != nil {
+		plan.PlanName, plan.PriceCents = referral.PlanName, referral.PriceCents
 	}
 
 	sub, err := s.Orders.Reactivate(r.Context(), customerID, vehicleID, plan)

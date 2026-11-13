@@ -206,9 +206,11 @@ func (s *Service) CustomerRecurrence(ctx context.Context, customerID uuid.UUID) 
 	if err != nil || account != nil {
 		return nil, err
 	}
+	// Como a tabela, o semestral e o anual seguem com quem o representante já
+	// indicou, também com ele pausado.
 	var r Recurrence
 	err = s.db.QueryRow(ctx, `SELECT a.recurrence_enabled, a.semiannual_cents, a.annual_cents
-		FROM affiliate_referrals x JOIN affiliates a ON a.id = x.affiliate_id WHERE x.customer_id = $1 AND a.active`,
+		FROM affiliate_referrals x JOIN affiliates a ON a.id = x.affiliate_id WHERE x.customer_id = $1`,
 		customerID).Scan(&r.Enabled, &r.SemiannualCents, &r.AnnualCents)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !r.Enabled) {
 		return nil, nil
@@ -310,6 +312,84 @@ func (s *Service) handDelivery(ctx context.Context, query string, id uuid.UUID) 
 		return "", nil
 	}
 	return name, database.MapError(err)
+}
+
+// Representative é o representante cujas condições valem em toda
+// contratação do cliente — pelo app, pela central, na reativação e na frota:
+// o que o indicou, quando a central não definiu um plano para a conta (que
+// vale acima dele). Vazio: nenhum. Pausar o representante não tira as
+// condições de quem ele já indicou.
+func (s *Service) Representative(ctx context.Context, customerID uuid.UUID) (string, error) {
+	account, err := s.AccountPlan(ctx, customerID)
+	if err != nil || account != nil {
+		return "", err
+	}
+	var name string
+	err = s.db.QueryRow(ctx, `SELECT a.name FROM affiliate_referrals r JOIN affiliates a ON a.id = r.affiliate_id
+		WHERE r.customer_id = $1`, customerID).Scan(&name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return name, database.MapError(err)
+}
+
+// ReferralPlan é o plano do representante para um veículo do cliente: a
+// mensalidade da tabela dele para o tipo do veículo (ou, sem tabela, a do
+// site), no vencimento da conta. Nil: o cliente não segue um representante.
+func (s *Service) ReferralPlan(ctx context.Context, customerID uuid.UUID, kind string) (*billing.SubscriptionInput, error) {
+	rep, err := s.Representative(ctx, customerID)
+	if err != nil || rep == "" {
+		return nil, err
+	}
+	plan, _, err := s.CustomerPrices(ctx, customerID, kind)
+	if err != nil {
+		return nil, err
+	}
+	return &plan, nil
+}
+
+// ReferralImport é a frota do cliente que veio por um representante, nas
+// condições dele: o plano (o nome e o vencimento; a mensalidade de cada
+// veículo sai da tabela pelo tipo, em KindPrices, ou é a do plano), o
+// rastreador que ele oferece (o comodato só quando é o único, com as taxas
+// e a garantia dele) e a parte do rastreador incluso pela regra. Nil: o
+// cliente não segue um representante.
+type ReferralImport struct {
+	Representative string
+	Plan           billing.SubscriptionInput
+	Terms          Terms
+	Tracker        Tracker
+	KindPrices     *vehicles.KindPrices
+}
+
+func (s *Service) ReferralImportFor(ctx context.Context, customerID uuid.UUID) (*ReferralImport, error) {
+	rep, err := s.Representative(ctx, customerID)
+	if err != nil || rep == "" {
+		return nil, err
+	}
+	plan, tracker, err := s.CustomerPrices(ctx, customerID, vehicles.KindCar)
+	if err != nil {
+		return nil, err
+	}
+	table, err := s.CustomerKindPrices(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+	individual, err := s.PaysUpfront(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+	terms, err := s.OrderTerms(ctx, customerID, "", &plan, individual)
+	if err != nil {
+		return nil, err
+	}
+	install, err := s.CustomerInstall(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+	order := Order{Terms: terms}
+	install.applyInstall(&order)
+	return &ReferralImport{Representative: rep, Plan: plan, Terms: order.Terms, Tracker: tracker, KindPrices: table}, nil
 }
 
 // CustomerKindPrices é a tabela que vale para os veículos novos do cliente:

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 
@@ -32,10 +32,79 @@ export function monthLabel(month: string): string {
   return new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 }
 
+/** As faturas do pagador cuja nota da Notaas ainda não saiu: na fila, na prefeitura ou esperando créditos. */
+function autoPending(line: ClosingLine): number {
+  return (line.autoNotes ?? []).filter((n) => n.status === 'pending' || n.status === 'processing' || n.status === 'blocked').length;
+}
+
+/** A nota do pagador no mês: a da Notaas (que sai sozinha), a registrada à mão ou a que falta. */
+function NoteCell({ line }: { line: ClosingLine }) {
+  const auto = line.autoNotes ?? [];
+  const issued = auto.filter((n) => n.status === 'issued');
+  const refused = auto.filter((n) => n.status === 'error').length;
+  const pending = autoPending(line);
+  const upcoming = line.upcoming ?? 0;
+  const parts: ReactNode[] = [];
+  if (issued.length > 0) {
+    parts.push(
+      <div key="issued">
+        {issued.length === 1 ? 'Nº ' : 'Nºs '}
+        {issued.map((n) => n.number).join(', ')} · Notaas
+        <div className={billing.muted}>{formatMoney(issued.reduce((sum, n) => sum + n.amountCents, 0))}</div>
+      </div>,
+    );
+  }
+  if (pending > 0) {
+    parts.push(
+      <div key="pending" className={billing.muted}>
+        {pending === 1 ? '1 nota saindo pela Notaas' : `${pending} notas saindo pela Notaas`}
+      </div>,
+    );
+  }
+  if (upcoming > 0) {
+    parts.push(
+      <div key="upcoming" className={billing.muted}>
+        {upcoming === 1 ? '1 fatura ganha a nota da Notaas ao ser paga' : `${upcoming} faturas ganham a nota da Notaas ao serem pagas`}
+      </div>,
+    );
+  }
+  if (refused > 0) {
+    parts.push(
+      <div key="refused">
+        <Badge tone="danger" dot>
+          {refused === 1 ? 'Nota da Notaas recusada' : `${refused} notas da Notaas recusadas`}
+        </Badge>
+        <div className={billing.muted}>Corrija e emita de novo na ficha</div>
+      </div>,
+    );
+  }
+  if (line.note) {
+    parts.push(
+      <div key="note">
+        Nº {line.note.number} · {formatDateOnly(line.note.issuedOn)}
+        <div className={billing.muted}>
+          {formatMoney(line.note.amountCents)}
+          {auto.length === 0 && line.note.amountCents !== line.amountCents && ' (diferente do faturado)'}
+        </div>
+      </div>,
+    );
+  } else if (line.needsNote !== false) {
+    parts.push(
+      <Badge key="missing" tone="warning" dot>
+        Por emitir
+      </Badge>,
+    );
+  }
+  if (parts.length === 0) return <span className={billing.muted}>Sem nota de serviço (frete ou avulsa)</span>;
+  return <div>{parts}</div>;
+}
+
 /**
  * O fechamento do mês (competência): o que cada cliente e cada associação ou
  * seguradora teve faturado no mês — as faturas que vencem nele, pagas ou não
- * — e a nota fiscal de cada um. A nota é emitida no emissor da empresa; aqui
+ * — e a nota fiscal de cada um. A NFS-e de cada fatura paga sai sozinha pela
+ * Notaas (a da contratação também) e só aparece aqui; a que a Notaas não
+ * emite (paga antes de ela começar) é emitida no emissor da empresa, e aqui
  * fica o número, a data, o valor e o PDF (ou o XML), que o cliente baixa na
  * tela de faturas. A planilha vai para a contabilidade.
  */
@@ -88,18 +157,18 @@ export function ClosingTab() {
             <span className={billing.tileHint}>{formatMoney(m.amountCents - m.paidCents)} em aberto</span>
           </div>
           <div className={`${billing.tile} ${m.missingNotes > 0 ? billing.tileDanger : ''}`}>
-            <span className={billing.tileLabel}>Notas fiscais</span>
-            <span className={billing.tileValue}>
-              {m.notes} de {m.notes + m.missingNotes}
+            <span className={billing.tileLabel}>Notas por emitir</span>
+            <span className={billing.tileValue}>{m.missingNotes}</span>
+            <span className={billing.tileHint}>
+              {m.autoNotes ?? 0} emitidas pela Notaas · {m.notes} registradas aqui
             </span>
-            <span className={billing.tileHint}>{m.missingNotes > 0 ? `${m.missingNotes} por emitir` : 'Todas registradas'}</span>
           </div>
         </div>
       )}
 
       <Card
         title="Fechamento por pagador"
-        subtitle="Competência: as faturas que vencem no mês, pagas ou não. Emita a nota no emissor e registre aqui o número e o arquivo."
+        subtitle="Competência: as faturas que vencem no mês, pagas ou não. A nota da Notaas sai sozinha quando a fatura é paga, a da contratação também. Registre aqui só a que estiver Por emitir: emita no emissor e guarde o número e o arquivo."
         flush
       >
         {data.isLoading ? (
@@ -142,19 +211,7 @@ export function ClosingTab() {
                       )}
                     </td>
                     <td data-label="Nota fiscal">
-                      {line.note ? (
-                        <>
-                          Nº {line.note.number} · {formatDateOnly(line.note.issuedOn)}
-                          <div className={billing.muted}>
-                            {formatMoney(line.note.amountCents)}
-                            {line.note.amountCents !== line.amountCents && ' (diferente do faturado)'}
-                          </div>
-                        </>
-                      ) : (
-                        <Badge tone="warning" dot>
-                          Por emitir
-                        </Badge>
-                      )}
+                      <NoteCell line={line} />
                     </td>
                     <td>
                       <div className={pageStyles.actions}>
@@ -163,9 +220,11 @@ export function ClosingTab() {
                             Baixar
                           </Button>
                         )}
-                        <Button size="small" variant={line.note ? 'ghost' : 'primary'} onClick={() => setEditing(line)}>
-                          {line.note ? 'Trocar' : 'Registrar nota'}
-                        </Button>
+                        {(line.note || line.needsNote !== false) && (
+                          <Button size="small" variant={line.note ? 'ghost' : 'primary'} onClick={() => setEditing(line)}>
+                            {line.note ? 'Trocar' : 'Registrar nota'}
+                          </Button>
+                        )}
                         {line.note && (
                           <Button size="small" variant="ghost" onClick={() => setRemoving(line)}>
                             Tirar

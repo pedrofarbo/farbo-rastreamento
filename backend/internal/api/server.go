@@ -987,6 +987,12 @@ func (s *Server) routes() chi.Router {
 					r.Put("/coupons/{id}", s.handleUpdateCoupon)
 					r.Delete("/coupons/{id}", s.handleDeleteCoupon)
 
+					// Os links de pagamento: a oferta fechada de cada um.
+					r.Get("/checkout-links", s.handleListCheckoutLinks)
+					r.Post("/checkout-links", s.handleCreateCheckoutLink)
+					r.Put("/checkout-links/{id}", s.handleUpdateCheckoutLink)
+					r.Delete("/checkout-links/{id}", s.handleDeleteCheckoutLink)
+
 					// O reajuste anual pelo IPCA: o próximo, os anteriores e o veto.
 					if s.Adjustment != nil {
 						r.Get("/price-adjustments", s.handlePriceAdjustments)
@@ -1023,6 +1029,7 @@ func (s *Server) routes() chi.Router {
 							r.Post("/password", s.handleSetCustomerPassword)
 							r.Post("/invoices", s.handleCreateInvoice)
 							r.Post("/trackers", s.handleAdminOrderTracker)
+							r.Get("/catalog", s.handleCustomerCatalog)
 							r.Post("/trackers/import", s.handleAdminImportFleet)
 							r.Get("/shipping-quote", s.handleCustomerShippingQuote)
 							r.Get("/launch-promo", s.handleCustomerLaunchPromo)

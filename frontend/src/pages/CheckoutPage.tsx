@@ -23,12 +23,12 @@ import {
 } from '@/services/checkout';
 import type { CheckoutChoice } from '@/services/checkout';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
-import { formatMoney, formatPhoneInput, isPhoneComplete } from '@/services/format';
+import { formatDateOnly, formatMoney, formatPhoneInput, isPhoneComplete } from '@/services/format';
 import { KIND_NAMES, PRICED_KINDS, kindPrice } from '@/services/kindPrices';
 import { currentReferral } from '@/services/referral';
 import { formatTaxId, taxIdDigits, validTaxId } from '@/services/taxid';
 import { useAuth } from '@/stores/AuthContext';
-import type { CheckoutOffer, CouponOffer, DeliveryAddress, VehicleKind } from '@/types';
+import type { CheckoutLinkOffer, CheckoutOffer, CouponOffer, DeliveryAddress, VehicleKind } from '@/types';
 
 import pre from './PreLaunch.module.css';
 import styles from './CheckoutPage.module.css';
@@ -41,6 +41,16 @@ const EXAMPLES: Record<VehicleKind, { brand: string; model: string }> = {
   CAR: { brand: 'Ex.: Fiat', model: 'Ex.: Uno' },
   TRUCK: { brand: 'Ex.: Volvo', model: 'Ex.: FH 540' },
 };
+
+/** A escolha que o link de pagamento já traz: a oferta fechada dele. */
+export function linkChoice(link: CheckoutLinkOffer): CheckoutChoice {
+  return {
+    equipmentMode: link.equipmentMode,
+    farboInstall: link.equipmentMode === 'sale' && link.farboInstall,
+    ...(link.periodMonths > 1 ? { periodMonths: link.periodMonths } : {}),
+    installBlocking: link.installBlocking,
+  };
+}
 
 interface Person {
   name: string;
@@ -63,10 +73,12 @@ export function CheckoutPage() {
   const { user, completeLogin } = useAuth();
   // O evento do QR Code de onde a pessoa veio (o convite do evento manda).
   const event = params.get('evento') ?? '';
+  // O link de pagamento da central (?link=): a oferta fechada dele, sem o representante.
+  const linkToken = (params.get('link') ?? '').trim();
   // Pelo link de um afiliado com tabela, a mensalidade é a do tipo do veículo
   // (do evento, sem o link guardado no aparelho, como na contratação).
-  const ref = event ? '' : currentReferral();
-  const { query: offer } = useCheckoutOffer(ref);
+  const ref = event || linkToken ? '' : currentReferral();
+  const { query: offer } = useCheckoutOffer(ref, linkToken);
   const [step, setStep] = useState(0);
   const [choice, setChoice] = useState<CheckoutChoice>({ equipmentMode: 'sale', farboInstall: false });
   const [kind, setKind] = useState<VehicleKind>('MOTORCYCLE');
@@ -147,6 +159,29 @@ export function CheckoutPage() {
       </Shell>
     );
   }
+  if (o && linkToken && !o.link) {
+    return (
+      <Shell>
+        <section className={pre.intro}>
+          <h1 className={pre.title}>Link de pagamento indisponível</h1>
+          <p className={pre.lead}>
+            {o.linkProblem ? `${o.linkProblem.charAt(0).toUpperCase()}${o.linkProblem.slice(1)}.` : 'Confira o endereço.'} Fale com
+            a gente para receber um novo{o.enabled ? ' ou veja os planos do site' : ''}.
+          </p>
+        </section>
+        <div className={pre.actions}>
+          <Link className={pre.primary} to={`/${CHECKOUT_ANCHOR}`}>
+            Deixar o meu contato
+          </Link>
+          {o.enabled && (
+            <Link className={pre.secondary} to="/contratar">
+              Ver os planos do site
+            </Link>
+          )}
+        </div>
+      </Shell>
+    );
+  }
   if (!o || !o.enabled) {
     return (
       <Shell>
@@ -177,12 +212,14 @@ export function CheckoutPage() {
   }
 
   const applied = o.coupons ? coupon : null;
-  const totals = checkoutTotals(o, choice, freightCents, kind, applied);
+  // Pelo link de pagamento, a escolha é a dele (sem escolher nada).
+  const current = o.link ? linkChoice(o.link) : choice;
+  const totals = checkoutTotals(o, current, freightCents, kind, applied);
   const table = o.planByKind;
-  const loan = choice.equipmentMode === 'loan' && o.loan !== null;
+  const loan = current.equipmentMode === 'loan' && o.loan !== null;
   // O semestral e o anual (com o rastreador incluso ou em comodato), quando o link os oferece.
   const periods = o.periods ?? [];
-  const period = chosenPeriod(o, choice);
+  const period = chosenPeriod(o, current);
   // Pela tabela do afiliado, a parte do rastreador incluso soma nas primeiras.
   const added = trackerAdded(o);
   const cpf = taxIdDigits(person.document);
@@ -215,9 +252,10 @@ export function CheckoutPage() {
       const result = await checkoutApi.place({
         equipmentMode: loan ? 'loan' : 'sale',
         ...(period ? { periodMonths: period.months } : {}),
-        farboInstall: !loan && choice.farboInstall,
-        ...(chosenInstall(o, choice).blocking ? { installBlocking: true } : {}),
+        farboInstall: !loan && current.farboInstall,
+        ...(chosenInstall(o, current).blocking ? { installBlocking: true } : {}),
         ...(applied ? { coupon: applied.code } : {}),
+        ...(o.link ? { link: o.link.token } : {}),
         vehicle: { kind, name: vehicleName(kind, brand, model), brand: brand.trim(), model: model.trim(), plate: plate.trim() },
         name: person.name.trim(),
         email,
@@ -229,7 +267,8 @@ export function CheckoutPage() {
         contractVersion: o.contractVersion,
         accept,
         // Do QR Code de um evento, sem o link de indicação guardado no
-        // aparelho: pode ser o tablet da equipe no estande.
+        // aparelho: pode ser o tablet da equipe no estande. Pelo link de
+        // pagamento, a oferta é a dele, mas a conta fica com o representante.
         ref: event ? undefined : currentReferral() || undefined,
         event: event || undefined,
         website,
@@ -261,10 +300,21 @@ export function CheckoutPage() {
         </p>
       )}
       <section className={pre.intro}>
-        <h1 className={pre.title}>Contrate em poucos minutos</h1>
-        <p className={pre.lead}>
-          Escolha o plano, informe o veículo e pague com Pix. O rastreador vem incluso e vai para o seu endereço.
-        </p>
+        {o.link ? (
+          <>
+            <h1 className={pre.title}>A sua proposta</h1>
+            <p className={pre.lead}>
+              As condições abaixo foram preparadas para você. Informe o veículo e os seus dados e pague com Pix.
+            </p>
+          </>
+        ) : (
+          <>
+            <h1 className={pre.title}>Contrate em poucos minutos</h1>
+            <p className={pre.lead}>
+              Escolha o plano, informe o veículo e pague com Pix. O rastreador vem incluso e vai para o seu endereço.
+            </p>
+          </>
+        )}
       </section>
 
       <ol className={styles.steps} aria-label="Etapas">
@@ -280,7 +330,16 @@ export function CheckoutPage() {
       </ol>
 
       <form className={pre.form} onSubmit={submit} noValidate data-theme="dark">
-        {step === 0 && (
+        {step === 0 && o.link && (
+          <>
+            <LinkOffer link={o.link} offer={o} />
+            <Total totals={totals} shippingPending={o.shippingEnabled} />
+            <button type="button" className={pre.submit} onClick={() => goTo(1)}>
+              Continuar
+            </button>
+          </>
+        )}
+        {step === 0 && !o.link && (
           <>
             <fieldset className={styles.options}>
               <legend className={styles.legend}>{table ? 'O plano, pelo tipo do veículo' : 'O plano'}</legend>
@@ -577,7 +636,7 @@ export function CheckoutPage() {
 
             <Summary
               offer={o}
-              choice={choice}
+              choice={current}
               totals={totals}
               vehicle={vehicleName(kind, brand, model)}
               kind={kind}
@@ -626,6 +685,64 @@ export function CheckoutPage() {
         )}
       </form>
     </Shell>
+  );
+}
+
+/**
+ * A oferta fechada do link de pagamento, sem escolha: o plano e o valor, o rastreador, quem
+ * instala (com ou sem bloqueio) e as taxas, e até quando vale.
+ */
+function LinkOffer({ link, offer }: { link: CheckoutLinkOffer; offer: CheckoutOffer }) {
+  const loan = link.equipmentMode === 'loan';
+  const period = link.periodMonths > 1 ? link.periodMonths : 0;
+  const plan = period ? (period === 12 ? 'Plano anual' : 'Plano semestral') : 'Plano mensal';
+  const installed = loan || link.farboInstall;
+  const tracker = offer.tracker;
+  return (
+    <div className={styles.summary} aria-label="A sua oferta">
+      <p className={styles.legend}>A sua oferta</p>
+      <div className={styles.line}>
+        <span>{plan}</span>
+        <span className={styles.monthly}>
+          {formatMoney(link.priceCents)}
+          {period === 12 ? '/ano' : period === 6 ? '/semestre' : '/mês'}
+        </span>
+      </div>
+      <div className={styles.line}>
+        <span>{loan ? 'Rastreador em comodato (emprestado)' : 'Rastreador incluso (fica com você)'}</span>
+        <span>{loan ? 'volta ao encerrar' : 'incluso'}</span>
+      </div>
+      <div className={styles.line}>
+        <span>
+          {installed
+            ? `Instalação pelos instaladores da Farbo, ${link.installBlocking ? 'com' : 'sem'} bloqueio`
+            : 'Instalação por conta própria'}
+        </span>
+        <span>{installed && link.installCents > 0 ? formatMoney(link.installCents) : 'sem custo'}</span>
+      </div>
+      {loan && link.uninstallCents > 0 && (
+        <div className={styles.line}>
+          <span>Desinstalação, ao encerrar</span>
+          <span>{formatMoney(link.uninstallCents)}</span>
+        </div>
+      )}
+      <p className={styles.note}>
+        Rastreamento em tempo real, app, alertas, histórico de rotas e bloqueio pelo celular
+        {link.installBlocking && installed ? ' (o relé do bloqueio vai na instalação)' : ''}.{' '}
+        {period
+          ? `${formatMoney(Math.floor(link.priceCents / period))} por mês, pagos de uma vez a cada ${period} meses. Se cancelar antes do fim do período pago, não há devolução: o rastreamento segue até o fim dele e não renova.`
+          : 'O valor vale enquanto a assinatura durar (só o reajuste anual do contrato).'}
+        {!installed && ' Com o instalador da sua preferência, pago direto a ele; o guia de instalação vai junto.'}
+        {installed && ' A gente agenda o dia com você.'}
+      </p>
+      {!loan && !period && tracker.cents > 0 && tracker.months > 0 && (
+        <p className={styles.note}>
+          Se a assinatura for encerrada antes da {tracker.months}ª mensalidade, a parte do rastreador que falta (
+          {formatMoney(tracker.cents)} por mensalidade) vence de uma vez.
+        </p>
+      )}
+      {link.validUntil && <p className={styles.note}>Condições válidas para contratar até {formatDateOnly(link.validUntil)}.</p>}
+    </div>
   );
 }
 

@@ -11,8 +11,9 @@ import { offerWith } from '@/test/checkoutOffer';
 import type { CheckoutInput, CheckoutOffer, ShippingQuoteView } from '@/types';
 
 let offer: CheckoutOffer;
-/** O link do afiliado com que cada oferta foi pedida. */
+/** O link do afiliado com que cada oferta foi pedida, e o link de pagamento. */
 const offerRefs: (string | undefined)[] = [];
+const offerLinks: (string | undefined)[] = [];
 /** O link com que cada cotação do frete foi pedida, e a cotação devolvida. */
 const shippingRefs: (string | undefined)[] = [];
 let shippingView: ShippingQuoteView | null = null;
@@ -28,8 +29,9 @@ const quote: ShippingQuoteView = {
 
 vi.mock('@/api/resources', () => ({
   checkoutApi: {
-    offer: async (ref?: string) => {
+    offer: async (ref?: string, link?: string) => {
       offerRefs.push(ref);
+      offerLinks.push(link);
       return offer;
     },
     shipping: async (_: unknown, ref?: string) => {
@@ -145,6 +147,7 @@ beforeEach(() => {
   couponCodes.length = 0;
   logins.length = 0;
   offerRefs.length = 0;
+  offerLinks.length = 0;
   shippingRefs.length = 0;
   shippingView = null;
 });
@@ -522,6 +525,93 @@ describe('a contratação pelo site', () => {
     await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
     await click(button('Pagar R$ 50,82 com Pix'));
     expect(placed[0]).toMatchObject({ coupon: 'SEMPRE' });
+  });
+
+  it('pelo link de pagamento: a oferta fechada, sem escolha nem cupom; o pedido vai com o link, e o representante fica com a conta', async () => {
+    saveReferral('equipe-farbo');
+    // O servidor manda a oferta já com o link: o anual em comodato, com bloqueio, mesmo com o site fechado.
+    offer = offerWith({
+      enabled: true,
+      coupons: false,
+      equipmentModes: 'loan',
+      planCents: 3490,
+      tracker: { cents: 0, months: 0, added: false },
+      loan: { enabled: true, surchargeCents: 0, installFeeCents: 10000, uninstallFeeCents: 8500 },
+      install: { enabled: true, priceCents: 10000, blockingCents: 10000 },
+      periods: [{ months: 12, planName: 'Plano Anual', cents: 60000, loanCents: 60000 }],
+      link: {
+        token: 'abc123defg4567', equipmentMode: 'loan', periodMonths: 12, priceCents: 60000, farboInstall: true,
+        installCents: 10000, uninstallCents: 8500, installBlocking: true, validUntil: '2026-11-30',
+      },
+    });
+    await render('/contratar?link=abc123defg4567');
+    expect(offerLinks).toEqual(['abc123defg4567']);
+    expect(offerRefs).toEqual(['']);
+    expect(text()).toContain('A sua proposta');
+    expect(text()).toContain('Plano anualR$ 600,00/ano');
+    expect(text()).toContain('Rastreador em comodato (emprestado)volta ao encerrar');
+    expect(text()).toContain('Instalação pelos instaladores da Farbo, com bloqueioR$ 100,00');
+    expect(text()).toContain('Desinstalação, ao encerrarR$ 85,00');
+    expect(text()).toContain('R$ 50,00 por mês, pagos de uma vez a cada 12 meses');
+    expect(text()).toContain('Condições válidas para contratar até 30/11/2026');
+    expect(text()).toContain('Hoje, no PixR$ 700,00 + frete');
+    // Sem escolha: nenhuma opção de plano, rastreador ou instalação.
+    expect(document.querySelectorAll('input[type="radio"]')).toHaveLength(0);
+
+    await fillUntilPayment();
+    expect(text()).not.toContain('Cupom de desconto');
+    expect(text()).toContain('1º ano · Plano AnualR$ 600,00');
+    expect(text()).toContain('Instalação pelos instaladores da Farbo, com bloqueioR$ 100,00');
+    expect(text()).toContain('Hoje, no PixR$ 722,90');
+    expect(shippingRefs).toEqual(['']);
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar R$ 722,90 com Pix'));
+    expect(placed[0]).toMatchObject({ link: 'abc123defg4567', equipmentMode: 'loan', periodMonths: 12, farboInstall: false });
+    // A oferta não muda pelo representante, mas a conta fica com ele.
+    expect(placed[0].ref).toBe('equipe-farbo');
+    expect(placed[0].coupon).toBeUndefined();
+    localStorage.clear();
+  });
+
+  it('pelo link de pagamento do incluso mensal por conta própria: o valor do link e a parte do rastreador dentro dele', async () => {
+    offer = offerWith({
+      planCents: 4990,
+      equipmentModes: 'sale',
+      loan: null,
+      install: null,
+      periods: [],
+      link: {
+        token: 'zzz', equipmentMode: 'sale', periodMonths: 1, priceCents: 4990, farboInstall: false, installCents: 0,
+        uninstallCents: 0, installBlocking: false, validUntil: null,
+      },
+    });
+    await render('/contratar?link=zzz');
+    expect(text()).toContain('Plano mensalR$ 49,90/mês');
+    expect(text()).toContain('Rastreador incluso (fica com você)incluso');
+    expect(text()).toContain('Instalação por conta própriasem custo');
+    expect(text()).toContain('a parte do rastreador que falta (R$ 12,00 por mensalidade) vence de uma vez');
+    expect(text()).toContain('MensalidadeR$ 49,90/mês');
+    expect(text()).not.toContain('Condições válidas');
+    await fillUntilPayment();
+    await click(document.querySelector('input[type="checkbox"]') as HTMLInputElement);
+    await click(button('Pagar R$ 72,80 com Pix'));
+    expect(placed[0]).toMatchObject({ link: 'zzz', equipmentMode: 'sale', farboInstall: false });
+    expect(placed[0].periodMonths).toBeUndefined();
+    expect(placed[0].installBlocking).toBeUndefined();
+  });
+
+  it('o link de pagamento que não vale: o motivo, e os planos do site quando a contratação está aberta', async () => {
+    offer = offerWith({ linkProblem: 'este link de pagamento já foi usado' });
+    await render('/contratar?link=usado');
+    expect(text()).toContain('Link de pagamento indisponível');
+    expect(text()).toContain('Este link de pagamento já foi usado.');
+    expect(document.querySelector('a[href="/contratar"]')).not.toBeNull();
+    expect(document.querySelector('a[href="/#contratar"]')).not.toBeNull();
+    document.body.innerHTML = '';
+    offer = offerWith({ enabled: false, linkProblem: 'este link de pagamento venceu em 10/11/2026' });
+    await render('/contratar?link=velho');
+    expect(text()).toContain('Este link de pagamento venceu em 10/11/2026.');
+    expect(document.querySelector('a[href="/contratar"]')).toBeNull();
   });
 
   it('fechada na central: chama para deixar o contato', async () => {
