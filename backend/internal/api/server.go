@@ -1016,6 +1016,8 @@ func (s *Server) routes() chi.Router {
 
 					// Os veículos de todas as contas, paginados e com filtros.
 					r.Get("/vehicle-directory", s.handleVehicleDirectory)
+					// A busca geral do painel: clientes, veículos, rastreadores e chips.
+					r.Get("/search", s.handleSearch)
 
 					r.Route("/customers", func(r chi.Router) {
 						r.Get("/", s.handleListCustomers)

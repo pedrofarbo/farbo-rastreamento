@@ -280,10 +280,14 @@ func TestPagarmeGateway(t *testing.T) {
 	var detail struct {
 		PaymentLinks map[string]string `json:"paymentLinks"`
 		PayAllURL    string            `json:"payAllUrl"`
+		CardMissing  []string          `json:"cardMissing"`
 	}
 	linked := invoice(ana, 4990)
 	other := invoice(ana, 3000)
 	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/customers/"+ana.String(), nil, http.StatusOK), &detail)
+	if len(detail.CardMissing) != 0 {
+		t.Fatalf("cadastro completo, mas a ficha diz que falta %v", detail.CardMissing)
+	}
 	invoiceToken := strings.TrimPrefix(detail.PaymentLinks[linked.String()], "https://painel.farbo.test/pagar/")
 	raw := env.must("", http.MethodGet, "/api/public/invoices/"+invoiceToken+"/card", nil, http.StatusOK)
 	var pub struct {
@@ -319,4 +323,30 @@ func TestPagarmeGateway(t *testing.T) {
 	env.must("", http.MethodPost, "/api/public/accounts/"+accountToken+"/card", map[string]any{"token": "token_x"}, http.StatusConflict)
 	// O link errado não paga.
 	env.must("", http.MethodPost, "/api/public/invoices/inventado/card", map[string]any{"token": "token_x"}, http.StatusNotFound)
+
+	// O cadastro incompleto: a ficha diz o que falta e o link não oferece o
+	// cartão (a mesma conferência da cobrança: sem celular e sem o número do
+	// endereço, a Pagar.me recusaria).
+	if _, err := env.db.Exec(ctx, `UPDATE users SET phone = '' WHERE id = $1`, ana); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.db.Exec(ctx, `UPDATE customer_addresses SET number = '' WHERE customer_id = $1`, ana); err != nil {
+		t.Fatal(err)
+	}
+	detail.CardMissing = nil
+	_ = json.Unmarshal(env.must(admin, http.MethodGet, "/api/customers/"+ana.String(), nil, http.StatusOK), &detail)
+	if want := []string{"celular com DDD", "endereço completo (CEP, rua, número, cidade e UF)"}; strings.Join(detail.CardMissing, "|") != strings.Join(want, "|") {
+		t.Errorf("falta no cadastro = %v, esperado %v", detail.CardMissing, want)
+	}
+	pub = struct {
+		Enabled    bool   `json:"enabled"`
+		Provider   string `json:"provider"`
+		PublicKey  string `json:"publicKey"`
+		PayerReady bool   `json:"payerReady"`
+		PublicLink bool   `json:"publicLink"`
+	}{}
+	_ = json.Unmarshal(env.must("", http.MethodGet, "/api/public/accounts/"+accountToken+"/card", nil, http.StatusOK), &pub)
+	if !pub.Enabled || pub.PayerReady {
+		t.Errorf("cartão do link com o cadastro incompleto = %+v", pub)
+	}
 }

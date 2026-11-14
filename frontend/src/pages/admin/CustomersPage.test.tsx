@@ -15,13 +15,16 @@ vi.mock('@/api/resources', () => ({
 vi.mock('@/components/ui/Toast', () => ({ useToast: () => ({ notify: () => {} }) }));
 // As outras partes da tela têm os testes delas.
 vi.mock('./MrrCard', () => ({ MrrCard: () => null, ForecastTile: () => null, mrrParts: () => '', signedMoney: () => '' }));
-vi.mock('@/components/billing/OrderOptionsCard', () => ({ OrderOptionsCard: () => null }));
-vi.mock('@/components/billing/CouponsCard', () => ({ CouponsCard: () => null }));
-vi.mock('@/components/billing/CheckoutLinksCard', () => ({ CheckoutLinksCard: () => null }));
-vi.mock('@/components/billing/PriceAdjustmentCard', () => ({ PriceAdjustmentCard: () => null }));
+vi.mock('@/components/billing/OrderOptionsCard', () => ({ OrderOptionsCard: () => <p>[opções do pedido]</p> }));
+vi.mock('@/components/billing/CouponsCard', () => ({ CouponsCard: () => <p>[cupons]</p> }));
+vi.mock('@/components/billing/CheckoutLinksCard', () => ({ CheckoutLinksCard: () => <p>[links de pagamento]</p> }));
+vi.mock('@/components/billing/PriceAdjustmentCard', () => ({ PriceAdjustmentCard: () => <p>[reajuste]</p> }));
 vi.mock('./affiliates/AffiliatesTab', () => ({ AffiliatesTab: () => null }));
 vi.mock('./LeadsTab', () => ({ LeadsTab: () => null }));
 vi.mock('./SiteAnalyticsTab', () => ({ SiteAnalyticsTab: () => null }));
+vi.mock('./ChargeModal', () => ({
+  ChargeModal: ({ customerId }: { customerId: string | null }) => (customerId ? <p>[cobrar {customerId}]</p> : null),
+}));
 
 import { CustomersPage } from './CustomersPage';
 
@@ -149,5 +152,35 @@ describe('quem conta como cliente', () => {
     await act(async () => chip('Clientes').click());
     expect(location).toBe('/clientes');
     expect(rows()).toHaveLength(4);
+  });
+});
+
+describe('a aba Vendas', () => {
+  it('os links de pagamento, os cupons, as opções do pedido e o reajuste saem do fim da lista e ficam numa aba', async () => {
+    state.customers = CUSTOMERS;
+    await render();
+    const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    expect(tabs.map((t) => t.textContent)).toEqual(['Clientes', 'Vendas', 'Pré-clientes', 'Visitas do site', 'Afiliados']);
+    for (const card of ['[links de pagamento]', '[cupons]', '[opções do pedido]', '[reajuste]']) expect(text()).not.toContain(card);
+
+    await act(async () => tabs[1].click());
+    expect(location).toBe('/clientes?aba=vendas');
+    expect(rows()).toEqual([]);
+    const t = text();
+    const order = ['[links de pagamento]', '[cupons]', '[opções do pedido]', '[reajuste]'].map((card) => t.indexOf(card));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+});
+
+describe('cobrar pela lista', () => {
+  it('quem tem fatura em aberto tem o Cobrar na linha, que abre a mensagem pronta dele', async () => {
+    state.customers = CUSTOMERS;
+    await render();
+    const charge = Array.from(document.querySelectorAll<HTMLButtonElement>('tbody button')).filter((b) => b.textContent === 'Cobrar');
+    // Bia, Caio e Duda têm faturas em aberto; Ana, não.
+    expect(charge).toHaveLength(3);
+    await act(async () => charge[0].click());
+    expect(text()).toContain('[cobrar c2]');
   });
 });

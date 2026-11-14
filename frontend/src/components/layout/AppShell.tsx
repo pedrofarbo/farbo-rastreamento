@@ -5,6 +5,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
 import { financeApi, leadsApi, meApi, whatsappApi } from '@/api/resources';
 import { Spinner } from '@/components/ui/Spinner';
+import { GlobalSearch } from './GlobalSearch';
 import { SUPPORT_SCREEN } from '@/config/contact';
 import { useRealtime } from '@/hooks/useRealtime';
 import { ORG_ROLES, ROLE_LABELS } from '@/services/roles';
@@ -220,6 +221,9 @@ export function AppShell() {
         </NavLink>
 
         <div className={styles.right}>
+          {/* A busca geral (Ctrl+K): cliente, placa, IMEI ou chip. Só a central. */}
+          {canManage && <GlobalSearch />}
+
           <div
             className={`${styles.connection} ${connected ? styles.connectionLive : ''}`}
             title={

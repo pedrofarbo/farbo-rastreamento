@@ -14,6 +14,7 @@ import type {
   CheckoutInput,
   CheckoutLink,
   CheckoutLinkInput,
+  SearchResults,
   CheckoutOffer,
   Coupon,
   CouponInput,
@@ -677,6 +678,11 @@ export const checkoutLinksApi = {
   create: (input: CheckoutLinkInput) => api.post<CheckoutLink>('/api/checkout-links', input),
   update: (id: string, input: CheckoutLinkInput) => api.put<CheckoutLink>(`/api/checkout-links/${id}`, input),
   remove: (id: string) => api.delete<void>(`/api/checkout-links/${id}`),
+};
+
+/** A busca geral do painel da central: clientes, veículos, rastreadores e chips livres. */
+export const searchApi = {
+  search: (q: string) => api.get<SearchResults>(`/api/search?q=${encodeURIComponent(q)}`),
 };
 
 /** Os cupons de desconto da contratação direta pelo site (central). */

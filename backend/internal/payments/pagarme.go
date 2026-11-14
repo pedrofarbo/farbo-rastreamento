@@ -103,11 +103,8 @@ func pagarmeCustomer(p *Payer) *pagarme.Customer {
 	if p == nil || strings.TrimSpace(p.Name) == "" || !strings.Contains(p.Email, "@") || !validTaxID(p.Document) {
 		return nil
 	}
-	phone := onlyDigits(p.Phone)
-	if (len(phone) == 12 || len(phone) == 13) && strings.HasPrefix(phone, "55") {
-		phone = phone[2:]
-	}
-	if len(phone) < 10 || len(phone) > 11 {
+	phone, ok := pagarmePhone(p.Phone)
+	if !ok {
 		return nil
 	}
 	doc := onlyDigits(p.Document)
@@ -120,6 +117,41 @@ func pagarmeCustomer(p *Payer) *pagarme.Customer {
 		Phones:  pagarme.Phones{MobilePhone: &pagarme.Phone{CountryCode: "55", AreaCode: phone[:2], Number: phone[2:]}},
 		Address: pagarmeAddress(p.Address),
 	}
+}
+
+// pagarmePhone é o celular com o DDD, sem o 55 do país (10 ou 11 dígitos).
+func pagarmePhone(raw string) (string, bool) {
+	phone := onlyDigits(raw)
+	if (len(phone) == 12 || len(phone) == 13) && strings.HasPrefix(phone, "55") {
+		phone = phone[2:]
+	}
+	return phone, len(phone) >= 10 && len(phone) <= 11
+}
+
+// CardPayerMissing é o que falta no cadastro para pagar no cartão novo pela
+// Pagar.me (vazio: nada), nas palavras da ficha: a mesma conferência da
+// cobrança (pagarmeCustomer e o endereço de cobrança).
+func CardPayerMissing(p *Payer) []string {
+	if p == nil {
+		p = &Payer{}
+	}
+	var out []string
+	if strings.TrimSpace(p.Name) == "" {
+		out = append(out, "nome")
+	}
+	if !strings.Contains(p.Email, "@") {
+		out = append(out, "e-mail")
+	}
+	if !validTaxID(p.Document) {
+		out = append(out, "CPF ou CNPJ válido")
+	}
+	if _, ok := pagarmePhone(p.Phone); !ok {
+		out = append(out, "celular com DDD")
+	}
+	if pagarmeAddress(p.Address) == nil {
+		out = append(out, "endereço completo (CEP, rua, número, cidade e UF)")
+	}
+	return out
 }
 
 // pagarmeAddress: line_1 com "número, rua, bairro" e line_2 com o complemento.

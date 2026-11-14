@@ -2,6 +2,7 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Chip } from '@/types';
@@ -56,13 +57,15 @@ const type = async (input: HTMLInputElement, value: string) =>
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
 
-async function render() {
+async function render(path = '/chips') {
   const host = document.createElement('div');
   document.body.appendChild(host);
   await act(async () =>
     createRoot(host).render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <ChipsPage />
+        <MemoryRouter initialEntries={[path]}>
+          <ChipsPage />
+        </MemoryRouter>
       </QueryClientProvider>,
     ),
   );
@@ -92,6 +95,14 @@ describe('o estoque de chips', () => {
     expect(text()).not.toContain('8955 3202 1000 9379 5330');
     await act(async () => button('Todos (2)')[0].click());
     await type(document.querySelector('input[type="search"]') as HTMLInputElement, '869247');
+    expect(text()).toContain('8955 3202 1000 9379 5330');
+    expect(text()).not.toContain('8955 3202 1000 9379 5348');
+  });
+
+  it('a busca geral abre a lista já filtrada pelo ICCID (?busca=)', async () => {
+    chips = [chip(), chip({ id: 'c2', iccid: '89553202100093795330', phoneNumber: '', carrier: 'Vivo', apn: '' })];
+    await render('/chips?busca=89553202100093795330');
+    expect((document.querySelector('input[type="search"]') as HTMLInputElement).value).toBe('89553202100093795330');
     expect(text()).toContain('8955 3202 1000 9379 5330');
     expect(text()).not.toContain('8955 3202 1000 9379 5348');
   });

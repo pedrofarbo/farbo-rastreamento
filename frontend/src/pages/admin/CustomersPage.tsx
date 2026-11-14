@@ -26,6 +26,7 @@ import { usePagedList } from '@/hooks/usePagination';
 import styles from '../Page.module.css';
 import { AffiliatesTab } from './affiliates/AffiliatesTab';
 import { LeadsTab } from './LeadsTab';
+import { ChargeModal } from './ChargeModal';
 import { ForecastTile, MrrCard, mrrParts, signedMoney } from './MrrCard';
 import { SiteAnalyticsTab } from './SiteAnalyticsTab';
 
@@ -80,7 +81,9 @@ export function CustomersPage() {
   const showVisits = tab === 'visitas';
   // Programa de afiliados: os links dos influenciadores e as comissões.
   const showAffiliates = tab === 'afiliados';
-  const showCustomers = !showLeads && !showVisits && !showAffiliates;
+  // O que vale na contratação: as opções do pedido, os cupons, os links de pagamento e o reajuste.
+  const showSales = tab === 'vendas';
+  const showCustomers = !showLeads && !showVisits && !showAffiliates && !showSales;
   const leadStats = useQuery({ queryKey: ['leads', 'stats'], queryFn: leadsApi.stats, refetchInterval: 60_000 });
   const newLeads = leadStats.data?.new ?? 0;
 
@@ -89,6 +92,8 @@ export function CustomersPage() {
   const situation = SITUATIONS.find((s) => s.id === params.get('situacao')) ?? SITUATIONS[0];
   const listRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<CustomerDraft | null>(null);
+  // Cobrar da lista: a mensagem pronta com o link de todas em aberto.
+  const [charging, setCharging] = useState<string | null>(null);
   const [formError, setFormError] = useState('');
 
   const customers = useQuery({ queryKey: ['customers'], queryFn: customersApi.list });
@@ -145,7 +150,7 @@ export function CustomersPage() {
   };
 
   // A receita recorrente (só na aba de clientes).
-  const mrr = useQuery({ queryKey: ['customers', 'mrr'], queryFn: customersApi.mrr, enabled: !showLeads && !showVisits && !showAffiliates });
+  const mrr = useQuery({ queryKey: ['customers', 'mrr'], queryFn: customersApi.mrr, enabled: showCustomers });
   const thisMonth = mrr.data?.months[0];
 
   // As assinaturas contam sem as grátis (mensalidade zero).
@@ -195,6 +200,15 @@ export function CustomersPage() {
           <button
             type="button"
             role="tab"
+            aria-selected={showSales}
+            className={`${styles.tab} ${showSales ? styles.tabActive : ''}`}
+            onClick={() => setParams({ aba: 'vendas' }, { replace: true })}
+          >
+            Vendas
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={showLeads}
             className={`${styles.tab} ${showLeads ? styles.tabActive : ''}`}
             onClick={() => setParams({ aba: 'pre-clientes' }, { replace: true })}
@@ -221,7 +235,19 @@ export function CustomersPage() {
           </button>
         </div>
 
-        {showAffiliates ? (
+        {showSales ? (
+          <>
+            <p className={styles.description}>
+              O que vale na contratação: as opções do pedido, os cupons do site, os links de pagamento com a oferta
+              fechada e o reajuste anual. O plano definido na ficha de um cliente (e as condições do representante)
+              continuam valendo para ele.
+            </p>
+            <CheckoutLinksCard />
+            <CouponsCard />
+            <OrderOptionsCard />
+            <PriceAdjustmentCard />
+          </>
+        ) : showAffiliates ? (
           <AffiliatesTab />
         ) : showVisits ? (
           <SiteAnalyticsTab />
@@ -381,6 +407,18 @@ export function CustomersPage() {
                               </td>
                               <td className={billing.amount}>
                                 {customer.openInvoices > 0 ? formatMoney(customer.openAmountCents) : '—'}
+                                {customer.openInvoices > 0 && (
+                                  <div>
+                                    <Button
+                                      size="small"
+                                      variant={customer.overdueInvoices > 0 ? 'secondary' : 'ghost'}
+                                      title="A mensagem pronta com o link que paga todas as faturas em aberto, para o WhatsApp"
+                                      onClick={() => setCharging(customer.id)}
+                                    >
+                                      Cobrar
+                                    </Button>
+                                  </div>
+                                )}
                               </td>
                               <td>
                                 <CustomerStatus customer={customer} />
@@ -397,10 +435,6 @@ export function CustomersPage() {
             </div>
 
             <MrrCard mrr={mrr} />
-            <OrderOptionsCard />
-            <CouponsCard />
-            <CheckoutLinksCard />
-            <PriceAdjustmentCard />
           </>
         )}
       </div>
@@ -503,6 +537,7 @@ export function CustomersPage() {
           </div>
         )}
       </Modal>
+      <ChargeModal customerId={charging} onClose={() => setCharging(null)} />
     </div>
   );
 }

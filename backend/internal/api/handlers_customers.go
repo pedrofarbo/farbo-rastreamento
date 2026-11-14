@@ -50,6 +50,9 @@ type customerDetail struct {
 	// PayAllURL: o link (sem login) que paga todas as faturas em aberto do
 	// cliente de uma vez, de qualquer vencimento.
 	PayAllURL string `json:"payAllUrl,omitempty"`
+	// CardMissing: o que falta no cadastro para o cliente pagar no cartão
+	// pelos links (nulo: nada falta, ou o cartão não vale nos links).
+	CardMissing []string `json:"cardMissing,omitempty"`
 	// Fulfillments é o acompanhamento de cada veículo (chip e rastreador).
 	Fulfillments []*fulfillment.Fulfillment `json:"fulfillments"`
 	// HistoryRetentionDays é o prazo do cliente (nulo = padrão da central,
@@ -153,6 +156,13 @@ func (s *Server) customerDetail(ctx context.Context, id uuid.UUID) (*customerDet
 			return nil, err
 		}
 	}
+	// O cartão nos links pede os dados do cadastro: a ficha avisa o que falta.
+	var cardMissing []string
+	if s.publicCardEnabled() {
+		cardMissing = payments.CardPayerMissing(&payments.Payer{
+			Name: summary.Name, Email: summary.Email, Document: summary.Document, Phone: summary.Phone, Address: address,
+		})
+	}
 	var security twofactor.Brief
 	if s.TwoFactor != nil {
 		briefs, err := s.TwoFactor.Briefs(ctx, []uuid.UUID{id})
@@ -172,7 +182,7 @@ func (s *Server) customerDetail(ctx context.Context, id uuid.UUID) (*customerDet
 		OnlinePayment: s.Payments.Enabled(), Payments: paid, DeliveryAddress: address, Fulfillments: tracking,
 		HistoryRetentionDays: retentionDays, DefaultHistoryDays: s.Retention.Default(), Affiliate: referral,
 		Reminders: reminders, PaymentLinks: links, PayAllURL: payAll, Contract: accepted, ContractVersion: version, TwoFactor: security,
-		Plan: plan, Card: card,
+		Plan: plan, Card: card, CardMissing: cardMissing,
 	}, nil
 }
 

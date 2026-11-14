@@ -26,6 +26,7 @@ vi.mock('@/api/resources', () => ({
   leadsApi: { stats: async () => ({ new: 0 }) },
   meApi: { account: async () => ({ overdueInvoices: 0 }) },
   whatsappApi: { status: whatsappStatus },
+  searchApi: { search: async () => ({ customers: [], vehicles: [], devices: [], chips: [] }) },
 }));
 
 import { AppShell } from './AppShell';
@@ -175,5 +176,14 @@ describe('menu do painel', () => {
     host = await render();
     expect(menuLabels(host)).not.toContain('Faturas');
     expect(host.querySelector('#menu-principal')?.textContent).toContain('Conta de Frota Ltda · Gestor · alguns grupos');
+  });
+
+  it('a busca geral fica no cabeçalho só para a central', async () => {
+    let host = await render();
+    expect(host.querySelector('button[aria-label="Buscar no painel (Ctrl+K)"]')).not.toBeNull();
+    document.body.innerHTML = '';
+    auth = customer({});
+    host = await render();
+    expect(host.querySelector('button[aria-label="Buscar no painel (Ctrl+K)"]')).toBeNull();
   });
 });

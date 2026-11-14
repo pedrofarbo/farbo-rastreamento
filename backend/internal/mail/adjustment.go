@@ -191,7 +191,7 @@ var adjustmentSummaryTemplates = adjustmentTemplatesOf(`{{if .NoChange}}O IPCA d
 
 {{.Customers}} clientes ({{.Subscriptions}} mensalidades) foram avisados por e-mail. O preço novo vale para as faturas que vencem a partir de {{.From}}; a receita mensal sobe {{.MonthlyDiff}}.
 
-Dá para cancelar o reajuste deste ano em Clientes → Reajuste anual até {{.CancelUntil}} (os clientes recebem o aviso de cancelamento).{{end}}
+Dá para cancelar o reajuste deste ano em Clientes → Vendas → Reajuste anual até {{.CancelUntil}} (os clientes recebem o aviso de cancelamento).{{end}}
 
 {{.ActionURL}}
 `, `{{define "content"}}
@@ -203,7 +203,7 @@ Dá para cancelar o reajuste deste ano em Clientes → Reajuste anual até {{.Ca
 <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0d130e;">IPCA de {{.Rate}}</h1>
 <p style="margin:0 0 12px;font-size:15px;line-height:1.6;color:#334155;">O IPCA de {{.Period}} foi de <strong>{{.Rate}}</strong>. <strong>{{.Customers}} clientes</strong> ({{.Subscriptions}} mensalidades) foram avisados por e-mail.</p>
 <p style="margin:0 0 12px;font-size:15px;line-height:1.6;color:#334155;">O preço novo vale para as faturas que vencem a partir de <strong>{{.From}}</strong>; a receita mensal sobe <strong>{{.MonthlyDiff}}</strong>.</p>
-<p style="margin:0;font-size:14px;line-height:1.6;color:#475569;">Dá para cancelar o reajuste deste ano em Clientes → Reajuste anual até <strong>{{.CancelUntil}}</strong>; os clientes recebem o aviso de cancelamento.</p>
+<p style="margin:0;font-size:14px;line-height:1.6;color:#475569;">Dá para cancelar o reajuste deste ano em Clientes → Vendas → Reajuste anual até <strong>{{.CancelUntil}}</strong>; os clientes recebem o aviso de cancelamento.</p>
 {{end}}
 {{template "button" (button .ActionURL "Abrir Clientes")}}
 {{end}}`)

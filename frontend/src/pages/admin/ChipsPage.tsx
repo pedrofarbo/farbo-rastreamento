@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 
 import { chipsApi } from '@/api/resources';
 import { ChipBulkModal } from '@/components/chips/ChipBulkModal';
@@ -35,7 +36,13 @@ export function ChipsPage() {
   const { notify } = useToast();
   const list = useQuery({ queryKey: chipsKey, queryFn: chipsApi.list });
   const [filter, setFilter] = useState<Filter>('all');
-  const [search, setSearch] = useState('');
+  // A busca geral do cabeçalho abre a lista já filtrada (?busca=ICCID).
+  const [params] = useSearchParams();
+  const linked = params.get('busca') ?? '';
+  const [search, setSearch] = useState(linked);
+  useEffect(() => {
+    if (linked) setSearch(linked);
+  }, [linked]);
   // O chip em edição (null: chip novo); o formulário aberto é o form.
   const [editing, setEditing] = useState<Chip | null>(null);
   const [form, setForm] = useState<ChipInput | null>(null);

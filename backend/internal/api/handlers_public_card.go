@@ -44,7 +44,8 @@ func (s *Server) publicCard(r *http.Request, customerID uuid.UUID) publicCardVie
 	}
 	view.Provider, view.PublicKey = s.Payments.CardProvider(), s.Payments.CardPublicKey()
 	payer := s.payerFor(r, customerID)
-	view.PayerReady = payments.CardPayer(payer) != nil && payer.Address != nil
+	// A mesma conferência da cobrança: o que passa aqui a Pagar.me aceita.
+	view.PayerReady = len(payments.CardPayerMissing(payer)) == 0
 	return view
 }
 

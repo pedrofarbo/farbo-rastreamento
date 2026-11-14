@@ -586,6 +586,24 @@ export interface VehicleDirectoryFilter {
   device: string;
 }
 
+/** A busca geral do painel da central (Ctrl+K): até 6 de cada grupo. */
+export interface SearchResults {
+  customers: { id: string; name: string; email: string; phone: string; document: string; active: boolean }[];
+  vehicles: { id: string; name: string; plate: string; customerId: string | null; customerName: string; deviceImei: string }[];
+  devices: {
+    id: string;
+    imei: string;
+    model: string;
+    status: string;
+    vehicleId: string | null;
+    vehicleName: string;
+    customerId: string | null;
+    customerName: string;
+  }[];
+  /** Só os chips livres: o que está num rastreador aparece nele. */
+  chips: { id: string; iccid: string; phoneNumber: string; carrier: string }[];
+}
+
 export interface VehicleDirectoryPage {
   items: VehicleDirectoryEntry[];
   /** Quantos passam nos filtros (em todas as páginas). */
@@ -1689,6 +1707,8 @@ export interface CustomerDetail extends CustomerSummary {
   paymentLinks: Record<string, string>;
   /** O link (sem login) que paga todas as faturas em aberto do cliente de uma vez, de qualquer vencimento. */
   payAllUrl?: string;
+  /** O que falta no cadastro para pagar no cartão pelos links (ausente: nada, ou o cartão não vale nos links). */
+  cardMissing?: string[];
 }
 
 /** Um parágrafo (text) ou uma lista (items) do contrato. */

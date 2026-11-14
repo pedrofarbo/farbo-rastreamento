@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import { chipsApi, customersApi, deviceInputFrom, devicesApi, diagnosticsApi, vehiclesApi } from '@/api/resources';
 import type { DeviceInput, VehicleInput } from '@/api/resources';
@@ -109,7 +109,13 @@ export function DevicesPage() {
   const [bulkActivationOpen, setBulkActivationOpen] = useState(false);
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<Set<string>>(new Set());
   const [activationFilter, setActivationFilter] = useState<'all' | 'pending' | 'activated'>('all');
-  const [search, setSearch] = useState('');
+  // A busca geral do cabeçalho abre a lista já filtrada (?busca=IMEI).
+  const [params] = useSearchParams();
+  const linked = params.get('busca') ?? '';
+  const [search, setSearch] = useState(linked);
+  useEffect(() => {
+    if (linked) setSearch(linked);
+  }, [linked]);
 
   const devices = useQuery({ queryKey: ['devices'], queryFn: devicesApi.list });
   const vehicles = useQuery({ queryKey: ['vehicles'], queryFn: vehiclesApi.list });
