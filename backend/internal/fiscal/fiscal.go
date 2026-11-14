@@ -2,9 +2,12 @@
 // pela Notaas, pelo valor cheio: a mensalidade (a Farbo não vende o
 // rastreador; o incluso é parte do serviço), o proporcional, a instalação e
 // a desinstalação, o saldo do rastreador incluso e a fatura do mês da
-// organização. A nota sai sozinha depois do pagamento, vai por e-mail ao
-// cliente e aparece na ficha; estornada a fatura, a nota é cancelada. A
-// Notaas cobra por nota: a rotina não reenvia o que ela recusou.
+// organização. Uma nota por pagamento: as faturas do mês pagas juntas (a
+// mensalidade de cada veículo da frota num Pix só) saem numa nota, com a
+// quantidade de veículos no texto. A nota sai sozinha depois do pagamento,
+// vai por e-mail ao cliente e aparece na ficha; estornado o pagamento, a
+// nota é cancelada. A Notaas cobra por nota: a rotina não reenvia o que ela
+// recusou.
 package fiscal
 
 import (
@@ -65,14 +68,18 @@ type Mailer interface {
 	FiscalCreditsOver(ctx context.Context, to []string, d mail.FiscalCredits) error
 }
 
-// Document é a nota de uma fatura, como a ficha e o app mostram.
+// Document é a nota de um pagamento, como a ficha e o app mostram (sob cada
+// fatura que ela cobre).
 type Document struct {
-	ID               uuid.UUID `json:"id"`
-	InvoiceID        uuid.UUID `json:"invoiceId"`
-	Status           string    `json:"status"`
-	Number           string    `json:"number"`
-	VerificationCode string    `json:"verificationCode"`
-	AmountCents      int       `json:"amountCents"`
+	ID uuid.UUID `json:"id"`
+	// InvoiceID: a primeira fatura da nota (a referência na Notaas).
+	InvoiceID uuid.UUID `json:"invoiceId"`
+	// Invoices: quantas faturas a nota cobre (as pagas juntas).
+	Invoices         int    `json:"invoices"`
+	Status           string `json:"status"`
+	Number           string `json:"number"`
+	VerificationCode string `json:"verificationCode"`
+	AmountCents      int    `json:"amountCents"`
 	// HasPDF: dá para baixar o DANFSE (pelo /pdf, que busca na Notaas).
 	HasPDF bool `json:"hasPdf"`
 	// HasXML: dá para baixar o XML (pelo /xml): a emitida, também depois de
@@ -100,34 +107,47 @@ func NewService(db *database.DB, api Gateway, cfg config.Fiscal, mailer Mailer, 
 // SetClock troca o relógio (testes).
 func (s *Service) SetClock(now func() time.Time) { s.now = now }
 
-const documentColumns = `id, invoice_id, status, number, verification_code, amount_cents, provider_id <> '' AND status = 'issued',
-	provider_id <> '' AND number <> '' AND status IN ('issued', 'cancel_pending', 'cancelled'),
-	error, issued_at, cancelled_at, created_at`
+// documentColumns: a nota (fiscal_documents f) com quantas faturas ela cobre.
+const documentColumns = `f.id, f.invoice_id, f.status, f.number, f.verification_code, f.amount_cents,
+	f.provider_id <> '' AND f.status = 'issued',
+	f.provider_id <> '' AND f.number <> '' AND f.status IN ('issued', 'cancel_pending', 'cancelled'),
+	f.error, f.issued_at, f.cancelled_at, f.created_at,
+	(SELECT count(*) FROM fiscal_document_invoices c WHERE c.document_id = f.id)`
 
-func scanDocument(row database.Scanner) (*Document, error) {
+// scanDocument lê a nota; first são as colunas antes das dela.
+func scanDocument(row database.Scanner, first ...any) (*Document, error) {
 	var d Document
-	if err := row.Scan(&d.ID, &d.InvoiceID, &d.Status, &d.Number, &d.VerificationCode, &d.AmountCents, &d.HasPDF, &d.HasXML, &d.Error,
-		&d.IssuedAt, &d.CancelledAt, &d.CreatedAt); err != nil {
+	if err := row.Scan(append(first, &d.ID, &d.InvoiceID, &d.Status, &d.Number, &d.VerificationCode, &d.AmountCents, &d.HasPDF,
+		&d.HasXML, &d.Error, &d.IssuedAt, &d.CancelledAt, &d.CreatedAt, &d.Invoices)...); err != nil {
 		return nil, database.MapError(err)
 	}
 	return &d, nil
 }
 
-// ForCustomer são as notas do cliente, pela fatura.
+// ForCustomer são as notas do cliente, pela fatura: a nota de um pagamento
+// aparece em cada fatura que ela cobre.
 func (s *Service) ForCustomer(ctx context.Context, customerID uuid.UUID) (map[string]*Document, error) {
-	rows, err := s.db.Query(ctx, `SELECT `+documentColumns+` FROM fiscal_documents WHERE customer_id = $1
-		ORDER BY created_at DESC LIMIT 500`, customerID)
+	rows, err := s.db.Query(ctx, `SELECT fi.invoice_id, `+documentColumns+`
+		FROM fiscal_documents f JOIN fiscal_document_invoices fi ON fi.document_id = f.id
+		WHERE f.customer_id = $1
+		ORDER BY f.created_at DESC LIMIT 2000`, customerID)
 	if err != nil {
 		return nil, database.MapError(err)
 	}
 	defer rows.Close()
 	out := map[string]*Document{}
+	byID := map[uuid.UUID]*Document{}
 	for rows.Next() {
-		d, err := scanDocument(rows)
+		var invoice uuid.UUID
+		d, err := scanDocument(rows, &invoice)
 		if err != nil {
 			return nil, err
 		}
-		out[d.InvoiceID.String()] = d
+		if same := byID[d.ID]; same != nil {
+			d = same
+		}
+		byID[d.ID] = d
+		out[invoice.String()] = d
 	}
 	return out, database.MapError(rows.Err())
 }
@@ -144,7 +164,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID, owner *uuid.UUID) (*Doc
 	if err != nil {
 		return nil, "", database.MapError(err)
 	}
-	d, err := scanDocument(s.db.QueryRow(ctx, `SELECT `+documentColumns+` FROM fiscal_documents WHERE id = $1`, id))
+	d, err := scanDocument(s.db.QueryRow(ctx, `SELECT `+documentColumns+` FROM fiscal_documents f WHERE f.id = $1`, id))
 	return d, providerID, err
 }
 
@@ -242,28 +262,9 @@ func (s *Service) start(ctx context.Context) (time.Time, error) {
 	return since, database.MapError(err)
 }
 
-// enqueue cria a nota das faturas pagas desde o início, pelo valor cheio
-// delas: a Farbo só emite nota de serviço, e a mensalidade inteira é serviço
-// (com a parte do rastreador incluso e, nas antigas, a parcela do comprado).
-func (s *Service) enqueue(ctx context.Context, since time.Time) error {
-	tag, err := s.db.Exec(ctx, `
-		INSERT INTO fiscal_documents (invoice_id, customer_id, amount_cents, next_try_at)
-		SELECT i.id, i.customer_id, i.amount_cents, $2
-		FROM invoices i
-		WHERE i.status = 'PAID' AND i.paid_at >= $1 AND i.amount_cents > 0 AND `+Eligible+`
-			AND NOT EXISTS (SELECT 1 FROM fiscal_documents f WHERE f.invoice_id = i.id)
-		ORDER BY i.paid_at LIMIT 200
-		ON CONFLICT (invoice_id) DO NOTHING`, since, s.now())
-	if err != nil {
-		return database.MapError(err)
-	}
-	if n := tag.RowsAffected(); n > 0 {
-		s.log.Info("notas fiscais enfileiradas", "count", n)
-	}
-	return nil
-}
-
-// job é uma nota a emitir, com o tomador.
+// job é uma nota a emitir, com o tomador. description: o texto do serviço
+// (o da nota de várias faturas, ou o da fatura); due: o vencimento da
+// primeira, a competência.
 type job struct {
 	id          uuid.UUID
 	status      string
@@ -281,7 +282,7 @@ type job struct {
 
 func (s *Service) emitPending(ctx context.Context) {
 	rows, err := s.db.Query(ctx, `
-		SELECT f.id, f.status, f.invoice_id, f.attempts, f.amount_cents, i.description, i.due_date,
+		SELECT f.id, f.status, f.invoice_id, f.attempts, f.amount_cents, COALESCE(NULLIF(f.description, ''), i.description), i.due_date,
 			COALESCE(u.name, ''), COALESCE(u.email, ''), COALESCE(u.phone, ''), COALESCE(u.document, ''),
 			a.street, a.number, a.complement, a.district, a.city, a.state, a.zip_code
 		FROM fiscal_documents f JOIN invoices i ON i.id = f.invoice_id
@@ -532,16 +533,21 @@ func (s *Service) apply(ctx context.Context, id uuid.UUID, current string, attem
 	}
 }
 
-// cancelRefunded pede o cancelamento da nota de fatura estornada (que
-// voltou a ficar em aberto ou foi cancelada); a que nem saiu, sai da fila.
+// refunded: alguma fatura da nota não está mais paga (o pagamento foi
+// estornado: a fatura voltou a ficar em aberto ou foi cancelada).
+const refunded = `EXISTS (SELECT 1 FROM fiscal_document_invoices fi JOIN invoices i ON i.id = fi.invoice_id
+	WHERE fi.document_id = f.id AND i.status <> 'PAID')`
+
+// cancelRefunded pede o cancelamento da nota do pagamento estornado (o
+// estorno devolve o pagamento inteiro: todas as faturas dele reabrem); a que
+// nem saiu, sai da fila.
 func (s *Service) cancelRefunded(ctx context.Context) {
 	if _, err := s.db.Exec(ctx, `UPDATE fiscal_documents f SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW()
-		FROM invoices i WHERE i.id = f.invoice_id AND i.status <> 'PAID'
-			AND f.status IN ('pending', 'error', 'blocked')`); err != nil {
+		WHERE f.status IN ('pending', 'error', 'blocked') AND `+refunded); err != nil {
 		s.log.Error("falha ao tirar da fila as notas de faturas estornadas", "err", err)
 	}
-	rows, err := s.db.Query(ctx, `SELECT f.id, f.provider_id FROM fiscal_documents f JOIN invoices i ON i.id = f.invoice_id
-		WHERE i.status <> 'PAID' AND f.status = 'issued' AND f.provider_id <> '' LIMIT `+fmt.Sprint(batch))
+	rows, err := s.db.Query(ctx, `SELECT f.id, f.provider_id FROM fiscal_documents f
+		WHERE f.status = 'issued' AND f.provider_id <> '' AND `+refunded+` LIMIT `+fmt.Sprint(batch))
 	if err != nil {
 		s.log.Error("falha ao listar as notas de faturas estornadas", "err", err)
 		return
@@ -577,7 +583,8 @@ func (s *Service) sendMail(ctx context.Context) {
 		return
 	}
 	rows, err := s.db.Query(ctx, `
-		SELECT f.id, f.number, f.amount_cents, f.pdf_url, i.description, COALESCE(u.email, ''), COALESCE(u.name, '')
+		SELECT f.id, f.number, f.amount_cents, f.pdf_url, COALESCE(NULLIF(f.description, ''), i.description),
+			COALESCE(u.email, ''), COALESCE(u.name, '')
 		FROM fiscal_documents f JOIN invoices i ON i.id = f.invoice_id JOIN users u ON u.id = f.customer_id
 		WHERE f.status = 'issued' AND f.emailed_at IS NULL AND u.email <> ''
 		ORDER BY f.issued_at LIMIT `+fmt.Sprint(batch))

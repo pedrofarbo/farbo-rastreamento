@@ -39,6 +39,14 @@ describe('a NFS-e sob a fatura', () => {
     expect(fiscalLabel(doc({ status: 'cancelled' }))).toBe('NFS-e nº 1234 cancelada');
   });
 
+  it('a nota de um pagamento de várias faturas diz quantas cobre', () => {
+    expect(fiscalLabel(doc({ invoices: 1 }))).toBe('NFS-e nº 1234');
+    expect(fiscalLabel(doc({ invoices: 4 }))).toBe('NFS-e nº 1234 · uma nota para as 4 faturas pagas juntas');
+    expect(fiscalLabel(doc({ status: 'processing', number: '', invoices: 3 }))).toBe(
+      'NFS-e em emissão · uma nota para as 3 faturas pagas juntas',
+    );
+  });
+
   it('a emitida baixa o PDF e o XML; a recusada emite de novo só para a central', async () => {
     const onDownload = await render(doc({}));
     await act(async () => button('Baixar o PDF')!.click());

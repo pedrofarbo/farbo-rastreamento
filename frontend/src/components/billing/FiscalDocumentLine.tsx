@@ -3,8 +3,14 @@ import type { FiscalDocument } from '@/types';
 
 import styles from './Billing.module.css';
 
-/** A situação da NFS-e, como aparece sob a fatura. */
+/** A situação da NFS-e, como aparece sob a fatura (a de várias faturas diz quantas). */
 export function fiscalLabel(doc: FiscalDocument): string {
+  const label = statusLabel(doc);
+  const n = doc.invoices ?? 1;
+  return n > 1 ? `${label} · uma nota para as ${n} faturas pagas juntas` : label;
+}
+
+function statusLabel(doc: FiscalDocument): string {
   switch (doc.status) {
     case 'issued':
       return `NFS-e nº ${doc.number}`;

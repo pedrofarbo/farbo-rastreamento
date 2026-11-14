@@ -151,9 +151,9 @@ func (s *Service) Close(ctx context.Context, month time.Time) (*Month, error) {
 		SELECT u.id, u.role, u.name, u.document, u.email, count(*),
 			COALESCE(sum(i.amount_cents), 0),
 			COALESCE(sum(i.amount_cents) FILTER (WHERE i.status = 'PAID'), 0),
-			count(*) FILTER (WHERE i.amount_cents > 0 AND NOT EXISTS (SELECT 1 FROM fiscal_documents f WHERE f.invoice_id = i.id)
+			count(*) FILTER (WHERE i.amount_cents > 0 AND NOT EXISTS (SELECT 1 FROM fiscal_document_invoices f WHERE f.invoice_id = i.id)
 				AND (NOT $3 OR (`+fiscal.Eligible+` AND i.status = 'PAID' AND (i.paid_at IS NULL OR i.paid_at < $4)))),
-			count(*) FILTER (WHERE $3 AND i.amount_cents > 0 AND NOT EXISTS (SELECT 1 FROM fiscal_documents f WHERE f.invoice_id = i.id)
+			count(*) FILTER (WHERE $3 AND i.amount_cents > 0 AND NOT EXISTS (SELECT 1 FROM fiscal_document_invoices f WHERE f.invoice_id = i.id)
 				AND `+fiscal.Eligible+` AND NOT (i.status = 'PAID' AND (i.paid_at IS NULL OR i.paid_at < $4)))
 		FROM invoices i JOIN users u ON u.id = i.customer_id
 		WHERE i.status <> 'CANCELED' AND i.due_date >= $1 AND i.due_date < $2

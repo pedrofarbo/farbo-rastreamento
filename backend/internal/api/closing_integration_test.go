@@ -198,8 +198,11 @@ func TestMonthlyClosingWithNotaas(t *testing.T) {
 	}
 	document := func(invoiceID, customer uuid.UUID, status, number string, cents int) {
 		t.Helper()
-		if _, err := env.db.Exec(ctx, `INSERT INTO fiscal_documents (invoice_id, customer_id, status, number, amount_cents, issued_at)
-			VALUES ($1, $2, $3, $4, $5, CASE WHEN $3 = 'issued' THEN NOW() END)`, invoiceID, customer, status, number, cents); err != nil {
+		if _, err := env.db.Exec(ctx, `WITH f AS (
+				INSERT INTO fiscal_documents (invoice_id, customer_id, status, number, amount_cents, issued_at)
+				VALUES ($1, $2, $3, $4, $5, CASE WHEN $3 = 'issued' THEN NOW() END) RETURNING id, invoice_id, amount_cents)
+			INSERT INTO fiscal_document_invoices (invoice_id, document_id, amount_cents) SELECT invoice_id, id, amount_cents FROM f`,
+			invoiceID, customer, status, number, cents); err != nil {
 			t.Fatal(err)
 		}
 	}

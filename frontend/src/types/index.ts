@@ -1362,7 +1362,10 @@ export interface Invoice {
  */
 export interface FiscalDocument {
   id: string;
+  /** A primeira fatura da nota (a referência na Notaas). */
   invoiceId: string;
+  /** Quantas faturas a nota cobre: as pagas juntas (o Pix de várias, as baixas seguidas) do mesmo mês. */
+  invoices?: number;
   status: 'pending' | 'processing' | 'issued' | 'error' | 'blocked' | 'cancel_pending' | 'cancelled';
   number: string;
   verificationCode: string;
