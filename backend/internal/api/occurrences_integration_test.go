@@ -192,7 +192,8 @@ func TestClaimsAndInspections(t *testing.T) {
 	if status, _ := env.upload(biaToken, http.MethodPut, ipath+"/photos/teto", jpegBytes, nil); status != http.StatusBadRequest {
 		t.Fatalf("ângulo inválido: %d", status)
 	}
-	_ = json.Unmarshal(env.must(biaToken, http.MethodPost, ipath+"/submit", nil, http.StatusOK), &inspection)
+	env.must(biaToken, http.MethodPost, ipath+"/submit", nil, http.StatusBadRequest) // sem a declaração
+	_ = json.Unmarshal(env.must(biaToken, http.MethodPost, ipath+"/submit", map[string]any{"accept": true}, http.StatusOK), &inspection)
 	if inspection.Status != "submitted" || len(inspection.Photos) != 6 {
 		t.Fatalf("enviada = %+v", inspection)
 	}
@@ -220,7 +221,7 @@ func TestClaimsAndInspections(t *testing.T) {
 	if status, _ := env.upload(biaToken, http.MethodPut, redo+"/photos/chassis", jpegBytes, nil); status != http.StatusOK {
 		t.Fatalf("refazer o chassi: %d", status)
 	}
-	env.must(biaToken, http.MethodPost, redo+"/submit", nil, http.StatusOK)
+	env.must(biaToken, http.MethodPost, redo+"/submit", map[string]any{"accept": true}, http.StatusOK)
 	_ = json.Unmarshal(env.must(ivo, http.MethodPost, "/api/org/inspections/"+mine[0].ID.String()+"/review", map[string]any{"approve": true},
 		http.StatusOK), &inspection)
 	if inspection.Status != "approved" {

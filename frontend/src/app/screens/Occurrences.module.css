@@ -84,6 +84,8 @@
 .picker {
   position: relative;
   display: inline-flex;
+  background: transparent;
+  font-family: inherit;
   align-items: center;
   justify-content: center;
   min-height: 44px;
@@ -211,4 +213,20 @@
 .stats strong {
   font-size: var(--text-base);
   white-space: nowrap;
+}
+
+/* A declaração da vistoria, antes de enviar. */
+.accept {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.accept input {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  flex-shrink: 0;
 }

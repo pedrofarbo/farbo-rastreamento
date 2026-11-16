@@ -201,7 +201,17 @@ import type {
   ClaimInput,
   ClaimStatus,
   Inspection,
+  InspectionPhotoMeta,
+  InspectionRequestInput,
   InspectionSlot,
+  PublicInspection,
+  Adhesion,
+  AdhesionInput,
+  AdhesionSettings,
+  PublicAdhesion,
+  PublicAdhesionOrg,
+  ClaimTelemetry,
+  TrackerHealth,
   ReferralProgram,
   FleetDriver,
   FleetDriverInput,
@@ -556,6 +566,8 @@ export const orgApi = {
     }),
   claims: (status = '') => api.get<Claim[]>(`/api/org/claims${status ? `?situacao=${status}` : ''}`),
   claim: (id: string) => api.get<Claim>(`/api/org/claims/${id}`),
+  /** A análise do rastreador em volta do horário declarado. */
+  claimTelemetry: (id: string) => api.get<ClaimTelemetry>(`/api/org/claims/${id}/telemetry`),
   setClaimStatus: (id: string, status: ClaimStatus, note: string) =>
     api.post<Claim>(`/api/org/claims/${id}/status`, { status, note }),
   claimNote: (id: string, note: string) => api.post<Claim>(`/api/org/claims/${id}/notes`, { note }),
@@ -563,10 +575,27 @@ export const orgApi = {
   downloadClaimFile: (id: string, fileId: string) => download(`/api/org/claims/${id}/files/${fileId}`),
   inspections: (status = '') => api.get<Inspection[]>(`/api/org/inspections${status ? `?situacao=${status}` : ''}`),
   inspection: (id: string) => api.get<Inspection>(`/api/org/inspections/${id}`),
-  requestInspection: (vehicleId: string, note: string) => api.post<Inspection>('/api/org/inspections', { vehicleId, note }),
+  /** A vistoria do veículo do associado ou, de quem vai entrar, pelo nome, o celular e a placa (volta com o link). */
+  requestInspection: (input: InspectionRequestInput) => api.post<Inspection>('/api/org/inspections', input),
   reviewInspection: (id: string, approve: boolean, note: string) =>
     api.post<Inspection>(`/api/org/inspections/${id}/review`, { approve, note }),
+  /** O link para de abrir (a vistoria que espera as fotos). */
+  cancelInspection: (id: string) => api.post<Inspection>(`/api/org/inspections/${id}/cancel`),
+  /** Mais 7 dias para o link. */
+  renewInspection: (id: string) => api.post<Inspection>(`/api/org/inspections/${id}/renew`),
   inspectionPhotoUrl: (id: string, slot: InspectionSlot) => `/api/org/inspections/${id}/photos/${slot}`,
+  /** As adesões pelo link e o link de adesão. */
+  adhesions: (status = '') => api.get<Adhesion[]>(`/api/org/adhesions${status ? `?situacao=${status}` : ''}`),
+  adhesion: (id: string) => api.get<Adhesion>(`/api/org/adhesions/${id}`),
+  approveAdhesion: (id: string) => api.post<Adhesion>(`/api/org/adhesions/${id}/approve`),
+  rejectAdhesion: (id: string, note: string) => api.post<Adhesion>(`/api/org/adhesions/${id}/reject`, { note }),
+  adhesionSettings: () => api.get<AdhesionSettings>('/api/org/adhesion-settings'),
+  setAdhesionSettings: (enabled: boolean) => api.put<AdhesionSettings>('/api/org/adhesion-settings', { enabled }),
+  /** A saúde dos rastreadores dos associados. */
+  trackerHealth: () => api.get<TrackerHealth>('/api/org/health'),
+  /** Avisa agora, no app, o associado do rastreador sem sinal. */
+  notifyTrackerHealth: (vehicleId: string) => api.post<{ delivered: number }>(`/api/org/health/vehicles/${vehicleId}/notify`),
+  setTrackerHealthAutoNotice: (autoNotice: boolean) => api.put<void>('/api/org/health/settings', { autoNotice }),
   /** O painel de recuperação: os modos roubo dos veículos dos associados. */
   recoveries: (months = 12) => api.get<OrgRecoveries>(`/api/org/recoveries?meses=${months}`),
   associate: (id: string) => api.get<AssociateDetail>(`/api/org/associates/${id}`),
@@ -699,6 +728,8 @@ export const installationsApi = {
   list: (from?: string, to?: string) =>
     api.get<InstallationAppointment[]>(`/api/installations${from && to ? `?de=${from}&ate=${to}` : ''}`),
   awaiting: () => api.get<AwaitingInstall[]>('/api/installations/awaiting'),
+  /** As paradas de qualquer dia: o horário passou sem a chegada, ou chegou e não concluiu. */
+  stalled: () => api.get<InstallationAppointment[]>('/api/installations/stalled'),
   /** Os veículos de associado à espera da retirada do rastreador (pedido da associação ou associado desligado). */
   awaitingUninstall: () => api.get<AwaitingUninstall[]>('/api/installations/awaiting-uninstall'),
   create: (input: InstallationInput) => api.post<InstallationAppointment>('/api/installations', input),
@@ -709,6 +740,52 @@ export const installationsApi = {
   /** Outra senha para o link do instalador (a antiga para de valer e destrava o link). */
   renewPin: (id: string) => api.post<InstallationAppointment>(`/api/installations/${id}/pin`),
   photoUrl: (id: string, slot: InstallationSlot) => `/api/installations/${id}/photos/${slot}`,
+};
+
+/** A adesão digital pelo link da associação (sem login). */
+export const adhesionLinkApi = {
+  org: (token: string) => request<PublicAdhesionOrg>(`/api/public/adhesion/${encodeURIComponent(token)}`, { anonymous: true }),
+  start: (token: string, input: AdhesionInput) =>
+    request<PublicAdhesion>(`/api/public/adhesion/${encodeURIComponent(token)}`, { method: 'POST', body: input, anonymous: true }),
+  view: (token: string) => request<PublicAdhesion>(`/api/public/adhesions/${encodeURIComponent(token)}`, { anonymous: true }),
+  accept: (token: string, version: string, preference: string) =>
+    request<PublicAdhesion>(`/api/public/adhesions/${encodeURIComponent(token)}/accept`, {
+      method: 'POST',
+      body: { version, preference },
+      anonymous: true,
+    }),
+};
+
+/** A foto da vistoria com a posição do celular e de onde veio. */
+function inspectionPhotoForm(slot: InspectionSlot, file: Blob, meta: InspectionPhotoMeta): FormData {
+  const form = new FormData();
+  form.append('file', file, `${slot}.jpg`);
+  form.append('source', meta.source);
+  if (meta.position) {
+    form.append('latitude', String(meta.position.latitude));
+    form.append('longitude', String(meta.position.longitude));
+    if (meta.position.accuracy !== null) form.append('accuracy', String(Math.round(meta.position.accuracy)));
+  }
+  return form;
+}
+
+/** O link da vistoria (sem login): o associado, quem vai entrar ou o técnico. */
+export const inspectionLinkApi = {
+  view: (token: string) => request<PublicInspection>(`/api/public/inspections/${encodeURIComponent(token)}`, { anonymous: true }),
+  savePhoto: (token: string, slot: InspectionSlot, file: Blob, meta: InspectionPhotoMeta) =>
+    request<unknown>(`/api/public/inspections/${encodeURIComponent(token)}/photos/${slot}`, {
+      method: 'PUT',
+      body: inspectionPhotoForm(slot, file, meta),
+      anonymous: true,
+    }),
+  photoUrl: (token: string, slot: InspectionSlot, version = '') =>
+    apiUrl(`/api/public/inspections/${encodeURIComponent(token)}/photos/${slot}${version ? `?v=${encodeURIComponent(version)}` : ''}`),
+  submit: (token: string, damagesNote: string) =>
+    request<PublicInspection>(`/api/public/inspections/${encodeURIComponent(token)}/submit`, {
+      method: 'POST',
+      body: { damagesNote, accept: true },
+      anonymous: true,
+    }),
 };
 
 /** A senha do link do instalador, guardada no aparelho (vai em toda chamada ao link). */
@@ -1737,17 +1814,11 @@ export const meApi = {
   /** As vistorias pedidas ao associado. */
   inspections: () => api.get<Inspection[]>('/api/me/inspections'),
   inspection: (id: string) => api.get<Inspection>(`/api/me/inspections/${id}`),
-  saveInspectionPhoto: (id: string, slot: InspectionSlot, file: Blob, position: { latitude: number; longitude: number } | null) => {
-    const form = new FormData();
-    form.append('file', file, `${slot}.jpg`);
-    if (position) {
-      form.append('latitude', String(position.latitude));
-      form.append('longitude', String(position.longitude));
-    }
-    return request<unknown>(`/api/me/inspections/${id}/photos/${slot}`, { method: 'PUT', body: form });
-  },
+  saveInspectionPhoto: (id: string, slot: InspectionSlot, file: Blob, meta: InspectionPhotoMeta) =>
+    request<unknown>(`/api/me/inspections/${id}/photos/${slot}`, { method: 'PUT', body: inspectionPhotoForm(slot, file, meta) }),
   inspectionPhotoUrl: (id: string, slot: InspectionSlot) => `/api/me/inspections/${id}/photos/${slot}`,
-  submitInspection: (id: string) => api.post<Inspection>(`/api/me/inspections/${id}/submit`),
+  submitInspection: (id: string, damagesNote: string) =>
+    api.post<Inspection>(`/api/me/inspections/${id}/submit`, { damagesNote, accept: true }),
   /** As notas fiscais de cada mês. */
   fiscalNotes: () => api.get<FiscalNote[]>('/api/me/fiscal-notes'),
   /** A NFS-e de cada fatura paga, pelo id da fatura. */

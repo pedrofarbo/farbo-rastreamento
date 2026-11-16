@@ -159,6 +159,12 @@ export function InstallerPage() {
           </p>
         )}
         {view.notes && <p className={styles.muted}>📝 {view.notes}</p>}
+        {view.inspectionUrl && !done && (
+          <p className={styles.text}>
+            📷 <strong>Vistoria:</strong> a associação pediu a vistoria deste veículo com técnico. Faça junto com a instalação:{' '}
+            <a href={view.inspectionUrl}>abrir a vistoria</a>.
+          </p>
+        )}
         <div className={local.contact}>
           {view.customerPhone && (
             <>
@@ -259,6 +265,11 @@ export function InstallerPage() {
                 </>
               ) : null}
               {check && <p className={`${local.check} ${check.ready ? local.ok : local.wait}`}>{check.message}</p>}
+              {check?.ready && !done && (
+                <p className={styles.text} role="status">
+                  <strong>Falta pouco:</strong> {readyHint(hasTracker)}
+                </p>
+              )}
             </section>
           )}
 
@@ -320,6 +331,13 @@ export function InstallerPage() {
       )}
     </Shell>
   );
+}
+
+/** Depois do teste que passou: o que falta para o rastreador ficar no veículo. */
+export function readyHint(hasTrackerPhoto: boolean): string {
+  return hasTrackerPhoto
+    ? 'toque em “Concluir a instalação” (passo 4). O rastreador só fica no veículo do cliente depois disso.'
+    : 'tire a foto do rastreador instalado (passo 3) e toque em “Concluir a instalação” (passo 4). O rastreador só fica no veículo do cliente depois disso.';
 }
 
 export function Shell({ children, label = 'Instalador' }: { children: ReactNode; label?: string }) {

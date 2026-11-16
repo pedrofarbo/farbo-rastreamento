@@ -40,11 +40,15 @@ const PublicTheftPage = page(() => import('@/pages/PublicTheftPage'), 'PublicThe
 const PublicLivePage = page(() => import('@/pages/PublicLivePage'), 'PublicLivePage');
 const PublicRoutePage = page(() => import('@/pages/PublicRoutePage'), 'PublicRoutePage');
 const InstallerPage = page(() => import('@/pages/InstallerPage'), 'InstallerPage');
+const PublicInspectionPage = page(() => import('@/pages/PublicInspectionPage'), 'PublicInspectionPage');
+const PublicAdhesionPage = page(() => import('@/pages/PublicAdhesionPage'), 'PublicAdhesionPage');
+const PublicAdhesionFollowPage = page(() => import('@/pages/PublicAdhesionPage'), 'PublicAdhesionFollowPage');
 const StandaloneInstallPage = page(() => import('@/pages/StandaloneInstallPage'), 'StandaloneInstallPage');
 const InstallationsAgendaPage = page(() => import('@/pages/admin/InstallationsAgendaPage'), 'InstallationsAgendaPage');
 const OrgInstallationsPage = page(() => import('@/pages/org/OrgInstallationsPage'), 'OrgInstallationsPage');
 const TheftReportPage = page(() => import('@/pages/TheftReportPage'), 'TheftReportPage');
 const ClaimReportPage = page(() => import('@/pages/ClaimReportPage'), 'ClaimReportPage');
+const InspectionReportPage = page(() => import('@/pages/org/InspectionReportPage'), 'InspectionReportPage');
 const PublicPayPage = page(() => import('@/pages/PublicPayPage'), 'PublicPayPage');
 const PublicAccountPayPage = page(() => import('@/pages/PublicAccountPayPage'), 'PublicAccountPayPage');
 const CheckoutPage = page(() => import('@/pages/CheckoutPage'), 'CheckoutPage');
@@ -79,6 +83,8 @@ const OrgClaimsPage = page(() => import('@/pages/org/OrgClaimsPage'), 'OrgClaims
 const OrgClaimPage = page(() => import('@/pages/org/OrgClaimsPage'), 'OrgClaimPage');
 const OrgInspectionsPage = page(() => import('@/pages/org/OrgInspectionsPage'), 'OrgInspectionsPage');
 const OrgInspectionPage = page(() => import('@/pages/org/OrgInspectionsPage'), 'OrgInspectionPage');
+const OrgHealthPage = page(() => import('@/pages/org/OrgHealthPage'), 'OrgHealthPage');
+const OrgAdhesionsPage = page(() => import('@/pages/org/OrgAdhesionsPage'), 'OrgAdhesionsPage');
 const OrgInvoicesPage = page(() => import('@/pages/org/OrgInvoicesPage'), 'OrgInvoicesPage');
 const OrganizationsPage = page(() => import('@/pages/admin/OrganizationsPage'), 'OrganizationsPage');
 const VehiclesPage = page(() => import('@/pages/admin/VehiclesPage'), 'VehiclesPage');
@@ -131,6 +137,11 @@ export function App() {
                 <Route path="/linha/:token" element={<PublicRoutePage />} />
                 {/* O link do instalador: o passo a passo da instalação (sem login). */}
                 <Route path="/instalador/:token" element={<InstallerPage />} />
+                {/* O link da vistoria: o associado, quem vai entrar ou o técnico tira as fotos (sem login). */}
+                <Route path="/vistoria/:token" element={<PublicInspectionPage />} />
+                {/* A adesão digital: o link da associação e o acompanhamento (sem login). */}
+                <Route path="/adesao/acompanhar/:token" element={<PublicAdhesionFollowPage />} />
+                <Route path="/adesao/:token" element={<PublicAdhesionPage />} />
                 {/* O link da instalação avulsa: o teste do sinal e a conclusão (sem login). */}
                 <Route path="/instalador/avulsa/:token" element={<StandaloneInstallPage />} />
                 {/* O link de pagamento dos lembretes de fatura (sem login). */}
@@ -146,6 +157,8 @@ export function App() {
                   <Route path="relatorio-roubo/:id" element={<TheftReportPage />} />
                   {/* O relatório de sinistro (o seguro, a perícia): o trajeto e a velocidade em volta de um momento. */}
                   <Route path="relatorio-sinistro/:id" element={<ClaimReportPage />} />
+                  {/* O laudo da vistoria (para imprimir ou salvar em PDF). */}
+                  <Route path="organizacao/vistorias/:id/laudo" element={<InspectionReportPage />} />
                   <Route element={<AppShell />}>
                     {/* Comuns: a API filtra o que o cliente vê. */}
                     <Route path="dashboard" element={<DashboardPage />} />
@@ -179,10 +192,12 @@ export function App() {
                         <Route path="organizacao/integracoes" element={<OrgIntegrationsPage />} />
                       </Route>
                       <Route path="organizacao/relatorios" element={<ReportsPage />} />
+                      <Route path="organizacao/saude" element={<OrgHealthPage />} />
                       <Route path="organizacao/recuperacao" element={<OrgRecoveryPage />} />
                       <Route path="organizacao/comunicados" element={<OrgAnnouncementsPage />} />
                       <Route path="organizacao/ocorrencias" element={<OrgClaimsPage />} />
                       <Route path="organizacao/ocorrencias/:id" element={<OrgClaimPage />} />
+                      <Route path="organizacao/adesoes" element={<OrgAdhesionsPage />} />
                       <Route path="organizacao/vistorias" element={<OrgInspectionsPage />} />
                       <Route path="organizacao/vistorias/:id" element={<OrgInspectionPage />} />
                       <Route path="organizacao/instalacoes" element={<OrgInstallationsPage />} />

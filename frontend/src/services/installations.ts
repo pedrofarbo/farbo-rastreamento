@@ -40,6 +40,71 @@ export function slotsOf(kind: InstallationKind) {
   return kind === 'uninstall' ? UNINSTALL_SLOTS : INSTALLATION_SLOTS;
 }
 
+/** Um passo do link do instalador, feito ou não. */
+export interface InstallStep {
+  label: string;
+  done: boolean;
+}
+
+/**
+ * O andamento pelo link: a chegada, o rastreador, o teste do sinal, a foto e
+ * a conclusão (na retirada, a chegada, a foto e a conclusão). O rastreador só
+ * fica ligado ao veículo na conclusão.
+ */
+export function installSteps(a: InstallationAppointment): InstallStep[] {
+  const steps: InstallStep[] = [
+    { label: a.arrivedAt ? `Chegou às ${hourLabel(a.arrivedAt)}` : 'Chegada', done: Boolean(a.arrivedAt) },
+  ];
+  const photo = a.photos.includes('tracker');
+  const done = a.status === 'done';
+  if (a.kind === 'uninstall') {
+    steps.push({ label: 'Foto do rastreador retirado', done: photo || done });
+  } else {
+    const imei = a.trackerImei ?? '';
+    steps.push({
+      label: imei ? `Rastreador final ${imei.slice(-6)}${a.trackerConnected ? ' conectado' : ''}` : 'Rastreador escolhido',
+      done: Boolean(imei) || done,
+    });
+    steps.push({
+      label: a.checkReady && a.checkedAt
+        ? `Sinal ok às ${hourLabel(a.checkedAt)}`
+        : a.checkedAt
+          ? `Teste do sinal (o das ${hourLabel(a.checkedAt)} não passou)`
+          : 'Teste do sinal',
+      done: Boolean(a.checkReady) || done,
+    });
+    steps.push({ label: 'Foto do rastreador', done: photo || done });
+  }
+  steps.push({ label: 'Concluir', done });
+  return steps;
+}
+
+/** Vale mostrar o andamento: em aberto e já começou pelo link. */
+export function showSteps(a: InstallationAppointment): boolean {
+  return isOpen(a) && Boolean(a.arrivedAt || a.trackerImei || a.checkedAt || a.photos.length > 0);
+}
+
+/**
+ * O aviso da instalação parada (vazio: andando). Para quem instala (o
+ * representante), o que fazer; para a central e a associação, o que houve.
+ */
+export function stallText(a: InstallationAppointment, forInstaller = false): string {
+  const missing = installSteps(a).filter((s) => !s.done).map((s) => s.label.toLowerCase());
+  const conclude = a.kind === 'uninstall' ? 'Concluir a retirada' : 'Concluir a instalação';
+  if (a.stall === 'late') {
+    return forInstaller
+      ? `Passou do horário e a chegada não foi registrada no link. Se você já foi, abra o link e siga os passos até “${conclude}”: só então o rastreador fica no veículo do cliente.`
+      : 'Passou do horário e o link não registrou a chegada: confirme com o instalador.';
+  }
+  if (a.stall === 'stalled' && a.arrivedAt) {
+    const when = `${dayLabel(dayKey(a.arrivedAt))} às ${hourLabel(a.arrivedAt)}`;
+    return forInstaller
+      ? `Você chegou ${when} e ainda falta: ${missing.join(', ')}. O rastreador só fica no veículo do cliente (e no app dele) depois de “${conclude}”.`
+      : `Instalador no local desde ${when} e ainda falta: ${missing.join(', ')}. O rastreador só fica ligado ao veículo depois de “${conclude}” no link.`;
+  }
+  return '';
+}
+
 /** Em aberto: agendada ou com o instalador no local. */
 export function isOpen(a: Pick<InstallationAppointment, 'status'>): boolean {
   return a.status === 'scheduled' || a.status === 'arrived';

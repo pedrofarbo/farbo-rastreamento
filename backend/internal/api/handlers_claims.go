@@ -3,9 +3,12 @@ package api
 import (
 	"errors"
 	"io"
+	"math"
 	"mime"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -174,6 +177,21 @@ func (s *Server) handleGetClaim(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleClaimTelemetry: a análise do rastreador em volta do horário
+// declarado (onde estava, a velocidade, o corte de energia, o modo roubo) e
+// o que confere ou não.
+func (s *Server) handleClaimTelemetry(w http.ResponseWriter, r *http.Request) {
+	c, ok := s.claimFor(w, r)
+	if !ok {
+		return
+	}
+	out, err := s.Claims.Telemetry(r.Context(), c)
+	if !writeClaimsError(w, err, "ocorrência não encontrada") {
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // handleAddClaimFile: uma foto, o B.O. ou um documento (campo kind).
 func (s *Server) handleAddClaimFile(w http.ResponseWriter, r *http.Request) {
 	defer cleanupForm(r)
@@ -294,7 +312,7 @@ func (s *Server) inspectionFor(w http.ResponseWriter, r *http.Request) (*inspect
 		}
 		return in, true
 	}
-	if customerID, ok := customerOf(r); !ok || in.AssociateID != customerID {
+	if customerID, ok := customerOf(r); !ok || in.AssociateID == nil || *in.AssociateID != customerID {
 		writeError(w, http.StatusNotFound, "vistoria não encontrada")
 		return nil, false
 	}
@@ -319,39 +337,43 @@ func (s *Server) handleGetInspection(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleSaveInspectionPhoto: a foto de um ângulo (com a posição, se o
-// navegador deu).
-func (s *Server) handleSaveInspectionPhoto(w http.ResponseWriter, r *http.Request) {
-	defer cleanupForm(r)
-	in, ok := s.inspectionFor(w, r)
-	if !ok {
-		return
+// inspectionPhotoMeta: a posição do celular (se a pessoa deixou), a precisão
+// dela e de onde a foto veio (camera: a câmera ao vivo da vistoria).
+func inspectionPhotoMeta(r *http.Request) inspections.PhotoMeta {
+	value := func(name string) *float64 {
+		if v, err := strconv.ParseFloat(r.FormValue(name), 64); err == nil && !math.IsNaN(v) && !math.IsInf(v, 0) {
+			return &v
+		}
+		return nil
 	}
+	return inspections.PhotoMeta{Latitude: value("latitude"), Longitude: value("longitude"), AccuracyM: value("accuracy"),
+		Source: r.FormValue("source")}
+}
+
+// saveInspectionPhoto: a foto de um ângulo da vistoria (pelo app ou pelo link).
+func (s *Server) saveInspectionPhoto(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 	data, _, ok := readUpload(w, r, inspections.MaxPhotoBytes)
 	if !ok {
 		return
 	}
-	var lat, lon *float64
-	if v, err := strconv.ParseFloat(r.FormValue("latitude"), 64); err == nil {
-		lat = &v
-	}
-	if v, err := strconv.ParseFloat(r.FormValue("longitude"), 64); err == nil {
-		lon = &v
-	}
-	p, err := s.Inspections.SavePhoto(r.Context(), in.ID, chi.URLParam(r, "slot"), data, lat, lon)
+	p, err := s.Inspections.SavePhoto(r.Context(), id, chi.URLParam(r, "slot"), data, inspectionPhotoMeta(r))
 	if !writeClaimsError(w, err, "vistoria não encontrada") {
 		return
 	}
 	writeJSON(w, http.StatusOK, p)
 }
 
-func (s *Server) handleInspectionPhoto(w http.ResponseWriter, r *http.Request) {
-	in, ok := s.inspectionFor(w, r)
-	if !ok {
-		return
+func (s *Server) handleSaveInspectionPhoto(w http.ResponseWriter, r *http.Request) {
+	defer cleanupForm(r)
+	if in, ok := s.inspectionFor(w, r); ok {
+		s.saveInspectionPhoto(w, r, in.ID)
 	}
+}
+
+// writeInspectionPhoto manda a foto de um ângulo.
+func (s *Server) writeInspectionPhoto(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 	slot := chi.URLParam(r, "slot")
-	contentType, data, err := s.Inspections.PhotoData(r.Context(), in.ID, slot)
+	contentType, data, err := s.Inspections.PhotoData(r.Context(), id, slot)
 	if !writeClaimsError(w, err, "foto não encontrada") {
 		return
 	}
@@ -362,12 +384,35 @@ func (s *Server) handleInspectionPhoto(w http.ResponseWriter, r *http.Request) {
 	writeAttachment(w, "vistoria-"+slot+ext, contentType, data)
 }
 
+func (s *Server) handleInspectionPhoto(w http.ResponseWriter, r *http.Request) {
+	if in, ok := s.inspectionFor(w, r); ok {
+		s.writeInspectionPhoto(w, r, in.ID)
+	}
+}
+
+// decodeSubmit: as avarias e o aceite da declaração.
+func decodeSubmit(w http.ResponseWriter, r *http.Request) (inspections.SubmitInput, bool) {
+	var req inspections.SubmitInput
+	if r.ContentLength == 0 {
+		return req, true
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return req, false
+	}
+	return req, true
+}
+
 func (s *Server) handleSubmitInspection(w http.ResponseWriter, r *http.Request) {
 	in, ok := s.inspectionFor(w, r)
 	if !ok {
 		return
 	}
-	updated, err := s.Inspections.Submit(r.Context(), in.ID)
+	req, ok := decodeSubmit(w, r)
+	if !ok {
+		return
+	}
+	updated, err := s.Inspections.Submit(r.Context(), in.ID, req)
 	if !writeClaimsError(w, err, "vistoria não encontrada") {
 		return
 	}
@@ -383,26 +428,143 @@ func (s *Server) handleOrgInspections(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
-type requestInspectionRequest struct {
-	VehicleID uuid.UUID `json:"vehicleId"`
-	Note      string    `json:"note"`
-}
-
+// handleOrgRequestInspection: a vistoria de um veículo de associado
+// (vehicleId) ou, de quem ainda vai entrar, pelo nome, o celular e a placa.
+// A resposta traz o link para mandar.
 func (s *Server) handleOrgRequestInspection(w http.ResponseWriter, r *http.Request) {
 	orgID, _ := orgOf(r)
-	var req requestInspectionRequest
+	var req inspections.RequestInput
 	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "corpo inválido")
 		return
 	}
-	in, err := s.Inspections.Request(r.Context(), orgID, req.VehicleID, personOf(r), req.Note)
+	if req.VehicleID != nil && *req.VehicleID == uuid.Nil {
+		req.VehicleID = nil
+	}
+	in, err := s.Inspections.Request(r.Context(), orgID, personOf(r), req)
 	if !writeClaimsError(w, err, "veículo não encontrado") {
 		return
 	}
-	s.recordAudit(r, audit.ActionInspectionChanged, &in.VehicleID, nil, map[string]any{
-		"inspectionId": in.ID, "organizationId": orgID, "change": "requested",
+	s.recordAudit(r, audit.ActionInspectionChanged, in.VehicleID, nil, map[string]any{
+		"inspectionId": in.ID, "organizationId": orgID, "change": "requested", "kind": in.Kind, "mode": in.Mode,
 	})
 	writeJSON(w, http.StatusCreated, in)
+}
+
+// handleOrgCancelInspection: o link para de abrir (a vistoria que espera as fotos).
+func (s *Server) handleOrgCancelInspection(w http.ResponseWriter, r *http.Request) {
+	in, ok := s.inspectionFor(w, r)
+	if !ok {
+		return
+	}
+	updated, err := s.Inspections.Cancel(r.Context(), in.ID)
+	if !writeClaimsError(w, err, "vistoria não encontrada") {
+		return
+	}
+	s.recordAudit(r, audit.ActionInspectionChanged, in.VehicleID, nil, map[string]any{
+		"inspectionId": in.ID, "organizationId": in.OrganizationID, "change": "canceled",
+	})
+	writeJSON(w, http.StatusOK, updated)
+}
+
+// handleOrgRenewInspection: mais 7 dias para o link.
+func (s *Server) handleOrgRenewInspection(w http.ResponseWriter, r *http.Request) {
+	in, ok := s.inspectionFor(w, r)
+	if !ok {
+		return
+	}
+	updated, err := s.Inspections.Renew(r.Context(), in.ID)
+	if !writeClaimsError(w, err, "vistoria não encontrada") {
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+// ---------------------------------------------------------------------------
+// O link da vistoria (sem login)
+// ---------------------------------------------------------------------------
+
+// publicInspectionView é o que o link mostra: sem o celular, o sobrenome nem
+// a posição das fotos.
+type publicInspectionView struct {
+	OrganizationName string                  `json:"organizationName"`
+	Kind             string                  `json:"kind"`
+	Mode             string                  `json:"mode"`
+	VehicleType      string                  `json:"vehicleType"`
+	VehicleName      string                  `json:"vehicleName"`
+	Plate            string                  `json:"plate"`
+	FirstName        string                  `json:"firstName"`
+	Status           string                  `json:"status"`
+	Expired          bool                    `json:"expired"`
+	ExpiresAt        *time.Time              `json:"expiresAt"`
+	RequestNote      string                  `json:"requestNote"`
+	SubmittedAt      *time.Time              `json:"submittedAt"`
+	Slots            []inspections.Slot      `json:"slots"`
+	Photos           []publicInspectionPhoto `json:"photos"`
+}
+
+type publicInspectionPhoto struct {
+	Slot    string    `json:"slot"`
+	TakenAt time.Time `json:"takenAt"`
+}
+
+func (s *Server) toPublicInspection(in *inspections.Inspection) publicInspectionView {
+	first, _, _ := strings.Cut(strings.TrimSpace(in.AssociateName), " ")
+	photos := make([]publicInspectionPhoto, len(in.Photos))
+	for i, p := range in.Photos {
+		photos[i] = publicInspectionPhoto{Slot: p.Slot, TakenAt: p.TakenAt}
+	}
+	return publicInspectionView{
+		OrganizationName: in.OrganizationName, Kind: in.Kind, Mode: in.Mode, VehicleType: in.VehicleType,
+		VehicleName: in.VehicleName, Plate: in.Plate, FirstName: first, Status: in.Status, Expired: in.Expired(s.Inspections.Now()),
+		ExpiresAt: in.ExpiresAt, RequestNote: in.RequestNote, SubmittedAt: in.SubmittedAt, Slots: in.Slots, Photos: photos,
+	}
+}
+
+// publicInspectionFor é a vistoria mais nova da série do link.
+func (s *Server) publicInspectionFor(w http.ResponseWriter, r *http.Request) (*inspections.Inspection, bool) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Robots-Tag", "noindex, nofollow")
+	in, err := s.Inspections.ByToken(r.Context(), chi.URLParam(r, "token"))
+	if !writeClaimsError(w, err, "link não encontrado") {
+		return nil, false
+	}
+	return in, true
+}
+
+func (s *Server) handlePublicInspection(w http.ResponseWriter, r *http.Request) {
+	if in, ok := s.publicInspectionFor(w, r); ok {
+		writeJSON(w, http.StatusOK, s.toPublicInspection(in))
+	}
+}
+
+func (s *Server) handlePublicInspectionPhoto(w http.ResponseWriter, r *http.Request) {
+	defer cleanupForm(r)
+	if in, ok := s.publicInspectionFor(w, r); ok {
+		s.saveInspectionPhoto(w, r, in.ID)
+	}
+}
+
+func (s *Server) handlePublicInspectionPhotoFile(w http.ResponseWriter, r *http.Request) {
+	if in, ok := s.publicInspectionFor(w, r); ok {
+		s.writeInspectionPhoto(w, r, in.ID)
+	}
+}
+
+func (s *Server) handlePublicInspectionSubmit(w http.ResponseWriter, r *http.Request) {
+	in, ok := s.publicInspectionFor(w, r)
+	if !ok {
+		return
+	}
+	req, ok := decodeSubmit(w, r)
+	if !ok {
+		return
+	}
+	updated, err := s.Inspections.Submit(r.Context(), in.ID, req)
+	if !writeClaimsError(w, err, "link não encontrado") {
+		return
+	}
+	writeJSON(w, http.StatusOK, s.toPublicInspection(updated))
 }
 
 type reviewInspectionRequest struct {
@@ -424,7 +586,7 @@ func (s *Server) handleOrgReviewInspection(w http.ResponseWriter, r *http.Reques
 	if !writeClaimsError(w, err, "vistoria não encontrada") {
 		return
 	}
-	s.recordAudit(r, audit.ActionInspectionChanged, &in.VehicleID, nil, map[string]any{
+	s.recordAudit(r, audit.ActionInspectionChanged, in.VehicleID, nil, map[string]any{
 		"inspectionId": in.ID, "organizationId": in.OrganizationID, "change": updated.Status,
 	})
 	writeJSON(w, http.StatusOK, updated)

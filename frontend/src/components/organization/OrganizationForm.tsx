@@ -24,6 +24,8 @@ interface Draft {
   equipment: string;
   installFee: string;
   uninstallFee: string;
+  inspection: string;
+  inspectionTech: string;
   notes: string;
   active: boolean;
   adminName: string;
@@ -32,7 +34,7 @@ interface Draft {
 
 const EMPTY: Draft = {
   kind: 'association', name: '', document: '', email: '', phone: '', price: '', dueDay: '10',
-  equipmentMode: 'loan', equipment: '', installFee: '', uninstallFee: '', notes: '', active: true,
+  equipmentMode: 'loan', equipment: '', installFee: '', uninstallFee: '', inspection: '', inspectionTech: '', notes: '', active: true,
   adminName: '', adminEmail: '',
 };
 
@@ -41,7 +43,9 @@ function draftOf(o: Organization): Draft {
     kind: o.kind, name: o.name, document: formatTaxId(o.document), email: o.email, phone: o.phone,
     price: centsToInput(o.priceCents), dueDay: String(o.dueDay), equipmentMode: o.equipmentMode,
     equipment: o.equipmentCents ? centsToInput(o.equipmentCents) : '', installFee: o.installFeeCents ? centsToInput(o.installFeeCents) : '',
-    uninstallFee: o.uninstallFeeCents ? centsToInput(o.uninstallFeeCents) : '', notes: o.notes, active: o.active,
+    uninstallFee: o.uninstallFeeCents ? centsToInput(o.uninstallFeeCents) : '',
+    inspection: o.inspectionCents ? centsToInput(o.inspectionCents) : '',
+    inspectionTech: o.inspectionTechCents ? centsToInput(o.inspectionTechCents) : '', notes: o.notes, active: o.active,
     adminName: '', adminEmail: '',
   };
 }
@@ -58,6 +62,8 @@ export function organizationFromDraft(
   const equipment = d.equipmentMode === 'sale' ? money(d.equipment) : 0;
   const install = money(d.installFee);
   const uninstall = money(d.uninstallFee);
+  const inspection = money(d.inspection);
+  const inspectionTech = money(d.inspectionTech);
   const dueDay = Number(d.dueDay);
   if (!d.name.trim()) return 'Informe o nome da organização.';
   if (d.document.trim() && !validTaxId(d.document)) return 'CNPJ (ou CPF) inválido: confira os números.';
@@ -65,11 +71,12 @@ export function organizationFromDraft(
   if (price === null || !d.price.trim()) return 'Informe a mensalidade por veículo (zero, se não houver).';
   if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 28) return 'O dia de vencimento vai de 1 a 28.';
   if (equipment === null || install === null || uninstall === null) return 'Confira os valores do rastreador e das taxas.';
+  if (inspection === null || inspectionTech === null) return 'Confira os preços das vistorias.';
   if (d.equipmentMode === 'sale' && !equipment) return 'Informe o preço do rastreador na venda.';
   const input: OrganizationInput = {
     kind: d.kind, name: d.name.trim(), document: taxIdDigits(d.document), email: d.email.trim(), phone: d.phone.trim(),
     priceCents: price, dueDay, equipmentMode: d.equipmentMode, equipmentCents: equipment, installFeeCents: install,
-    uninstallFeeCents: uninstall, notes: d.notes.trim(),
+    uninstallFeeCents: uninstall, inspectionCents: inspection, inspectionTechCents: inspectionTech, notes: d.notes.trim(),
     ...(creating ? {} : { active: d.active }),
   };
   if (creating && (d.adminName.trim() || d.adminEmail.trim())) {
@@ -235,6 +242,22 @@ export function OrganizationFormModal({
             placeholder="0,00"
             value={draft.uninstallFee}
             onChange={(e) => set({ uninstallFee: e.target.value })}
+          />
+          <TextField
+            label="Autovistoria (R$ por vistoria)"
+            inputMode="decimal"
+            placeholder="0,00"
+            value={draft.inspection}
+            hint="Feita pelo associado, pelo link ou pelo app. Entra na fatura do mês em que é enviada."
+            onChange={(e) => set({ inspection: e.target.value })}
+          />
+          <TextField
+            label="Vistoria com técnico (R$ por vistoria)"
+            inputMode="decimal"
+            placeholder="0,00"
+            value={draft.inspectionTech}
+            hint="Feita pelo técnico, no lugar do associado. Vazio: sem cobrança."
+            onChange={(e) => set({ inspectionTech: e.target.value })}
           />
         </div>
 

@@ -17,7 +17,8 @@ import (
 // A fatura da organização é uma só por mês, no dia de vencimento dela, com o
 // extrato: a mensalidade de cada veículo com rastreador (o mês que começa no
 // vencimento), o proporcional dos dias de quem passou a contar no meio do
-// mês, a instalação, o equipamento (na venda) e a desinstalação.
+// mês, a instalação, o equipamento (na venda), a desinstalação e as
+// vistorias enviadas desde a última fatura.
 
 // Os itens do extrato.
 const (
@@ -26,6 +27,8 @@ const (
 	ItemInstall   = "install"
 	ItemEquipment = "equipment"
 	ItemUninstall = "uninstall"
+	// ItemInspection: uma vistoria enviada (a refação não entra).
+	ItemInspection = "inspection"
 )
 
 // Item é uma linha do extrato da fatura.
@@ -38,6 +41,10 @@ type Item struct {
 	AmountCents int        `json:"amountCents"`
 	// Days: os dias do proporcional.
 	Days int `json:"days,omitempty"`
+	// Detail e Date: na vistoria, o que foi ("Autovistoria · Adesão") e o
+	// dia do envio.
+	Detail string        `json:"detail,omitempty"`
+	Date   *billing.Date `json:"date,omitempty"`
 }
 
 // Invoice é a fatura da organização, com o extrato (vazio na fatura avulsa
@@ -164,7 +171,8 @@ type terms struct {
 
 // statement monta o extrato do vencimento due e, com mark, marca o que
 // entrou como cobrado. Roda dentro da transação da fatura (ou da simulação).
-func statement(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, t terms, due billing.Date, mark bool) ([]Item, int, error) {
+func statement(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, t terms, due billing.Date, mark bool,
+	dateOf func(time.Time) billing.Date) ([]Item, int, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id, vehicle_id, vehicle_name, plate, owner_name, installed_on, removed_on, uninstalled,
 			prorata_billed, install_billed, equipment_billed, uninstall_billed
@@ -242,7 +250,61 @@ func statement(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, t terms, due bil
 			}
 		}
 	}
-	return items, monthly, nil
+	inspected, err := inspectionItems(ctx, tx, orgID, mark, dateOf)
+	if err != nil {
+		return nil, 0, err
+	}
+	return append(items, inspected...), monthly, nil
+}
+
+// inspectionKinds e inspectionModes: o tipo e quem fez, na linha da fatura.
+var (
+	inspectionKinds = map[string]string{"entry": "Adesão", "periodic": "Revistoria", "claim": "Sinistro", "replacement": "Troca de veículo"}
+	inspectionModes = map[string]string{"self": "Autovistoria", "technician": "Vistoria com técnico"}
+)
+
+// inspectionItems são as vistorias enviadas que ainda não entraram numa
+// fatura (pelo preço do pedido; a refação tem preço zero) e, com mark,
+// marca as que entraram.
+func inspectionItems(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, mark bool, dateOf func(time.Time) billing.Date) ([]Item, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT i.id, i.vehicle_id, COALESCE(v.name, NULLIF(i.vehicle_desc, ''), i.plate), COALESCE(NULLIF(v.plate, ''), i.plate),
+			COALESCE(a.name, i.person_name), i.kind, i.mode, i.price_cents, i.submitted_at
+		FROM inspections i LEFT JOIN vehicles v ON v.id = i.vehicle_id LEFT JOIN users a ON a.id = i.associate_id
+		WHERE i.organization_id = $1 AND NOT i.billed AND i.price_cents > 0 AND i.submitted_at IS NOT NULL
+		ORDER BY i.submitted_at, i.id
+		FOR UPDATE OF i`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	var items []Item
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		var it Item
+		var kind, mode string
+		var submitted time.Time
+		if err := rows.Scan(&id, &it.VehicleID, &it.Name, &it.Plate, &it.OwnerName, &kind, &mode, &it.AmountCents, &submitted); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		it.Kind = ItemInspection
+		it.Detail = inspectionModes[mode] + " · " + inspectionKinds[kind]
+		day := dateOf(submitted)
+		it.Date = &day
+		items = append(items, it)
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if mark && len(ids) > 0 {
+		if _, err := tx.Exec(ctx, `UPDATE inspections SET billed = TRUE WHERE id = ANY($1)`, ids); err != nil {
+			return nil, err
+		}
+	}
+	return items, nil
 }
 
 // prorata é a mensalidade pelos dias (mês comercial de 30 dias).
@@ -290,7 +352,7 @@ func (s *Service) generate(ctx context.Context, orgID uuid.UUID, due billing.Dat
 		if exists {
 			return errAlreadyBilled
 		}
-		items, monthly, err := statement(ctx, tx, orgID, t, due, true)
+		items, monthly, err := statement(ctx, tx, orgID, t, due, true, s.billing.DateOf)
 		if err != nil {
 			return err
 		}
@@ -298,14 +360,7 @@ func (s *Service) generate(ctx context.Context, orgID uuid.UUID, due billing.Dat
 		if amount <= 0 {
 			return ErrNothingToBill
 		}
-		description := fmt.Sprintf("Rastreamento — %s/%d", billing.MonthName(due.Month()), due.Year())
-		if monthly > 0 {
-			plural := "veículo"
-			if monthly > 1 {
-				plural = "veículos"
-			}
-			description += fmt.Sprintf(" · %d %s", monthly, plural)
-		}
+		description := invoiceDescription(due, monthly, items)
 		// Sem o teto da fatura avulsa: a de uma organização grande passa dele.
 		inv, err := billing.InsertInvoice(ctx, tx, &billing.Invoice{
 			CustomerID: orgID, Description: description, AmountCents: amount, DueDate: due,
@@ -359,7 +414,7 @@ func (s *Service) NextEstimate(ctx context.Context, orgID uuid.UUID) (*Estimate,
 		if err != nil {
 			return err
 		}
-		if out.Items, out.Vehicles, err = statement(ctx, tx, orgID, t, due, false); err != nil {
+		if out.Items, out.Vehicles, err = statement(ctx, tx, orgID, t, due, false, s.billing.DateOf); err != nil {
 			return err
 		}
 		out.AmountCents = total(out.Items)
@@ -470,4 +525,33 @@ func (s *Service) GenerateInvoices(ctx context.Context) {
 	if created > 0 {
 		s.log.Info("faturas das organizações geradas", "count", created)
 	}
+}
+
+// invoiceDescription: "Rastreamento — novembro/2026 · 3 veículos · 12
+// vistorias"; só com vistorias, "Vistorias — novembro/2026 · 12 vistorias".
+func invoiceDescription(due billing.Date, monthly int, items []Item) string {
+	inspections := 0
+	for _, it := range items {
+		if it.Kind == ItemInspection {
+			inspections++
+		}
+	}
+	count := func(n int, one, many string) string {
+		if n == 1 {
+			return " · 1 " + one
+		}
+		return fmt.Sprintf(" · %d %s", n, many)
+	}
+	title := "Rastreamento"
+	if inspections > 0 && inspections == len(items) {
+		title = "Vistorias"
+	}
+	out := fmt.Sprintf("%s — %s/%d", title, billing.MonthName(due.Month()), due.Year())
+	if monthly > 0 {
+		out += count(monthly, "veículo", "veículos")
+	}
+	if inspections > 0 {
+		out += count(inspections, "vistoria", "vistorias")
+	}
+	return out
 }

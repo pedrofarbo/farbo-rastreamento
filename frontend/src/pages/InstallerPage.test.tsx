@@ -193,6 +193,8 @@ describe('o link do instalador: a ativação antes de instalar', () => {
     expect(text()).not.toContain('Chip e ativação');
     await act(async () => button('Testar o sinal')!.click());
     expect(api.calls).toContainEqual(['check', 'tok123', '869247061240229']);
+    // O teste passou: o que falta para o rastreador ficar no veículo.
+    expect(text()).toContain('Falta pouco: tire a foto do rastreador instalado (passo 3) e toque em “Concluir a instalação” (passo 4).');
   });
 
   it('a página recarregada no meio: volta com a ativação em andamento', async () => {

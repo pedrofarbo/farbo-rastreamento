@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 
 import { ApiError } from '@/api/client';
 import { publicApi } from '@/api/resources';
+import { installSteps, showSteps, stallText } from '@/services/installations';
 import type { InstallationAppointment, InstallationKind, PartnerQueue, PartnerVehicle } from '@/types';
 
 import styles from '../Partner.module.css';
@@ -168,6 +169,20 @@ export function InstallationsSection({ token }: { token: string }) {
                       }}
                     />
                     {a.notes && <span className={styles.muted}>Obs.: {a.notes}</span>}
+                    {showSteps(a) && (
+                      <ol className={styles.installSteps} aria-label="Andamento pelo link">
+                        {installSteps(a).map((s) => (
+                          <li key={s.label} className={s.done ? styles.installStepDone : undefined}>
+                            <span aria-hidden="true">{s.done ? '✓' : '○'}</span> {s.label}
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                    {a.stall && (
+                      <p className={styles.installStall} role="status">
+                        {stallText(a, true)}
+                      </p>
+                    )}
                     {form(a.id) ?? (
                       <div className={styles.installActions}>
                         {a.url && (

@@ -39,6 +39,7 @@ type Config struct {
 	StepUp    StepUp
 	WhatsApp  WhatsApp
 	Leads     Leads
+	Install   Install
 	Infra     Infra
 	SMS       SMS
 	Theft     Theft
@@ -628,6 +629,13 @@ type Infra struct {
 	BackupDir string
 }
 
+// Install configura o aviso da instalação parada (o horário passou sem a
+// chegada, ou o instalador chegou e não concluiu no link).
+type Install struct {
+	// NotifyEmails recebem o aviso (o representante que agendou recebe o dele).
+	NotifyEmails []string
+}
+
 // Leads configura os pré-clientes (cadastro de interesse da landing).
 type Leads struct {
 	// NotifyEmails recebem o aviso de cada pré-cliente novo.
@@ -941,6 +949,7 @@ func Load() (*Config, error) {
 		NotifyEmails: csv("LEADS_NOTIFY_EMAILS", centralEmails()),
 		SiteURL:      strings.TrimRight(str("SITE_URL", "https://farborastreadores.com.br"), "/"),
 	}
+	cfg.Install = Install{NotifyEmails: csv("INSTALL_NOTIFY_EMAILS", centralEmails())}
 	cfg.Infra = Infra{BackupDir: strings.TrimSpace(str("BACKUP_DIR", ""))}
 	cfg.SMS = SMS{
 		SMSMarketUser:     strings.TrimSpace(str("SMSMARKET_USER", "")),
@@ -1067,6 +1076,11 @@ func Load() (*Config, error) {
 	for _, email := range cfg.Leads.NotifyEmails {
 		if _, err := netmail.ParseAddress(email); err != nil {
 			return nil, fmt.Errorf("LEADS_NOTIFY_EMAILS: endereço inválido %q", email)
+		}
+	}
+	for _, email := range cfg.Install.NotifyEmails {
+		if _, err := netmail.ParseAddress(email); err != nil {
+			return nil, fmt.Errorf("INSTALL_NOTIFY_EMAILS: endereço inválido %q", email)
 		}
 	}
 	if cfg.Payments.PixExpiresIn < 5*time.Minute || cfg.Payments.PixExpiresIn > 30*24*time.Hour {

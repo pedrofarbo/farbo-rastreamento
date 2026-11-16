@@ -14,6 +14,7 @@ import (
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/accounts"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/addresses"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/adhesions"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/adjustment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/affiliates"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/alerts"
@@ -148,6 +149,9 @@ type Deps struct {
 	// Nil: rotas fora.
 	Claims      *claims.Service
 	Inspections *inspections.Service
+	// Adhesions: a adesão digital pelo link da associação (precisa de
+	// Inspections). Nil: rotas fora.
+	Adhesions *adhesions.Service
 	// Fleet: a gestão da frota (motoristas, custos, multas, locações). Nil:
 	// rotas fora.
 	Fleet *fleet.Service
@@ -260,6 +264,9 @@ func (s *Server) routes() chi.Router {
 	// O link do modo roubo: a página pergunta a cada 10 s; numa delegacia,
 	// várias pessoas podem abrir pela mesma rede.
 	theftLinkLimiter := newRateLimiter(2, 60)
+	// A adesão nova pelo link da associação: com folga para corrigir o
+	// formulário, mas poucas por IP no tempo (cada uma pede uma vistoria).
+	adhesionLimiter := newRateLimiter(0.05, 20)
 	// A API de integração: 5 por segundo, com folga para rajadas.
 	apiLimiter := newRateLimiter(5, 60)
 	// O link de pagamento: a página pergunta o status do Pix a cada 4 s.
@@ -434,6 +441,24 @@ func (s *Server) routes() chi.Router {
 				r.Get("/activation", s.handlePublicStandaloneActivation)
 				r.Post("/activate", s.handlePublicStandaloneActivate)
 			})
+		}
+		// O link da vistoria: o associado, quem vai entrar ou o técnico tira
+		// as fotos (sem login).
+		if s.Inspections != nil {
+			r.Route("/public/inspections/{token}", func(r chi.Router) {
+				r.Use(theftLinkLimiter.middleware)
+				r.Get("/", s.handlePublicInspection)
+				r.Put("/photos/{slot}", s.handlePublicInspectionPhoto)
+				r.Get("/photos/{slot}", s.handlePublicInspectionPhotoFile)
+				r.Post("/submit", s.handlePublicInspectionSubmit)
+			})
+		}
+		// A adesão digital: o link da associação e o de acompanhamento (sem login).
+		if s.Adhesions != nil {
+			r.With(theftLinkLimiter.middleware).Get("/public/adhesion/{token}", s.handlePublicAdhesionOrg)
+			r.With(adhesionLimiter.middleware).Post("/public/adhesion/{token}", s.handlePublicAdhesionStart)
+			r.With(theftLinkLimiter.middleware).Get("/public/adhesions/{token}", s.handlePublicAdhesion)
+			r.With(theftLinkLimiter.middleware).Post("/public/adhesions/{token}/accept", s.handlePublicAdhesionAccept)
 		}
 		// A localização ao vivo por um tempo, pelo link que o cliente mandou.
 		if s.LiveLinks != nil {
@@ -780,6 +805,10 @@ func (s *Server) routes() chi.Router {
 						// Os associados: o corretor vê e cadastra só os dele.
 						r.Get("/associates", s.handleOrgAssociates)
 						r.Get("/associates/{associateId}", s.handleOrgAssociate)
+						// A saúde dos rastreadores (o corretor vê os dele).
+						r.Get("/health", s.handleOrgHealth)
+						r.With(s.requireOrgOperator).Post("/health/vehicles/{vehicleId}/notify", s.handleOrgHealthNotify)
+						r.With(s.requireOrgOperator, s.requireOrgStaff).Put("/health/settings", s.handleOrgHealthSettings)
 						r.Group(func(r chi.Router) {
 							r.Use(s.requireOrgRegistrar)
 							r.Post("/associates", s.handleOrgCreateAssociate)
@@ -798,7 +827,13 @@ func (s *Server) routes() chi.Router {
 							if s.Claims != nil {
 								r.Get("/claims", s.handleOrgClaims)
 								r.Get("/claims/{claimId}", s.handleGetClaim)
+								r.Get("/claims/{claimId}/telemetry", s.handleClaimTelemetry)
 								r.Get("/claims/{claimId}/files/{fileId}", s.handleClaimFile)
+							}
+							if s.Adhesions != nil {
+								r.Get("/adhesions", s.handleOrgAdhesions)
+								r.Get("/adhesions/{adhesionId}", s.handleOrgAdhesion)
+								r.Get("/adhesion-settings", s.handleOrgAdhesionSettings)
 							}
 							if s.Inspections != nil {
 								r.Get("/inspections", s.handleOrgInspections)
@@ -823,6 +858,13 @@ func (s *Server) routes() chi.Router {
 							if s.Inspections != nil {
 								r.Post("/inspections", s.handleOrgRequestInspection)
 								r.Post("/inspections/{inspectionId}/review", s.handleOrgReviewInspection)
+								r.Post("/inspections/{inspectionId}/cancel", s.handleOrgCancelInspection)
+								r.Post("/inspections/{inspectionId}/renew", s.handleOrgRenewInspection)
+							}
+							if s.Adhesions != nil {
+								r.Post("/adhesions/{adhesionId}/approve", s.handleOrgApproveAdhesion)
+								r.Post("/adhesions/{adhesionId}/reject", s.handleOrgRejectAdhesion)
+								r.Put("/adhesion-settings", s.handleOrgSetAdhesionSettings)
 							}
 						})
 					})
@@ -1183,6 +1225,7 @@ func (s *Server) routes() chi.Router {
 						r.Get("/", s.handleInstallations)
 						r.Get("/awaiting", s.handleAwaitingInstall)
 						r.Get("/awaiting-uninstall", s.handleAwaitingUninstall)
+						r.Get("/stalled", s.handleStalledInstallations)
 						r.Post("/", s.handleCreateInstallation)
 						r.Patch("/{id}", s.handleRescheduleInstallation)
 						r.Post("/{id}/close", s.handleCloseInstallation)

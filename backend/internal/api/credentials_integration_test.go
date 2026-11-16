@@ -22,6 +22,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/accounts"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/adhesions"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/apikeys"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/appointments"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/audit"
@@ -32,6 +33,7 @@ import (
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/closing"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/commands"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/config"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/contract"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/database"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/devices"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/events"
@@ -217,6 +219,9 @@ type credEnv struct {
 	routes    *busroutes.Service
 	sms       *smssetup.Service
 	closing   *closing.Service
+	billing   *billing.Service
+	adhesions *adhesions.Service
+	contract  *contract.Service
 
 	fwdMu     sync.Mutex
 	forwarded [][]byte // o que iria para o Redis (outras instâncias)
@@ -264,6 +269,9 @@ type credEnvOptions struct {
 	installs bool
 	// sms liga a configuração por SMS (a ativação), com esta SMS Market.
 	sms smssetup.Sender
+	// adhesions liga a adesão digital pelo link (com occurrences e orgs) e o
+	// contrato, com o termo do associado.
+	adhesions bool
 }
 
 func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
@@ -308,6 +316,7 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
+	env.billing = billingSvc
 	env.devices = devices.NewService(devices.NewRepository(db), registry)
 	env.vehicles = vehicles.NewService(vehicles.NewRepository(db))
 	env.owners = vehicles.NewOwnerIndex(db, log)
@@ -377,8 +386,23 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 	if opts.occurrences != nil {
 		env.claims = claims.NewService(db, opts.occurrences, log)
 		env.claims.SetSync()
-		env.inspects = inspections.NewService(db, log)
+		env.inspects = inspections.NewService(db, "https://painel.farbo.test", []byte(cfg.Auth.JWTSecret), log)
 		env.inspects.SetSync()
+	}
+	if opts.adhesions && env.inspects != nil && env.orgs != nil {
+		env.adhesions = adhesions.NewService(db, env.inspects, env.orgs, "https://painel.farbo.test", []byte(cfg.Auth.JWTSecret), log)
+		params := contract.Params{Company: config.Company{Name: "Farbo Rastreadores"}, HistoryOptions: []int{7, 14, 30}}
+		doc, err := contract.Render(params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		term, err := contract.RenderAssociate(params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		env.contract = contract.NewService(db, doc, &recordingContractMailer{}, log)
+		env.contract.SetAssociateTerm(term)
+		env.contract.SetSync()
 	}
 	if opts.liveLinks {
 		env.liveLinks = livelinks.NewService(db, "https://painel.farbo.test", cfg.Auth.JWTSecret)
@@ -397,8 +421,9 @@ func newCredEnvWith(t *testing.T, opts credEnvOptions) *credEnv {
 	server := NewServer(Deps{
 		Geofences: fences, Reports: reportsSvc, ReportMail: reportMail, Maintenance: maintenanceSvc,
 		StepUp: stepUpSvc, Shares: sharesSvc, Theft: env.theft, Accounts: accountsSvc, Organizations: env.orgs,
-		Closing: env.closing, LiveLinks: env.liveLinks, Claims: env.claims, Inspections: env.inspects,
-		Fleet: env.fleetOps, APIKeys: env.apiKeys, Webhooks: env.webhooks, Appointments: env.installs, BusRoutes: env.routes,
+		Closing: env.closing, LiveLinks: env.liveLinks, Claims: env.claims, Inspections: env.inspects, Adhesions: env.adhesions,
+		Contract: env.contract,
+		Fleet:    env.fleetOps, APIKeys: env.apiKeys, Webhooks: env.webhooks, Appointments: env.installs, BusRoutes: env.routes,
 		SMSSetup: env.sms, Config: cfg, Log: log, Metrics: metrics, DB: db, Auth: authSvc,
 		Devices: env.devices, Vehicles: env.vehicles, Events: eventSvc, Commands: env.commands,
 		Audit: auditSvc, Billing: billingSvc,

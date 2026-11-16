@@ -21,6 +21,7 @@ import (
 
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/accounts"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/addresses"
+	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/adhesions"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/adjustment"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/affiliates"
 	"github.com/pedrofarbo/farbo-rastreamento/backend/internal/alerts"
@@ -456,11 +457,15 @@ func run() error {
 	// As ocorrências e as vistorias dos associados (o associado é avisado no app).
 	claimsSvc := claims.NewService(db, mail.NewOrgMailer(mailer, cfg.Mail.AppURL), log)
 	claimsSvc.SetPusher(pushSvc)
-	inspectionsSvc := inspections.NewService(db, log)
+	claimsSvc.SetLocation(billingSvc.Location())
+	inspectionsSvc := inspections.NewService(db, cfg.Mail.AppURL, []byte(cfg.Auth.JWTSecret), log)
 	inspectionsSvc.SetPusher(pushSvc)
+	// A adesão digital pelo link da associação (a vistoria e o cadastro).
+	adhesionsSvc := adhesions.NewService(db, inspectionsSvc, orgSvc, cfg.Mail.AppURL, []byte(cfg.Auth.JWTSecret), log)
 	// A agenda de instalação e o link do instalador (o cliente é avisado no app).
 	appointmentsSvc := appointments.NewService(db, cfg.Mail.AppURL, []byte(cfg.Auth.JWTSecret), log)
 	appointmentsSvc.SetPusher(pushSvc)
+	appointmentsSvc.SetStallNotifier(mail.NewInstallMailer(mailer, cfg.Mail.AppURL), cfg.Install.NotifyEmails)
 	// A gestão da frota (o aviso das locações atrasadas roda com os workers).
 	fleetSvc := fleet.NewService(db, cfg.Billing.Timezone, mail.NewFleetMailer(mailer, cfg.Mail.AppURL), log)
 
@@ -561,7 +566,7 @@ func run() error {
 		Kits:      kits.NewService(db),
 		Fiscal:    fiscalSvc,
 		LiveLinks: livelinks.NewService(db, cfg.Mail.AppURL, []byte(cfg.Auth.JWTSecret)),
-		Claims:    claimsSvc, Inspections: inspectionsSvc, Fleet: fleetSvc,
+		Claims:    claimsSvc, Inspections: inspectionsSvc, Adhesions: adhesionsSvc, Fleet: fleetSvc,
 		APIKeys: apikeys.NewService(db), Webhooks: webhooksSvc, Appointments: appointmentsSvc,
 		BusRoutes: busroutes.NewService(db, cfg.Mail.AppURL, []byte(cfg.Auth.JWTSecret)),
 		Dunning:   dunningSvc, Contract: contractSvc, Adjustment: adjustmentSvc,
@@ -651,7 +656,7 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, theftSvc, dunningSvc, adjustmentSvc, contractSvc, pushSvc, orgSvc, ordersSvc, fiscalSvc, log)
+		runWorkers(ctx, cfg, ingestor, commandSvc, authSvc, billingSvc, paymentsSvc, fulfillmentSvc, retentionSvc, rawRepo, geocodingSvc, analyticsSvc, infraSvc, financeSvc, affiliatesSvc, smsSvc, theftSvc, dunningSvc, adjustmentSvc, contractSvc, pushSvc, orgSvc, appointmentsSvc, ordersSvc, fiscalSvc, log)
 	}()
 
 	log.Info("plataforma no ar",
@@ -694,6 +699,7 @@ func runWorkers(
 	contractSvc *contract.Service,
 	pushSvc *push.Service,
 	orgSvc *organizations.Service,
+	appointmentsSvc *appointments.Service,
 	ordersSvc *orders.Service,
 	fiscalSvc *fiscal.Service,
 	log *slog.Logger,
@@ -776,6 +782,10 @@ func runWorkers(
 			billingSvc.GenerateInvoices(ctx)
 			// A fatura do mês das associações e seguradoras.
 			orgSvc.GenerateInvoices(ctx)
+			// O aviso ao associado do rastreador sem sinal (das 9h às 20h).
+			orgSvc.NotifyTrackerHealth(ctx)
+			// A instalação parada: à central e ao representante (das 8h às 20h).
+			appointmentsSvc.NotifyStalled(ctx)
 			// Os lembretes de fatura do dia (só entre 9h e 20h).
 			dunningSvc.Work(ctx)
 			// O aviso do contrato novo a quem aceitou o anterior.

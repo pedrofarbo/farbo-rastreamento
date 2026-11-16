@@ -206,6 +206,18 @@ func (s *Server) handleCloseInstallation(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, a)
 }
 
+// handleStalledInstallations são as instalações paradas de qualquer dia (a
+// agenda mostra a semana): o horário passou sem a chegada, ou o instalador
+// chegou e não concluiu.
+func (s *Server) handleStalledInstallations(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Appointments.Stalled(r.Context())
+	if err != nil {
+		writeAppointmentError(w, err, "")
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
 func (s *Server) handleInstallationPhoto(w http.ResponseWriter, r *http.Request) {
 	id, err := urlUUID(r, "id")
 	if err != nil {
@@ -273,6 +285,9 @@ type installView struct {
 	Photos      []string   `json:"photos"`
 	// Blocking: o cliente contratou a instalação com o relé do bloqueio.
 	Blocking bool `json:"blocking"`
+	// InspectionURL: a vistoria com técnico pedida para o veículo (o
+	// instalador faz junto).
+	InspectionURL string `json:"inspectionUrl,omitempty"`
 }
 
 // installPinHeader leva a senha do link do instalador (a foto, que abre numa
@@ -355,7 +370,11 @@ func toInstallView(a *appointments.Appointment) installView {
 
 func (s *Server) handlePublicInstall(w http.ResponseWriter, r *http.Request) {
 	if a, ok := s.installFor(w, r); ok {
-		writeJSON(w, http.StatusOK, toInstallView(a))
+		view := toInstallView(a)
+		if s.Inspections != nil && a.Status != appointments.StatusDone {
+			view.InspectionURL = s.Inspections.TechnicianLink(r.Context(), a.VehicleID)
+		}
+		writeJSON(w, http.StatusOK, view)
 	}
 }
 
@@ -469,8 +488,21 @@ func (s *Server) handlePublicInstallCheck(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "corpo inválido")
 		return
 	}
-	_, check := s.checkInstallDevice(r, a, req.IMEI)
+	dev, check := s.checkInstallDevice(r, a, req.IMEI)
+	s.saveInstallCheck(r, a, dev, check)
 	writeJSON(w, http.StatusOK, check)
+}
+
+// saveInstallCheck guarda o teste do sinal no agendamento: a central e o
+// representante veem o andamento (o rastreador de outro veículo não conta).
+func (s *Server) saveInstallCheck(r *http.Request, a *appointments.Appointment, dev *devices.Device, check installCheck) {
+	var id *uuid.UUID
+	if dev != nil && !check.OtherVehicle {
+		id = &dev.ID
+	}
+	if err := s.Appointments.SaveCheck(r.Context(), a.ID, id, check.Ready && !check.OtherVehicle); err != nil {
+		s.Log.Warn("teste do sinal não guardado no agendamento", "appointment", a.ID, "err", err)
+	}
 }
 
 func (s *Server) handlePublicInstallPhoto(w http.ResponseWriter, r *http.Request) {
@@ -529,6 +561,7 @@ func (s *Server) handlePublicInstallComplete(w http.ResponseWriter, r *http.Requ
 	}
 	dev, check := s.checkInstallDevice(r, a, req.IMEI)
 	if dev == nil || !check.Ready || check.OtherVehicle {
+		s.saveInstallCheck(r, a, dev, check)
 		writeError(w, http.StatusConflict, check.Message)
 		return
 	}

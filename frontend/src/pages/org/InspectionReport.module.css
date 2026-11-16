@@ -1,0 +1,48 @@
+/* As fotos do laudo da vistoria: duas por linha, com a data, a hora e o lugar embaixo. */
+
+.photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+
+.photo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  break-inside: avoid;
+}
+
+.image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+.photo figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.photo figcaption strong {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+@media print {
+  .photos {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .photo figcaption,
+  .photo figcaption strong {
+    color: #111111;
+  }
+}

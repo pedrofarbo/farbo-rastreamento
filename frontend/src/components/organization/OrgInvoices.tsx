@@ -25,6 +25,8 @@ export function itemLabel(item: OrgInvoiceItem): string {
       return `Rastreador: ${vehicle}${who}`;
     case 'uninstall':
       return `Desinstalação: ${vehicle}${who}`;
+    case 'inspection':
+      return `${item.detail || 'Vistoria'}${item.date ? ` (${formatDateOnly(item.date)})` : ''}: ${vehicle}${who}`;
   }
 }
 

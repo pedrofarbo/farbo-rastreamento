@@ -10,9 +10,10 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import fieldStyles from '@/components/ui/Field.module.css';
+import { Address } from '@/components/ui/Address';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { formatDateTime } from '@/services/format';
+import { formatCoordinates, formatDateTime } from '@/services/format';
 import { CLAIM_STATUS, claimKindLabel } from '@/services/occurrences';
 import { useAuth } from '@/stores/AuthContext';
 import type { ClaimStatus } from '@/types';
@@ -180,6 +181,8 @@ export function OrgClaimPage() {
               )}
             </Card>
 
+            {c.vehicleId && <ClaimTelemetryCard claimId={c.id} />}
+
             <Card title={`Fotos (${photos.length})`}>
               {photos.length === 0 ? (
                 <p className={styles.muted}>Nenhuma foto ainda.</p>
@@ -252,5 +255,76 @@ export function OrgClaimPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+const FINDING_ICON = { ok: '✅', warn: '⚠️', info: 'ℹ️' } as const;
+
+/**
+ * A análise do rastreador em volta do horário declarado: onde o veículo
+ * estava, a velocidade, quanto andou antes e depois e o que confere ou não
+ * com o relato (o que olhar com atenção primeiro).
+ */
+export function ClaimTelemetryCard({ claimId }: { claimId: string }) {
+  const telemetry = useQuery({ queryKey: ['org', 'claims', claimId, 'telemetry'], queryFn: () => orgApi.claimTelemetry(claimId) });
+  const t = telemetry.data;
+  const order = { warn: 0, ok: 1, info: 2 } as const;
+  return (
+    <Card title="O rastreador na hora da ocorrência">
+      {telemetry.isLoading ? (
+        <Spinner label="Analisando o rastreador" />
+      ) : !t ? (
+        <p className={styles.muted}>Não deu para analisar agora.</p>
+      ) : (
+        <>
+          {t.available && (
+            <dl className={styles.facts}>
+              <div>
+                <dt>Na hora declarada</dt>
+                <dd>
+                  {t.at ? (
+                    <>
+                      {t.at.speedKmh >= 5 ? `andando a ${Math.round(t.at.speedKmh)} km/h` : 'parado'}
+                      {t.at.ignition === false ? ' · ignição desligada' : t.at.ignition ? ' · ignição ligada' : ''}
+                    </>
+                  ) : (
+                    'sem posição'
+                  )}
+                </dd>
+              </div>
+              {t.at && (
+                <div>
+                  <dt>Onde estava</dt>
+                  <dd title={formatCoordinates(t.at.latitude, t.at.longitude)}>
+                    <Address lat={t.at.latitude} lon={t.at.longitude} />
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt>Andou antes · depois (2 h)</dt>
+                <dd>
+                  {t.kmBefore.toLocaleString('pt-BR')} km · {t.kmAfter.toLocaleString('pt-BR')} km
+                </dd>
+              </div>
+              {t.now && (
+                <div>
+                  <dt>Última posição</dt>
+                  <dd>{formatDateTime(t.now.at)}</dd>
+                </div>
+              )}
+            </dl>
+          )}
+          <ul className={styles.checks}>
+            {[...t.findings]
+              .sort((a, b) => order[a.level] - order[b.level])
+              .map((f, i) => (
+                <li key={i} className={f.level === 'warn' ? styles.checkWarn : undefined}>
+                  <span aria-hidden="true">{FINDING_ICON[f.level]}</span> {f.text}
+                </li>
+              ))}
+          </ul>
+        </>
+      )}
+    </Card>
   );
 }

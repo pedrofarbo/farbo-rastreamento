@@ -40,6 +40,12 @@ func NewService(repo *Repository, cfg config.Billing, log *slog.Logger) (*Servic
 // SetClock troca o relógio (testes).
 func (s *Service) SetClock(now func() time.Time) { s.now = now }
 
+// Now é o relógio da cobrança (o mesmo dos testes).
+func (s *Service) Now() time.Time { return s.now() }
+
+// Location é o fuso da cobrança.
+func (s *Service) Location() *time.Location { return s.loc }
+
 // Today é a data de hoje no fuso de cobrança.
 func (s *Service) Today() Date { return DateIn(s.now(), s.loc) }
 

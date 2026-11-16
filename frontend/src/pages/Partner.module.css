@@ -486,6 +486,34 @@
   color: #060907;
 }
 
+/* O andamento pelo link e o aviso da instalação parada. */
+.installSteps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.875rem;
+  margin: 0.125rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8125rem;
+  color: #94a3b8;
+}
+
+.installStepDone {
+  color: var(--color-neon-green);
+  font-weight: 600;
+}
+
+.installStall {
+  margin: 0.25rem 0 0;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid rgba(240, 180, 60, 0.4);
+  border-radius: 10px;
+  background: rgba(240, 180, 60, 0.12);
+  color: #fde7b0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
 .installButton:disabled {
   opacity: 0.6;
   cursor: default;

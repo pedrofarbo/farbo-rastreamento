@@ -93,6 +93,10 @@ type Terms struct {
 	// As taxas de instalação e de desinstalação (zero: sem taxa).
 	InstallFeeCents   int `json:"installFeeCents"`
 	UninstallFeeCents int `json:"uninstallFeeCents"`
+	// O preço de cada vistoria enviada: a autovistoria (pelo associado) e a
+	// com técnico (zero: sem cobrança).
+	InspectionCents     int `json:"inspectionCents"`
+	InspectionTechCents int `json:"inspectionTechCents"`
 }
 
 // Input é o cadastro da organização (o documento já vem conferido).
@@ -225,7 +229,8 @@ func (s *Service) Lookup(ctx context.Context, userID uuid.UUID) (*auth.OrgMember
 // selectOrganization: $1 é o "hoje" da cobrança (as faturas vencidas).
 const selectOrganization = `
 	SELECT u.id, o.kind, u.name, u.document, u.email, u.phone, o.price_cents, o.due_day,
-		o.equipment_mode, o.equipment_cents, o.install_fee_cents, o.uninstall_fee_cents, o.notes, u.active, o.created_at,
+		o.equipment_mode, o.equipment_cents, o.install_fee_cents, o.uninstall_fee_cents, o.inspection_cents,
+		o.inspection_tech_cents, o.notes, u.active, o.created_at,
 		(SELECT count(*) FROM users a WHERE a.organization_id = o.id AND a.active),
 		(SELECT count(*) FROM vehicles v JOIN users a ON a.id = v.owner_id WHERE a.organization_id = o.id AND a.active),
 		(SELECT count(*) FROM vehicles v JOIN users a ON a.id = v.owner_id
@@ -238,7 +243,8 @@ const selectOrganization = `
 func scanOrganization(row database.Scanner) (*Organization, error) {
 	var o Organization
 	if err := row.Scan(&o.ID, &o.Kind, &o.Name, &o.Document, &o.Email, &o.Phone, &o.PriceCents, &o.DueDay,
-		&o.EquipmentMode, &o.EquipmentCents, &o.InstallFeeCents, &o.UninstallFeeCents, &o.Notes,
+		&o.EquipmentMode, &o.EquipmentCents, &o.InstallFeeCents, &o.UninstallFeeCents, &o.InspectionCents,
+		&o.InspectionTechCents, &o.Notes,
 		&o.Active, &o.CreatedAt, &o.Associates, &o.Vehicles, &o.Installed, &o.Members, &o.OpenInvoices,
 		&o.OverdueInvoices); err != nil {
 		return nil, database.MapError(err)
@@ -301,8 +307,10 @@ func cleanTerms(t *Terms) error {
 		return &InputError{"escolha o rastreador: comodato ou venda"}
 	case t.EquipmentCents < 0 || t.EquipmentCents > 100_000_00,
 		t.InstallFeeCents < 0 || t.InstallFeeCents > 100_000_00,
-		t.UninstallFeeCents < 0 || t.UninstallFeeCents > 100_000_00:
-		return &InputError{"os valores do rastreador e das taxas vão de R$ 0 a R$ 100.000"}
+		t.UninstallFeeCents < 0 || t.UninstallFeeCents > 100_000_00,
+		t.InspectionCents < 0 || t.InspectionCents > 100_000_00,
+		t.InspectionTechCents < 0 || t.InspectionTechCents > 100_000_00:
+		return &InputError{"os valores do rastreador, das taxas e das vistorias vão de R$ 0 a R$ 100.000"}
 	}
 	if t.EquipmentMode == EquipmentLoan {
 		t.EquipmentCents = 0
@@ -333,10 +341,10 @@ func (s *Service) Create(ctx context.Context, in Input, actor uuid.UUID) (*Organ
 		}
 		_, err := tx.Exec(ctx, `
 			INSERT INTO organizations (id, kind, price_cents, due_day, notes, created_by,
-				equipment_mode, equipment_cents, install_fee_cents, uninstall_fee_cents)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+				equipment_mode, equipment_cents, install_fee_cents, uninstall_fee_cents, inspection_cents, inspection_tech_cents)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
 			id, in.Kind, in.PriceCents, in.DueDay, in.Notes, nullable(actor),
-			in.EquipmentMode, in.EquipmentCents, in.InstallFeeCents, in.UninstallFeeCents)
+			in.EquipmentMode, in.EquipmentCents, in.InstallFeeCents, in.UninstallFeeCents, in.InspectionCents, in.InspectionTechCents)
 		return err
 	})
 	if err != nil {
@@ -372,10 +380,11 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, in Input) (*Organiza
 		}
 		_, err = tx.Exec(ctx, `
 			UPDATE organizations SET kind = $2, price_cents = $3, due_day = $4, notes = $5,
-				equipment_mode = $6, equipment_cents = $7, install_fee_cents = $8, uninstall_fee_cents = $9, updated_at = NOW()
+				equipment_mode = $6, equipment_cents = $7, install_fee_cents = $8, uninstall_fee_cents = $9,
+				inspection_cents = $10, inspection_tech_cents = $11, updated_at = NOW()
 			WHERE id = $1`,
 			id, in.Kind, in.PriceCents, in.DueDay, in.Notes,
-			in.EquipmentMode, in.EquipmentCents, in.InstallFeeCents, in.UninstallFeeCents)
+			in.EquipmentMode, in.EquipmentCents, in.InstallFeeCents, in.UninstallFeeCents, in.InspectionCents, in.InspectionTechCents)
 		return err
 	})
 	if err != nil {

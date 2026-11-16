@@ -145,11 +145,17 @@ type Service struct {
 	now      func() time.Time
 	runAsync func(func())
 	log      *slog.Logger
+	// loc: o fuso das horas da análise da telemetria.
+	loc *time.Location
 }
 
 func NewService(db *database.DB, notifier Notifier, log *slog.Logger) *Service {
+	loc, err := time.LoadLocation("America/Sao_Paulo")
+	if err != nil {
+		loc = time.UTC
+	}
 	return &Service{db: db, notifier: notifier, now: time.Now, runAsync: func(f func()) { go f() },
-		log: log.With("component", "claims")}
+		log: log.With("component", "claims"), loc: loc}
 }
 
 // SetPusher liga o aviso no app.

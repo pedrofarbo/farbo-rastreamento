@@ -188,3 +188,41 @@
   letter-spacing: 0.12em;
   color: var(--text-primary);
 }
+
+/* O andamento pelo link e o aviso da instalação parada. */
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--space-3);
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-xs);
+}
+
+.stepDone {
+  color: var(--success, #22c55e);
+  font-weight: 600;
+}
+
+.stepTodo {
+  color: var(--text-muted);
+}
+
+.stall {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--warning-soft);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

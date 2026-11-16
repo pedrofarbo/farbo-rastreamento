@@ -96,4 +96,26 @@ describe('as instalações dos clientes do representante', () => {
     await flush();
     expect(calls[2]).toEqual(['cancel', 'tok', 'ap1']);
   });
+
+  it('a parada: o andamento pelo link e o que falta para o rastreador ficar no veículo', async () => {
+    state.queue = {
+      awaitingInstall: [], awaitingUninstall: [],
+      appointments: [{
+        ...appointment, status: 'arrived', arrivedAt: '2026-11-16T17:44:00Z', trackerImei: '860752061230249', trackerConnected: true,
+        checkedAt: '2026-11-16T18:49:00Z', checkReady: true, stall: 'stalled',
+      }],
+    };
+    await render();
+    const steps = Array.from(document.querySelectorAll('ol[aria-label="Andamento pelo link"] li')).map((li) => li.textContent?.trim());
+    expect(steps).toEqual([
+      expect.stringMatching(/^✓ Chegou às \d\d:44$/),
+      '✓ Rastreador final 230249 conectado',
+      expect.stringMatching(/^✓ Sinal ok às \d\d:49$/),
+      '○ Foto do rastreador',
+      '○ Concluir',
+    ]);
+    expect(text()).toContain('ainda falta: foto do rastreador, concluir. O rastreador só fica no veículo do cliente (e no app dele) depois de “Concluir a instalação”.');
+    // Com o instalador no local, não remarca (o link segue).
+    expect(Array.from(document.querySelectorAll('button')).some((b) => b.textContent?.trim() === 'Remarcar')).toBe(false);
+  });
 });

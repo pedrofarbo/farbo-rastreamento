@@ -20,15 +20,19 @@ afterEach(() => {
 const draft = {
   kind: 'association' as const, name: 'Associação Motoclube', document: '11.222.333/0001-81', email: 'contato@moto.test',
   phone: '', price: '49,90', dueDay: '10', equipmentMode: 'loan' as const, equipment: '', installFee: '80', uninstallFee: '',
-  notes: '', active: true, adminName: '', adminEmail: '',
+  inspection: '15', inspectionTech: '', notes: '', active: true, adminName: '', adminEmail: '',
 };
 
 describe('o cadastro da organização', () => {
   it('converte os valores e confere o que falta', () => {
     const ok = organizationFromDraft(draft, true);
     expect(ok).toEqual({
-      input: expect.objectContaining({ priceCents: 4990, installFeeCents: 8000, uninstallFeeCents: 0, equipmentCents: 0, document: '11222333000181' }),
+      input: expect.objectContaining({
+        priceCents: 4990, installFeeCents: 8000, uninstallFeeCents: 0, equipmentCents: 0, document: '11222333000181',
+        inspectionCents: 1500, inspectionTechCents: 0,
+      }),
     });
+    expect(organizationFromDraft({ ...draft, inspectionTech: 'abc' }, true)).toMatch(/vistorias/);
     expect(organizationFromDraft({ ...draft, email: 'x' }, true)).toMatch(/e-mail de cobrança/);
     expect(organizationFromDraft({ ...draft, document: '11.222.333/0001-00' }, true)).toMatch(/CNPJ/);
     expect(organizationFromDraft({ ...draft, equipmentMode: 'sale' }, true)).toMatch(/preço do rastreador/);

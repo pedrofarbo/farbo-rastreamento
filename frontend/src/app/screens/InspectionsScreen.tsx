@@ -4,14 +4,16 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { meApi } from '@/api/resources';
 import { AuthImage } from '@/components/media/AuthImage';
+import { InspectionCamera } from '@/components/inspection/InspectionCamera';
+import { positionText, usePositionWatch } from '@/components/inspection/usePositionWatch';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateTime } from '@/services/format';
-import { INSPECTION_SLOTS, INSPECTION_STATUS, photosLabel } from '@/services/occurrences';
-import { compressImage, currentPosition } from '@/services/photos';
-import type { InspectionSlot } from '@/types';
+import { watermarkLines } from '@/services/inspectionCamera';
+import { INSPECTION_STATUS, inspectionExpired, inspectionKindLabel, missingSlots, photosLabel } from '@/services/occurrences';
+import type { InspectionPhotoSource, InspectionSlotDef } from '@/types';
 
 import { BackIcon } from '../icons';
 import local from './Occurrences.module.css';
@@ -54,7 +56,8 @@ export function InspectionsScreen() {
               <Badge tone={INSPECTION_STATUS[i.status].tone}>{INSPECTION_STATUS[i.status].label}</Badge>
             </span>
             <span className={styles.muted}>
-              {i.plate ? `${i.plate} · ` : ''}pedida em {formatDateTime(i.createdAt)} · {photosLabel(i.photos.length)}
+              {inspectionKindLabel(i.kind)} · {i.plate ? `${i.plate} · ` : ''}pedida em {formatDateTime(i.createdAt)} ·{' '}
+              {photosLabel(i.slots, i.photos)}
             </span>
           </Link>
         ))
@@ -63,36 +66,38 @@ export function InspectionsScreen() {
   );
 }
 
-/** A vistoria: a foto de cada ângulo (tirar ou refazer) e o envio. */
+/** A vistoria: a foto de cada ângulo pela câmera (tirar ou refazer), a declaração e o envio. */
 export function InspectionScreen() {
   const { id = '' } = useParams();
   const queryClient = useQueryClient();
   const { notify } = useToast();
-  const [busy, setBusy] = useState<InspectionSlot | null>(null);
+  const [shooting, setShooting] = useState<InspectionSlotDef | null>(null);
   const [version, setVersion] = useState(0);
+  const [damages, setDamages] = useState('');
+  const [accept, setAccept] = useState(false);
   const inspection = useQuery({ queryKey: [...inspectionsKey, id], queryFn: () => meApi.inspection(id), enabled: Boolean(id) });
+  const i = inspection.data;
+  const expired = i ? inspectionExpired(i) : false;
+  const pending = i?.status === 'pending' && !expired;
+  const position = usePositionWatch(pending);
   const refresh = () => {
     setVersion((v) => v + 1);
     void queryClient.invalidateQueries({ queryKey: [...inspectionsKey, id] });
     void queryClient.invalidateQueries({ queryKey: inspectionsKey });
   };
 
-  const take = async (slot: InspectionSlot, file: File | undefined) => {
-    if (!file) return;
-    setBusy(slot);
-    try {
-      const [photo, position] = await Promise.all([compressImage(file), currentPosition()]);
-      await meApi.saveInspectionPhoto(id, slot, photo, position);
-      refresh();
-    } catch (err) {
-      notify({ tone: 'error', title: 'A foto não subiu', description: (err as Error).message });
-    } finally {
-      setBusy(null);
-    }
+  const upload = async (slot: InspectionSlotDef, photo: Blob, source: InspectionPhotoSource) => {
+    const fix = position.current();
+    await meApi.saveInspectionPhoto(id, slot.id, photo, {
+      position: fix ? { latitude: fix.latitude, longitude: fix.longitude, accuracy: fix.accuracy } : null,
+      source,
+    });
+    setShooting(null);
+    refresh();
   };
 
   const submit = useMutation({
-    mutationFn: () => meApi.submitInspection(id),
+    mutationFn: () => meApi.submitInspection(id, damages),
     onSuccess: () => {
       refresh();
       notify({ tone: 'success', title: 'Vistoria enviada', description: 'Você recebe aqui a resposta.' });
@@ -100,9 +105,8 @@ export function InspectionScreen() {
     onError: (err: Error) => notify({ tone: 'error', title: 'Não deu para enviar', description: err.message }),
   });
 
-  const i = inspection.data;
-  const pending = i?.status === 'pending';
   const done = new Set(i?.photos.map((p) => p.slot) ?? []);
+  const missing = i ? missingSlots(i.slots, i.photos) : [];
   return (
     <div className={styles.screen}>
       <NavBar title="Vistoria" back="/vistorias" />
@@ -114,23 +118,30 @@ export function InspectionScreen() {
         <>
           <section className={local.card}>
             <span className={local.head}>
-              <strong>{i.vehicleName}</strong>
-              <Badge tone={INSPECTION_STATUS[i.status].tone}>{INSPECTION_STATUS[i.status].label}</Badge>
+              <strong>
+                {inspectionKindLabel(i.kind)} · {i.vehicleName}
+              </strong>
+              {expired ? <Badge tone="neutral">Link vencido</Badge> : <Badge tone={INSPECTION_STATUS[i.status].tone}>{INSPECTION_STATUS[i.status].label}</Badge>}
             </span>
             {i.requestNote && <p className={local.note}>{i.requestNote}</p>}
             {i.reviewNote && i.status !== 'pending' && <p className={local.note}>Resposta: {i.reviewNote}</p>}
             <span className={styles.muted}>
-              {pending
-                ? 'Tire uma foto de cada ângulo, com boa luz. Dá para refazer qualquer uma antes de enviar.'
-                : i.status === 'submitted'
-                  ? 'Enviada: a equipe está revisando as fotos.'
-                  : i.status === 'approved'
-                    ? 'Aprovada. Obrigado!'
-                    : 'Devolvida: veja a vistoria nova na lista para refazer.'}
+              {expired
+                ? 'O prazo da vistoria acabou: peça para a associação renovar.'
+                : pending
+                  ? 'Toque em cada ângulo para abrir a câmera, com boa luz. Dá para refazer qualquer uma antes de enviar.'
+                  : i.status === 'submitted'
+                    ? 'Enviada: a equipe está revisando as fotos.'
+                    : i.status === 'approved'
+                      ? 'Aprovada. Obrigado!'
+                      : i.status === 'canceled'
+                        ? 'A associação cancelou esta vistoria.'
+                        : 'Devolvida: veja a vistoria nova na lista para refazer.'}
             </span>
+            {pending && <span className={styles.muted}>{positionText(position.state, position.accuracy)}</span>}
           </section>
           <ul className={local.slots}>
-            {INSPECTION_SLOTS.map((slot) => (
+            {i.slots.map((slot) => (
               <li key={slot.id} className={`${local.slot} ${done.has(slot.id) ? local.slotDone : ''}`}>
                 {done.has(slot.id) ? (
                   <AuthImage
@@ -145,39 +156,54 @@ export function InspectionScreen() {
                   </span>
                 )}
                 <span className={local.slotText}>
-                  <strong>{slot.label}</strong>
+                  <strong>
+                    {slot.label}
+                    {slot.optional ? ' (se houver)' : ''}
+                  </strong>
                   <span className={styles.muted}>{slot.hint}</span>
                   {pending && (
-                    <label className={local.picker}>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        disabled={busy !== null}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          e.target.value = '';
-                          void take(slot.id, file);
-                        }}
-                      />
-                      {busy === slot.id ? 'Enviando…' : done.has(slot.id) ? 'Refazer' : 'Tirar foto'}
-                    </label>
+                    <button type="button" className={local.picker} onClick={() => setShooting(slot)}>
+                      {done.has(slot.id) ? 'Refazer' : 'Tirar foto'}
+                    </button>
                   )}
                 </span>
               </li>
             ))}
           </ul>
           {pending && (
-            <Button
-              variant="primary"
-              block
-              disabled={done.size < INSPECTION_SLOTS.length || busy !== null}
-              loading={submit.isPending}
-              onClick={() => submit.mutate()}
-            >
-              {done.size < INSPECTION_SLOTS.length ? `Faltam ${INSPECTION_SLOTS.length - done.size} fotos` : 'Enviar vistoria'}
-            </Button>
+            <section className={local.card}>
+              <textarea
+                className={local.textarea}
+                maxLength={1000}
+                value={damages}
+                aria-label="Avarias que o veículo já tem"
+                placeholder="Avarias que o veículo já tem (opcional): riscos, amassados, vidro trincado…"
+                onChange={(e) => setDamages(e.target.value)}
+              />
+              <label className={local.accept}>
+                <input type="checkbox" checked={accept} onChange={(e) => setAccept(e.target.checked)} />
+                <span>
+                  Declaro que as fotos são do veículo {i.plate || i.vehicleName}, foram tiradas agora por mim e que as avarias que ele já
+                  tem estão descritas acima.
+                </span>
+              </label>
+              <Button
+                variant="primary"
+                block
+                disabled={missing.length > 0 || !accept}
+                loading={submit.isPending}
+                onClick={() => submit.mutate()}
+              >
+                {missing.length > 0 ? `Faltam ${missing.length} ${missing.length === 1 ? 'foto' : 'fotos'}` : 'Enviar vistoria'}
+              </Button>
+            </section>
           )}
+          <InspectionCamera
+            slot={shooting}
+            stamp={() => watermarkLines(new Date(), i.plate, position.current())}
+            onClose={() => setShooting(null)}
+            onShot={(photo, source) => (shooting ? upload(shooting, photo, source) : Promise.resolve())}
+          />
         </>
       )}
     </div>

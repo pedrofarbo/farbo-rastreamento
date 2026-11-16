@@ -58,6 +58,8 @@ export function InstallationsAgendaPage() {
   const [scheduling, setScheduling] = useState<{ target: Target | null; appointment: InstallationAppointment | null } | null>(null);
   const agenda = useQuery({ queryKey: [...key, from], queryFn: () => installationsApi.list(from, to), refetchInterval: 60_000 });
   const awaiting = useQuery({ queryKey: [...key, 'awaiting'], queryFn: installationsApi.awaiting });
+  // As paradas de qualquer dia (a agenda mostra só a semana).
+  const stalled = useQuery({ queryKey: [...key, 'stalled'], queryFn: installationsApi.stalled, refetchInterval: 60_000 });
   const removals = useQuery({ queryKey: [...key, 'awaiting-uninstall'], queryFn: installationsApi.awaitingUninstall });
   const installers = useQuery({ queryKey: ['installers'], queryFn: installersApi.list });
   const close = useMutation({
@@ -76,6 +78,41 @@ export function InstallationsAgendaPage() {
       /* sem permissão: a pessoa copia na mão */
     }
   };
+  const actionsFor = (a: InstallationAppointment) =>
+    isOpen(a) ? (
+      <>
+        <a className={styles.waLink} href={installerWhatsapp(a, installers.data ?? [])} target="_blank" rel="noreferrer noopener">
+          WhatsApp ao instalador
+        </a>
+        {a.url && (
+          <Button size="small" variant="ghost" onClick={() => void copy(a.url ?? '')}>
+            Copiar link
+          </Button>
+        )}
+        {a.status === 'scheduled' && (
+          <Button size="small" variant="secondary" onClick={() => setScheduling({ target: null, appointment: a })}>
+            Remarcar
+          </Button>
+        )}
+        <Button size="small" variant="ghost" onClick={() => close.mutate({ id: a.id, status: 'no_show' })}>
+          Ausente
+        </Button>
+        <Button size="small" variant="ghost" onClick={() => close.mutate({ id: a.id, status: 'canceled' })}>
+          Cancelar
+        </Button>
+      </>
+    ) : null;
+  // O link do representante abre sem senha.
+  const footerFor = (a: InstallationAppointment) =>
+    isOpen(a) && a.pin ? (
+      <LinkPin
+        pin={a.pin}
+        whatsappFor={(message) => installerWhatsapp(a, installers.data ?? [], message)}
+        renew={() => installationsApi.renewPin(a.id)}
+        onRenewed={() => void queryClient.invalidateQueries({ queryKey: key })}
+      />
+    ) : null;
+  const stalledList = stalled.data ?? [];
   const waiting = awaiting.data ?? [];
   const pending = waiting.filter((w) => !w.scheduledFor);
   const toRemove = removals.data ?? [];
@@ -97,6 +134,16 @@ export function InstallationsAgendaPage() {
             </p>
           </div>
         </header>
+
+        {stalledList.length > 0 && (
+          <Card
+            title="Instalações paradas"
+            subtitle={`${stalledList.length} em aberto há mais de 3 horas: o horário passou sem a chegada pelo link, ou o instalador chegou e não concluiu. O rastreador só fica ligado ao veículo na conclusão.`}
+            flush
+          >
+            <AppointmentList list={stalledList} photoUrl={installationsApi.photoUrl} actions={actionsFor} footer={footerFor} />
+          </Card>
+        )}
 
         <Card
           title="Aguardando instalação"
@@ -152,7 +199,10 @@ export function InstallationsAgendaPage() {
                             {[w.customerPhone, w.organizationName].filter(Boolean).join(' · ')}
                           </div>
                         </td>
-                        <td data-label="Endereço">{w.address || <span className={styles.muted}>sem endereço</span>}</td>
+                        <td data-label="Endereço">
+                          {w.address || <span className={styles.muted}>sem endereço</span>}
+                          {w.preference && <div className={styles.muted}>Prefere: {w.preference}</div>}
+                        </td>
                         <td data-label="Desde">{formatDateOnly(w.createdAt.slice(0, 10))}</td>
                         <td>
                           {w.scheduledFor ? (
@@ -290,45 +340,8 @@ export function InstallationsAgendaPage() {
             <AppointmentList
               list={agenda.data ?? []}
               photoUrl={installationsApi.photoUrl}
-              actions={(a) =>
-                isOpen(a) ? (
-                  <>
-                    <a
-                      className={styles.waLink}
-                      href={installerWhatsapp(a, installers.data ?? [])}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                    >
-                      WhatsApp ao instalador
-                    </a>
-                    {a.url && (
-                      <Button size="small" variant="ghost" onClick={() => void copy(a.url ?? '')}>
-                        Copiar link
-                      </Button>
-                    )}
-                    <Button size="small" variant="secondary" onClick={() => setScheduling({ target: null, appointment: a })}>
-                      Remarcar
-                    </Button>
-                    <Button size="small" variant="ghost" onClick={() => close.mutate({ id: a.id, status: 'no_show' })}>
-                      Ausente
-                    </Button>
-                    <Button size="small" variant="ghost" onClick={() => close.mutate({ id: a.id, status: 'canceled' })}>
-                      Cancelar
-                    </Button>
-                  </>
-                ) : null
-              }
-              footer={(a) =>
-                // O link do representante abre sem senha.
-                isOpen(a) && a.pin ? (
-                  <LinkPin
-                    pin={a.pin}
-                    whatsappFor={(message) => installerWhatsapp(a, installers.data ?? [], message)}
-                    renew={() => installationsApi.renewPin(a.id)}
-                    onRenewed={() => void queryClient.invalidateQueries({ queryKey: key })}
-                  />
-                ) : null
-              }
+              actions={actionsFor}
+              footer={footerFor}
             />
           )}
         </Card>

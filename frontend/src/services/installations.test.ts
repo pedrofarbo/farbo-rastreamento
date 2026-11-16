@@ -2,7 +2,17 @@ import { describe, expect, it } from 'vitest';
 
 import type { InstallationAppointment } from '@/types';
 
-import { dayKey, groupByDay, installerMessage, installerPinMessage, isOpen, statusOf } from './installations';
+import {
+  dayKey,
+  groupByDay,
+  installSteps,
+  installerMessage,
+  installerPinMessage,
+  isOpen,
+  showSteps,
+  stallText,
+  statusOf,
+} from './installations';
 
 const appt = (over: Partial<InstallationAppointment>): InstallationAppointment => ({
   id: crypto.randomUUID(),
@@ -76,5 +86,58 @@ describe('a agenda de instalação', () => {
     expect(text).toContain('a foto do rastreador retirado');
     expect(statusOf({ kind: 'uninstall', status: 'done' }).label).toBe('Retirado');
     expect(statusOf({ kind: 'install', status: 'done' }).label).toBe('Instalado');
+  });
+});
+
+describe('o andamento pelo link e a instalação parada', () => {
+  const arrivedAt = new Date(2026, 10, 16, 14, 44).toISOString();
+  const checkedAt = new Date(2026, 10, 16, 15, 49).toISOString();
+
+  it('os passos: a chegada, o rastreador, o sinal, a foto e a conclusão', () => {
+    const steps = (a: Partial<InstallationAppointment>) => installSteps(appt(a)).map((s) => `${s.done ? '✓' : '○'} ${s.label}`);
+    expect(steps({})).toEqual(['○ Chegada', '○ Rastreador escolhido', '○ Teste do sinal', '○ Foto do rastreador', '○ Concluir']);
+    expect(
+      steps({ status: 'arrived', arrivedAt, trackerImei: '860752061230249', trackerConnected: true, checkedAt, checkReady: false }),
+    ).toEqual([
+      '✓ Chegou às 14:44',
+      '✓ Rastreador final 230249 conectado',
+      '○ Teste do sinal (o das 15:49 não passou)',
+      '○ Foto do rastreador',
+      '○ Concluir',
+    ]);
+    expect(steps({ status: 'arrived', arrivedAt, trackerImei: '860752061230249', checkedAt, checkReady: true, photos: ['tracker'] })).toEqual([
+      '✓ Chegou às 14:44',
+      '✓ Rastreador final 230249',
+      '✓ Sinal ok às 15:49',
+      '✓ Foto do rastreador',
+      '○ Concluir',
+    ]);
+    expect(steps({ kind: 'uninstall', status: 'arrived', arrivedAt })).toEqual([
+      '✓ Chegou às 14:44',
+      '○ Foto do rastreador retirado',
+      '○ Concluir',
+    ]);
+  });
+
+  it('só mostra o andamento da que está aberta e já começou pelo link', () => {
+    expect(showSteps(appt({}))).toBe(false);
+    expect(showSteps(appt({ status: 'arrived', arrivedAt }))).toBe(true);
+    expect(showSteps(appt({ checkedAt }))).toBe(true);
+    expect(showSteps(appt({ status: 'done', arrivedAt }))).toBe(false);
+  });
+
+  it('o aviso da parada: para a central e para quem instala', () => {
+    expect(stallText(appt({}))).toBe('');
+    expect(stallText(appt({ stall: 'late' }))).toBe('Passou do horário e o link não registrou a chegada: confirme com o instalador.');
+    expect(stallText(appt({ stall: 'late' }), true)).toContain('abra o link e siga os passos até “Concluir a instalação”');
+    const stalled = appt({ status: 'arrived', stall: 'stalled', arrivedAt, trackerImei: '860752061230249', checkedAt, checkReady: true });
+    expect(stallText(stalled)).toBe(
+      'Instalador no local desde segunda, 16/11 às 14:44 e ainda falta: foto do rastreador, concluir. ' +
+        'O rastreador só fica ligado ao veículo depois de “Concluir a instalação” no link.',
+    );
+    expect(stallText(stalled, true)).toBe(
+      'Você chegou segunda, 16/11 às 14:44 e ainda falta: foto do rastreador, concluir. ' +
+        'O rastreador só fica no veículo do cliente (e no app dele) depois de “Concluir a instalação”.',
+    );
   });
 });

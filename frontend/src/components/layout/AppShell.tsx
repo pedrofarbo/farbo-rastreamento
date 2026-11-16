@@ -331,10 +331,12 @@ export function AppShell() {
               <>
                 {item('/dashboard', 'map', 'Mapa')}
                 {item('/associados', 'users', 'Associados')}
+                {item('/organizacao/saude', 'pulse', 'Saúde dos rastreadores')}
                 {item('/organizacao/relatorios', 'chart', 'Relatórios')}
                 {!isOrgBroker && (
                   <>
                     {item('/organizacao/ocorrencias', 'activity', 'Ocorrências')}
+                    {item('/organizacao/adesoes', 'users', 'Adesões')}
                     {item('/organizacao/vistorias', 'car', 'Vistorias')}
                     {item('/organizacao/recuperacao', 'shield', 'Recuperação')}
                     {item('/organizacao/comunicados', 'chat', 'Comunicados')}

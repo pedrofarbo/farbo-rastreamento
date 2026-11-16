@@ -2,7 +2,17 @@ import type { ReactNode } from 'react';
 
 import { AuthImage } from '@/components/media/AuthImage';
 import { Badge } from '@/components/ui/Badge';
-import { KIND_LABEL, dayLabel, groupByDay, hourLabel, slotsOf, statusOf } from '@/services/installations';
+import {
+  KIND_LABEL,
+  dayLabel,
+  groupByDay,
+  hourLabel,
+  installSteps,
+  showSteps,
+  slotsOf,
+  stallText,
+  statusOf,
+} from '@/services/installations';
 import type { InstallationAppointment, InstallationSlot } from '@/types';
 
 import styles from './Appointments.module.css';
@@ -10,7 +20,8 @@ import styles from './Appointments.module.css';
 /**
  * Os agendamentos de instalação e de desinstalação por dia (a central, a
  * associação): o horário, o tipo, o veículo, o cliente, o instalador, a
- * situação e, depois de concluído, o IMEI e as fotos.
+ * situação, o andamento pelo link (e o aviso da parada) e, depois de
+ * concluído, o IMEI e as fotos.
  */
 export function AppointmentList({
   list,
@@ -38,6 +49,7 @@ export function AppointmentList({
           {items.map((a) => {
             const st = statusOf(a);
             const extra = footer?.(a);
+            const stall = stallText(a);
             return (
               <article key={a.id} className={styles.item}>
                 <span className={styles.hour}>{hourLabel(a.scheduledFor)}</span>
@@ -62,7 +74,14 @@ export function AppointmentList({
                     <Badge tone={a.kind === 'uninstall' ? 'warning' : 'accent'}>{KIND_LABEL[a.kind]}</Badge>
                     {a.blocking && a.kind === 'install' && <Badge tone="warning">Com bloqueio</Badge>}
                     <Badge tone={st.tone}>{st.label}</Badge>
+                    {stall && <Badge tone="danger">Parada</Badge>}
                   </span>
+                  {showSteps(a) && <InstallSteps appointment={a} />}
+                  {stall && (
+                    <span className={styles.stall} role="status">
+                      {stall}
+                    </span>
+                  )}
                   {a.status === 'done' ? (
                     <span className={styles.muted}>
                       {a.kind === 'uninstall' ? 'Retirado o' : 'Instalado o'} IMEI {a.imei || '—'}
@@ -88,5 +107,19 @@ export function AppointmentList({
         </section>
       ))}
     </div>
+  );
+}
+
+/** O andamento pelo link: o que já foi feito (✓) e o que falta. */
+export function InstallSteps({ appointment, className }: { appointment: InstallationAppointment; className?: string }) {
+  return (
+    <ol className={`${styles.steps} ${className ?? ''}`} aria-label="Andamento pelo link">
+      {installSteps(appointment).map((s) => (
+        <li key={s.label} className={s.done ? styles.stepDone : styles.stepTodo}>
+          <span aria-hidden="true">{s.done ? '✓' : '○'}</span> {s.label}
+          <span className={styles.srOnly}>{s.done ? ' (feito)' : ' (falta)'}</span>
+        </li>
+      ))}
+    </ol>
   );
 }

@@ -73,6 +73,9 @@ export interface OrgTerms {
   equipmentCents: number;
   installFeeCents: number;
   uninstallFeeCents: number;
+  /** O preço de cada vistoria enviada: a autovistoria e a com técnico (zero: sem cobrança). */
+  inspectionCents: number;
+  inspectionTechCents: number;
 }
 
 /** A associação ou seguradora, com os números do painel. */
@@ -159,13 +162,16 @@ export interface AssociateInput {
 
 /** Uma linha do extrato da fatura da organização. */
 export interface OrgInvoiceItem {
-  kind: 'monthly' | 'prorata' | 'install' | 'equipment' | 'uninstall';
+  kind: 'monthly' | 'prorata' | 'install' | 'equipment' | 'uninstall' | 'inspection';
   vehicleId: string | null;
   name: string;
   plate: string;
   ownerName: string;
   amountCents: number;
   days?: number;
+  /** Na vistoria: o que foi ("Autovistoria · Adesão") e o dia do envio. */
+  detail?: string;
+  date?: string;
 }
 
 /** A fatura da organização, com o extrato (vazio na avulsa). */
@@ -742,18 +748,199 @@ export interface ClaimInput {
   policeReport: string;
 }
 
-export type InspectionSlot = 'front' | 'rear' | 'left' | 'right' | 'dashboard' | 'chassis';
-export type InspectionStatus = 'pending' | 'submitted' | 'approved' | 'rejected';
+/** pending: falta a vistoria ou o termo; submitted: espera a associação. */
+export type AdhesionStatus = 'pending' | 'submitted' | 'approved' | 'rejected';
 
-/** Uma vistoria digital (o associado tira as fotos pelo app). */
-export interface Inspection {
+/** O que a pessoa manda pelo link de adesão da associação. */
+export interface AdhesionInput {
+  name: string;
+  document: string;
+  email: string;
+  phone: string;
+  address: DeliveryAddress;
+  vehicleType: InspectionVehicleType;
+  plate: string;
+  brand: string;
+  model: string;
+  year: number | null;
+  color: string;
+}
+
+/** A associação do link de adesão (e se ele está aberto). */
+export interface PublicAdhesionOrg {
+  organizationName: string;
+  kind: OrgKind;
+  enabled: boolean;
+}
+
+/** O link de acompanhamento da adesão: só o primeiro nome. */
+export interface PublicAdhesion {
+  organizationName: string;
+  status: AdhesionStatus;
+  firstName: string;
+  plate: string;
+  vehicleName: string;
+  inspectionStatus: InspectionStatus | '';
+  inspectionLink: string;
+  inspectionExpired: boolean;
+  /** O motivo da refação da vistoria. */
+  inspectionNote: string;
+  acceptedAt: string | null;
+  installPreference: string;
+  reviewNote: string;
+  followToken?: string;
+}
+
+/** Uma adesão no painel da associação. */
+export interface Adhesion {
   id: string;
   organizationId: string;
-  associateId: string;
-  associateName: string;
+  organizationName: string;
+  status: AdhesionStatus;
+  name: string;
+  document: string;
+  email: string;
+  phone: string;
+  address: DeliveryAddress;
+  vehicleType: InspectionVehicleType;
+  plate: string;
+  brand: string;
+  model: string;
+  year: number | null;
+  color: string;
+  installPreference: string;
+  termVersion: string;
+  acceptedAt: string | null;
+  associateId: string | null;
+  vehicleId: string | null;
+  reviewNote: string;
+  reviewedByName: string;
+  reviewedAt: string | null;
+  createdAt: string;
+  inspection: Inspection | null;
+  followUrl: string;
+}
+
+/** O link de adesão da associação. */
+export interface AdhesionSettings {
+  enabled: boolean;
+  url: string;
+}
+
+/** Uma posição do rastreador na análise da ocorrência. */
+export interface TelemetryPoint {
+  at: string;
+  latitude: number;
+  longitude: number;
+  speedKmh: number;
+  ignition: boolean | null;
+}
+
+/** A análise do rastreador em volta do horário declarado na ocorrência. */
+export interface ClaimTelemetry {
+  available: boolean;
+  occurredAt: string;
+  at: TelemetryPoint | null;
+  lastBefore: TelemetryPoint | null;
+  firstAfter: TelemetryPoint | null;
+  now: TelemetryPoint | null;
+  kmBefore: number;
+  kmAfter: number;
+  maxSpeedNear: number;
+  harshBrakes: string[];
+  powerCuts: string[];
+  theftActivatedAt: string | null;
+  theftOutcome: string;
+  findings: { level: 'ok' | 'warn' | 'info'; text: string }[];
+}
+
+/** O problema do rastreador: do mais grave ao mais leve. */
+export type TrackerIssue = 'removed' | 'silent_long' | 'silent' | 'never' | 'power_cut';
+
+/** Um veículo com rastreador de associado e o problema dele. */
+export interface TrackerHealthVehicle {
   vehicleId: string;
   vehicleName: string;
   plate: string;
+  associateId: string;
+  associateName: string;
+  phone: string;
+  imei: string;
+  status: string;
+  lastSeenAt: string | null;
+  lastPowerCutAt: string | null;
+  powerCuts: number;
+  issue: TrackerIssue;
+  notifiedAt: string | null;
+  /** O associado tem as notificações do app ligadas (o aviso chega). */
+  pushEnabled: boolean;
+}
+
+/** A saúde dos rastreadores da organização. */
+export interface TrackerHealth {
+  installed: number;
+  online: number;
+  silent: number;
+  silentLong: number;
+  never: number;
+  removed: number;
+  powerCuts: number;
+  autoNotice: boolean;
+  vehicles: TrackerHealthVehicle[];
+}
+
+/** O ângulo de uma foto da vistoria (o roteiro vem do servidor). */
+export type InspectionSlot = string;
+export type InspectionStatus = 'pending' | 'submitted' | 'approved' | 'rejected' | 'canceled';
+/** entry: adesão; periodic: revistoria; claim: sinistro; replacement: troca de veículo. */
+export type InspectionKind = 'entry' | 'periodic' | 'claim' | 'replacement';
+/** Quem tira as fotos: o associado (ou quem vai entrar) ou um técnico. */
+export type InspectionMode = 'self' | 'technician';
+export type InspectionVehicleType = 'car' | 'motorcycle';
+/** De onde a foto veio: a câmera ao vivo da vistoria ou o seletor de arquivos. */
+export type InspectionPhotoSource = 'camera' | 'file';
+
+/** Um ângulo do roteiro: o que pedir e como tirar. */
+export interface InspectionSlotDef {
+  id: InspectionSlot;
+  label: string;
+  hint: string;
+  optional?: boolean;
+}
+
+/** Uma conferência da vistoria enviada. */
+export interface InspectionCheck {
+  code: string;
+  level: 'ok' | 'warn' | 'info';
+  text: string;
+}
+
+export interface InspectionPhoto {
+  slot: InspectionSlot;
+  sizeBytes: number;
+  latitude: number | null;
+  longitude: number | null;
+  accuracyM: number | null;
+  source: InspectionPhotoSource;
+  takenAt: string;
+}
+
+/** Uma vistoria digital: pelo app do associado ou pelo link (sem login). */
+export interface Inspection {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  /** O associado com conta (null: quem ainda vai entrar, pelo link). */
+  associateId: string | null;
+  associateName: string;
+  phone: string;
+  /** O veículo do associado (null: só a placa do pedido). */
+  vehicleId: string | null;
+  vehicleName: string;
+  plate: string;
+  vehicleType: InspectionVehicleType;
+  kind: InspectionKind;
+  mode: InspectionMode;
   status: InspectionStatus;
   requestNote: string;
   reviewNote: string;
@@ -761,8 +948,55 @@ export interface Inspection {
   reviewedByName: string;
   submittedAt: string | null;
   reviewedAt: string | null;
+  expiresAt: string | null;
+  redoOf: string | null;
+  priceCents: number;
+  billed: boolean;
+  damagesNote: string;
+  acceptedAt: string | null;
+  checks: InspectionCheck[];
   createdAt: string;
-  photos: { slot: InspectionSlot; sizeBytes: number; latitude: number | null; longitude: number | null; takenAt: string }[];
+  slots: InspectionSlotDef[];
+  photos: InspectionPhoto[];
+  /** O link sem login, enquanto espera as fotos. */
+  link?: string;
+}
+
+/** O pedido de vistoria: o veículo do associado ou, de quem vai entrar, o nome, o celular e a placa. */
+export interface InspectionRequestInput {
+  vehicleId?: string;
+  kind: InspectionKind;
+  mode: InspectionMode;
+  vehicleType?: InspectionVehicleType;
+  personName?: string;
+  personPhone?: string;
+  plate?: string;
+  vehicleDesc?: string;
+  note?: string;
+}
+
+/** O que o link da vistoria mostra (sem login): só o primeiro nome. */
+export interface PublicInspection {
+  organizationName: string;
+  kind: InspectionKind;
+  mode: InspectionMode;
+  vehicleType: InspectionVehicleType;
+  vehicleName: string;
+  plate: string;
+  firstName: string;
+  status: InspectionStatus;
+  expired: boolean;
+  expiresAt: string | null;
+  requestNote: string;
+  submittedAt: string | null;
+  slots: InspectionSlotDef[];
+  photos: { slot: InspectionSlot; takenAt: string }[];
+}
+
+/** A posição do celular na hora da foto (a precisão em metros). */
+export interface InspectionPhotoMeta {
+  position: { latitude: number; longitude: number; accuracy: number | null } | null;
+  source: InspectionPhotoSource;
 }
 
 /** O indique e ganhe do cliente. */
@@ -3636,7 +3870,17 @@ export interface InstallationAppointment {
   pin?: string;
   /** O cliente contratou a instalação com o relé do bloqueio do motor. */
   blocking?: boolean;
+  /** O andamento pelo link: o rastreador do teste do sinal (ou o ativado pelo link) e se ele já conectou. */
+  trackerImei?: string;
+  trackerConnected?: boolean;
+  /** O último teste do sinal pelo link e se passou. */
+  checkedAt?: string | null;
+  checkReady?: boolean;
+  /** Parada há 3 h: late (o horário passou sem a chegada) ou stalled (chegou e não concluiu). */
+  stall?: InstallationStall;
 }
+
+export type InstallationStall = '' | 'late' | 'stalled';
 
 export interface InstallationInput {
   kind: InstallationKind;
@@ -3668,6 +3912,8 @@ export interface AwaitingInstall {
   representative?: string;
   /** A instalação contratada com o relé do bloqueio do motor. */
   blocking?: boolean;
+  /** O dia e a hora que o associado prefere (da adesão pelo link). */
+  preference?: string;
 }
 
 /** Um veículo de cliente do representante esperando a instalação ou a retirada do rastreador. */
@@ -3748,6 +3994,8 @@ export interface PublicInstallView {
   photos: InstallationSlot[];
   /** O cliente contratou a instalação com o relé do bloqueio do motor. */
   blocking?: boolean;
+  /** A vistoria com técnico pedida para o veículo (o instalador faz junto). */
+  inspectionUrl?: string;
 }
 
 /** Um rastreador livre para o instalador escolher (ativado: já conectou alguma vez). */
