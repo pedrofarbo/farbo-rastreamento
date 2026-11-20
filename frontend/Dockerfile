@@ -21,7 +21,7 @@ ENV VITE_PANEL_URL=$VITE_PANEL_URL
 RUN npm run build
 
 # ---- runtime ----
-FROM nginx:1.30-alpine
+FROM nginx:1.30.7-alpine
 
 COPY --from=build /build/dist/ /usr/share/nginx/html/
 RUN test -s /usr/share/nginx/html/landing.html \
