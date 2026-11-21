@@ -1,26 +1,40 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Navbar } from '@/components/landing/Navbar';
-import { HeroSection } from '@/components/landing/HeroSection';
-import { PricingSection } from '@/components/landing/PricingSection';
-import { InstallationSection } from '@/components/landing/InstallationSection';
-import { RepresentativesSection } from '@/components/landing/RepresentativesSection';
-import { FeaturesSection } from '@/components/landing/FeaturesSection';
-import { HowItWorksSection } from '@/components/landing/HowItWorksSection';
-import { TestimonialsSection } from '@/components/landing/TestimonialsSection';
-import { CTASection } from '@/components/landing/CTASection';
-import { Footer } from '@/components/landing/Footer';
-import { ContactModal } from '@/components/landing/ContactModal';
-import { InstallersModal } from '@/components/landing/InstallersModal';
+
+import { CineHero } from '@/components/cinema/CineHero';
+import { DeviceReveal } from '@/components/cinema/DeviceReveal';
+import { Features } from '@/components/cinema/Features';
+import { Finale, PlansIntro, ScrollProgress } from '@/components/cinema/Finale';
+import { Journey } from '@/components/cinema/Journey';
+import { LockStory } from '@/components/cinema/LockStory';
 import { CheckoutSection } from '@/components/landing/CheckoutSection';
+import { ContactModal } from '@/components/landing/ContactModal';
+import { Footer } from '@/components/landing/Footer';
+import { InstallationSection } from '@/components/landing/InstallationSection';
+import { InstallersModal } from '@/components/landing/InstallersModal';
 import { LeadModal } from '@/components/landing/LeadModal';
+import { Navbar } from '@/components/landing/Navbar';
+import { PricingSection } from '@/components/landing/PricingSection';
+import { RepresentativesSection } from '@/components/landing/RepresentativesSection';
+import { TestimonialsSection } from '@/components/landing/TestimonialsSection';
 import { WhatsAppFloat } from '@/components/landing/WhatsAppFloat';
 import { HIRE_VIA_WHATSAPP, WHATSAPP_NUMBER } from '@/config/contact';
 import { PRE_LAUNCH } from '@/config/landing';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
+import { useCineReveal, useScenes } from '@/hooks/useScenes';
 import { clickEvent, track, trackPageview } from '@/services/analytics';
 import { referralCode, saveReferral } from '@/services/referral';
+
 import styles from './LandingPage.module.css';
 
+/**
+ * A landing cinematográfica. A história é contada em cenas que andam com a
+ * rolagem (components/cinema, com o useScenes): a abertura com o mapa e o
+ * preço, o bloqueio acontecendo, o que vem no plano, o rastreador, o passo a
+ * passo e o fim. O que tem regra de negócio continua com os componentes de
+ * sempre (components/landing): os planos e a frota, a instalação e os
+ * prestadores, os representantes, a contratação pelo site, o pré-cadastro, o
+ * menu e o rodapé. Os preços vêm todos da oferta do servidor.
+ */
 export const LandingPage: React.FC = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<string>('Plano Mensal');
@@ -39,9 +53,14 @@ export const LandingPage: React.FC = () => {
     track('installers_open', filter);
   };
 
+  const wrapper = useRef<HTMLDivElement>(null);
+  // Primeiro as cenas: as presas só ganham altura com o [data-motion], e a
+  // rolagem até a âncora (logo abaixo) precisa delas no tamanho certo.
+  useScenes(wrapper);
+  useCineReveal(wrapper);
+
   // A visita, e cada seção a que a pessoa chega (uma vez por visita): mostra
   // até onde a página é lida.
-  const wrapper = useRef<HTMLDivElement>(null);
   useEffect(() => {
     // Vindo de outra página com uma seção no endereço (/#planos): a página
     // monta depois do navegador procurar a âncora, então rola aqui.
@@ -65,7 +84,9 @@ export const LandingPage: React.FC = () => {
           observer.unobserve(entry.target);
         }
       },
-      { threshold: 0.3 },
+      // As cenas presas têm várias telas de altura: nunca ficam 30% visíveis
+      // (o limiar da clássica). Conta quando a seção chega aos 70% de cima da tela.
+      { threshold: 0, rootMargin: '0px 0px -30% 0px' },
     );
     root.querySelectorAll('main section[id], footer').forEach((el) => {
       if (el.tagName === 'FOOTER') (el as HTMLElement).dataset.section = 'rodape';
@@ -80,38 +101,43 @@ export const LandingPage: React.FC = () => {
     if (hit) track(hit.name, hit.label);
   };
 
-  const handleCloseModal = () => {
-    setModalOpen(false);
-  };
-
   return (
-    <div className={styles.landingWrapper} ref={wrapper} onClickCapture={onClickCapture}>
+    <div className={styles.root} ref={wrapper} onClickCapture={onClickCapture}>
+      <ScrollProgress />
       <Navbar onOpenModal={handleOpenModal} />
       <main>
-        <HeroSection onOpenModal={handleOpenModal} />
+        <CineHero onOpenModal={handleOpenModal} />
+        <LockStory />
+        <Features />
+        <DeviceReveal />
+        <Journey />
+        <PlansIntro />
         <PricingSection onOpenModal={handleOpenModal} />
         <InstallationSection onOpenInstallers={openInstallers} />
         {/* Os representantes oficiais que a central marcou (nenhum: sai). */}
         <RepresentativesSection />
-        <FeaturesSection />
-        <HowItWorksSection />
         {/* A chamada para a contratação pelo site (fechada na central, sai) e,
             quando houver clientes para depor, os depoimentos. */}
         {checkoutOpen && <CheckoutSection onOpenModal={handleOpenModal} />}
         {!PRE_LAUNCH && <TestimonialsSection />}
-        <CTASection onOpenModal={handleOpenModal} />
+        <Finale onOpenModal={handleOpenModal} />
       </main>
       <Footer />
 
       {/* A contratação abre o pré-cadastro (pré-cliente), com o WhatsApp como
           canal ao lado; HIRE_VIA_WHATSAPP volta ao modal que abre a conversa. */}
       {HIRE_VIA_WHATSAPP && WHATSAPP_NUMBER ? (
-        <ContactModal isOpen={modalOpen} onClose={handleCloseModal} defaultPlan={selectedPlan} />
+        <ContactModal isOpen={modalOpen} onClose={() => setModalOpen(false)} defaultPlan={selectedPlan} />
       ) : (
-        <LeadModal isOpen={modalOpen} onClose={handleCloseModal} defaultPlan={selectedPlan} />
+        <LeadModal isOpen={modalOpen} onClose={() => setModalOpen(false)} defaultPlan={selectedPlan} />
       )}
 
-      {WHATSAPP_NUMBER && <WhatsAppFloat />}
+      {/* No celular, some enquanto uma cena está presa (cobria o pé dela). */}
+      {WHATSAPP_NUMBER && (
+        <div className={styles.float}>
+          <WhatsAppFloat />
+        </div>
+      )}
 
       <InstallersModal
         isOpen={installers !== null}

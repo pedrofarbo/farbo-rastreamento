@@ -52,6 +52,7 @@ const InspectionReportPage = page(() => import('@/pages/org/InspectionReportPage
 const PublicPayPage = page(() => import('@/pages/PublicPayPage'), 'PublicPayPage');
 const PublicAccountPayPage = page(() => import('@/pages/PublicAccountPayPage'), 'PublicAccountPayPage');
 const CheckoutPage = page(() => import('@/pages/CheckoutPage'), 'CheckoutPage');
+const ClassicLandingPage = page(() => import('@/pages/ClassicLandingPage'), 'ClassicLandingPage');
 const InstallGuidePage = page(() => import('@/pages/InstallGuidePage'), 'InstallGuidePage');
 const ContractPage = page(() => import('@/pages/legal/ContractPage'), 'ContractPage');
 const AssociateTermPage = page(() => import('@/pages/legal/ContractPage'), 'AssociateTermPage');
@@ -113,6 +114,8 @@ export function App() {
               <Routes>
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/landing" element={<LandingPage />} />
+                {/* A landing de antes da cinematográfica, para comparar (fora dos buscadores). */}
+                <Route path="/classica" element={<ClassicLandingPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/esqueci-senha" element={<ForgotPasswordPage />} />
                 <Route path="/redefinir-senha" element={<ResetPasswordPage />} />

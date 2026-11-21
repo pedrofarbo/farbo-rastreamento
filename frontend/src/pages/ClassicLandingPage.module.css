@@ -1,0 +1,7 @@
+.landingWrapper {
+  min-height: 100vh;
+  background-color: #060907;
+  color: #ffffff;
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}

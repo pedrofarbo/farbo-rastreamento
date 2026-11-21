@@ -1,0 +1,620 @@
+.scene {
+  --pin-h: 440vh;
+  --amber: #ffb547;
+  --red: #ff5a52;
+
+  background: radial-gradient(ellipse 70% 60% at 70% 50%, #0b160d 0%, var(--c-bg) 70%);
+}
+
+.stage {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+}
+
+.layout {
+  display: grid;
+  gap: 2.5rem;
+  align-items: center;
+  width: 100%;
+  max-width: var(--container);
+  margin: 0 auto;
+}
+
+.copy {
+  display: grid;
+  gap: 1.4rem;
+  align-content: start;
+}
+
+.title {
+  font-size: clamp(2rem, 1.1rem + 3vw, 3.9rem);
+}
+
+/* ---------- As versões por passo (data-at) ----------
+ * Sem movimento: o estado final (passo 3) e os quatro tempos em lista.
+ * Com movimento: só o que é do passo atual aparece. */
+.stack {
+  display: inline-grid;
+}
+
+.stack > * {
+  grid-area: 1 / 1;
+}
+
+.stack > [data-at]:not([data-at~='3']),
+.mapChip:not([data-at~='3']),
+.pushCard:not([data-at~='3']) {
+  display: none;
+}
+
+:global([data-motion]) .stack > [data-at],
+:global([data-motion]) .mapChip,
+:global([data-motion]) .pushCard {
+  display: revert;
+}
+
+:global([data-motion]) .scene [data-at] {
+  opacity: 0;
+  transition:
+    opacity 0.45s var(--ease),
+    transform 0.45s var(--ease),
+    filter 0.45s var(--ease);
+}
+
+.scene[data-step='0'] [data-at~='0'],
+.scene[data-step='1'] [data-at~='1'],
+.scene[data-step='2'] [data-at~='2'],
+.scene[data-step='3'] [data-at~='3'] {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+[data-tone='warn'] {
+  color: var(--amber);
+}
+
+[data-tone='bad'] {
+  color: var(--red);
+}
+
+/* ---------- Os quatro tempos ---------- */
+.beats {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.beat {
+  display: grid;
+  gap: 0.45rem;
+  max-width: 30rem;
+}
+
+.time {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--c-neon);
+  letter-spacing: 0.05em;
+}
+
+.beat strong {
+  font-size: clamp(1.35rem, 1.1rem + 1vw, 2rem);
+  font-weight: 850;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  color: var(--c-text);
+}
+
+.beatText {
+  font-size: 1.02rem;
+  line-height: 1.6;
+  color: var(--c-muted);
+}
+
+:global([data-motion]) .beat {
+  grid-area: 1 / 1;
+  transform: translate3d(0, 18px, 0);
+  filter: blur(6px);
+}
+
+:global([data-motion]) .beats {
+  gap: 0;
+}
+
+.dots {
+  display: none;
+}
+
+:global([data-motion]) .dots {
+  display: flex;
+  gap: 0.4rem;
+  max-width: 14rem;
+}
+
+.dot {
+  flex: 1;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.1);
+}
+
+.dot i {
+  display: block;
+  height: 100%;
+  background: var(--c-neon);
+  box-shadow: 0 0 10px var(--c-glow);
+}
+
+/* ---------- O mapa ---------- */
+.visual {
+  position: relative;
+  height: min(70svh, 40rem);
+}
+
+.panel {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 1.75rem;
+  background: #070b08;
+  box-shadow:
+    0 0 0 1px rgb(59 229 88 / 0.16) inset,
+    0 40px 100px -40px rgb(59 229 88 / 0.3);
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+}
+
+.route {
+  --draw: clamp(0, (var(--p) - 0.27) / 0.45, 1);
+}
+
+.car {
+  --tone: var(--red);
+}
+
+.scene[data-step='0'] .car {
+  --tone: var(--c-neon);
+}
+
+.scene[data-step='1'] .car,
+.scene[data-step='2'] .car {
+  --tone: var(--amber);
+}
+
+.lockBadge {
+  transition: opacity 0.4s var(--ease);
+}
+
+.lockBadge rect {
+  fill: var(--red);
+}
+
+.lockBadge path {
+  fill: none;
+  stroke: #1a0505;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+
+.scene[data-step='0'] .lockBadge,
+.scene[data-step='1'] .lockBadge,
+.scene[data-step='2'] .lockBadge {
+  opacity: 0;
+}
+
+/* O comando a caminho: ondas saindo do veículo (só no passo 2). */
+.waves {
+  opacity: 0;
+  transition: opacity 0.4s var(--ease);
+}
+
+.waves circle {
+  fill: none;
+  stroke: var(--amber);
+  stroke-width: 3;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: wave 1.6s ease-out infinite;
+}
+
+.waves circle:nth-child(2) {
+  animation-delay: 0.8s;
+}
+
+.scene[data-step='2'] .waves {
+  opacity: 1;
+}
+
+@keyframes wave {
+  from {
+    transform: scale(0.4);
+    opacity: 0.9;
+  }
+
+  to {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.mapChips {
+  position: absolute;
+  top: 1.1rem;
+  left: 1.1rem;
+  display: grid;
+}
+
+.mapChip {
+  grid-area: 1 / 1;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.8rem;
+  border-radius: 999px;
+  background: rgb(6 9 7 / 0.85);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.chipWarn {
+  color: var(--amber);
+  box-shadow: 0 0 0 1px rgb(255 181 71 / 0.45) inset;
+}
+
+.chipBad {
+  color: var(--red);
+  box-shadow: 0 0 0 1px rgb(255 90 82 / 0.5) inset;
+}
+
+/* ---------- A notificação ---------- */
+.push {
+  display: grid;
+}
+
+.pushCard {
+  grid-area: 1 / 1;
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.6rem 0.7rem;
+  border-radius: 0.9rem;
+  background: rgb(28 36 30 / 0.95);
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.08) inset,
+    0 16px 30px -12px rgb(0 0 0 / 0.8);
+}
+
+:global([data-motion]) .pushCard {
+  transform: translate3d(0, -14px, 0);
+}
+
+.pushCard > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+
+.pushCard strong {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--c-text);
+}
+
+.pushCard small {
+  font-size: 0.7rem;
+  color: var(--c-muted);
+}
+
+.pushIcon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 0.55rem;
+  background: rgb(255 181 71 / 0.16);
+  color: var(--amber);
+}
+
+.pushBad .pushIcon {
+  background: rgb(255 90 82 / 0.16);
+  color: var(--red);
+}
+
+/* ---------- O celular (computador) ---------- */
+.mini {
+  display: none;
+}
+
+.phone {
+  position: absolute;
+  left: -2.5rem;
+  bottom: -1.5rem;
+  width: 16.5rem;
+  padding: 0.55rem;
+  border-radius: 2.3rem;
+  background: linear-gradient(150deg, #2b332d, #0b100c 45%, #222a24);
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.1) inset,
+    0 40px 80px -24px rgb(0 0 0 / 0.95),
+    0 0 80px -30px rgb(59 229 88 / 0.4);
+}
+
+.screen {
+  position: relative;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.9rem 0.85rem 1rem;
+  border-radius: 1.8rem;
+  background: #0a0f0b;
+}
+
+.statusBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--c-text);
+}
+
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.bars i {
+  width: 3px;
+  border-radius: 1px;
+  background: var(--c-text);
+}
+
+.bars i:nth-child(1) { height: 5px; }
+.bars i:nth-child(2) { height: 7px; }
+.bars i:nth-child(3) { height: 9px; }
+
+.screen .push {
+  position: absolute;
+  top: 2.2rem;
+  left: 0.6rem;
+  right: 0.6rem;
+  z-index: 2;
+}
+
+.appHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 3.4rem;
+}
+
+.vehicle {
+  display: grid;
+}
+
+.vehicle strong {
+  font-size: 0.95rem;
+  font-weight: 850;
+  color: var(--c-text);
+}
+
+.vehicle small {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--c-muted);
+}
+
+.online {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  background: var(--c-neon-soft);
+  color: var(--c-neon);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.online i {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.4rem;
+}
+
+.tile {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.55rem 0.5rem;
+  border-radius: 0.7rem;
+  background: #111912;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.05) inset;
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: var(--c-text);
+}
+
+.tile small {
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6f7c72;
+}
+
+.action {
+  display: grid;
+  place-items: center;
+  min-height: 2.6rem;
+  border-radius: 0.8rem;
+  background: rgb(255 90 82 / 0.14);
+  box-shadow: 0 0 0 1px rgb(255 90 82 / 0.4) inset;
+  color: #ff7a73;
+  font-size: 0.8rem;
+  font-weight: 850;
+  text-align: center;
+  transition:
+    background-color 0.4s var(--ease),
+    color 0.4s var(--ease),
+    box-shadow 0.4s var(--ease);
+}
+
+.scene[data-step='2'] .action {
+  background: rgb(255 181 71 / 0.12);
+  box-shadow: 0 0 0 1px rgb(255 181 71 / 0.4) inset;
+  color: var(--amber);
+}
+
+/* Bloqueado (e sem movimento, o estado final): o botão vira "Desbloquear motor". */
+.scene:not([data-step]) .action,
+.scene[data-step='3'] .action {
+  background: rgb(255 255 255 / 0.06);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.14) inset;
+  color: var(--c-text);
+}
+
+.share {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.4rem;
+  border-radius: 0.8rem;
+  background: var(--c-neon-soft);
+  box-shadow: 0 0 0 1px rgb(59 229 88 / 0.35) inset;
+  color: var(--c-neon);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.note {
+  max-width: var(--container);
+  width: 100%;
+  margin: 0 auto;
+}
+
+@media (min-width: 64em) {
+  .layout {
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    gap: 5rem;
+  }
+
+  .visual {
+    margin-left: 2rem;
+  }
+}
+
+/* Telas largas, mas baixas: o celular encolhe para caber. */
+@media (min-width: 64em) and (max-height: 50em) {
+  .phone {
+    width: 14.5rem;
+  }
+
+  .appHead {
+    margin-top: 3rem;
+  }
+}
+
+@media (max-width: 63.99em) {
+  .phone {
+    display: none;
+  }
+
+  .mini {
+    position: absolute;
+    inset: 0.75rem;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    pointer-events: none;
+  }
+
+  .miniBar {
+    grid-row: 3;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.7rem 0.9rem;
+    border-radius: 0.9rem;
+    background: rgb(10 15 11 / 0.92);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08) inset;
+    font-size: 0.82rem;
+    font-weight: 800;
+  }
+
+  .miniState {
+    text-align: right;
+  }
+
+  .mapChips {
+    top: 0.75rem;
+    left: 0.75rem;
+  }
+
+  /* Mais perto: no painel baixo do celular, a rota ocupa a faixa do meio. */
+  .map {
+    transform: scale(1.4);
+    transform-origin: 62% 40%;
+  }
+
+  :global([data-motion]) .layout {
+    align-self: stretch;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 1rem;
+  }
+
+  :global([data-motion]) .visual {
+    height: 100%;
+  }
+
+  :global([data-motion]) .copy {
+    gap: 0.85rem;
+  }
+
+  :global([data-motion]) .title {
+    font-size: 1.85rem;
+  }
+
+  :global([data-motion]) .beat strong {
+    font-size: 1.25rem;
+  }
+
+  :global([data-motion]) .beatText {
+    font-size: 0.92rem;
+  }
+
+  .visual {
+    height: 22rem;
+  }
+}
+
+@media (max-width: 63.99em) and (max-height: 40em) {
+  :global([data-motion]) .copy > p:first-child {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .waves circle {
+    animation: none;
+  }
+}

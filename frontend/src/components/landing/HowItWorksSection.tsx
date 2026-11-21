@@ -6,15 +6,15 @@ import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
 import { HowItWorksArt, type StepArtKind } from './HowItWorksArt';
 import styles from './HowItWorksSection.module.css';
 
-type Actor = 'voce' | 'farbo' | 'parceiro';
+export type Actor = 'voce' | 'farbo' | 'parceiro';
 
-const ACTOR_LABEL: Record<Actor, string> = {
+export const ACTOR_LABEL: Record<Actor, string> = {
   voce: 'Você',
   farbo: 'Farbo',
   parceiro: 'Você escolhe',
 };
 
-interface Step {
+export interface Step {
   actor: Actor;
   art: StepArtKind;
   title: string;
@@ -106,6 +106,11 @@ const COMMON_STEPS: Step[] = [
   },
 ];
 
+/** Os passos do pedido ao mapa: o começo depende da contratação pelo site estar aberta. */
+export function howItWorksSteps(open: boolean): Step[] {
+  return [...(open ? SITE_STEPS : CONTACT_STEPS), ...COMMON_STEPS];
+}
+
 /**
  * O processo real, do pedido ao mapa: com a contratação pelo site aberta, a
  * pessoa física contrata e paga com Pix e já entra no app; fechada, o
@@ -114,7 +119,7 @@ const COMMON_STEPS: Step[] = [
  */
 export const HowItWorksSection: React.FC = () => {
   const { open } = useCheckoutOffer();
-  const steps = [...(open ? SITE_STEPS : CONTACT_STEPS), ...COMMON_STEPS];
+  const steps = howItWorksSteps(open);
   return (
     <section className={styles.section} id="como-funciona">
       <div className={styles.container}>

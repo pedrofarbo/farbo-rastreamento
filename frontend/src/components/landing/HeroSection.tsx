@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 
 import { CHECKOUT_PATH, includedLabel, loanOnly, priceLabel, priceParts } from '@/config/landing';
 import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
-import { headlineMonthly, kindPricesLabel } from '@/services/kindPrices';
+import { heroPrice, kindPricesLabel } from '@/services/kindPrices';
 
 import styles from './HeroSection.module.css';
 
@@ -23,11 +23,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenModal }) => {
   const { offer, open } = useCheckoutOffer();
   // Aberta, o preço do site com o normal riscado (pelo link de um afiliado
   // com tabela, o "a partir de" dela); fechada, o normal.
-  const headline = offer && headlineMonthly(offer, open);
-  const table = headline?.table ?? null;
-  const monthly = headline?.cents;
-  const regular = offer && open && monthly !== undefined && offer.planRegularCents > monthly ? offer.planRegularCents : undefined;
-  const off = regular && monthly !== undefined && !table ? Math.round((1 - monthly / regular) * 100) : 0;
+  const { monthly, regular, off, table } = heroPrice(offer, open);
   const parts = monthly !== undefined ? priceParts(monthly) : null;
   return (
     <section className={styles.heroSection} id="beneficios">

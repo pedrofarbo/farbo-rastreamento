@@ -1,0 +1,99 @@
+.map {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.street {
+  fill: none;
+  stroke: rgb(120 170 130 / 0.09);
+  stroke-width: 2;
+}
+
+.avenue {
+  fill: none;
+  stroke: rgb(140 200 150 / 0.16);
+  stroke-width: 7;
+}
+
+.park {
+  fill: rgb(59 229 88 / 0.05);
+  stroke: rgb(59 229 88 / 0.08);
+  stroke-width: 1.5;
+}
+
+.river {
+  fill: none;
+  stroke: rgb(40 120 110 / 0.18);
+  stroke-width: 46;
+  stroke-linecap: round;
+}
+
+/* ---------- A rota (--draw: 0 a 1, quanto dela está desenhado) ---------- */
+.route {
+  --draw: 1;
+}
+
+.routeGlow,
+.routeLine {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: calc(1 - var(--draw));
+}
+
+.routeGlow {
+  stroke: var(--c-neon);
+  stroke-width: 18;
+  opacity: 0.14;
+}
+
+.routeLine {
+  stroke: var(--c-neon);
+  stroke-width: 5;
+}
+
+/* ---------- O veículo ---------- */
+.vehicle {
+  --tone: var(--c-neon);
+}
+
+.halo {
+  fill: var(--tone);
+  opacity: 0.16;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: halo 2.2s ease-out infinite;
+}
+
+.ring {
+  fill: #0b120c;
+  stroke: var(--tone);
+  stroke-width: 3.5;
+  transition: stroke 0.4s ease;
+}
+
+.dot {
+  fill: var(--tone);
+  transition: fill 0.4s ease;
+}
+
+@keyframes halo {
+  from {
+    transform: scale(0.55);
+    opacity: 0.45;
+  }
+
+  to {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .halo {
+    animation: none;
+    opacity: 0.2;
+  }
+}

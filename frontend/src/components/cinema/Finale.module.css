@@ -1,0 +1,164 @@
+/* --k: as rotas chegando (de 0,12 a 0,5 da passagem da seção pela tela). */
+.scene {
+  --p: 1;
+  --k: clamp(0, (var(--p) - 0.12) / 0.38, 1);
+
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  min-height: 100svh;
+  padding: 6rem var(--gutter);
+  overflow: clip;
+  background: var(--c-bg);
+}
+
+.routes {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+}
+
+.glow,
+.line {
+  fill: none;
+  stroke: var(--c-neon);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: calc(1 - var(--k));
+}
+
+.glow {
+  stroke-width: 16;
+  opacity: 0.1;
+}
+
+.line {
+  stroke-width: 3;
+  opacity: 0.75;
+}
+
+.end {
+  fill: var(--c-neon);
+  opacity: clamp(0, (var(--k) - 0.92) * 12, 1);
+  filter: drop-shadow(0 0 6px var(--c-neon));
+}
+
+.pulse {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: -1;
+  width: min(80vw, 46rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(59 229 88 / 0.16), rgb(6 9 7 / 0) 62%);
+  transform: translate(-50%, -50%) scale(calc(0.6 + var(--k) * 0.4));
+}
+
+.inner {
+  display: grid;
+  justify-items: center;
+  gap: 1.1rem;
+  max-width: 44rem;
+  text-align: center;
+}
+
+.mark {
+  width: 5.5rem;
+  height: auto;
+  filter: drop-shadow(0 0 24px rgb(59 229 88 / 0.5));
+  transform: scale(calc(0.7 + var(--k) * 0.3));
+  opacity: calc(0.2 + var(--k) * 0.8);
+}
+
+.script {
+  font-family: var(--font-script);
+  font-size: clamp(1.6rem, 1.3rem + 1.2vw, 2.3rem);
+  font-weight: 700;
+  color: var(--c-neon);
+  line-height: 1;
+}
+
+.title {
+  font-size: clamp(2.4rem, 1.4rem + 4vw, 5rem);
+}
+
+.lead {
+  text-align: center;
+}
+
+.ctas {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.trust {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem 1.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8b978e;
+}
+
+.trust li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.trust svg {
+  color: var(--c-neon);
+}
+
+/* ---------- A abertura dos planos ---------- */
+.plansIntro {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: clamp(4.5rem, 3rem + 5vw, 7rem) var(--gutter) 0;
+  text-align: center;
+  transition:
+    opacity 0.8s var(--ease),
+    translate 0.8s var(--ease);
+}
+
+.plansIntro p:last-child {
+  text-align: center;
+}
+
+:global([data-reveal-ready]) .plansIntro:not([data-shown]) {
+  opacity: 0;
+  translate: 0 28px;
+}
+
+/* ---------- A barra de progresso ---------- */
+.progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1001;
+  height: 2px;
+  background: linear-gradient(90deg, var(--c-neon), var(--c-neon-2));
+  box-shadow: 0 0 10px var(--c-glow);
+  transform-origin: left;
+  transform: scaleX(var(--progress, 0));
+  pointer-events: none;
+}

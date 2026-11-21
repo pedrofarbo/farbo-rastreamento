@@ -1,0 +1,309 @@
+.scene {
+  --pin-h: calc(var(--n, 6) * 70vh + 100vh);
+
+  background:
+    radial-gradient(ellipse 60% 45% at 50% 55%, rgb(59 229 88 / 0.06), transparent 70%),
+    var(--c-bg);
+}
+
+.stage {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 1.5rem;
+}
+
+.head {
+  display: grid;
+  gap: 0.9rem;
+  width: 100%;
+  max-width: var(--container);
+  margin: 0 auto;
+}
+
+.title {
+  font-size: clamp(2rem, 1.1rem + 3vw, 3.9rem);
+}
+
+.body {
+  display: grid;
+  gap: 1.5rem;
+  align-content: center;
+  width: 100%;
+  max-width: var(--container);
+  margin: 0 auto;
+  min-height: 0;
+}
+
+/* ---------- A estrada ---------- */
+.road {
+  display: none;
+  overflow: visible;
+}
+
+:global([data-motion]) .wide {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 30svh;
+}
+
+.track {
+  fill: none;
+  stroke: #142016;
+  stroke-width: 26;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.trackDash {
+  fill: none;
+  stroke: rgb(255 255 255 / 0.12);
+  stroke-width: 2;
+  stroke-dasharray: 10 14;
+  stroke-linejoin: round;
+}
+
+.done {
+  fill: none;
+  stroke: var(--c-neon);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: calc(1 - var(--ps, 1));
+  opacity: 0.9;
+}
+
+.mileHalo {
+  fill: #0b120c;
+  stroke: #2a3a2d;
+  stroke-width: 2;
+  transition:
+    stroke 0.4s var(--ease),
+    fill 0.4s var(--ease);
+}
+
+.mileDot {
+  fill: #2a3a2d;
+  transition: fill 0.4s var(--ease);
+}
+
+.mileNum {
+  fill: #5d6b60;
+  font-size: 22px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  transition: fill 0.4s var(--ease);
+}
+
+/* Os marcos já alcançados acendem. */
+.scene:not([data-step]) .milestone,
+.scene[data-step='0'] .milestone:is([data-i='0']),
+.scene[data-step='1'] .milestone:is([data-i='0'], [data-i='1']),
+.scene[data-step='2'] .milestone:is([data-i='0'], [data-i='1'], [data-i='2']),
+.scene[data-step='3'] .milestone:is([data-i='0'], [data-i='1'], [data-i='2'], [data-i='3']),
+.scene[data-step='4'] .milestone:is([data-i='0'], [data-i='1'], [data-i='2'], [data-i='3'], [data-i='4']),
+.scene[data-step='5'] .milestone:is([data-i='0'], [data-i='1'], [data-i='2'], [data-i='3'], [data-i='4'], [data-i='5']),
+.scene[data-step='6'] .milestone {
+  --mc: var(--c-neon);
+  --mn: var(--c-neon);
+}
+
+.milestone {
+  --mc: #2a3a2d;
+  --mn: #5d6b60;
+}
+
+.milestone .mileHalo {
+  stroke: var(--mc);
+}
+
+.milestone .mileDot {
+  fill: var(--mc);
+}
+
+.milestone .mileNum {
+  fill: var(--mn);
+}
+
+.carHalo {
+  fill: var(--c-neon);
+  opacity: 0.18;
+}
+
+.carRing {
+  fill: #0b120c;
+  stroke: var(--c-neon);
+  stroke-width: 4;
+}
+
+.carDot {
+  fill: var(--c-neon);
+}
+
+/* ---------- Os cartões dos passos ---------- */
+.cards {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+  padding: 1.3rem 1.4rem;
+  border-radius: 1.2rem;
+  background: linear-gradient(165deg, #0f1710, #0a0f0b);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.07) inset;
+  transition:
+    opacity 0.5s var(--ease),
+    transform 0.5s var(--ease),
+    filter 0.5s var(--ease);
+}
+
+.cardTop {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--c-neon);
+}
+
+.actor {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.actor_voce {
+  background: var(--c-neon-soft);
+  color: var(--c-neon);
+}
+
+.actor_farbo {
+  background: rgb(255 255 255 / 0.08);
+  color: var(--c-text);
+}
+
+.actor_parceiro {
+  background: rgb(255 181 71 / 0.12);
+  color: #ffc46b;
+}
+
+.cardTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: clamp(1.2rem, 1.05rem + 0.6vw, 1.6rem);
+  font-weight: 850;
+  letter-spacing: -0.025em;
+  color: var(--c-text);
+}
+
+.cardTitle svg {
+  flex-shrink: 0;
+  color: var(--c-neon);
+}
+
+.cardText {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--c-muted);
+}
+
+/* Com movimento: só o cartão do passo atual, no mesmo lugar. */
+:global([data-motion]) .cards {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+}
+
+:global([data-motion]) .card {
+  grid-area: 1 / 1;
+  width: min(100%, 44rem);
+  opacity: 0;
+  transform: translate3d(0, 16px, 0);
+  filter: blur(6px);
+  pointer-events: none;
+}
+
+.scene[data-step='0'] .card[data-i='0'],
+.scene[data-step='1'] .card[data-i='1'],
+.scene[data-step='2'] .card[data-i='2'],
+.scene[data-step='3'] .card[data-i='3'],
+.scene[data-step='4'] .card[data-i='4'],
+.scene[data-step='5'] .card[data-i='5'],
+.scene[data-step='6'] .card[data-i='6'] {
+  opacity: 1;
+  transform: none;
+  filter: none;
+  pointer-events: auto;
+}
+
+@media (max-width: 63.99em) {
+  :global([data-motion]) .wide {
+    display: none;
+  }
+
+  /* A estrada em pé, à esquerda; o cartão do passo ao lado. */
+  :global([data-motion]) .body {
+    grid-template-columns: 3.4rem minmax(0, 1fr);
+    align-items: stretch;
+    gap: 0.9rem;
+    height: 100%;
+  }
+
+  :global([data-motion]) .tall {
+    display: block;
+    width: 100%;
+    height: 100%;
+    max-height: 30rem;
+    align-self: center;
+  }
+
+  :global([data-motion]) .cards {
+    align-items: center;
+  }
+
+  :global([data-motion]) .card {
+    padding: 1.1rem 1.1rem;
+  }
+
+  :global([data-motion]) .cardText {
+    font-size: 0.88rem;
+  }
+
+  :global([data-motion]) .lead {
+    display: none;
+  }
+
+  .tall .track {
+    stroke-width: 14;
+  }
+
+  .tall .done {
+    stroke-width: 3.5;
+  }
+}
+
+@media (max-width: 63.99em) and (max-height: 40em) {
+  :global([data-motion]) .head > p:first-child {
+    display: none;
+  }
+
+  :global([data-motion]) .cardText {
+    font-size: 0.82rem;
+    line-height: 1.5;
+  }
+}

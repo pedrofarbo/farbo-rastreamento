@@ -14,6 +14,14 @@ const trackerInfo = await sharp(`${SRC}/j16-rastreador-farbo.webp`)
   .webp({ quality: 85, alphaQuality: 90, effort: 6 })
   .toFile(`${OUT}/rastreador-j16-farbo.webp`);
 
+// O mesmo rastreador, maior: a cena do J16 na landing cinematográfica mostra
+// até ~420 px de altura; 640 px de largura cobrem as telas de alta densidade.
+const trackerLargeInfo = await sharp(`${SRC}/j16-rastreador-farbo.webp`)
+  .trim()
+  .resize({ width: 640 })
+  .webp({ quality: 82, alphaQuality: 90, effort: 6 })
+  .toFile(`${OUT}/rastreador-j16-farbo-640.webp`);
+
 // Escudo do Insanos MC (já vem sem fundo).
 const shieldInfo = await sharp(`${SRC}/escudo-insanos.png`)
   .trim()
@@ -45,5 +53,6 @@ const heroInfo = await sharp(`${SRC}/hero-app-mockup.webp`)
 
 console.log(`hero-app.webp ${heroInfo.width}x${heroInfo.height} (${heroInfo.size} bytes)`);
 console.log(`rastreador-j16-farbo.webp ${trackerInfo.width}x${trackerInfo.height} (${trackerInfo.size} bytes)`);
+console.log(`rastreador-j16-farbo-640.webp ${trackerLargeInfo.width}x${trackerLargeInfo.height} (${trackerLargeInfo.size} bytes)`);
 console.log(`anatel-logo.png ${anatelInfo.width}x${anatelInfo.height} (${anatelInfo.size} bytes)`);
 console.log(`insanos-escudo.webp ${shieldInfo.width}x${shieldInfo.height} (${shieldInfo.size} bytes)`);

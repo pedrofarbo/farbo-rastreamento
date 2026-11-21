@@ -1,0 +1,451 @@
+.hero {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  align-items: center;
+  min-height: 100svh;
+  padding: calc(var(--nav-h) + 2.5rem) var(--gutter) 5.5rem;
+  overflow: clip;
+}
+
+/* ---------- O mapa ao fundo ---------- */
+.backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+  opacity: 0.95;
+}
+
+.route path {
+  animation: draw 2.8s var(--ease) 0.25s both;
+}
+
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.parked {
+  --tone: #ff5a52;
+}
+
+.lockBadge rect {
+  fill: #ff5a52;
+}
+
+.lockBadge path {
+  fill: none;
+  stroke: #1a0505;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+
+.speed {
+  fill: #e9f5ec;
+  font-size: 15px;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: #060907;
+  stroke-width: 5px;
+}
+
+.vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgb(6 9 7 / 0.65) 0%, transparent 22%, transparent 70%, var(--c-bg) 100%),
+    linear-gradient(90deg, var(--c-bg) 0%, rgb(6 9 7 / 0.9) 32%, rgb(6 9 7 / 0.35) 62%, rgb(6 9 7 / 0.55) 100%);
+}
+
+/* ---------- Conteúdo ---------- */
+.inner {
+  display: grid;
+  gap: 3rem;
+  align-items: center;
+  width: 100%;
+  max-width: var(--container);
+  margin: 0 auto;
+}
+
+.copy {
+  display: grid;
+  gap: 1.35rem;
+  align-content: start;
+  max-width: 40rem;
+}
+
+.rise {
+  animation: rise 0.9s var(--ease) both;
+  animation-delay: calc(0.15s + var(--d, 0) * 0.08s);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 22px, 0);
+  }
+}
+
+.tag {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  background: var(--c-neon-soft);
+  box-shadow: 0 0 0 1px rgb(59 229 88 / 0.35) inset;
+  color: var(--c-neon);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.title {
+  font-size: clamp(2.6rem, 1.4rem + 5vw, 5.6rem);
+  font-weight: 900;
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+  color: var(--c-text);
+}
+
+.title span {
+  display: block;
+  color: var(--c-neon);
+  text-shadow: 0 0 42px rgb(59 229 88 / 0.45);
+}
+
+.lead {
+  max-width: 34rem;
+  font-size: clamp(1.02rem, 0.95rem + 0.35vw, 1.22rem);
+  line-height: 1.6;
+  color: var(--c-muted);
+}
+
+.lead strong {
+  color: var(--c-text);
+}
+
+.lead .neon {
+  color: var(--c-neon);
+}
+
+/* ---------- O preço ---------- */
+.price {
+  display: grid;
+  gap: 0.5rem;
+  justify-self: start;
+  max-width: 34rem;
+  padding: 1.1rem 1.3rem;
+  border-radius: 1.1rem;
+  background: linear-gradient(135deg, rgb(13 19 14 / 0.92), rgb(6 9 7 / 0.8));
+  box-shadow:
+    0 0 0 1px rgb(59 229 88 / 0.22) inset,
+    0 24px 60px -30px rgb(59 229 88 / 0.45);
+}
+
+.priceLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.75rem;
+}
+
+.off {
+  align-self: center;
+  padding: 0.25rem 0.55rem;
+  border-radius: 0.4rem;
+  background: var(--c-neon);
+  color: #04140a;
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.old {
+  color: #77847a;
+  font-size: 0.95rem;
+}
+
+.from {
+  color: var(--c-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.now {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.2rem;
+  color: var(--c-text);
+  line-height: 1;
+}
+
+.currency {
+  margin-top: 0.35rem;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.reais {
+  font-size: clamp(2.8rem, 2.2rem + 2vw, 3.6rem);
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  color: var(--c-neon);
+  text-shadow: 0 0 30px rgb(59 229 88 / 0.4);
+}
+
+.cents {
+  display: grid;
+  margin-top: 0.35rem;
+  font-size: 1.25rem;
+  font-weight: 900;
+}
+
+.cents small {
+  color: var(--c-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.pending {
+  font-size: 3rem;
+  font-weight: 900;
+  color: #3a463d;
+}
+
+.priceNote,
+.loan {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--c-muted);
+}
+
+.loan strong {
+  color: var(--c-text);
+}
+
+/* ---------- Botões e garantias ---------- */
+.ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.trust {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #c9d4cc;
+}
+
+.trust li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.trust svg {
+  color: var(--c-neon);
+}
+
+.fine {
+  max-width: 34rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #6d7a70;
+}
+
+/* ---------- As telas do app ---------- */
+.visual {
+  position: relative;
+  justify-self: center;
+  width: min(100%, 34rem);
+  animation: rise 1.1s var(--ease) 0.45s both;
+}
+
+.device {
+  transform: perspective(1400px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transition: transform 0.5s var(--ease);
+}
+
+.img {
+  display: block;
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 40px 60px rgb(0 0 0 / 0.6)) drop-shadow(0 0 60px rgb(59 229 88 / 0.12));
+  animation: float 7s ease-in-out infinite;
+}
+
+@keyframes float {
+  50% {
+    transform: translate3d(0, -12px, 0);
+  }
+}
+
+.chip {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 0.9rem;
+  background: rgb(13 19 14 / 0.82);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.1) inset,
+    0 18px 40px -16px rgb(0 0 0 / 0.8);
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--c-text);
+}
+
+.chipLive {
+  top: 8%;
+  right: 4%;
+  animation: float 6s ease-in-out 1s infinite;
+}
+
+.chipLive i {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--c-neon);
+  box-shadow: 0 0 0 0 rgb(59 229 88 / 0.6);
+  animation: ping 1.8s ease-out infinite;
+}
+
+@keyframes ping {
+  to {
+    box-shadow: 0 0 0 10px rgb(59 229 88 / 0);
+  }
+}
+
+.chipLock {
+  bottom: 12%;
+  left: -2%;
+  animation: float 8s ease-in-out 0.5s infinite;
+}
+
+.chipLock span {
+  display: grid;
+}
+
+.chipLock small {
+  color: var(--c-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.chipIcon {
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 0.6rem;
+  background: rgb(255 90 82 / 0.16);
+  color: #ff6b63;
+}
+
+/* ---------- A dica de rolar ---------- */
+.cue {
+  position: absolute;
+  left: 50%;
+  bottom: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.04);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1) inset;
+  color: var(--c-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-decoration: none;
+  transform: translateX(-50%);
+  animation: rise 1s var(--ease) 1.2s both;
+}
+
+.cue svg {
+  color: var(--c-neon);
+  animation: nudge 1.8s ease-in-out infinite;
+}
+
+@keyframes nudge {
+  50% {
+    transform: translateY(4px);
+  }
+}
+
+@media (min-width: 64em) {
+  .inner {
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+    gap: 4rem;
+  }
+}
+
+@media (max-width: 63.99em) {
+  /* Celular: o preço e o botão principal cabem na primeira tela. */
+  .hero {
+    padding-top: calc(var(--nav-h) + 1.25rem);
+    padding-bottom: 3rem;
+  }
+
+  .copy {
+    gap: 1.05rem;
+  }
+
+  .title {
+    font-size: clamp(2.35rem, 1.4rem + 4.6vw, 3.4rem);
+  }
+
+  .price {
+    padding: 0.9rem 1.05rem;
+  }
+
+  .vignette {
+    background:
+      linear-gradient(180deg, rgb(6 9 7 / 0.55) 0%, rgb(6 9 7 / 0.78) 40%, rgb(6 9 7 / 0.9) 70%, var(--c-bg) 100%);
+  }
+
+  .visual {
+    width: min(100%, 26rem);
+  }
+
+  .chipLock {
+    left: 0;
+  }
+
+  .cue {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .visual,
+  .cue,
+  .img,
+  .chip,
+  .chipLive i,
+  .cue svg,
+  .route path {
+    animation: none;
+  }
+}

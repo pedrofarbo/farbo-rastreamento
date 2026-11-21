@@ -1,0 +1,160 @@
+/*
+ * Peças comuns às cenas da landing cinematográfica.
+ *
+ * Cena presa (.pin + .stage): sem JS ou com "reduzir movimento", é um bloco
+ * normal no estado final (--p: 1). Com [data-motion] na raiz (o useScenes
+ * ligou), ganha a altura de rolagem (--pin-h) e o palco fica preso na tela
+ * enquanto --p vai de 0 a 1.
+ *
+ * O palco usa 100svh (a tela com as barras do navegador abertas), não dvh:
+ * ele não muda de tamanho quando as barras do celular somem ao rolar, e nada
+ * pula. Por isso tudo precisa caber em 100svh; no celular, as cenas dão ao
+ * visual (mapa, celular, rastreador) só a altura que sobra depois do texto.
+ */
+.pin {
+  --p: 1;
+
+  position: relative;
+}
+
+:global([data-motion]) .pin {
+  height: var(--pin-h, 400vh);
+}
+
+.stage {
+  position: relative;
+  min-height: 100svh;
+  overflow: clip;
+  padding: calc(var(--nav-h) + 2.5rem) var(--gutter) 4rem;
+}
+
+:global([data-motion]) .stage {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  padding-bottom: 2.5rem;
+}
+
+@media (max-width: 63.99em) {
+  :global([data-motion]) .stage {
+    padding-top: calc(var(--nav-h) + 1rem);
+    padding-bottom: 1.25rem;
+  }
+}
+
+.section {
+  position: relative;
+  padding: clamp(4.5rem, 3rem + 6vw, 8rem) var(--gutter);
+}
+
+.container {
+  width: 100%;
+  max-width: var(--container);
+  margin: 0 auto;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--c-neon);
+}
+
+.eyebrow::before {
+  content: '';
+  width: 1.5rem;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--c-neon);
+  box-shadow: 0 0 10px var(--c-glow);
+}
+
+.h2 {
+  font-size: clamp(2rem, 1.1rem + 3.4vw, 4.25rem);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+  line-height: 1.02;
+  color: var(--c-text);
+}
+
+.h2 em {
+  font-style: normal;
+  color: var(--c-neon);
+  text-shadow: 0 0 32px var(--c-glow);
+}
+
+.lead {
+  max-width: 36rem;
+  font-size: clamp(1rem, 0.95rem + 0.3vw, 1.2rem);
+  line-height: 1.6;
+  color: var(--c-muted);
+}
+
+.lead strong {
+  color: var(--c-text);
+}
+
+.note {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #6d7a70;
+}
+
+/* ---------- Botões ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 3.25rem;
+  padding: 0 1.6rem;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    transform 0.25s var(--ease),
+    box-shadow 0.25s var(--ease),
+    background-color 0.25s var(--ease);
+}
+
+.btn svg {
+  flex-shrink: 0;
+}
+
+.primary {
+  color: #04140a;
+  background: linear-gradient(135deg, var(--c-neon-2), var(--c-neon));
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.2) inset,
+    0 12px 40px -10px var(--c-glow);
+}
+
+.primary:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.3) inset,
+    0 18px 50px -10px rgb(59 229 88 / 0.6);
+}
+
+.ghost {
+  color: var(--c-text);
+  background: rgb(255 255 255 / 0.04);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.14) inset;
+}
+
+.ghost:hover {
+  background: rgb(255 255 255 / 0.08);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--c-neon);
+  outline-offset: 3px;
+}

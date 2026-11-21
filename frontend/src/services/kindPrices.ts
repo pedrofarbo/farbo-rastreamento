@@ -39,3 +39,21 @@ export function headlineMonthly(offer: CheckoutOffer, open: boolean): { cents: n
   const table = open ? offer.planByKind : null;
   return { cents: table ? lowestPrice(table) : open ? offer.planCents : offer.planRegularCents, table };
 }
+
+/**
+ * O preço do topo das páginas: a mensalidade em destaque, a normal riscada
+ * quando a do site é menor (com o desconto em %, fora da tabela do afiliado)
+ * e a tabela, quando há. Sem a oferta (carregando), tudo vazio.
+ */
+export function heroPrice(
+  offer: CheckoutOffer | undefined,
+  open: boolean,
+): { monthly: number | undefined; regular: number | undefined; off: number; table: KindPrices | null } {
+  const headline = offer && headlineMonthly(offer, open);
+  const table = headline?.table ?? null;
+  const monthly = headline?.cents;
+  const regular =
+    offer && open && monthly !== undefined && offer.planRegularCents > monthly ? offer.planRegularCents : undefined;
+  const off = regular && monthly !== undefined && !table ? Math.round((1 - monthly / regular) * 100) : 0;
+  return { monthly, regular, off, table };
+}

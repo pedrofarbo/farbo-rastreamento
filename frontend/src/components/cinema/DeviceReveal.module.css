@@ -1,0 +1,282 @@
+/*
+ * --k: a entrada do rastreador (0 a 1 no primeiro terço da rolagem);
+ * --s: a varredura de luz (0,35 a 0,6). Sem movimento, --p = 1: tudo pronto.
+ */
+.scene {
+  --pin-h: 320vh;
+  --k: clamp(0, var(--p) / 0.35, 1);
+  --s: clamp(0, (var(--p) - 0.35) / 0.25, 1);
+
+  background:
+    radial-gradient(ellipse 45% 50% at 50% 58%, rgb(59 229 88 / calc(0.04 + var(--k) * 0.1)), transparent 70%),
+    var(--c-bg);
+}
+
+.stage {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 1.5rem;
+  justify-items: center;
+}
+
+.head {
+  display: grid;
+  justify-items: center;
+  gap: 0.9rem;
+  max-width: 44rem;
+  text-align: center;
+}
+
+.title {
+  font-size: clamp(2rem, 1.1rem + 3vw, 3.9rem);
+}
+
+.lead {
+  text-align: center;
+}
+
+.stageArea {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  max-width: var(--container);
+  min-height: 0;
+}
+
+/* ---------- O rastreador ---------- */
+/* A linha da grade tem a altura do .device (1fr): sem isso, o 86% da foto
+   valia sobre o tamanho natural dela (850 px) assim que ela carregava. */
+.device {
+  position: relative;
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  place-items: center;
+  height: min(46svh, 26rem);
+  aspect-ratio: 0.75;
+  transform: scale(calc(0.7 + var(--k) * 0.3)) rotate(calc((1 - var(--k)) * -16deg));
+  opacity: calc(0.3 + var(--k) * 0.7);
+}
+
+.scene[data-live] .device {
+  will-change: transform, opacity;
+}
+
+.halo {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(59 229 88 / 0.35), transparent 65%);
+  filter: blur(30px);
+}
+
+.ring {
+  position: absolute;
+  inset: -6%;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 70%, rgb(59 229 88 / 0.7) 85%, transparent 100%);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
+  animation: spin 7s linear infinite;
+  opacity: calc(0.35 + var(--k) * 0.5);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.img {
+  position: relative;
+  display: block;
+  height: 86%;
+  width: auto;
+  filter: drop-shadow(0 30px 40px rgb(0 0 0 / 0.7));
+}
+
+/* A luz que varre o rastreador (como um scanner), uma vez. */
+/* A caixa tem a altura do rastreador: translateY(100%) leva o traço de cima até embaixo. */
+.scan {
+  position: absolute;
+  inset: 0 8%;
+  transform: translateY(calc(var(--s) * 100%));
+  opacity: calc(min(var(--s), 1 - var(--s)) * 6);
+  pointer-events: none;
+}
+
+.scan::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--c-neon);
+  box-shadow:
+    0 0 18px 4px var(--c-glow),
+    0 0 60px 10px rgb(59 229 88 / 0.2);
+}
+
+/* ---------- As qualidades ---------- */
+.callouts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.callout {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  max-width: 18rem;
+  padding: 0.85rem 1rem;
+  border-radius: 1rem;
+  background: rgb(13 19 14 / 0.88);
+  box-shadow:
+    0 0 0 1px rgb(59 229 88 / 0.2) inset,
+    0 20px 40px -20px rgb(0 0 0 / 0.8);
+  transition:
+    opacity 0.55s var(--ease),
+    transform 0.55s var(--ease),
+    filter 0.55s var(--ease);
+}
+
+.calloutIcon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 0.65rem;
+  background: var(--c-neon-soft);
+  color: var(--c-neon);
+}
+
+.calloutText {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.calloutText strong {
+  font-size: 0.98rem;
+  font-weight: 850;
+  color: var(--c-text);
+}
+
+.calloutText small {
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--c-muted);
+}
+
+.calloutLink {
+  justify-self: start;
+  margin-top: 0.2rem;
+  color: var(--c-neon);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+/* Com movimento: cada uma entra no seu passo (e fica, no computador). */
+:global([data-motion]) .callout {
+  opacity: 0;
+  transform: translate3d(0, 14px, 0);
+  filter: blur(6px);
+}
+
+.scene[data-step='0'] .c0,
+.scene[data-step='1'] :is(.c0, .c1),
+.scene[data-step='2'] :is(.c0, .c1, .c2),
+.scene[data-step='3'] :is(.c0, .c1, .c2, .c3) {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+@media (min-width: 64em) {
+  .callouts {
+    position: absolute;
+    inset: 0;
+    display: block;
+    pointer-events: none;
+  }
+
+  .callout {
+    position: absolute;
+    pointer-events: auto;
+  }
+
+  .c0 { top: 10%; left: 6%; }
+  .c1 { top: 10%; right: 6%; }
+  .c2 { bottom: 12%; left: 10%; }
+  .c3 { bottom: 12%; right: 10%; }
+
+  /* O traço até o rastreador. */
+  .callout::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 5.5rem;
+    height: 1px;
+    background: linear-gradient(90deg, rgb(59 229 88 / 0.7), transparent);
+  }
+
+  .c0::after,
+  .c2::after {
+    left: 100%;
+  }
+
+  .c1::after,
+  .c3::after {
+    right: 100%;
+    transform: scaleX(-1);
+  }
+}
+
+@media (max-width: 63.99em) {
+  .callout {
+    max-width: none;
+  }
+
+  /* No celular: o rastreador fica com a altura que sobra e as qualidades vêm uma por vez, no mesmo lugar. */
+  :global([data-motion]) .stageArea {
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 1rem;
+    height: 100%;
+  }
+
+  :global([data-motion]) .device {
+    height: 100%;
+    max-height: 22rem;
+  }
+
+  :global([data-motion]) .callouts {
+    width: 100%;
+  }
+
+  :global([data-motion]) .callout {
+    grid-area: 1 / 1;
+  }
+
+  .scene[data-step='1'] .c0,
+  .scene[data-step='2'] :is(.c0, .c1),
+  .scene[data-step='3'] :is(.c0, .c1, .c2) {
+    opacity: 0;
+    transform: translate3d(0, -14px, 0);
+    filter: blur(6px);
+  }
+
+  :global([data-motion]) .lead {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ring {
+    animation: none;
+  }
+}

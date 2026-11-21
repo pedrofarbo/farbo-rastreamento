@@ -1,0 +1,138 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { Navbar } from '@/components/landing/Navbar';
+import { HeroSection } from '@/components/landing/HeroSection';
+import { PricingSection } from '@/components/landing/PricingSection';
+import { InstallationSection } from '@/components/landing/InstallationSection';
+import { RepresentativesSection } from '@/components/landing/RepresentativesSection';
+import { FeaturesSection } from '@/components/landing/FeaturesSection';
+import { HowItWorksSection } from '@/components/landing/HowItWorksSection';
+import { TestimonialsSection } from '@/components/landing/TestimonialsSection';
+import { CTASection } from '@/components/landing/CTASection';
+import { Footer } from '@/components/landing/Footer';
+import { ContactModal } from '@/components/landing/ContactModal';
+import { InstallersModal } from '@/components/landing/InstallersModal';
+import { CheckoutSection } from '@/components/landing/CheckoutSection';
+import { LeadModal } from '@/components/landing/LeadModal';
+import { WhatsAppFloat } from '@/components/landing/WhatsAppFloat';
+import { HIRE_VIA_WHATSAPP, WHATSAPP_NUMBER } from '@/config/contact';
+import { PRE_LAUNCH } from '@/config/landing';
+import { useCheckoutOffer } from '@/hooks/useCheckoutOffer';
+import { clickEvent, track, trackPageview } from '@/services/analytics';
+import { referralCode, saveReferral } from '@/services/referral';
+import styles from './ClassicLandingPage.module.css';
+
+/**
+ * A landing clássica (a de antes da cinematográfica), em /classica, fora dos
+ * buscadores: para comparar durante a troca. Os componentes dela continuam
+ * em components/landing (e os de regra de negócio, como os planos, também
+ * estão na nova).
+ */
+export const ClassicLandingPage: React.FC = () => {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<string>('Plano Mensal');
+  // Prestadores recomendados: nulo fechado; senão, o filtro inicial.
+  const [installers, setInstallers] = useState<'todos' | 'moto' | 'carro' | null>(null);
+  const { open: checkoutOpen } = useCheckoutOffer();
+
+  const handleOpenModal = (plan?: string) => {
+    if (plan) setSelectedPlan(plan);
+    setModalOpen(true);
+    track('lead_open', plan ?? '');
+  };
+
+  const openInstallers = (filter: 'todos' | 'moto' | 'carro' = 'todos') => {
+    setInstallers(filter);
+    track('installers_open', filter);
+  };
+
+  // A visita, e cada seção a que a pessoa chega (uma vez por visita): mostra
+  // até onde a página é lida.
+  const wrapper = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const robots = document.createElement('meta');
+    robots.name = 'robots';
+    robots.content = 'noindex';
+    document.head.appendChild(robots);
+    return () => robots.remove();
+  }, []);
+  useEffect(() => {
+    // Vindo de outra página com uma seção no endereço (/#planos): a página
+    // monta depois do navegador procurar a âncora, então rola aqui.
+    if (window.location.hash.length > 1) {
+      document.getElementById(decodeURIComponent(window.location.hash.slice(1)))?.scrollIntoView();
+    }
+    // ?ref=<código>: o link de um afiliado que aponta direto para a landing.
+    const ref = new URLSearchParams(window.location.search).get('ref');
+    if (ref) saveReferral(ref);
+    trackPageview(ref ? { source: 'indicacao', campaign: referralCode(ref) } : {});
+    const root = wrapper.current;
+    if (!root || typeof IntersectionObserver === 'undefined') return;
+    const seen = new Set<string>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = (entry.target as HTMLElement).dataset.section ?? entry.target.id;
+          if (!entry.isIntersecting || !id || seen.has(id)) continue;
+          seen.add(id);
+          track('section_view', id);
+          observer.unobserve(entry.target);
+        }
+      },
+      { threshold: 0.3 },
+    );
+    root.querySelectorAll('main section[id], footer').forEach((el) => {
+      if (el.tagName === 'FOOTER') (el as HTMLElement).dataset.section = 'rodape';
+      observer.observe(el);
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  // Os botões marcados com data-analytics (um ouvinte só, na página toda).
+  const onClickCapture = (event: React.MouseEvent) => {
+    const hit = clickEvent(event.target as Element);
+    if (hit) track(hit.name, hit.label);
+  };
+
+  const handleCloseModal = () => {
+    setModalOpen(false);
+  };
+
+  return (
+    <div className={styles.landingWrapper} ref={wrapper} onClickCapture={onClickCapture}>
+      <Navbar onOpenModal={handleOpenModal} />
+      <main>
+        <HeroSection onOpenModal={handleOpenModal} />
+        <PricingSection onOpenModal={handleOpenModal} />
+        <InstallationSection onOpenInstallers={openInstallers} />
+        {/* Os representantes oficiais que a central marcou (nenhum: sai). */}
+        <RepresentativesSection />
+        <FeaturesSection />
+        <HowItWorksSection />
+        {/* A chamada para a contratação pelo site (fechada na central, sai) e,
+            quando houver clientes para depor, os depoimentos. */}
+        {checkoutOpen && <CheckoutSection onOpenModal={handleOpenModal} />}
+        {!PRE_LAUNCH && <TestimonialsSection />}
+        <CTASection onOpenModal={handleOpenModal} />
+      </main>
+      <Footer />
+
+      {/* A contratação abre o pré-cadastro (pré-cliente), com o WhatsApp como
+          canal ao lado; HIRE_VIA_WHATSAPP volta ao modal que abre a conversa. */}
+      {HIRE_VIA_WHATSAPP && WHATSAPP_NUMBER ? (
+        <ContactModal isOpen={modalOpen} onClose={handleCloseModal} defaultPlan={selectedPlan} />
+      ) : (
+        <LeadModal isOpen={modalOpen} onClose={handleCloseModal} defaultPlan={selectedPlan} />
+      )}
+
+      {WHATSAPP_NUMBER && <WhatsAppFloat />}
+
+      <InstallersModal
+        isOpen={installers !== null}
+        initialFilter={installers ?? 'todos'}
+        onClose={() => setInstallers(null)}
+      />
+    </div>
+  );
+};
+
+export default ClassicLandingPage;

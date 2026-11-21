@@ -1,7 +1,53 @@
-.landingWrapper {
+/*
+ * A raiz da landing cinematográfica: as cores da marca (fixas, a landing é
+ * sempre escura) e as medidas que as cenas usam. overflow-x: clip, não
+ * hidden: hidden criaria uma área de rolagem e as cenas presas (sticky)
+ * deixariam de prender.
+ */
+.root {
+  --c-bg: #060907;
+  --c-bg-2: #0d130e;
+  --c-line: rgb(255 255 255 / 0.08);
+  --c-neon: #3be558;
+  --c-neon-2: #4af067;
+  --c-neon-soft: rgb(59 229 88 / 0.12);
+  --c-glow: rgb(59 229 88 / 0.35);
+  --c-text: #f2f7f3;
+  --c-muted: #9aa69d;
+  --nav-h: 4.5rem;
+  --gutter: 1.25rem;
+  --container: 1240px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+
   min-height: 100vh;
-  background-color: #060907;
+  background-color: var(--c-bg);
   color: #ffffff;
   font-family: var(--font-sans);
-  overflow-x: hidden;
+  overflow-x: clip;
+}
+
+@media (min-width: 48em) {
+  .root {
+    --gutter: 2rem;
+  }
+}
+
+@media (min-width: 80em) {
+  .root {
+    --gutter: 2.5rem;
+  }
+}
+
+/* O WhatsApp flutuante: no celular, some enquanto um palco está preso (data-pinned, do useScenes). */
+.float {
+  transition:
+    opacity 0.3s ease,
+    visibility 0.3s;
+}
+
+@media (max-width: 63.99em) {
+  .root[data-pinned] .float {
+    opacity: 0;
+    visibility: hidden;
+  }
 }
